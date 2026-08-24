@@ -27,6 +27,7 @@ construcción y tan liviana que arranca antes de que sueltes el mouse.
 | [`docs/conectividad.md`](docs/conectividad.md) | Integración con Obsidian y con GitHub |
 | [`docs/inference.md`](docs/inference.md) | IA local para estudio (resúmenes, tarjetas, preguntas), opt-in y sin salir del equipo |
 | [`docs/brainstorm-estudio.md`](docs/brainstorm-estudio.md) | Ideas para superar a los readers actuales, apoyadas en apps de estudio |
+| [`docs/funciones.md`](docs/funciones.md) | **Catálogo completo de funciones en checklist**, de más a menos relevante, con pros y contras |
 | [`docs/roadmap.md`](docs/roadmap.md) | Fases concretas de construcción |
 | [`docs/futuro.md`](docs/futuro.md) | Horizonte largo, más allá del roadmap |
 
