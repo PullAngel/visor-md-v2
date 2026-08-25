@@ -14,14 +14,21 @@ posicionamiento debería sobrevivir a cualquier función futura.
 
 ### 1 · Edición en vivo
 Escribir sobre el documento renderizado, con las marcas visibles solo en la
-línea del cursor —lo que viste en Obsidian. Es el objetivo grande siguiente:
+línea del cursor, lo que viste en Obsidian. Es el objetivo grande siguiente:
 el que más cambia la sensación de uso, y también el más difícil. Exige cursor y
 selección sobre texto renderizado y reconstrucción parcial del árbol en cada
 pulsación. Ver `architecture.md`.
 
+**Presupuesto: crédito de Fable 5.** Es uno de los dos ítems que se separaron
+como los más difíciles del proyecto. Cuando llegue su turno en el roadmap, se
+avisa antes de activar el crédito reservado para esta tarea.
+
 ### 2 · Mermaid nativo
 Empezando por flowchart y secuencia, que son los que la gente usa de verdad. No
 los 22 tipos. Es la única función por la que vale gastar del techo de tamaño.
+
+**Presupuesto: crédito de Fable 5.** El otro de los dos ítems más difíciles.
+Mismo trato que la edición en vivo: se avisa antes de activar el crédito.
 
 ### 3 · IA local por el camino barato
 Hablar con un Ollama que ya tengas instalado: cero peso agregado, cero modelo
@@ -66,7 +73,7 @@ el proyecto se convierta, versión a versión, en otra cosa pesada e insegura m�
 
 No es técnico, es de sostenibilidad. simpler-paper murió archivado. Un proyecto
 de un mantenedor sobrevive si el alcance está acotado, las pruebas cubren lo
-importante, y **cada versión es un punto de parada válido** —no un compromiso
+importante, y **cada versión es un punto de parada válido**, no un compromiso
 abierto que hay que sostener para siempre.
 
 La v2 se diseña para poder detenerse en cualquier sprint completo y seguir

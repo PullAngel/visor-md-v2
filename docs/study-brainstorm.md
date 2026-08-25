@@ -179,18 +179,86 @@ Se cambia por documento, en los dos sentidos, sin pérdida.
 
 ## Sobre ThisIs-Developer/Markdown-Viewer
 
-Coincido con tu lectura: **tiene mucho y por eso se ve sobrecargado**. Lo que
-vale la pena robarles es la barra de formato, que está mejor resuelta que la
-nuestra:
+Esto ya no es solo lo que describiste de memoria: entré a `markdownviewer.pages.dev`
+y leí el toolbar real, botón por botón, para no perderme nada.
 
-- **Desplegable de encabezados** en vez de tres botones fijos. Ocupa un botón y
-  da acceso a los seis niveles. La v1 gasta tres botones para llegar a la mitad.
-- **Símbolos en vez de nombres, con tooltip al pasar.** Cabe más en menos ancho
-  y la barra deja de gritar.
-- **Menú de símbolos y entidades HTML.** Útil de verdad y barato.
+Coincido con tu lectura: **tiene mucho y por eso se ve sobrecargado**. Lo que
+vale la pena robarles, confirmado en vivo:
+
+- **Desplegable de "elegir estilo de texto"** en vez de tres botones fijos.
+  Es más amplio de lo que habías visto: no son solo H1–H6, es un único
+  selector que cubre encabezado y párrafo normal. Ocupa un botón y da acceso
+  a los seis niveles con `Ctrl+1` a `Ctrl+6`. La v1 gasta tres botones para
+  llegar a la mitad. **Ya está en el catálogo.**
+- **Símbolos en vez de nombres, con tooltip al pasar.** Cabe más en menos
+  ancho y la barra deja de gritar. **Ya está.**
+- **Menú de símbolos y entidades HTML.** Útil y barato. **Ya está.**
+- **Nuevo, no estaba en tus notas:** insertar fecha y hora, insertar enlace de
+  referencia, un bloque de terminal separado del bloque de código normal, y
+  cambiar mayúsculas/minúsculas de la selección. Los cuatro son baratos y ya
+  entraron al catálogo, en la sección de Edición.
+- **Nuevo, y me pareció valioso:** una **papelera del workspace** — borrar un
+  archivo lo manda ahí en vez de eliminarlo directo. Ya está en el catálogo,
+  en Workspace.
 
 Lo que **no** copiamos: la densidad. Ellos ponen todo a la vista siempre; la
-identidad Papel + Tinta pide lo contrario —la barra se calla, el documento manda.
+identidad Papel + Tinta pide lo contrario: la barra se calla, el documento
+manda.
+
+### Corrección: revisé el código, no solo la interfaz
+
+Fui a ver qué hay detrás del "espacio de trabajo secreto" antes de escribir
+nada, porque una casilla que dice "bloqueado" sin cifrado real es justo lo que
+`security.md` pide evitar. Leí el README técnico del repositorio y **no es
+teatro**: cifra archivos y nombres de carpeta con una clave derivada de la
+contraseña usando AES-GCM, la clave vive solo en memoria mientras está
+desbloqueado, y una contraseña olvidada no se puede recuperar (resetearlo
+borra el contenido cifrado sin forma de volver atrás). Es una implementación
+seria, no una ilusión de interfaz.
+
+**Aun así, fuera de la v2.0.** No porque esté mal hecho, sino porque abre una
+pregunta que no queremos resolver apurados: qué pasa si alguien pierde la
+contraseña de una nota de estudio real, y cómo se comunica esa
+irreversibilidad sin asustar a quien solo quiere probar la función. Queda en
+`future.md` como una idea válida, condicionada a diseñar bien esa
+conversación con el usuario antes de construir nada.
+
+### Sobre Tinta (código y README verificados)
+
+También fui a leer el README técnico y el código de `oipoistar/tinta`, la
+referencia de rendimiento, no solo la descripción de memoria. Encontré varias
+ideas baratas y concretas que no estaban en el catálogo:
+
+- **Referencias de archivo en texto plano.** Un camino como `docs/plan.md`
+  escrito tal cual en el documento se vuelve un enlace real: si el archivo
+  existe, abre como pestaña; si no, se ve atenuado como "fantasma" en vez de
+  romperse. Es más simple que un wikilink y no exige sintaxis nueva.
+- **Vista previa al pasar el mouse ("link peek").** Sobre un enlace local a
+  otro `.md`, aparece un panel con el destino ya renderizado, sin abrir
+  pestaña. Barato si ya existe el renderizador; es reusar lo que hay.
+- **Copiar tabla como TSV.** Un botón al pasar el mouse sobre una tabla la
+  copia en un formato que Excel o Sheets pegan como grilla real, no como
+  texto plano.
+- **Pegar capturas de pantalla.** `Ctrl+V` de una imagen en modo edición la
+  guarda como PNG junto al documento e inserta el enlace solo. Encaja con
+  nuestra regla de que las imágenes viven en la carpeta del documento.
+- **Filtrar la tabla de contenido escribiendo.** El panel de encabezados que
+  ya planeamos para el Sprint 4 se puede filtrar con solo empezar a escribir,
+  sin campo de búsqueda aparte.
+- **Marcas de coincidencia en la barra de scroll.** Al buscar texto, cada
+  resultado aparece como una marca sobre la barra de desplazamiento. Ayuda a
+  ubicarse en documentos largos sin nada de peso extra.
+- **Anotaciones de revisión más ambiciosas que las nuestras.** Seleccionar
+  texto y anotarlo lo guarda como comentario HTML invisible dentro del mismo
+  archivo (no aparte), con un botón que arma la lista de anotaciones como
+  tarea lista para pegarle a un agente de código. Interesante para un caso de
+  uso muy distinto al nuestro (revisar código, no estudiar), pero el patrón
+  de "resaltar y que se pueda exportar como lista" vale la pena recordar para
+  cuando entre el repaso espaciado.
+
+**Decisión sobre las primeras cinco: entran al catálogo**, en la sección de
+Edición y Workspace según corresponda. La de anotaciones-para-agentes queda
+solo como nota en este documento: no es el mismo problema que resolvemos.
 
 ## Sobre el corrector ortográfico
 

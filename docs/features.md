@@ -110,6 +110,21 @@ Nada de esto está construido: es el mapa para decidir qué entra en cada fase.
   *A favor:* en Obsidian un enlace roto es trabajo pendiente, no un error.
   Mostrarlo distinto es información útil.
 
+- [ ] **Referencias de archivo en texto plano, sin sintaxis especial** 🟢 ✳️
+  Confirmado en el código de Tinta: escribir `docs/plan.md` tal cual en el
+  documento ya lo vuelve un enlace real. Si el archivo existe, abre como
+  pestaña; si no, se ve atenuado ("fantasma") en vez de romperse.
+  *A favor:* más simple que un wikilink y no exige que el autor sepa una
+  sintaxis nueva. Cubre el caso de quien escribe rutas a mano sin ser
+  usuario de Obsidian.
+
+- [ ] **Vista previa al pasar el mouse sobre un enlace local ("link peek")** 🟡 ✳️
+  Visto en Tinta: sobre un enlace a otro `.md`, un panel muestra el destino
+  ya renderizado, sin abrir pestaña.
+  *A favor:* barato si el renderizador ya existe, es reusarlo.
+  *En contra:* hay que decidir cuánto tarda en aparecer para no estorbar al
+  pasar el mouse de paso.
+
 - [ ] **Backlinks: qué notas enlazan a esta** 🟡 ✳️
   *A favor:* la mitad del valor del grafo de Obsidian con una fracción del
   trabajo — es invertir el índice de wikilinks que ya existe.
@@ -156,9 +171,24 @@ Nada de esto está construido: es el mapa para decidir qué entra en cada fase.
 
 - [ ] **Sesión restaurada al reabrir** 🟢 ✳️
 
-- [ ] **Índice lateral desde los encabezados** 🟢 ✳️
+- [ ] **Índice lateral desde los encabezados, filtrable escribiendo** 🟢 ✳️
+  Visto en Tinta: el panel de encabezados se filtra con solo empezar a
+  escribir, sin campo de búsqueda aparte. Suma casi gratis sobre el panel
+  que ya estaba planeado.
 
-- [ ] **Búsqueda y reemplazo en el documento** 🟡 ✳️
+- [ ] **Búsqueda y reemplazo en el documento, con marcas en la barra de
+  scroll** 🟡 ✳️
+  Visto en Tinta: cada coincidencia aparece como una marca sobre la barra
+  de desplazamiento, para ubicarse en documentos largos sin peso extra.
+
+- [ ] **Papelera del workspace** 🟢 ✳️
+  Vista en ThisIs-Developer: borrar un archivo desde la app lo manda a una
+  papelera propia, no lo elimina directo.
+  *A favor:* red de seguridad barata contra un borrado accidental — el
+  mismo espíritu que el guardado atómico, aplicado a borrar en vez de
+  escribir.
+  *En contra:* hay que decidir cuánto tiempo se retiene y purgarla, o
+  crece para siempre.
 
 ---
 
@@ -223,6 +253,12 @@ Nada de esto está construido: es el mapa para decidir qué entra en cada fase.
 
 - [ ] **Frontmatter YAML oculto como en GitHub** 🟢 ✳️
 
+- [ ] **Copiar tabla como TSV** 🟢 ✳️
+  Visto en Tinta: un botón al pasar el mouse sobre una tabla la copia en un
+  formato que Excel o Sheets pegan como grilla real, no como texto plano.
+  *A favor:* barato, y cubre un caso de uso real de quien exporta datos de
+  sus notas.
+
 - [ ] **Tipografía y tamaño ajustables** 🟢 ✳️
 
 ---
@@ -240,12 +276,40 @@ Nada de esto está construido: es el mapa para decidir qué entra en cada fase.
   corrompe notas ajenas — exige deshacer transaccional y confirmación.
 
 - [ ] **Pegar imagen del portapapeles: la guarda y arma el enlace** 🟡 ✳️
-  *A favor:* el gesto más pedido al tomar notas de estudio.
-  *En contra:* decidir dónde la guarda (¿`assets/`? ¿junto a la nota?) sin
-  ensuciar la bóveda del usuario.
+  *A favor:* el gesto más pedido al tomar notas de estudio. Confirmado en
+  Tinta: la guarda como PNG junto al documento e inserta solo el enlace,
+  que es justo nuestra regla de que las imágenes viven en la carpeta de la
+  nota. Responde la pregunta que teníamos abierta sobre dónde guardarla.
+  *En contra:* ninguno real ya resuelto.
 
 - [ ] **Autocompletado de enlaces a otras notas** 🟡 ✳️
   *A favor:* con el índice de wikilinks ya hecho, es casi gratis.
+
+- [ ] **Insertar fecha y hora en el cursor** 🟢 ✳️
+  Visto en el toolbar real de ThisIs-Developer, no solo en su descripción.
+  *A favor:* barato y sirve de verdad para notas de estudio con formato de
+  diario, donde cada entrada empieza con la fecha.
+
+- [ ] **Insertar enlace de referencia** 🟢 ✳️
+  Arma el par `[texto][ref]` + `[ref]: url` al pie, en vez de solo el
+  enlace inline.
+  *A favor:* barato; ayuda a mantener limpio un documento con muchos
+  enlaces repetidos.
+
+- [ ] **Bloque de terminal, distinto del bloque de código** 🟡 ✳️
+  ThisIs-Developer separa "insertar bloque de código" de "insertar bloque
+  de terminal" como dos botones distintos, con estilo propio para el
+  segundo (más parecido a una salida de consola).
+  *A favor:* en Markdown ambos son la misma valla de tres backticks con
+  lenguaje `bash`/`console`/`text` — no hace falta un tipo de nodo nuevo,
+  solo un botón de la barra que inserte la plantilla correcta y el
+  renderizador ya sabe darle un estilo levemente distinto al lenguaje
+  `console`. Barato.
+
+- [ ] **Cambiar mayúsculas y minúsculas de la selección** 🟢 ✳️
+  Alterna MAYÚSCULAS, minúsculas y Formato Título sobre el texto
+  seleccionado.
+  *A favor:* de las cosas que nadie pide hasta que las usa una vez.
 
 - [ ] **Guardado atómico con codificación y fin de línea preservados** 🟡 ✳️
   *A favor:* un archivo ajeno no debe cambiar de codificación por abrirlo. Ya
@@ -297,6 +361,24 @@ Nada de esto está construido: es el mapa para decidir qué entra en cada fase.
 - [ ] **Sistema de movimiento acotado** 🟢 ✳️
   Duraciones de 120 a 240 ms, solo `transform` y `opacity`, respeto a
   `prefers-reduced-motion`. El detalle está en el lienzo de diseño.
+
+- [ ] **Siempre encima** 🟡 ✳️
+  Botón junto a minimizar y cerrar. La ventana no se tapa aunque se
+  interactúe con lo que está detrás: la función de Tinta que va de la
+  mano con estudiar mientras se sigue una clase o un video.
+  *A favor:* barata en Windows (`SetWindowPos` con `HWND_TOPMOST`); en
+  Linux es una sugerencia al gestor de ventanas, no una orden.
+  *En contra:* la superficie de pruebas fuera del happy path es real:
+  minimizar y restaurar, otra app en pantalla completa, cambio de
+  escritorio virtual, bloqueo y desbloqueo de sesión, y en Wayland algunos
+  compositores directamente la ignoran. Cada uno es un caso de prueba
+  propio, no una nota al pie: está detallado en `roadmap.md`, Sprint 3.
+
+- [ ] **Fijar pestaña** 🟢 ✳️
+  Desde el menú contextual de una pestaña: el archivo fijado se vuelve a
+  abrir solo cada vez que arranca la app.
+  *A favor:* barato, y nadie que no lo use se entera de que existe.
+  *En contra:* ninguno real.
 
 ---
 
