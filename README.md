@@ -42,6 +42,12 @@ Modo de medición, sin depender de que nadie mire la pantalla:
 cargo run --release -- documento.md --bench
 ```
 
+Pruebas:
+
+```bash
+cargo test
+```
+
 ## Documentación
 
 Empezá por **[`docs/roadmap.md`](docs/roadmap.md)**: es el documento operativo,

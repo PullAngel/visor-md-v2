@@ -791,3 +791,128 @@ fn main() {
 
     event_loop.run_app(&mut app).unwrap();
 }
+
+// ---------------------------------------------------------------- pruebas
+
+#[cfg(test)]
+mod pruebas {
+    use super::*;
+
+    fn aplanar(md: &str) -> Vec<Block> {
+        let arena = Arena::new();
+        let mut options = Options::default();
+        options.extension.table = true;
+        options.extension.strikethrough = true;
+        options.extension.autolink = true;
+        options.extension.tasklist = true;
+        let root = parse_document(&arena, md, &options);
+        let mut blocks = Vec::new();
+        flatten(root, 0, &mut blocks);
+        blocks
+    }
+
+    /// El parser no puede caerse con entrada hostil. Es la propiedad, no la
+    /// ausencia de crash por casualidad: estos son los casos que `security.md`
+    /// nombra como bombas de recursos.
+    #[test]
+    fn entrada_patologica_no_entra_en_panico() {
+        let casos = vec![
+            String::new(),
+            "\0\0\0".to_string(),
+            "#".repeat(10_000),
+            "> ".repeat(5_000) + "hola",
+            "- ".repeat(5_000) + "item",
+            "*".repeat(20_000),
+            "|a|b|\n|-|-|\n".to_string() + &"|x|y|\n".repeat(5_000),
+            "```\n".to_string() + &"x\n".repeat(10_000) + "```",
+            "[a]: b\n".repeat(5_000),
+            "\u{202E}\u{200B}texto invisible".to_string(),
+            "😀🏳️‍🌈".repeat(1_000),
+        ];
+        for caso in casos {
+            let _ = aplanar(&caso);
+        }
+    }
+
+    /// Un bloque siempre ocupa algo. Un alto de cero haria que se superpongan
+    /// y que la barra de scroll mienta hacia el otro lado.
+    #[test]
+    fn el_alto_estimado_siempre_es_positivo() {
+        for md in ["# t", "texto", "- a", "```\nx\n```", "|a|\n|-|\n|b|"] {
+            for block in aplanar(md) {
+                for ancho in [200.0, 900.0, 4000.0] {
+                    let h = estimate_height(&block, ancho);
+                    assert!(h > 0.0 && h.is_finite(), "alto invalido {h} en {md:?}");
+                }
+            }
+        }
+    }
+
+    /// El ADR-16 acepta que la estimacion tenga error, pero acotado: si se
+    /// desviara por un factor grande, la barra de scroll dejaria de servir.
+    /// Se mide contra el alto real que da parley.
+    #[test]
+    fn el_alto_estimado_se_parece_al_real() {
+        let md = "\
+# Un titulo de prueba
+
+Un parrafo comun y corriente, con la longitud que suele tener un parrafo real
+en un documento de verdad, para que el ajuste de linea entre en juego y la
+estimacion tenga algo que estimar.
+
+- Un item de lista
+- Otro item bastante mas largo que el anterior, para variar el largo
+
+```
+un bloque de codigo
+con dos lineas
+```
+";
+        let blocks = aplanar(md);
+        assert!(!blocks.is_empty(), "el documento de prueba quedo vacio");
+
+        let mut font_cx = FontContext::new();
+        let mut layout_cx = LayoutContext::new();
+        let ancho = 900.0;
+
+        let real: f32 = blocks
+            .iter()
+            .map(|b| build_layout(b, &mut font_cx, &mut layout_cx, ancho).height())
+            .sum();
+        let estimado: f32 = blocks.iter().map(|b| estimate_height(b, ancho)).sum();
+
+        let error = (estimado - real).abs() / real;
+        assert!(
+            error < 0.35,
+            "la estimacion se desvio {:.1}% (real {real:.0} px, estimado {estimado:.0} px)",
+            error * 100.0
+        );
+    }
+
+    /// Los encabezados y las filas de tabla tienen que sobrevivir el
+    /// aplanado con su tipo puesto: es lo que decide como se dibujan.
+    #[test]
+    fn los_tipos_de_bloque_sobreviven_al_aplanado() {
+        let blocks = aplanar("# uno\n\n## dos\n\ntexto\n\n- item\n\n|a|b|\n|-|-|\n|c|d|\n");
+        let tipos: Vec<String> = blocks.iter().map(|b| format!("{:?}", b.kind)).collect();
+        assert!(tipos.iter().any(|t| t.contains("Heading(1)")), "{tipos:?}");
+        assert!(tipos.iter().any(|t| t.contains("Heading(2)")), "{tipos:?}");
+        assert!(tipos.iter().any(|t| t.contains("Para")), "{tipos:?}");
+        assert!(tipos.iter().any(|t| t.contains("Item")), "{tipos:?}");
+        assert!(tipos.iter().any(|t| t.contains("TableRow")), "{tipos:?}");
+    }
+
+    /// Un bloque de codigo se parte en una linea por bloque para poder
+    /// dibujarle el fondo por linea. Si eso cambia, el fondo se rompe.
+    #[test]
+    fn el_bloque_de_codigo_se_parte_por_lineas() {
+        let blocks = aplanar("```\nuno\ndos\ntres\n```");
+        let codigo: Vec<_> = blocks
+            .iter()
+            .filter(|b| matches!(b.kind, Kind::Code))
+            .collect();
+        assert_eq!(codigo.len(), 3, "se esperaban 3 lineas de codigo");
+        assert_eq!(codigo[0].text, "uno");
+        assert_eq!(codigo[2].text, "tres");
+    }
+}
