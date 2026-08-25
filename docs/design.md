@@ -24,6 +24,40 @@ interfaz se calla.
 El acento cambia de tono entre temas para mantener el contraste: el verde claro
 que funciona sobre negro se lava sobre papel.
 
+## Jerarquía de superficies: barra, menús y configuración
+
+Regla explícita para decidir dónde va cada función nueva, nacida de comparar
+los dos extremos de la investigación: ThisIs-Developer pone todo a la vista
+siempre y se ve sobrecargado; Tinta, en el otro extremo, deja tan poco visible
+que a Angel le pareció "una terminal", sin calidez de interfaz. Visor MD v2 no
+quiere ninguno de los dos.
+
+Cuatro niveles, del más visible al más escondido:
+
+1. **Barra de formato.** Solo lo que se usa en casi todo documento: negrita,
+   listas, encabezados, enlace, imagen. Si una función no pasa ese filtro, no
+   entra acá aunque sea barata.
+2. **Menús desplegables de la propia barra.** Variantes de una acción ya
+   presente se agregan como segunda opción de su desplegable, no como botón
+   nuevo. Ejemplos ya decididos: insertar enlace de referencia (junto al
+   wikilink), insertar bloque de terminal (junto al bloque de código),
+   insertar fecha y hora (en el menú de símbolos y entidades).
+3. **Menú contextual (click derecho).** Todo lo que actúa sobre una selección
+   o un elemento puntual y no necesita descubrirse por curioseo: cambiar
+   mayúsculas y minúsculas de la selección, fijar una pestaña, las acciones
+   de la papelera.
+4. **Configuración avanzada.** Funciones que cambian el comportamiento por
+   defecto del documento y que, si estuvieran activas para todos, generarían
+   falsos positivos o sorpresas. Ejemplo decidido: las referencias de archivo
+   en texto plano quedan apagadas por defecto y se activan acá, porque
+   convertir cualquier ruta mencionada al pasar en un enlace no pedido rompe
+   la lectura de quien no lo esperaba. Cuando se activan, se pintan del color
+   de hipervínculo para que quede claro que son un enlace.
+
+**El criterio para dudar:** si hay que preguntarse "¿esto va en la barra?", ya
+la respuesta es no. La barra es para lo que casi todo el mundo usa en cada
+documento; todo lo demás vive un nivel más adentro, disponible pero sin gritar.
+
 ## Ventana: sin borde
 
 Sin líneas de contorno. La jerarquía sale del salto de color entre superficies.

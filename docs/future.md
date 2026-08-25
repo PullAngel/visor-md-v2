@@ -55,6 +55,27 @@ hasta tener una respuesta buena a eso.
 Solo si la pila de dibujo demostró que rinde, y si el modelo de datos lo
 soporta sin retorcerse.
 
+### 9 · Espacio de trabajo secreto, cifrado
+Visto y verificado en el código de ThisIs-Developer: una zona aparte dentro
+del workspace, protegida por contraseña propia, donde el contenido y los
+nombres de archivo se cifran en disco (AES-GCM con clave derivada de la
+contraseña, no solo ocultos en la interfaz). No es prioridad, pero encaja con
+la identidad de "visor seguro" del proyecto, así que queda anotado en vez de
+descartado.
+
+**No entra a diseño ni a roadmap todavía.** Antes de decidir si se construye,
+hay una conversación pendiente sobre cómo resolverlo bien:
+
+- Qué pasa con el índice del workspace (wikilinks, backlinks, búsqueda)
+  mientras el espacio está bloqueado, y si conviene indexarlo alguna vez.
+- Si el sidecar de anotaciones de una nota dentro del espacio secreto se
+  cifra también, o si directamente no se permiten anotaciones ahí.
+- Cómo se comunica, sin sorpresas desagradables, que una contraseña olvidada
+  es contenido perdido para siempre.
+
+Se retoma cuando el resto del roadmap esté firme y valga la pena invertir en
+pensarlo bien, no antes.
+
 ## Lo que el futuro NO debe erosionar
 
 Por más funciones que se sumen, tres cosas no se tocan:

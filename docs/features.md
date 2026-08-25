@@ -114,9 +114,15 @@ Nada de esto está construido: es el mapa para decidir qué entra en cada fase.
   Confirmado en el código de Tinta: escribir `docs/plan.md` tal cual en el
   documento ya lo vuelve un enlace real. Si el archivo existe, abre como
   pestaña; si no, se ve atenuado ("fantasma") en vez de romperse.
+  **Decidido: apagado por defecto, se activa desde configuración avanzada.**
+  Cuando está activo, la referencia se pinta con el color de hipervínculo
+  para que se note que es un enlace y no texto suelto.
   *A favor:* más simple que un wikilink y no exige que el autor sepa una
   sintaxis nueva. Cubre el caso de quien escribe rutas a mano sin ser
   usuario de Obsidian.
+  *En contra:* activado por defecto convertiría cualquier ruta mencionada
+  al pasar (un ejemplo de código, una referencia en prosa) en un link no
+  pedido. Por eso queda detrás de un interruptor.
 
 - [ ] **Vista previa al pasar el mouse sobre un enlace local ("link peek")** 🟡 ✳️
   Visto en Tinta: sobre un enlace a otro `.md`, un panel muestra el destino
@@ -184,11 +190,18 @@ Nada de esto está construido: es el mapa para decidir qué entra en cada fase.
 - [ ] **Papelera del workspace** 🟢 ✳️
   Vista en ThisIs-Developer: borrar un archivo desde la app lo manda a una
   papelera propia, no lo elimina directo.
+  **Decidido: no aparece entre las opciones visibles de entrada.** Vive
+  junto a Recientes y Favoritos en el árbol lateral, pero oculta hasta que
+  el usuario la activa o hay algo adentro. "Borrar" queda definido sin
+  ambigüedad: mueve el archivo a `.papelera/` dentro del propio workspace
+  (no lo borra del disco), y solo el purgado manual o el vencimiento de la
+  retención lo elimina de verdad. Con retención por tiempo (configurable,
+  con un tope por defecto sensato) para que no crezca para siempre.
   *A favor:* red de seguridad barata contra un borrado accidental: el
   mismo espíritu que el guardado atómico, aplicado a borrar en vez de
   escribir.
-  *En contra:* hay que decidir cuánto tiempo se retiene y purgarla, o
-  crece para siempre.
+  *En contra:* hay que purgar sola cuando vence la retención, o pasa a ser
+  basura acumulada sin que nadie la vea.
 
 ---
 
@@ -287,12 +300,16 @@ Nada de esto está construido: es el mapa para decidir qué entra en cada fase.
 
 - [ ] **Insertar fecha y hora en el cursor** 🟢 ✳️
   Visto en el toolbar real de ThisIs-Developer, no solo en su descripción.
+  **Decidido: sin botón propio.** Vive en el menú de símbolos y entidades
+  que ya estaba planeado, como una entrada más.
   *A favor:* barato y sirve de verdad para notas de estudio con formato de
   diario, donde cada entrada empieza con la fecha.
 
 - [ ] **Insertar enlace de referencia** 🟢 ✳️
   Arma el par `[texto][ref]` + `[ref]: url` al pie, en vez de solo el
   enlace inline.
+  **Decidido: sin botón propio.** Va en el mismo desplegable de "insertar
+  enlace" donde ya vive el wikilink, como una segunda opción.
   *A favor:* barato; ayuda a mantener limpio un documento con muchos
   enlaces repetidos.
 
@@ -300,15 +317,18 @@ Nada de esto está construido: es el mapa para decidir qué entra en cada fase.
   ThisIs-Developer separa "insertar bloque de código" de "insertar bloque
   de terminal" como dos botones distintos, con estilo propio para el
   segundo (más parecido a una salida de consola).
+  **Decidido: sin botón propio.** Va como segunda opción en el desplegable
+  de "insertar bloque de código", no como botón aparte en la barra.
   *A favor:* en Markdown ambos son la misma valla de tres backticks con
   lenguaje `bash`/`console`/`text`, no hace falta un tipo de nodo nuevo,
-  solo un botón de la barra que inserte la plantilla correcta y el
-  renderizador ya sabe darle un estilo levemente distinto al lenguaje
+  y el renderizador ya sabe darle un estilo levemente distinto al lenguaje
   `console`. Barato.
 
 - [ ] **Cambiar mayúsculas y minúsculas de la selección** 🟢 ✳️
   Alterna MAYÚSCULAS, minúsculas y Formato Título sobre el texto
   seleccionado.
+  **Decidido: solo en el menú contextual** (click derecho sobre una
+  selección), nunca en la barra.
   *A favor:* de las cosas que nadie pide hasta que las usa una vez.
 
 - [ ] **Guardado atómico con codificación y fin de línea preservados** 🟡 ✳️

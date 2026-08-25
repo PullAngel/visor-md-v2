@@ -140,6 +140,13 @@ Se cambia por documento, en los dos sentidos, sin pérdida.
 | Botones con símbolo y tooltip | 3 | También de ellos |
 | Menú de símbolos y entidades | 3 | Ídem |
 | Siempre encima | 3 | De Tinta. Con pruebas fuera del happy path |
+| Fijar pestaña | 3 | Menú contextual de la pestaña. No molesta a quien no lo use |
+| Referencias de archivo en texto plano | 3 | De Tinta. Apagado por defecto, se activa en configuración avanzada, se pinta como hipervínculo |
+| Vista previa al pasar el mouse ("link peek") | 3 | De Tinta |
+| Índice de encabezados filtrable escribiendo | 4 | De Tinta, sobre el panel que ya estaba planeado |
+| Marcas de búsqueda en la barra de scroll | 4 | De Tinta |
+| Copiar tabla como TSV | 4 | De Tinta |
+| Papelera del workspace | 4 | De ThisIs-Developer. Oculta por defecto, con retención configurable |
 | Tabla de contenido flotante | 4 | Activable desde configuración avanzada |
 | Búsqueda en toda la bóveda | 4 | |
 | Backlinks | 5 | |
@@ -147,13 +154,16 @@ Se cambia por documento, en los dos sentidos, sin pérdida.
 | Repaso espaciado, forma simple | 7 | |
 | Temporizador Pomodoro | 7 | En configuración avanzada, interfaz mínima |
 | Exportar a PDF directo | 7 | Sin pasar por imprimir, como en la v1 |
+| Insertar fecha y hora | 7 | De ThisIs-Developer. Sin botón propio, va al menú de símbolos |
+| Insertar enlace de referencia | 7 | De ThisIs-Developer. Sin botón propio, va al desplegable de enlace |
+| Bloque de terminal vs bloque de código | 7 | De ThisIs-Developer. Sin botón propio, va al desplegable de bloque de código |
+| Cambiar mayúsculas y minúsculas de la selección | 7 | De ThisIs-Developer. Solo en el menú contextual |
 
 ## Entra si sobra presupuesto
 
 | Idea | Nota |
 | --- | --- |
 | Menú de emojis | Solo si no suma peso real. Un selector completo pesa; uno de los 200 más usados, no |
-| Fijar pestaña | Lo viste en Obsidian. No molesta a quien no lo use |
 
 ## Futuro
 
@@ -166,6 +176,7 @@ Se cambia por documento, en los dos sentidos, sin pérdida.
 | Tarjetas con IA | Depende del componente de IA |
 | Corrector ortográfico | Ver abajo |
 | Plugins descargables | Ahí entraría KaTeX |
+| Espacio de trabajo secreto, cifrado | No es prioridad. De ThisIs-Developer, cifrado real (AES-GCM), no es teatro. Falta resolver el índice, el sidecar y la comunicación de irreversibilidad antes de diseñarlo |
 
 ## Descartado
 
@@ -216,12 +227,13 @@ desbloqueado, y una contraseña olvidada no se puede recuperar (resetearlo
 borra el contenido cifrado sin forma de volver atrás). Es una implementación
 seria, no una ilusión de interfaz.
 
-**Aun así, fuera de la v2.0.** No porque esté mal hecho, sino porque abre una
-pregunta que no queremos resolver apurados: qué pasa si alguien pierde la
-contraseña de una nota de estudio real, y cómo se comunica esa
-irreversibilidad sin asustar a quien solo quiere probar la función. Queda en
-`future.md` como una idea válida, condicionada a diseñar bien esa
-conversación con el usuario antes de construir nada.
+**Decisión de Angel: no es prioridad, pero se anota para el futuro.** No por
+estar mal hecho, sino porque abre preguntas que no conviene resolver apuradas
+(qué pasa con el índice del workspace mientras está bloqueado, si el sidecar
+de anotaciones se cifra también, cómo se comunica que una contraseña olvidada
+es contenido perdido para siempre). Encaja con la identidad de "visor seguro"
+del proyecto, así que queda como idea válida en `future.md` (punto 9),
+condicionada a una conversación de diseño propia antes de construir nada.
 
 ### Sobre Tinta (código y README verificados)
 
@@ -256,9 +268,18 @@ ideas baratas y concretas que no estaban en el catálogo:
   de "resaltar y que se pueda exportar como lista" vale la pena recordar para
   cuando entre el repaso espaciado.
 
-**Decisión sobre las primeras cinco: entran al catálogo**, en la sección de
-Edición y Workspace según corresponda. La de anotaciones-para-agentes queda
-solo como nota en este documento: no es el mismo problema que resolvemos.
+**Decisión de Angel: las cinco entran, todas aprobadas.** La de referencias en
+texto plano queda apagada por defecto (se activa en configuración avanzada, y
+al activarse se pinta como hipervínculo) para no convertir cualquier ruta
+mencionada al pasar en un enlace no pedido. Las demás entran tal como se
+describieron. La de anotaciones-para-agentes queda solo como nota en este
+documento: no es el mismo problema que resolvemos.
+
+Angel también fue explícito sobre dónde deben vivir estas funciones nuevas:
+ni la sobrecarga de ThisIs-Developer ni el vacío de Tinta, que "parecía una
+terminal". La regla que resultó de eso (qué va en la barra, qué en un
+desplegable, qué en el menú contextual, qué en configuración avanzada) quedó
+escrita en `design.md`, sección "Jerarquía de superficies".
 
 ## Sobre el corrector ortográfico
 
