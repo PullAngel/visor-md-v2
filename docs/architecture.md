@@ -1,7 +1,10 @@
 # Arquitectura
 
-Plan, no código. Los nombres de dependencias son candidatos a validar en la
-Fase 0, no elecciones cerradas.
+**La pila ya no es candidata: el Sprint 0 la construyó y la midió.** `comrak`,
+`parley`, `swash`, `tiny-skia`, `winit` y `softbuffer` funcionan juntos y
+entran en 2,14 MB. Los números están en `budget.md` y las decisiones que
+salieron de ahí, en los ADR-14 a 17. Lo que sigue marcado como candidato es lo
+que todavía no se construyó.
 
 ## Principios que ordenan todo lo demás
 
@@ -90,13 +93,32 @@ combinarse con ella, es el riesgo de madurez más razonable que se puede
 tomar en esta capa.
 
 `tiny-skia` sobre Skia completo es una decisión de presupuesto: Skia solo
-costaría más de 5 MB. Si el Sprint 0 muestra que el scroll de documentos
-largos no rinde por software, se evalúa `vello` (GPU) midiendo el costo en
-tamaño.
+costaría más de 5 MB. **El Sprint 0 confirmó que el software alcanza**: 186 fps
+en un documento normal y 132 en uno de 5 MB. No se evalúa GPU. Ver ADR-17.
 
 Responsabilidades: selección de texto que cruza bloques, enlaces clicables,
-resaltado de sintaxis, y **virtualización** (dibujar solo lo visible), que es lo
-que permite abrir archivos enormes sin que el scroll se arrastre.
+resaltado de sintaxis, y **virtualización**.
+
+### Qué virtualizar, corregido por la medición
+
+Este documento decía antes que virtualizar era "dibujar solo lo visible". La
+medición del Sprint 0 mostró que eso está mal enfocado. Dibujar nunca fue el
+problema. En orden de costo real, de mayor a menor:
+
+1. **Conservar lo maquetado.** Mantener vivos los 43.194 layouts de parley de
+   un documento de 5 MB costaba **393 MB**. Guardar solo la posición de cada
+   bloque y rehacer el layout de los que se ven bajó a 120 MB.
+2. **Maquetar para medir.** Maquetar esos 43.194 bloques solo para saber
+   cuánto mide cada uno costaba **5,1 segundos**. Estimar el alto contando
+   caracteres cuesta 10 ms, con 5 % de error en la barra de scroll. ADR-16.
+3. **Rasterizar glifos.** Rehacer el contorno de cada glifo en cada cuadro
+   costaba 39 ms por cuadro. Con cache, 5,4 ms. ADR-15.
+4. **Dibujar.** Prácticamente gratis al lado de lo anterior.
+
+O sea: **la virtualización que importa es de layout y de memoria, no de
+dibujo.** El principio operativo que queda es que el trabajo por cuadro debe
+ser proporcional a lo que se ve, nunca al tamaño del documento, y que nada que
+dependa del tamaño del documento puede pasar por el hilo de interfaz.
 
 ### 5 · Chrome
 

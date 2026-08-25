@@ -20,7 +20,7 @@ qué prueba lo cubre, y qué tiene que ser cierto para pasar al siguiente.
 
 | Sprint | Qué entrega | Estado |
 | --- | --- | --- |
-| 0 | Prototipo y validación del presupuesto | ⬜ Pendiente |
+| 0 | Prototipo y validación del presupuesto | ✅ **Cerrado**, criterio cumplido |
 | 1 | Lector mínimo usable | ⬜ |
 | 2 | Lector completo | ⬜ |
 | 3 | Chrome y pestañas | ⬜ |
@@ -59,6 +59,69 @@ debajo de 7 MB con margen. Si no se llega, se replantea alcance o presupuesto
 
 **Prueba manual:** sí, corta. Abrir el prototipo y decirme si el arranque se
 *siente* instantáneo. El número importa menos que la sensación.
+
+### ✅ Resultado
+
+**Criterio cumplido con holgura: 2,14 MB contra un objetivo de 7.** Los
+números completos están en `budget.md`; el resumen:
+
+| Métrica | Objetivo | Medido |
+| --- | --- | --- |
+| Tamaño del binario | < 7 MB | **2,14 MB** |
+| Ventana visible | < 150 ms | **79 ms** |
+| Primer pintado, documento normal | < 400 ms | **119 ms** |
+| Scroll, documento normal | 60 fps | **186 fps** (5,4 ms) |
+| Scroll, documento de 5 MB | 60 fps | **132 fps** (7,6 ms) |
+| RAM, documento normal | decenas de MB | **19 MB** |
+| Documento de 5 MB abierto | sin objetivo fijado | **698 ms** |
+| RAM, documento de 5 MB | sin objetivo fijado | 120 MB |
+| Dependencias | mínimas | **96, ninguna en C** |
+| `cargo audit` | limpio | 0 vulnerabilidades, 1 aviso |
+
+**Las cuatro decisiones que el sprint tenía que tomar, tomadas:**
+
+1. **Backend de dibujo: software.** No hace falta GPU. ADR-17.
+2. **Resaltado de sintaxis: no con `syntect` + Oniguruma**, porque arrastra C.
+   Las alternativas quedan acotadas y se elige en el Sprint 2. ADR-14.
+3. **Toolkit de chrome:** se pospone al Sprint 3 con información nueva. Dibujar
+   texto y rectángulos con la pila propia salió barato, así que dibujar el
+   chrome a mano dejó de ser el plan de emergencia y pasó a ser la opción por
+   defecto razonable.
+4. **Almacenamiento del índice:** sin decidir todavía, no hacía falta para el
+   prototipo. Queda para el Sprint 4, con el margen de tamaño que ahora hay.
+
+**Los tres problemas que aparecieron, y qué se hizo:**
+
+| Problema medido | Causa | Solución | Resultado |
+| --- | --- | --- | --- |
+| 39 ms por cuadro (26 fps) | Rasterizar cada glifo en cada cuadro | Cache de glifos (ADR-15) | 5,4 ms (186 fps) |
+| 393 MB con un documento de 5 MB | 43.194 layouts de parley vivos a la vez | Guardar solo posiciones (ADR-16) | 120 MB |
+| 5,7 s para abrir un documento de 5 MB | Maquetar los 43.194 bloques para saber su alto | Estimar el alto (ADR-16) | 698 ms |
+
+**Lo que queda anotado para más adelante:** el parseo de un documento de 5 MB
+cuesta 522 ms en el hilo de interfaz. Es lo único que falta para que un archivo
+gigante también abra instantáneo, y ya estaba previsto en el Sprint 2.
+
+**Aviso de `cargo audit`:** `ttf-parser` 0.25.1 figura como **sin
+mantenimiento** (RUSTSEC-2026-0192). No es una vulnerabilidad. Entra de forma
+transitiva por la pila de fuentes. Hay que vigilarlo: si aparece un fallo real
+en un crate sin mantenedor, no va a haber parche. Se revisa en el Sprint 1, que
+es cuando se toca la capa de fuentes.
+
+**Lo que quedó sin hacer, dicho claro:** el sprint pedía auditar con
+`cargo geiger` cuánto `unsafe` trae la pila. **No se corrió.** En su lugar se
+auditó el árbol de dependencias completo, que dio el hallazgo más importante
+del sprint (el C que estaba enlazado sin que nadie lo pidiera, ADR-14), pero no
+es lo mismo: falta el conteo de bloques `unsafe` por crate. Queda pendiente
+para el Sprint 1.
+
+Lo que sí quedó puesto: **`#![forbid(unsafe_code)]`** en el código propio, que
+ahora es una regla que hace fallar la compilación, no una intención escrita en
+un documento.
+
+**Prueba manual pendiente:** falta que abras el prototipo y digas si el
+arranque se *siente* instantáneo. El número dice 119 ms; la sensación la
+tenés que confirmar vos.
 
 ---
 

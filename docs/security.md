@@ -50,10 +50,40 @@ decirlo con precisión:**
 - Las dependencias con más `unsafe` en esta pila son justo las de bajo nivel:
   rasterización de glifos, decodificación de imágenes, dibujo 2D.
 
+### Lo que encontró la primera auditoría real (Sprint 0)
+
+No es teoría: al compilar el prototipo y mirar el árbol de dependencias
+aparecieron dos cosas que valen como advertencia permanente.
+
+**1. Habíamos enlazado C sin querer.** Las funciones por defecto de `comrak`
+traen `syntect-onig`, que usa **Oniguruma**, una librería de expresiones
+regulares escrita en C, vía `onig_sys`. Nadie la pidió. Entró porque nadie
+miró qué arrastraba una dependencia por defecto. Un motor de expresiones
+regulares en C procesando entrada no confiable es exactamente la clase de
+superficie que el ADR-2 existe para evitar, y estaba adentro del binario que
+se presentaba como "sin C".
+
+Se sacó con `default-features = false`. El árbol pasó de 144 a **96 crates**,
+**ninguno en C**, y el binario bajó 536 KB. Ver ADR-14.
+
+**La lección, que vale más que el arreglo:** la tesis de seguridad no se
+sostiene sola por elegir Rust. Se sostiene revisando qué se enlaza. Toda
+dependencia nueva entra con `default-features = false` y se audita con
+`cargo tree` antes de agregarla.
+
+**2. Un crate sin mantenimiento.** `cargo audit` da cero vulnerabilidades, pero
+avisa que `ttf-parser` 0.25.1 está **sin mantenimiento**
+(RUSTSEC-2026-0192). Entra de forma transitiva por la pila de fuentes. No es
+un fallo hoy, pero es riesgo acumulado: si mañana aparece un problema en un
+crate que nadie mantiene, no va a haber parche y hay que reemplazarlo con
+apuro. Se revisa en el Sprint 1, al tocar la capa de fuentes.
+
 **Mitigaciones concretas:**
 
 - `cargo audit` y `cargo deny` en cada compilación, con la construcción fallando
   ante un advisory abierto. No es opcional ni "cuando nos acordemos".
+- **Ninguna dependencia en C.** Verificado en el Sprint 0 y a verificar en cada
+  dependencia nueva.
 - **Presupuesto de `unsafe` en código propio: cero.** `#![forbid(unsafe_code)]`
   en todos los módulos salvo la capa de integración con el sistema operativo,
   donde llamar a la API de Windows lo exige. Ese módulo se revisa aparte y a

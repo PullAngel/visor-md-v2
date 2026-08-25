@@ -211,3 +211,115 @@ que Windows trata como de primera clase, el que espera la Microsoft Store para
 firmar, y el que hace que el binario medido en el Sprint 0 sea exactamente el
 que se termina distribuyendo, sin una diferencia de tamaño entre objetivos que
 explicar más adelante.
+
+## ADR-14: Dependencias sin funciones por defecto, y ninguna en C
+
+**Contexto.** El Sprint 0 compiló el prototipo y auditó el árbol de
+dependencias real para Windows. Las funciones por defecto de dos crates
+metían cosas que nadie pidió:
+
+- `comrak` traía su interfaz de línea de comandos (`clap`, `shell-words`,
+  `xdg`, `fmt2io`) y, sobre todo, `syntect-onig`: resaltado de sintaxis
+  apoyado en **Oniguruma**, una librería de expresiones regulares escrita en
+  C, vía `onig` y `onig_sys`.
+- `tiny-skia` traía `png-format`, un decodificador de PNG que todavía no se
+  usa.
+
+**Decisión.** Las dos entran con `default-features = false`. De `tiny-skia` se
+piden explícitamente solo `std` y `simd`.
+
+**Por qué.** El ADR-2 elige Rust porque la seguridad de memoria sobre entrada
+no confiable es la tesis del proyecto. Un decodificador de expresiones
+regulares en C, enlazado por arrastre de una opción por defecto que nadie
+revisó, contradice esa tesis en silencio. Que además ahorre medio mega es un
+premio, no el motivo.
+
+**Medido.** El binario pasó de 2,66 MB a **2,14 MB** (536 KB menos) y el árbol
+de dependencias de 144 a **96 crates**, sin ninguna dependencia en C.
+
+**Consecuencia para el resaltado de sintaxis.** El Sprint 0 tenía que decidir
+esa estrategia y esta medición la decide por descarte: **no vía `syntect` con
+Oniguruma**. Como el renderizado es nativo y no genera HTML, el resaltado hay
+que hacerlo sobre el árbol propio igual. Las opciones que quedan, a evaluar en
+el Sprint 2: `syntect` con su motor `fancy-regex` (Rust puro), `tree-sitter`,
+o un resaltador propio por tokens para los quince o veinte lenguajes que
+importan. La regla que hereda de este ADR: ninguna que arrastre C.
+
+**Regla permanente.** Toda dependencia nueva entra con
+`default-features = false` y se le habilitan solo las funciones que se usan.
+Antes de agregar una, se revisa qué arrastra con `cargo tree`.
+
+## ADR-15: Cache de glifos rasterizados
+
+**Contexto.** La primera versión del prototipo dibujaba a 39 ms por cuadro
+(26 fps) en un documento normal. Se siente pastoso: el objetivo es 60 fps, o
+sea menos de 16 ms.
+
+**Decisión.** Los glifos ya rasterizados se guardan en una cache, indexados
+por (fuente, tamaño, glifo). El pixmap también se reusa entre cuadros en vez
+de reservarse de nuevo.
+
+**Por qué.** La sospecha inicial fue el pixmap (2,7 MB reservados y puestos a
+cero por cuadro), pero la aritmética señalaba a otro lado: una pantalla de
+texto son unos 2300 glifos, y rasterizar un contorno cuesta del orden de 15
+microsegundos, lo que da unos 35 ms. Coincidía casi exacto con los 39 ms
+medidos. El pixmap era ruido al lado de eso.
+
+**Medido.** De 39,0 ms a **5,4 ms** por cuadro en un documento normal (26 fps
+a 186 fps), y de 47,4 ms a 7,6 ms en uno de 5 MB. Costo en tamaño: **2,5 KB**.
+Es la mejor relación esfuerzo/resultado de todo el Sprint 0.
+
+**Pendiente para el Sprint 1.** La cache ignora la posición subpíxel, porque
+parley ya entrega posiciones alineadas a píxel. Si al embeber las fuentes
+propias se nota pérdida de calidad en el trazo, hay que agregar la posición
+subpíxel a la clave, a costa de multiplicar el tamaño de la cache.
+
+## ADR-16: Las alturas se estiman, no se maquetan
+
+**Contexto.** Para saber dónde cae cada bloque en la barra de scroll hay que
+saber cuánto mide. Maquetarlos todos para averiguarlo costaba **5122 ms** en
+un documento de 5 MB con 43.194 bloques. El documento tardaba 5,7 segundos en
+aparecer.
+
+**Decisión.** El alto de cada bloque se **estima** contando caracteres y
+dividiendo por cuántos entran por línea. Los bloques que efectivamente se ven
+se maquetan de verdad, y ese layout se cachea mientras estén en pantalla.
+
+**Por qué.** El alto exacto de un bloque que está a doscientas pantallas de
+distancia no le importa a nadie: solo participa de la proporción de la barra
+de scroll. Pagar cinco segundos por esa precisión es un mal negocio.
+
+**Medido.** Posicionar los 43.194 bloques pasó de 5122 ms a **10 ms**. El
+documento completo abre en **698 ms** en vez de 5622 ms. El error acumulado en
+el alto total es de **5,2 %**, y no afecta lo que se dibuja.
+
+**Costo aceptado y pendiente.** La barra de scroll miente un 5 %, y a medida
+que se maquetan bloques reales las posiciones de los siguientes deberían
+corregirse. Esa corrección progresiva, sin que el texto salte bajo el cursor,
+es trabajo del Sprint 2. La regla de `design.md` de que "el texto nunca se
+mueve" aplica: si corregir una posición hace saltar lo que se está leyendo, se
+corrige al salir de esa zona, no mientras se lee.
+
+**Corrección a `architecture.md`.** El documento decía "virtualización:
+dibujar solo lo visible". La medición muestra que dibujar nunca fue el
+problema. Lo caro es **maquetar**, y lo verdaderamente caro es **conservar** lo
+maquetado. La virtualización que importa es de layout y de memoria, no de
+dibujo.
+
+## ADR-17: Dibujo por software confirmado, sin GPU
+
+**Contexto.** El ADR-3 eligió `tiny-skia` (software) sobre Skia completo por
+presupuesto de tamaño, dejando anotado que si el scroll no rendía habría que
+evaluar `vello` (GPU) midiendo el costo en tamaño.
+
+**Decisión.** Se queda el dibujo por software. No se evalúa GPU.
+
+**Por qué.** No hace falta: 186 fps en un documento normal y 132 fps en uno de
+5 MB, por software, en un equipo de escritorio común. El presupuesto de cuadro
+para 60 fps es 16 ms y estamos usando 5,4.
+
+**Lo que se gana además.** Sin dependencia de GPU ni de drivers: una máquina
+virtual descartable de Linux con aceleración mal configurada, un escritorio
+remoto o un equipo viejo dibujan igual. Para un visor que quiere ser el
+predeterminado de `.md` en cualquier máquina, eso vale más que los fps que
+sobran.

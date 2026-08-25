@@ -1,0 +1,30 @@
+[package]
+name = "visor-md"
+version = "0.1.0"
+edition = "2024"
+
+# Perfil de medicion del Sprint 0: las palancas de tamano de docs/budget.md
+# aplicadas todas juntas, para que el binario medido sea el que se distribuye.
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[dependencies]
+# Sin funciones por defecto a proposito. Las de comrak arrastran su CLI (clap,
+# xdg, shell-words) y, peor, `syntect-onig`: resaltado de sintaxis apoyado en
+# Oniguruma, una libreria de expresiones regulares escrita en C. Meter C al
+# binario contradice de frente el ADR-2. Ver ADR-14.
+comrak = { version = "0.54.0", default-features = false }
+parley = "0.11.1"
+softbuffer = "0.4.8"
+swash = "0.2.10"
+# Sin `png-format`: el decodificador de PNG entra cuando toquen las imagenes,
+# con los limites de `security.md`, no de arrastre por una opcion por defecto.
+tiny-skia = { version = "0.12.0", default-features = false, features = [
+    "std",
+    "simd",
+] }
+winit = "0.30.13"

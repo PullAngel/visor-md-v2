@@ -1,6 +1,7 @@
-# Visor MD v2: fase de planificación
+# Visor MD v2
 
-**Estado: planeando. No hay código de producto en este repositorio.**
+**Estado: Sprint 0 cerrado.** Hay un prototipo que funciona y, sobre todo, hay
+mediciones reales que reemplazaron a las estimaciones.
 
 Segunda versión de [Visor MD](https://github.com/PullAngel/visor-md). La v1 está
 terminada, publicada y auditada, y corre sobre WebView2. La v2 cambia de
@@ -11,6 +12,35 @@ integradas.
 En una frase: la herramienta que dejás como predeterminada para abrir cualquier
 `.md`, cómoda para estudiar, que se conecta con el segundo cerebro que ya usás,
 segura por construcción y tan liviana que arranca antes de que sueltes el mouse.
+
+## Lo que dio el Sprint 0
+
+El prototipo abre un `.md`, lo parsea con `comrak`, lo maqueta con `parley` y
+lo dibuja con `tiny-skia` sobre una ventana `winit` + `softbuffer`. Sin motor
+web, sin chrome todavía.
+
+| Métrica | Objetivo | Medido |
+| --- | --- | --- |
+| Tamaño del binario | < 7 MB | **2,14 MB** |
+| Ventana visible | < 150 ms | **79 ms** |
+| Primer pintado | < 400 ms | **119 ms** |
+| Scroll | 60 fps | **186 fps** |
+| RAM, documento típico | decenas de MB | **19 MB** |
+| Documento de 5 MB, abierto entero | | **698 ms** |
+| Dependencias | mínimas | **96, ninguna en C** |
+
+El detalle, con lo que salió mal antes de salir bien, está en
+[`docs/budget.md`](docs/budget.md).
+
+```bash
+cargo run --release -- documento.md
+```
+
+Modo de medición, sin depender de que nadie mire la pantalla:
+
+```bash
+cargo run --release -- documento.md --bench
+```
 
 ## Documentación
 
