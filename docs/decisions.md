@@ -194,3 +194,20 @@ será con confirmación explícita mostrando qué archivos va a tocar.
 **Por qué.** Los diccionarios de Hunspell pesan ~1 MB por idioma en disco, pero
 el de inglés solo usa ~4,5 MB de RAM al cargarse. Contra un presupuesto de 7 MB
 de binario, no cierra. Mismo trato que la IA local y por la misma razón.
+
+## ADR-13 — Toolchain MSVC desde el Sprint 0, no GNU de transición
+
+**Contexto.** Windows necesita un enlazador para compilar Rust. Hay dos
+objetivos disponibles: MSVC (requiere instalar Visual Studio Build Tools, 2-4
+GB) o GNU vía MinGW-w64 (unos cientos de MB, instalable junto con `rustup` sin
+nada aparte).
+
+**Decisión.** MSVC desde el primer commit del Sprint 0.
+
+**Por qué.** Se evaluó instalar GNU primero para iterar rápido y migrar a MSVC
+recién en el Sprint 8 de distribución, pero el objetivo declarado es la mejor
+calidad a largo plazo, no la instalación más liviana hoy. MSVC es el objetivo
+que Windows trata como de primera clase, el que espera la Microsoft Store para
+firmar, y el que hace que el binario medido en el Sprint 0 sea exactamente el
+que se termina distribuyendo — sin una diferencia de tamaño entre objetivos que
+explicar más adelante.
