@@ -25,7 +25,7 @@ de producto de los mejores lectores, y una herramienta de estudio real.
 - **Quien recibe `.md` de terceros** y quiere abrirlos sin que el archivo pueda
   hacer nada raro.
 - **Quien estudia.** Este es el eje que más creció: no solo leer notas, sino
-  trabajar sobre ellas —subrayar, repasar, medir— sin abrir una app de 300 MB
+  trabajar sobre ellas (subrayar, repasar, medir) sin abrir una app de 300 MB
   para cada gesto. Ver `study-brainstorm.md`.
 - **Quien ya tiene un segundo cerebro** y quiere una ventana rápida y segura
   para leer y anotar dentro de él, sin reemplazarlo.

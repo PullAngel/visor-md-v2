@@ -40,7 +40,7 @@ Al abrir una nota, ver **qué otras notas la enlazan a ella**.
 
 Ejemplo: tenés `Rust.md`. En `Proyecto Visor.md` escribiste "lo hago en
 [[Rust]]", y en `Lenguajes.md` también. Al abrir `Rust.md`, un panel te muestra
-que esas dos notas la mencionan —aunque desde `Rust.md` nunca las hayas
+que esas dos notas la mencionan, aunque desde `Rust.md` nunca las hayas
 enlazado.
 
 Es el enlace al revés, y es la mitad del valor del grafo con una fracción del
@@ -59,7 +59,7 @@ Cómo funcionaría en la práctica:
 1. Estás leyendo tus apuntes de redes. Hay una línea que querés memorizar:
    `El puerto 443 es HTTPS`.
 2. La marcás como repasable. Con una sintaxis mínima queda algo así:
-   `El puerto 443 es ==HTTPS==` — lo resaltado es la respuesta.
+   `El puerto 443 es ==HTTPS==`: lo resaltado es la respuesta.
 3. La app guarda **aparte** (no en el `.md`) que esa línea es repasable, cuándo
    la viste por última vez y qué tan bien la recordaste.
 4. Cuando abrís el modo repaso, te muestra `El puerto 443 es ___` y te pide la
@@ -112,7 +112,7 @@ Dos opciones, y **las dos son válidas**:
 
 **Sidecar (por defecto).** Junto a `notas.md` vive un `notas.md.anot` que dice
 "en el carácter 340 al 380 hay un resaltado amarillo". El `.md` queda intacto.
-No es caché —no se borra solo— es un archivo tuyo, en tu carpeta, que podés
+No es caché (no se borra solo), es un archivo tuyo, en tu carpeta, que podés
 versionar o borrar.
 
 **Incrustado (un clic).** El resaltado se escribe en el `.md` como
@@ -197,7 +197,7 @@ vale la pena robarles, confirmado en vivo:
   referencia, un bloque de terminal separado del bloque de código normal, y
   cambiar mayúsculas/minúsculas de la selección. Los cuatro son baratos y ya
   entraron al catálogo, en la sección de Edición.
-- **Nuevo, y me pareció valioso:** una **papelera del workspace** — borrar un
+- **Nuevo, y me pareció valioso:** una **papelera del workspace**: borrar un
   archivo lo manda ahí en vez de eliminarlo directo. Ya está en el catálogo,
   en Workspace.
 

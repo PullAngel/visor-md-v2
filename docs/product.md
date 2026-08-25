@@ -11,7 +11,7 @@ nada terminado.
 | **Lectura** | Documento renderizado, con resaltado y anotaciones | Sí |
 | **Fuente** | Texto plano con las marcas visibles | Sí |
 | **Dividido** | Fuente y lectura lado a lado, scroll sincronizado | Sí |
-| **Edición en vivo** | Escribir sobre el documento renderizado | **No** — primer objetivo grande después |
+| **Edición en vivo** | Escribir sobre el documento renderizado | **No**, primer objetivo grande después |
 
 El razonamiento sobre la edición en vivo está en `architecture.md`: es
 técnicamente el modo más difícil y hacerlo a medias es peor que no tenerlo.
@@ -25,7 +25,7 @@ con contador de palabras y tiempo estimado al pie. Plegado de secciones. Temas
 claro y oscuro. Tipografía ajustable.
 
 Mermaid: la fuente del diagrama se muestra en un bloque con estilo. El render
-nativo es el segundo objetivo grande después de la v2.0 —y la única función por
+nativo es el segundo objetivo grande después de la v2.0, y la única función por
 la que vale subir el presupuesto de tamaño.
 
 ### Edición
@@ -41,7 +41,7 @@ aparte. Se puede activar el autoguardado desde configuración avanzada.
 ### Ventanas y pestañas
 Pestañas y ventanas al estilo navegador, con arrastre entre ellas. Dividir a la
 derecha y abajo, abriendo una pestaña **nueva** con la opción de crear archivo,
-abrir archivo o cerrar —no un duplicado. Menú contextual por zona. Siempre
+abrir archivo o cerrar, no un duplicado. Menú contextual por zona. Siempre
 encima. Pantalla completa.
 
 ### Workspace

@@ -17,8 +17,8 @@ RemNote o los plugins de IA de Obsidian tienen demanda.
 
 Si Visor MD v2 suma IA, corre **100% local**. Ni una palabra de las notas sale
 del equipo. Esto no es una preferencia: es coherencia con toda la tesis del
-proyecto. Un segundo cerebro que manda tus notas —muchas veces lo más privado
-que uno escribe— a un servidor ajeno para "resumirlas" es precisamente lo que
+proyecto. Un segundo cerebro que manda tus notas, muchas veces lo más privado
+que uno escribe, a un servidor ajeno para "resumirlas" es precisamente lo que
 este proyecto existe para no ser. Una app que se vende como "seguro por
 construcción" y después filtra el contenido a una API de terceros sería una
 contradicción que la haría inservible para su público.
@@ -26,7 +26,7 @@ contradicción que la haría inservible para su público.
 ## Cómo encaja sin romper el presupuesto de 7 MB
 
 La IA local **no va en el núcleo**. Un modelo pequeño de lenguaje pesa cientos
-de MB o más —imposible dentro de los 7 MB—. Por eso:
+de MB o más, imposible dentro de los 7 MB. Por eso:
 
 - Es un **componente opcional, de descarga separada y explícita**. Quien no lo
   quiere, no lo baja, y su Visor MD v2 sigue pesando <7 MB.

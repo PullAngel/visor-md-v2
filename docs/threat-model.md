@@ -38,7 +38,7 @@ Esto es lo que un enfoque nativo ingenuo pasaría por alto, y por lo que la
 elección de lenguaje importa:
 
 - **Corrupción de memoria en el parser.** Un lector nativo en C/C++ que parsea
-  entrada no confiable es terreno clásico de desbordamientos de búfer —el
+  entrada no confiable es terreno clásico de desbordamientos de búfer: el
   CVE-2026-5525 de Notepad++ es exactamente esto. **Mitigación: Rust.** La
   seguridad de memoria del lenguaje elimina la clase entera. Es la razón de
   seguridad detrás del ADR-2, no una preferencia estética.
@@ -64,7 +64,7 @@ comprobaciones se reescriben para el renderizador nativo:
 - Ninguna ruta del corpus de traversal se resuelve fuera de su carpeta.
 - El corpus de "conversión defectuosa" renderiza entero sin panic.
 - Un documento con anidamiento patológico se corta en el tope, no cuelga.
-- El parser sobrevive a entrada aleatoria (fuzzing con `cargo-fuzz`) —posible en
+- El parser sobrevive a entrada aleatoria (fuzzing con `cargo-fuzz`), posible en
   Rust de forma barata, y algo que la v1 no podía hacer sobre su pipeline JS con
   la misma facilidad.
 

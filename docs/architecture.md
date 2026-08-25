@@ -55,8 +55,8 @@ ventana viva y una barra de progreso que aparece solo si el parseo pasa de
 
 ### 3 · Validador único
 
-El punto por el que pasa todo antes de dibujarse. No sanea HTML —no hay HTML
-que ejecutar— sino que aplica una **allowlist de tipos de nodo que la vista
+El punto por el que pasa todo antes de dibujarse. No sanea HTML (no hay HTML
+que ejecutar) sino que aplica una **allowlist de tipos de nodo que la vista
 sabe dibujar**. Lo que está fuera se degrada a texto inerte o se descarta. Una
 sola puerta, sin forma de saltearla y sin ajuste que la apague.
 
@@ -86,7 +86,7 @@ superficie de píxeles de arriba. Pila candidata: `parley` (layout de texto),
 `parley` (0.11.1, verificado) es la única pieza pre-1.0 de toda la lista: su
 API todavía puede cambiar entre versiones menores. Igual la mantiene
 Linebender, el mismo equipo de `tiny-skia`, diseñada a propósito para
-combinarse con ella — es el riesgo de madurez más razonable que se puede
+combinarse con ella, es el riesgo de madurez más razonable que se puede
 tomar en esta capa.
 
 `tiny-skia` sobre Skia completo es una decisión de presupuesto: Skia solo
@@ -95,7 +95,7 @@ largos no rinde por software, se evalúa `vello` (GPU) midiendo el costo en
 tamaño.
 
 Responsabilidades: selección de texto que cruza bloques, enlaces clicables,
-resaltado de sintaxis, y **virtualización** —dibujar solo lo visible, que es lo
+resaltado de sintaxis, y **virtualización** (dibujar solo lo visible), que es lo
 que permite abrir archivos enormes sin que el scroll se arrastre.
 
 ### 5 · Chrome
@@ -133,7 +133,7 @@ con distinto costo:
 
 **Sobre la edición en vivo**, que es la que te interesa de Obsidian: es
 técnicamente el modo más difícil de todos. Exige que el cursor y la selección
-existan sobre texto *renderizado* —no sobre un `<textarea>`— y que cada
+existan sobre texto *renderizado* (no sobre un `<textarea>`) y que cada
 pulsación reconstruya solo la parte del árbol que cambió. Es un editor de
 texto enriquecido de verdad, no una vista previa.
 
@@ -166,8 +166,8 @@ y con un contrato de mensajes angosto. Ver `security.md`.
 paralelo, pero no se publicita hasta tenerlo bien probado.**
 
 El razonamiento sobre macOS, que me pediste decidir: mantener la puerta abierta
-cuesta poco —elegir dependencias portables y no pegarse a APIs de Windows fuera
-de la capa de integración—, mientras que retrofitear después cuesta mucho:
+cuesta poco (elegir dependencias portables y no pegarse a APIs de Windows fuera
+de la capa de integración), mientras que retrofitear después cuesta mucho:
 obliga a desarmar suposiciones ya metidas en todo el código. Así que se compila
 en macOS desde temprano y se publica cuando tenga pruebas propias. Barato ahora,
 sin deuda después.

@@ -91,7 +91,7 @@ ve bien.
 - Plegado de secciones entre encabezados.
 
 **Pruebas automáticas:** suite de seguridad de la v1 portada entera y en verde
-—incluidos los tres caminos de red que encontró en su día—; corpus de
+(incluidos los tres caminos de red que encontró en su día); corpus de
 conversión defectuosa; límites de recursos.
 
 **Criterio de salida:** paridad de lectura con la v1, con las cuatro propiedades
@@ -130,7 +130,7 @@ bloquear y desbloquear la sesión, y con la ventana minimizada.
 - Recientes y favoritos persistentes.
 - Búsqueda en toda la carpeta.
 - Sesión restaurada, con recuperación ante cierre inesperado por archivo
-  temporal aparte —sin autoguardar sobre el original.
+  temporal aparte, sin autoguardar sobre el original.
 - Tabla de contenido flotante, activable desde configuración avanzada.
 
 **Pruebas automáticas:** el índice es incremental y no reindexa lo que no
@@ -162,7 +162,7 @@ embed detectados; el índice sobrevive a que se renombre un archivo por fuera.
 ## Sprint 6 · Edición
 
 - Editor de texto plano con barra de ayudas y atajos.
-- Vista dividida con scroll sincronizado —con el bug de la v1 ya resuelto de
+- Vista dividida con scroll sincronizado, con el bug de la v1 ya resuelto de
   origen: el panel donde se escribe manda, el otro sigue.
 - Listas automáticas, indentado, pegar URL sobre selección.
 - Lista numerada con el comportamiento corregido de la v1.
@@ -241,6 +241,6 @@ instaladas.
 
 Ningún sprint avanza con el criterio de salida sin cumplir o con una suite
 anterior en rojo. Es la disciplina que evita terminar como simpler-paper
-—archivado por un mantenedor sin red de seguridad—: alcance acotado por sprint,
+(archivado por un mantenedor sin red de seguridad): alcance acotado por sprint,
 pruebas por sprint, y honestidad para frenar en el Sprint 0 si los números no
 dan.

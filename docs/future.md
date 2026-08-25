@@ -65,7 +65,7 @@ Por más funciones que se sumen, tres cosas no se tocan:
 3. **Seguro por construcción.** No se agrega nada que reintroduzca un motor de
    scripts o una superficie de ejecución, por conveniente que sea.
 
-Si una función futura obliga a romper una de las tres, no entra —o entra como
+Si una función futura obliga a romper una de las tres, no entra: o entra como
 un producto distinto, no como Visor MD v2. Esa disciplina es lo que evita que
 el proyecto se convierta, versión a versión, en otra cosa pesada e insegura más.
 

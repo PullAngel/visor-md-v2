@@ -21,7 +21,7 @@ inaceptable como uno que ejecuta código**.
 
 La v1 dedicaba la mitad de su trabajo de seguridad a contener un motor de
 scripts: DOMPurify, CSP, allowlist de protocolos, aislar Mermaid. Sin ese
-motor, esa mitad desaparece —no se contiene lo que no está.
+motor, esa mitad desaparece: no se contiene lo que no está.
 
 | Clase de ataque | En la v1 | En la v2 nativa |
 | --- | --- | --- |
@@ -35,7 +35,7 @@ motor, esa mitad desaparece —no se contiene lo que no está.
 Esta es la parte que un enfoque nativo ingenuo pasa por alto. Cambiar de un
 motor web a código nativo **cambia la clase de vulnerabilidad, no la elimina**:
 se pasa de XSS a corrupción de memoria. Un lector nativo en C o C++ que parsea
-entrada no confiable es terreno clásico de desbordamientos —el CVE-2026-5525 de
+entrada no confiable es terreno clásico de desbordamientos: el CVE-2026-5525 de
 Notepad++, un desbordamiento en el manejo de rutas por arrastre, es exactamente
 eso.
 
@@ -110,7 +110,7 @@ Superficie nueva de la v2, y me pediste cuidado explícito acá.
 
 **Defensas:**
 - Un wikilink **nunca** es una ruta: es un nombre que se busca en el índice de
-  la bóveda. Si no está en el índice, no existe — no se intenta abrir como
+  la bóveda. Si no está en el índice, no existe: no se intenta abrir como
   ruta. Esto sola cierra el traversal por completo.
 - El índice solo contiene archivos que ya pasaron la contención de rutas.
 - Tope de profundidad de embeds y detección de ciclos por conjunto de visitados.
@@ -144,8 +144,8 @@ la nota y no puede apuntar fuera de ella.
 
 ### 4.6 · Componentes opcionales (IA local, diagramas)
 
-**Ataque:** el componente descargable es el eslabón débil —o está adulterado, o
-tiene su propia superficie.
+**Ataque:** el componente descargable es el eslabón débil: puede estar
+adulterado, o tener su propia superficie.
 
 **Defensas:**
 - Corren en **su propio proceso**, sin acceso al sistema de archivos, hablando

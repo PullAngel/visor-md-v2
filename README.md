@@ -1,4 +1,4 @@
-# Visor MD v2 — fase de planificación
+# Visor MD v2: fase de planificación
 
 **Estado: planeando. No hay código de producto en este repositorio.**
 

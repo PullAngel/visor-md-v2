@@ -15,7 +15,7 @@ Se trabaja como si el límite fuera 7. Pasarlo exige una razón fuerte y anotada
 9,44 no se cruza nunca.
 
 **La razón fuerte ya identificada:** Mermaid. Dijiste que es de las pocas cosas
-por las que subirías el límite, y coincido —es lo que distingue un lector
+por las que subirías el límite, y coincido: es lo que distingue un lector
 técnico de uno de texto plano. Si el render nativo de flowchart y secuencia
 entra en 1–1,5 MB, vale gastar hasta ~8,5 MB. Sigue por debajo del techo.
 

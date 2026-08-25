@@ -54,7 +54,7 @@ en reposo**. En la v1 todos lo llevan y compiten con el documento. Estados:
 - **Código:** JetBrains Mono
 
 Preguntaste si tres familias pesan. **Sí, pero entra**: en una app nativa no hay
-CDN —no habría red— así que las fuentes van embebidas. Subconjunto latino de una
+CDN (no habría red) así que las fuentes van embebidas. Subconjunto latino de una
 variable por familia, unos 150–200 KB cada una: **~500 KB de los 7 MB, un 7 %
 del presupuesto**.
 
@@ -82,7 +82,7 @@ Medida de 62 a 72 caracteres por línea.
 alertas se separan por color de superficie y, en el caso de las alertas, por su
 filete de acento a la izquierda.
 
-**Lo que está literalmente por encima** —menús, diálogos, avisos— lleva
+**Lo que está literalmente por encima** (menús, diálogos, avisos) lleva
 elevación, con la sombra suavizada respecto de la propuesta original:
 
 | Capa | Sombra |

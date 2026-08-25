@@ -1,4 +1,4 @@
-# Catálogo de funciones — Visor MD v2
+# Catálogo de funciones: Visor MD v2
 
 Lista completa de funciones candidatas, ordenadas de más a menos relevantes.
 Cada bloque es una casilla para marcar. Las funciones con carga técnica traen
@@ -11,7 +11,7 @@ Nada de esto está construido: es el mapa para decidir qué entra en cada fase.
 
 ---
 
-## 1 · Núcleo — sin esto no hay producto
+## 1 · Núcleo: sin esto no hay producto
 
 - [ ] **Render de CommonMark + GFM completo** 🔴 ✳️
   Tablas, listas anidadas, tareas, notas al pie, tachado, autolinks, citas.
@@ -31,7 +31,7 @@ Nada de esto está construido: es el mapa para decidir qué entra en cada fase.
   *En contra:* ninguno. Debe copiar exactamente lo visible, nunca texto oculto.
 
 - [ ] **Se fija como programa predeterminado de Windows para `.md`** 🟡 ✳️
-  *A favor:* es el gesto central — doble clic y se abre.
+  *A favor:* es el gesto central: doble clic y se abre.
   *En contra:* Windows no deja que una app se fije sola; el usuario da el paso
   final. Hay que explicarlo bien o parece que no funcionó.
 
@@ -49,7 +49,7 @@ Nada de esto está construido: es el mapa para decidir qué entra en cada fase.
 
 ---
 
-## 2 · Seguridad — la tesis del proyecto
+## 2 · Seguridad: la tesis del proyecto
 
 - [ ] **Sin motor de scripts: nada del documento se ejecuta** 🟡 ✳️
   *A favor:* elimina la clase de ataque entera por construcción, en vez de
@@ -127,7 +127,7 @@ Nada de esto está construido: es el mapa para decidir qué entra en cada fase.
 
 - [ ] **Backlinks: qué notas enlazan a esta** 🟡 ✳️
   *A favor:* la mitad del valor del grafo de Obsidian con una fracción del
-  trabajo — es invertir el índice de wikilinks que ya existe.
+  trabajo: es invertir el índice de wikilinks que ya existe.
 
 - [ ] **Callouts de Obsidian (`> [!info]`)** 🟢 ✳️
   *A favor:* casi idénticos a las alertas de GitHub que la v1 ya renderiza.
@@ -153,7 +153,7 @@ Nada de esto está construido: es el mapa para decidir qué entra en cada fase.
 
 ---
 
-## 4 · Workspace — lo que separa un visor de una herramienta
+## 4 · Workspace: lo que separa un visor de una herramienta
 
 - [ ] **Abrir una carpeta como espacio de trabajo** 🟡 ✳️
   *A favor:* es la diferencia entre "abre un archivo" y "es donde trabajo".
@@ -184,7 +184,7 @@ Nada de esto está construido: es el mapa para decidir qué entra en cada fase.
 - [ ] **Papelera del workspace** 🟢 ✳️
   Vista en ThisIs-Developer: borrar un archivo desde la app lo manda a una
   papelera propia, no lo elimina directo.
-  *A favor:* red de seguridad barata contra un borrado accidental — el
+  *A favor:* red de seguridad barata contra un borrado accidental: el
   mismo espíritu que el guardado atómico, aplicado a borrar en vez de
   escribir.
   *En contra:* hay que decidir cuánto tiempo se retiene y purgarla, o
@@ -192,7 +192,7 @@ Nada de esto está construido: es el mapa para decidir qué entra en cada fase.
 
 ---
 
-## 5 · Estudio y notas — el terreno diferencial
+## 5 · Estudio y notas: el terreno diferencial
 
 - [ ] **Modo foco / estudio** 🟢 ✳️
   Oculta todo el chrome, deja la nota sola, con temporizador opcional.
@@ -201,7 +201,7 @@ Nada de esto está construido: es el mapa para decidir qué entra en cada fase.
 - [ ] **Repaso espaciado desde el propio documento** 🔴 ✳️
   Marcar pares pregunta/respuesta con una sintaxis mínima y repasarlos sin
   salir del lector.
-  *A favor:* **es el hueco real del mercado** — entre Anki (tarjetas sin
+  *A favor:* **es el hueco real del mercado**: entre Anki (tarjetas sin
   contexto) y Obsidian (contexto, pero el repaso es plugin de terceros). Nadie
   liviano lo ocupa.
   *En contra:* exige llevar estado de repaso por ítem, fuera del `.md` para no
@@ -217,7 +217,7 @@ Nada de esto está construido: es el mapa para decidir qué entra en cada fase.
 
 - [ ] **Estadísticas de lectura** 🟡 ✳️
   Tiempo estimado, palabras, densidad de código.
-  *En contra:* roza el "data slop" — números que se ven bien pero nadie usa.
+  *En contra:* roza el "data slop": números que se ven bien pero nadie usa.
   Solo el tiempo estimado de lectura justifica el espacio.
 
 - [ ] **Grafo de notas** ⬛ ⚠️
@@ -235,12 +235,12 @@ Nada de esto está construido: es el mapa para decidir qué entra en cada fase.
 - [ ] **Imágenes locales, remotas bloqueadas por defecto** 🟡 ✳️
 
 - [ ] **Fuente visible de Mermaid en bloque con estilo** 🟢 ✳️
-  *A favor:* honesto y útil — el texto Mermaid es legible. Desbloquea la v2.0
+  *A favor:* honesto y útil: el texto Mermaid es legible. Desbloquea la v2.0
   sin pagar el coste del render.
 
 - [ ] **Render nativo de Mermaid** ⬛ 🧩
   *A favor:* es lo que Tinta demuestra posible, con 22 tipos de diagrama.
-  *En contra:* **el ítem más caro de todo el proyecto**, más que el parser —
+  *En contra:* **el ítem más caro de todo el proyecto**, más que el parser:
   cada tipo trae su propio algoritmo de layout. Componente opcional posterior,
   y aun así arrancando por flowchart y secuencia, que son los que se usan.
 
@@ -273,7 +273,7 @@ Nada de esto está construido: es el mapa para decidir qué entra en cada fase.
   *A favor:* es lo que JetBrains cobra en su plugin. Convierte "editor de
   texto" en "editor de documentos".
   *En contra:* hay que reescribir otros archivos del workspace. Un fallo acá
-  corrompe notas ajenas — exige deshacer transaccional y confirmación.
+  corrompe notas ajenas: exige deshacer transaccional y confirmación.
 
 - [ ] **Pegar imagen del portapapeles: la guarda y arma el enlace** 🟡 ✳️
   *A favor:* el gesto más pedido al tomar notas de estudio. Confirmado en
@@ -301,7 +301,7 @@ Nada de esto está construido: es el mapa para decidir qué entra en cada fase.
   de terminal" como dos botones distintos, con estilo propio para el
   segundo (más parecido a una salida de consola).
   *A favor:* en Markdown ambos son la misma valla de tres backticks con
-  lenguaje `bash`/`console`/`text` — no hace falta un tipo de nodo nuevo,
+  lenguaje `bash`/`console`/`text`, no hace falta un tipo de nodo nuevo,
   solo un botón de la barra que inserte la plantilla correcta y el
   renderizador ya sabe darle un estilo levemente distinto al lenguaje
   `console`. Barato.
@@ -345,7 +345,7 @@ Nada de esto está construido: es el mapa para decidir qué entra en cada fase.
 
 - [ ] **Barra de título propia con pestañas integradas** 🟡 ✳️
   *En contra:* quitar el marco nativo se lleva bordes de redimensionado, Aero
-  Snap y el maximizado correcto. Cada pieza hay que reponerla a mano — la v1
+  Snap y el maximizado correcto. Cada pieza hay que reponerla a mano: la v1
   ya documentó ese camino completo.
 
 - [ ] **Menú contextual según dónde se hace clic derecho** 🟢 ✳️
@@ -396,12 +396,12 @@ Nada de esto está construido: es el mapa para decidir qué entra en cada fase.
   *A favor:* Rust y la pila de dibujo son portables; el stack se elige para no
   impedirlo.
   *En contra:* triplica la superficie de prueba. Fuera de la v2.0, pero la
-  puerta queda abierta — es una diferencia real con la v1 y con Tinta, ambas
+  puerta queda abierta: es una diferencia real con la v1 y con Tinta, ambas
   atadas a Windows.
 
 ---
 
-## 11 · IA local — opcional y aparte
+## 11 · IA local: opcional y aparte
 
 - [ ] **Hablar con un Ollama que el usuario ya tenga** 🟡 🧩
   *A favor:* **la vía más perezosa y la mejor**: cero peso agregado, cero
@@ -439,7 +439,7 @@ Nada de esto está construido: es el mapa para decidir qué entra en cada fase.
 ## Las cinco decisiones que ordenan todo lo demás
 
 1. **¿Se llega a 7 MB?** Lo responde el prototipo de la Fase 0. Si no, hay que
-   recortar alcance o mover el presupuesto — antes de construir nada grande.
+   recortar alcance o mover el presupuesto, antes de construir nada grande.
 2. **¿Wikilinks en la v2.0?** Es el mayor diferenciador por unidad de esfuerzo
    de toda la lista. Mi recomendación: sí, y temprano.
 3. **¿Repaso espaciado, o solo lector?** Define si el producto compite con

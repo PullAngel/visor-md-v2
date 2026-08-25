@@ -25,7 +25,7 @@ son de dialecto, no de fondo.
 Zettlr, Joplin y cualquier repo. No hay que integrar con cada herramienta: hay
 que hablar bien el dialecto común.
 
-Logseq es el único que pide algo extra —su modelo de bloques— y por eso queda
+Logseq es el único que pide algo extra (su modelo de bloques) y por eso queda
 como soporte de segunda: sus archivos se leen perfecto como Markdown normal,
 solo que sin entender las referencias a nivel de bloque.
 
@@ -33,7 +33,7 @@ solo que sin entender las referencias a nivel de bloque.
 
 - **Wikilinks** `[[nota]]` y `[[nota|alias]]`: se resuelven contra el índice de
   la bóveda, se navegan con un clic, y se marcan visualmente cuando apuntan a
-  una nota que no existe —en Obsidian eso es trabajo pendiente, no un error.
+  una nota que no existe: en Obsidian eso es trabajo pendiente, no un error.
 - **Enlaces a encabezados y bloques**: `[[nota#encabezado]]`, `[[nota^bloque]]`.
 - **Embeds** `![[nota]]`: en la v2.0 como enlace destacado; el embed real es
   incremental, con tope de profundidad y detección de ciclos.
@@ -48,7 +48,7 @@ solo que sin entender las referencias a nivel de bloque.
 
 ## GitHub
 
-No un cliente de la API —eso sería red y tokens— sino entender un repositorio
+No un cliente de la API (eso sería red y tokens) sino entender un repositorio
 **ya clonado**:
 
 - GFM fiel: tablas, tareas, alertas, autolinks, como en github.com.
