@@ -128,8 +128,8 @@ tenés que confirmar vos.
 ## Sprint 1 · Lector mínimo usable
 
 - CommonMark completo.
-- Fuentes embebidas y la escala tipográfica de `design.md`.
-- Tema Papel + Tinta, claro y oscuro.
+- ✅ Fuentes embebidas y la escala tipográfica de `design.md`.
+- ✅ Tema Papel + Tinta, claro y oscuro.
 - Ventana sin borde, con su capa de integración con el sistema.
 - Scroll con virtualización.
 
@@ -140,6 +140,19 @@ renderiza sin panic; fuzzing del parser en marcha.
 ve bien.
 
 **Prueba manual:** sí. Abrí tus propios `.md` y buscá lo que se vea mal.
+
+### Avance parcial
+
+**Fuentes y tema ya están, adelantados desde el Sprint 0.** Sora, Newsreader y
+JetBrains Mono embebidas (409,8 KB, subconjunto latino, ver
+`assets/fonts/README.md`), con el tema Papel + Tinta completo: sigue al tema
+del sistema operativo al abrir y se alterna a mano con `T`. Costo: 400 KB de
+binario y 1 ms de arranque. El binario total pasó de 2,14 a **2,54 MB**.
+
+Falta todavía: CommonMark completo (hoy corre GFM básico heredado del Sprint
+0), la ventana sin borde con su capa de integración, y la virtualización de
+scroll ya presente en el layout pero sin pulir para el caso de encabezados que
+cruzan el borde de la pantalla.
 
 ---
 

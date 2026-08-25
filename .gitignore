@@ -1,1 +1,3 @@
 /target
+# Fuentes variables completas, sin recortar. Regenerables, ver assets/fonts/README.md.
+/assets/fonts/raw

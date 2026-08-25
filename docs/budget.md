@@ -130,16 +130,28 @@ que queda es el árbol de comrak más el texto de los bloques, no el maquetado.
 | Layout de texto (`parley` + `swash`) | 0,8–1,5 MB | Incluido |
 | Dibujo 2D (`tiny-skia`) | 0,5–1,0 MB | Incluido |
 | **Subtotal medido, todo lo anterior junto** | **1,9–3,9 MB** | **2,14 MB** |
+| Fuentes embebidas (Sora + Newsreader + JetBrains Mono) | ~0,5 MB | **0,41 MB, medido** |
+| **Subtotal con tipografía** | | **2,54 MB** |
 | Resaltado de sintaxis | 0,3–0,8 MB | Pendiente, ver ADR-14 |
-| Fuentes embebidas | ~0,5 MB | Pendiente, Sprint 1 |
 | Índice del workspace | 0–1,0 MB | Pendiente, Sprint 4 |
 | Chrome | 0,5–2,0 MB | Pendiente, Sprint 3 |
 | Iconos y recursos | 0,1 MB | Pendiente |
-| **Proyección con todo** | | **3,5–6,5 MB** |
+| **Proyección con todo** | | **3,9–6,9 MB** |
 
 La estimación original daba 3,3–8,3 MB, con el peor caso pasándose del
-objetivo. Medido el núcleo, la proyección baja a 3,5–6,5 MB: **el peor caso
-ahora entra en el objetivo de 7 MB**, y el mejor caso entra en el ideal de 6.
+objetivo. Medido el núcleo más la tipografía real, la proyección queda en
+3,9–6,9 MB: **el peor caso sigue entrando en el objetivo de 7 MB**, con el
+mejor caso cerca del ideal de 6.
+
+**Las fuentes, medidas.** Las tres familias de `design.md` ("Contraste
+editorial") son variables de Google Fonts, licencia SIL OFL, recortadas al
+subconjunto latino con `fonttools`: de ~750 KB combinadas a **409,8 KB**. El
+detalle de la técnica (por qué se conservan ciertos `name-IDs`, por qué se
+descarta `STAT`) está en `assets/fonts/README.md`. Costo de arranque: **1 ms**
+para registrar las tres. El plan de repliegue en dos pasos que este documento
+tenía anotado (bajar a dos familias, después a Neutro suizo) queda sin usarse:
+con 409,8 KB reales contra un presupuesto de 7 MB, la identidad tipográfica se
+paga entera sin negociar.
 
 Las palancas siguen disponibles pero ya no hacen falta con urgencia:
 

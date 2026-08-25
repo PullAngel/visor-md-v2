@@ -28,22 +28,89 @@ use swash::scale::{Render, ScaleContext, Source, StrikeWith};
 use swash::zeno::{Format, Vector};
 use tiny_skia::{Color, Paint, Pixmap, PremultipliedColorU8, Rect, Transform};
 use winit::application::ApplicationHandler;
-use winit::event::{MouseScrollDelta, WindowEvent};
+use winit::event::{ElementState, KeyEvent, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
-use winit::window::{Window, WindowId};
+use winit::keyboard::{KeyCode, PhysicalKey};
+use winit::window::{Theme, Window, WindowId};
 
-// Paleta Papel + Tinta, tema noche. Ver docs/design.md.
-const BG: (u8, u8, u8) = (0x0C, 0x0F, 0x0D);
-const SURFACE: (u8, u8, u8) = (0x12, 0x15, 0x13);
-const TEXT: (u8, u8, u8) = (0xE9, 0xE9, 0xE4);
-const DIM: (u8, u8, u8) = (0x8B, 0x91, 0x8C);
-const ACCENT: (u8, u8, u8) = (0x5F, 0xD0, 0x8A);
+/// Paleta Papel + Tinta. Los dos temas de `docs/design.md`, tabla completa:
+/// el acento cambia de tono entre temas a proposito, no es el mismo verde
+/// oscurecido, porque el que funciona sobre negro se lava sobre papel.
+#[derive(Clone, Copy)]
+struct Palette {
+    bg: (u8, u8, u8),
+    surface: (u8, u8, u8),
+    text: (u8, u8, u8),
+    dim: (u8, u8, u8),
+    accent: (u8, u8, u8),
+}
+
+const NIGHT: Palette = Palette {
+    bg: (0x0C, 0x0F, 0x0D),
+    surface: (0x12, 0x15, 0x13),
+    text: (0xE9, 0xE9, 0xE4),
+    dim: (0x8B, 0x91, 0x8C),
+    accent: (0x5F, 0xD0, 0x8A),
+};
+
+const DAY: Palette = Palette {
+    bg: (0xEB, 0xFA, 0xDC),
+    surface: (0xF7, 0xFD, 0xEF),
+    text: (0x13, 0x2A, 0x0A),
+    dim: (0x5A, 0x6B, 0x4F),
+    accent: (0x2E, 0x9E, 0x5B),
+};
+
+impl Palette {
+    fn resolve(self, role: Role) -> (u8, u8, u8) {
+        match role {
+            Role::Text => self.text,
+            Role::Dim => self.dim,
+            Role::Accent => self.accent,
+        }
+    }
+}
 
 const MARGIN: f32 = 48.0;
 const MAX_MEASURE: f32 = 720.0;
 
+// Tipografia "Contraste editorial" de docs/design.md: Sora para la interfaz
+// (todavia sin chrome que la use), Newsreader para el documento, JetBrains
+// Mono para el codigo. Subconjunto latino, variables, ~410 KB los tres.
+// Origen y licencia (SIL OFL) en assets/fonts/README.md.
+// Sin uso todavia: no hay chrome que dibuje texto de interfaz.
+#[allow(dead_code)]
+const FONT_UI: &str = "Sora";
+const FONT_DOC: &str = "Newsreader";
+const FONT_CODE: &str = "JetBrains Mono";
+
+const SORA_TTF: &[u8] = include_bytes!("../assets/fonts/Sora.ttf");
+const NEWSREADER_TTF: &[u8] = include_bytes!("../assets/fonts/Newsreader.ttf");
+const JETBRAINS_MONO_TTF: &[u8] = include_bytes!("../assets/fonts/JetBrainsMono.ttf");
+
+/// Registra las tres fuentes embebidas en la coleccion. Si algo saliera mal
+/// con un archivo (no debería, se subsetean en el propio repo), la familia
+/// simplemente no aparece y el `FontFamily::List` cae al generico del
+/// sistema: nunca un panic por una fuente.
+fn register_embedded_fonts(font_cx: &mut FontContext) {
+    for bytes in [SORA_TTF, NEWSREADER_TTF, JETBRAINS_MONO_TTF] {
+        let blob = parley::fontique::Blob::new(std::sync::Arc::new(bytes.to_vec()));
+        font_cx.collection.register_fonts(blob, None);
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 struct Brush(u8, u8, u8);
+
+/// A que rol de la paleta apunta un bloque. Se resuelve a un color concreto
+/// recien al maquetar, contra el tema activo: asi cambiar de tema no exige
+/// volver a aplanar el documento, solo volver a maquetar.
+#[derive(Clone, Copy, Debug)]
+enum Role {
+    Text,
+    Dim,
+    Accent,
+}
 
 /// Un bloque del documento ya aplanado: el arbol tipado de comrak reducido a
 /// lo que el Sprint 0 sabe dibujar.
@@ -63,19 +130,19 @@ struct Block {
 }
 
 impl Kind {
-    /// (tamano, peso, color, monoespaciada)
-    fn style(self) -> (f32, f32, (u8, u8, u8), bool) {
+    /// (tamano, peso, rol de color, monoespaciada)
+    fn style(self) -> (f32, f32, Role, bool) {
         match self {
             // Escala tipografica de docs/design.md.
-            Kind::Heading(1) => (31.0, 700.0, TEXT, false),
-            Kind::Heading(2) => (25.0, 700.0, TEXT, false),
-            Kind::Heading(3) => (20.0, 600.0, TEXT, false),
-            Kind::Heading(_) => (17.0, 600.0, TEXT, false),
-            Kind::Para | Kind::Item(_) => (16.0, 400.0, TEXT, false),
-            Kind::Code => (13.5, 400.0, ACCENT, true),
-            Kind::TableRow { header: true } => (15.0, 600.0, TEXT, true),
-            Kind::TableRow { header: false } => (15.0, 400.0, DIM, true),
-            Kind::Quote => (16.0, 400.0, DIM, false),
+            Kind::Heading(1) => (31.0, 700.0, Role::Text, false),
+            Kind::Heading(2) => (25.0, 700.0, Role::Text, false),
+            Kind::Heading(3) => (20.0, 600.0, Role::Text, false),
+            Kind::Heading(_) => (17.0, 600.0, Role::Text, false),
+            Kind::Para | Kind::Item(_) => (16.0, 400.0, Role::Text, false),
+            Kind::Code => (13.5, 400.0, Role::Accent, true),
+            Kind::TableRow { header: true } => (15.0, 600.0, Role::Text, true),
+            Kind::TableRow { header: false } => (15.0, 400.0, Role::Dim, true),
+            Kind::Quote => (16.0, 400.0, Role::Dim, false),
         }
     }
 
@@ -198,22 +265,32 @@ fn build_layout(
     font_cx: &mut FontContext,
     layout_cx: &mut LayoutContext<Brush>,
     width: f32,
+    palette: Palette,
 ) -> Layout<Brush> {
-    let (size, weight, color, mono) = block.kind.style();
+    let (size, weight, role, mono) = block.kind.style();
+    let color = palette.resolve(role);
     let advance = (width - MARGIN * 2.0 - block.kind.indent())
         .min(MAX_MEASURE)
         .max(80.0);
 
-    let family = if mono {
-        GenericFamily::Monospace
+    // Nombre embebido primero, generico del sistema como red de seguridad si
+    // el registro fallara. Ver docs/design.md, "Contraste editorial".
+    let stack: &[FontFamilyName] = if mono {
+        &[
+            FontFamilyName::Named(std::borrow::Cow::Borrowed(FONT_CODE)),
+            FontFamilyName::Generic(GenericFamily::Monospace),
+        ]
     } else {
-        GenericFamily::SystemUi
+        &[
+            FontFamilyName::Named(std::borrow::Cow::Borrowed(FONT_DOC)),
+            FontFamilyName::Generic(GenericFamily::SystemUi),
+        ]
     };
 
     let mut builder = layout_cx.ranged_builder(font_cx, &block.text, 1.0, true);
     builder.push_default(StyleProperty::Brush(Brush(color.0, color.1, color.2)));
-    builder.push_default(StyleProperty::FontFamily(FontFamily::Single(
-        FontFamilyName::Generic(family),
+    builder.push_default(StyleProperty::FontFamily(FontFamily::List(
+        std::borrow::Cow::Borrowed(stack),
     )));
     builder.push_default(StyleProperty::FontSize(size));
     builder.push_default(StyleProperty::FontWeight(FontWeight::new(weight)));
@@ -258,7 +335,8 @@ fn measure_all(
 
     for block in blocks {
         let height = if exact {
-            build_layout(block, font_cx, layout_cx, width).height()
+            // El color no afecta el alto: la paleta es irrelevante aca.
+            build_layout(block, font_cx, layout_cx, width, NIGHT).height()
         } else {
             estimate_height(block, width)
         };
@@ -479,6 +557,9 @@ struct App {
     /// redirigida a un archivo, cada `eprintln` costaba mas que el trabajo
     /// que pretendia cronometrar.
     log: Vec<String>,
+    /// Tema activo. Arranca siguiendo al sistema operativo (`Window::theme`);
+    /// `T` lo alterna a mano. Ver docs/design.md.
+    palette: Palette,
 }
 
 impl ApplicationHandler for App {
@@ -513,6 +594,11 @@ impl ApplicationHandler for App {
             t.elapsed().as_secs_f64() * 1000.0
         ));
         self.surface = Some(surface);
+        // Sigue al tema del sistema si el sistema lo informa; si no, noche.
+        self.palette = match window.theme() {
+            Some(Theme::Light) => DAY,
+            _ => NIGHT,
+        };
         window.request_redraw();
         self.window = Some(window);
     }
@@ -522,6 +608,30 @@ impl ApplicationHandler for App {
             WindowEvent::CloseRequested => {
                 self.report();
                 event_loop.exit();
+            }
+            WindowEvent::ThemeChanged(theme) => {
+                self.palette = if matches!(theme, Theme::Light) { DAY } else { NIGHT };
+                self.live.clear();
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::KeyT),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } => {
+                let is_night = self.palette.bg == NIGHT.bg;
+                self.palette = if is_night { DAY } else { NIGHT };
+                self.live.clear();
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 let dy = match delta {
@@ -613,6 +723,7 @@ impl App {
                     &mut self.font_cx,
                     &mut self.layout_cx,
                     size.width as f32,
+                    self.palette,
                 );
                 self.live.insert(i, layout);
             }
@@ -637,13 +748,16 @@ impl App {
             glyphs,
             scroll,
             surface,
+            palette,
             ..
         } = self;
         let pixmap = pixmap.as_mut().unwrap();
-        pixmap.fill(Color::from_rgba8(BG.0, BG.1, BG.2, 255));
+        let bg = palette.bg;
+        let surface_color = palette.surface;
+        pixmap.fill(Color::from_rgba8(bg.0, bg.1, bg.2, 255));
 
         let mut paint = Paint::default();
-        paint.set_color(Color::from_rgba8(SURFACE.0, SURFACE.1, SURFACE.2, 255));
+        paint.set_color(Color::from_rgba8(surface_color.0, surface_color.1, surface_color.2, 255));
 
         for &i in &visible {
             let slot = &slots[i];
@@ -759,9 +873,16 @@ fn main() {
     ));
 
     let t = Instant::now();
-    let font_cx = FontContext::new();
+    let mut font_cx = FontContext::new();
     log.push(format!(
         "[medicion]   FontContext::new (fuentes del sistema): {:.0} ms",
+        t.elapsed().as_secs_f64() * 1000.0
+    ));
+
+    let t = Instant::now();
+    register_embedded_fonts(&mut font_cx);
+    log.push(format!(
+        "[medicion]   registrar 3 fuentes embebidas: {:.0} ms",
         t.elapsed().as_secs_f64() * 1000.0
     ));
 
@@ -787,6 +908,7 @@ fn main() {
         bench,
         exact_measure,
         log,
+        palette: NIGHT,
     };
 
     event_loop.run_app(&mut app).unwrap();
@@ -872,12 +994,13 @@ con dos lineas
         assert!(!blocks.is_empty(), "el documento de prueba quedo vacio");
 
         let mut font_cx = FontContext::new();
+        register_embedded_fonts(&mut font_cx);
         let mut layout_cx = LayoutContext::new();
         let ancho = 900.0;
 
         let real: f32 = blocks
             .iter()
-            .map(|b| build_layout(b, &mut font_cx, &mut layout_cx, ancho).height())
+            .map(|b| build_layout(b, &mut font_cx, &mut layout_cx, ancho, NIGHT).height())
             .sum();
         let estimado: f32 = blocks.iter().map(|b| estimate_height(b, ancho)).sum();
 

@@ -323,3 +323,33 @@ virtual descartable de Linux con aceleración mal configurada, un escritorio
 remoto o un equipo viejo dibujan igual. Para un visor que quiere ser el
 predeterminado de `.md` en cualquier máquina, eso vale más que los fps que
 sobran.
+
+## ADR-18: Fuentes variables completas, recortadas al vuelo, no estáticas por peso
+
+**Contexto.** `design.md` pide una variable por familia, no un archivo por
+peso. Google Fonts distribuye Sora, Newsreader y JetBrains Mono como fuentes
+variables completas (miles de glifos, todos los pesos en un `fvar`), demasiado
+grandes para embeber tal cual: ~750 KB combinadas antes de recortar.
+
+**Decisión.** Se recortan con `fonttools` al subconjunto latino (Basic Latin +
+Latin-1 + Latin Extended-A y puntuación general), conservando el eje variable
+de peso (`fvar`) y solo los `name-IDs` que `fontique` necesita para reconocer
+la familia por nombre (1, 2, 4, 6, 16, 17). Se descarta `STAT`, que es
+metadata de presentación para selectores de estilo que esta app no tiene.
+
+**Por qué.** Guardar una variable en vez de instancias estáticas por peso es
+lo que permite pedir cualquier peso (incluidos los intermedios que
+`docs/design.md` no fijó) sin sumar otro archivo. El recorte de Unicode es lo
+que hace que sea viable en tamaño: de 750 KB a 409,8 KB, dentro del ~0,5 MB
+que `budget.md` tenía presupuestado.
+
+**El detalle no obvio.** Vaciar la tabla de nombres para ahorrar los últimos
+bytes rompe el registro: `Collection::register_fonts` de `fontique` identifica
+la familia leyendo su propio nombre interno, y una fuente sin nombre queda
+registrada pero irreconocible por el código que la pide. La receta completa,
+para reproducirla o ajustarla, está en `assets/fonts/README.md`.
+
+**Licencia.** Las tres son SIL Open Font License 1.1, que permite embeber,
+modificar (el recorte lo es) y redistribuir. La única restricción real es no
+vender la fuente suelta bajo su nombre original sin permiso del autor, que no
+aplica a este uso.
