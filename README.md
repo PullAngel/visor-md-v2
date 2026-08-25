@@ -2,45 +2,44 @@
 
 **Estado: planeando. No hay código de producto en este repositorio.**
 
-Segunda versión de [Visor MD](https://github.com/PullAngel/visor-md). La v1
-está terminada, publicada y auditada, y corre sobre WebView2. La v2 cambia de
-dirección: **nativa, sin motor web, por debajo de 7 MB**, en la filosofía de
-[Tinta](https://github.com/oipoistar/tinta) pero con el modelo de seguridad de
-Visor MD llevado más lejos, y con la profundidad de producto de
-[ThisIs-Developer/Markdown-Viewer](https://github.com/ThisIs-Developer/Markdown-Viewer).
+Segunda versión de [Visor MD](https://github.com/PullAngel/visor-md). La v1 está
+terminada, publicada y auditada, y corre sobre WebView2. La v2 cambia de
+dirección: **nativa, sin motor web, por debajo de 7 MB, para Windows y Linux**,
+con el modelo de seguridad de la v1 llevado más lejos y herramientas de estudio
+integradas.
 
-El objetivo en una frase: la herramienta que uno deja como predeterminada para
-abrir cualquier `.md`, cómoda para estudiar y tomar notas, que se conecta con
-el segundo cerebro que ya usás (Obsidian, un repo de GitHub), segura por
-construcción y tan liviana que arranca antes de que sueltes el mouse.
+En una frase: la herramienta que dejás como predeterminada para abrir cualquier
+`.md`, cómoda para estudiar, que se conecta con el segundo cerebro que ya usás,
+segura por construcción y tan liviana que arranca antes de que sueltes el mouse.
 
 ## Documentación
 
+Empezá por **[`docs/roadmap.md`](docs/roadmap.md)**: es el documento operativo,
+el que dice qué se construye y en qué orden.
+
 | Documento | Qué contiene |
 | --- | --- |
+| [`docs/roadmap.md`](docs/roadmap.md) | **Sprints en orden, con criterio de salida y pruebas.** El documento de trabajo |
 | [`docs/vision.md`](docs/vision.md) | Para qué existe y para quién |
-| [`docs/producto.md`](docs/producto.md) | Qué hace, funciones, alcance de la v2.0 |
-| [`docs/arquitectura.md`](docs/arquitectura.md) | Cómo está construido y por qué |
-| [`docs/decisiones.md`](docs/decisiones.md) | Registro de decisiones: lenguaje, stack, qué se descartó y con qué motivo |
-| [`docs/calculos.md`](docs/calculos.md) | El presupuesto de 7 MB y de arranque, con plan de medición |
-| [`docs/audit.md`](docs/audit.md) | Modelo de amenaza y por qué el enfoque nativo mejora la seguridad de la v1 |
-| [`docs/conectividad.md`](docs/conectividad.md) | Integración con Obsidian y con GitHub |
-| [`docs/inference.md`](docs/inference.md) | IA local para estudio (resúmenes, tarjetas, preguntas), opt-in y sin salir del equipo |
-| [`docs/brainstorm-estudio.md`](docs/brainstorm-estudio.md) | Ideas para superar a los readers actuales, apoyadas en apps de estudio |
-| [`docs/funciones.md`](docs/funciones.md) | **Catálogo completo de funciones en checklist**, de más a menos relevante, con pros y contras |
-| [`docs/roadmap.md`](docs/roadmap.md) | Fases concretas de construcción |
-| [`docs/futuro.md`](docs/futuro.md) | Horizonte largo, más allá del roadmap |
+| [`docs/product.md`](docs/product.md) | Qué hace, modos de vista, alcance de la v2.0 |
+| [`docs/design.md`](docs/design.md) | Identidad visual decidida: color, ventana, iconos, tipografía, movimiento |
+| [`docs/architecture.md`](docs/architecture.md) | Cómo está construido y por qué |
+| [`docs/security.md`](docs/security.md) | **Blindaje: superficies de ataque, defensas y qué se sacrifica** |
+| [`docs/threat-model.md`](docs/threat-model.md) | Modelo de amenaza y las cuatro propiedades |
+| [`docs/features.md`](docs/features.md) | Catálogo completo de funciones en checklist, con pros y contras |
+| [`docs/study-brainstorm.md`](docs/study-brainstorm.md) | Estudio: explicaciones de cada concepto y estado de cada idea |
+| [`docs/connectivity.md`](docs/connectivity.md) | Obsidian, Logseq, GitHub y la puerta a IA local |
+| [`docs/budget.md`](docs/budget.md) | Presupuesto de tamaño y de arranque, con plan de medición |
+| [`docs/decisions.md`](docs/decisions.md) | Registro de decisiones con su motivo |
+| [`docs/inference.md`](docs/inference.md) | IA local: principios y límites |
+| [`docs/future.md`](docs/future.md) | Horizonte más allá del roadmap |
 
-## Cómo se llegó a esta dirección
+## Cómo se llegó acá
 
-Los documentos [`docs/01-investigacion.md`](docs/01-investigacion.md) a
-[`docs/07-hoja-de-ruta.md`](docs/07-hoja-de-ruta.md) son el registro de la
-exploración previa: diez proyectos estudiados y tres arquitecturas comparadas,
-cuando el requisito de <7 MB y "sin WebView2" todavía no estaba fijo. Ese
-requisito, ahora firme, resuelve la pregunta que quedaba abierta en
-[`06-comparacion-y-decision.md`](docs/06-comparacion-y-decision.md) a favor de
-la vía nativa. Se conservan como bitácora de decisión, no como plan vigente:
-el plan vigente es el de la tabla de arriba.
+[`docs/research/`](docs/research) guarda la exploración previa: diez proyectos
+estudiados y tres arquitecturas comparadas, cuando el requisito de <7 MB sin
+WebView2 todavía no estaba fijo. Se conserva como bitácora de decisión, no como
+plan vigente.
 
 ## Licencia
 

@@ -1,90 +1,246 @@
 # Roadmap
 
-Fases concretas y en orden. No hay fechas: es planificación, y el ritmo lo pone
-el tiempo real disponible. Cada fase termina con algo verificable antes de
-pasar a la siguiente.
+Este es el documento operativo del proyecto. Está escrito para que decir
+**"avanza con el roadmap"** sea suficiente: cada sprint dice qué se construye,
+qué prueba lo cubre, y qué tiene que ser cierto para pasar al siguiente.
 
-## Fase 0 — Prototipo y validación del presupuesto
+## Cómo funciona
 
-**La fase que puede cambiar todo el plan, por eso va primero.**
+- **Sprints numerados**, en orden. No se salta uno.
+- Cada sprint termina con un **criterio de salida** verificable. Si no se
+  cumple, el sprint no está listo, por más que "casi".
+- Cada sprint dice si necesita **prueba manual tuya**. Cuando la necesite, te
+  paso qué probar en concreto y en qué orden.
+- Las pruebas automáticas de un sprint quedan corriendo para siempre. Ningún
+  sprint posterior avanza con una suite anterior en rojo.
+- **Fuera del happy path desde el principio**: cada sprint prueba también el
+  caso raro, no solo el que funciona.
 
-- Prototipo mínimo en Rust: abrir un `.md`, parsear con `comrak`, dibujar
-  encabezados, párrafos, listas y tablas con `parley` + `tiny-skia`.
-- Medir contra `calculos.md`: tamaño del binario, arranque, primer pintado, RAM.
-- Probar con el corpus de la v1 (`tests/estres.md`, `conversion-defectuosa.md`).
-- Decidir con números reales: backend de dibujo (software vs GPU), toolkit de
-  chrome (sí o dibujo propio), estrategia de resaltado de sintaxis.
+## Estado
+
+| Sprint | Qué entrega | Estado |
+| --- | --- | --- |
+| 0 | Prototipo y validación del presupuesto | ⬜ Pendiente |
+| 1 | Lector mínimo usable | ⬜ |
+| 2 | Lector completo | ⬜ |
+| 3 | Chrome y pestañas | ⬜ |
+| 4 | Workspace | ⬜ |
+| 5 | Obsidian y GitHub | ⬜ |
+| 6 | Edición | ⬜ |
+| 7 | Anotaciones y estudio | ⬜ |
+| 8 | Distribución | ⬜ |
+| 9 | Linux | ⬜ |
+
+---
+
+## Sprint 0 · Prototipo y validación del presupuesto
+
+**El único sprint que puede cambiar todo el plan. Por eso va primero y solo.**
+
+Construir: abrir un `.md`, parsear con `comrak`, dibujar encabezados, párrafos,
+listas y tablas con `parley` + `tiny-skia`. Nada más: sin chrome, sin pestañas,
+sin Mermaid.
+
+Medir, con números reales y anotados en `budget.md`:
+- Tamaño del binario con `strip`, `panic=abort`, `opt-level=z`.
+- Tiempo hasta ventana visible y hasta primer pintado.
+- RAM en reposo con un documento abierto.
+- Rendimiento del scroll con un documento de 5 MB.
+
+Decidir con esos números: backend de dibujo (software o GPU), toolkit de chrome
+(sí o dibujo propio), estrategia de resaltado de sintaxis, almacenamiento del
+índice.
+
+Auditar con `cargo geiger` cuánto `unsafe` trae la pila elegida.
 
 **Criterio de salida:** un binario que abre un documento simple, medido, por
 debajo de 7 MB con margen. Si no se llega, se replantea alcance o presupuesto
-acá, antes de construir nada grande encima.
+**acá**, antes de construir nada encima.
 
-## Fase 1 — Lector completo
+**Prueba manual:** sí, corta. Abrir el prototipo y decirme si el arranque se
+*siente* instantáneo. El número importa menos que la sensación.
 
-- CommonMark + GFM completo sobre la vista de documento.
-- Resaltado de sintaxis en bloques de código.
+---
+
+## Sprint 1 · Lector mínimo usable
+
+- CommonMark completo.
+- Fuentes embebidas y la escala tipográfica de `design.md`.
+- Tema Papel + Tinta, claro y oscuro.
+- Ventana sin borde, con su capa de integración con el sistema.
+- Scroll con virtualización.
+
+**Pruebas automáticas:** corpus de CommonMark; el documento de estrés de la v1
+renderiza sin panic; fuzzing del parser en marcha.
+
+**Criterio de salida:** se puede leer un documento real de principio a fin y se
+ve bien.
+
+**Prueba manual:** sí. Abrí tus propios `.md` y buscá lo que se vea mal.
+
+---
+
+## Sprint 2 · Lector completo
+
+- GFM: tablas, tareas, tachado, notas al pie, autolinks.
+- Resaltado de sintaxis.
 - Alertas de GitHub y callouts de Obsidian.
-- Imágenes locales (remotas bloqueadas por defecto).
-- Temas claro/oscuro, tipografía ajustable, índice lateral.
-- Suite de seguridad de la v1 portada y en verde.
+- Imágenes locales, remotas bloqueadas.
+- Bloque de Mermaid mostrando su fuente con estilo.
+- Índice lateral, con el contador de palabras abajo.
+- Plegado de secciones entre encabezados.
 
-**Criterio de salida:** abre y muestra fielmente el corpus de la v1, con las
-cuatro propiedades de seguridad verificadas por pruebas.
+**Pruebas automáticas:** suite de seguridad de la v1 portada entera y en verde
+—incluidos los tres caminos de red que encontró en su día—; corpus de
+conversión defectuosa; límites de recursos.
 
-## Fase 2 — Chrome y workspace
+**Criterio de salida:** paridad de lectura con la v1, con las cuatro propiedades
+de seguridad verificadas por pruebas.
 
-- Pestañas y ventanas.
-- Abrir una carpeta como workspace, barra lateral con el árbol.
+**Prueba manual:** sí. Comparar lado a lado con la v1 y con GitHub.
+
+---
+
+## Sprint 3 · Chrome y pestañas
+
+- Pestañas, con las animaciones de `design.md`.
+- Ventanas múltiples y arrastre de pestañas entre ellas.
+- **Dividir a la derecha y abajo**, abriendo una pestaña nueva con la opción de
+  crear archivo, abrir archivo o cerrar. No un duplicado.
+- Menú contextual por zona.
+- Barra de herramientas con desplegable de H1–H6, botones con símbolo y
+  tooltip, menú de símbolos y entidades.
+- **Siempre encima**, junto a minimizar y cerrar.
+
+**Pruebas automáticas:** ocho archivos a la vez aterrizan en una ventana; cerrar
+con cambios sin guardar avisa; el estado de "siempre encima" sobrevive a
+minimizar, maximizar y cambio de escritorio virtual.
+
+**Criterio de salida:** se puede trabajar con varios documentos sin fricción.
+
+**Prueba manual:** sí, y **fuera del happy path** como pediste para "siempre
+encima": probarlo con pantalla completa de otra app, con un segundo monitor, al
+bloquear y desbloquear la sesión, y con la ventana minimizada.
+
+---
+
+## Sprint 4 · Workspace
+
+- Abrir una carpeta como espacio de trabajo, con árbol lateral.
 - Recientes y favoritos persistentes.
 - Búsqueda en toda la carpeta.
-- Menú contextual, configuración.
+- Sesión restaurada, con recuperación ante cierre inesperado por archivo
+  temporal aparte —sin autoguardar sobre el original.
+- Tabla de contenido flotante, activable desde configuración avanzada.
 
-**Criterio de salida:** usable como herramienta de trabajo diaria, no solo como
-visor de un archivo suelto.
+**Pruebas automáticas:** el índice es incremental y no reindexa lo que no
+cambió; una carpeta de 10.000 archivos no cuelga el arranque; matar el proceso
+con cambios sin guardar los recupera al reabrir **sin haber tocado el original**.
 
-## Fase 3 — Conexión con segundos cerebros
+**Criterio de salida:** se puede usar como herramienta de trabajo diaria.
 
-- Wikilinks de Obsidian: resolver, navegar, marcar rotos.
-- Enlaces a encabezados y bloques; embeds como enlace destacado.
-- Backlinks (qué notas enlazan a la actual).
-- Repo de GitHub: enlaces relativos, raíz del repo, README automático.
+**Prueba manual:** sí. Abrí una carpeta grande de verdad y contame si arrastra.
 
-**Criterio de salida:** abrir una bóveda de Obsidian real y navegarla con los
-wikilinks funcionando.
+---
 
-## Fase 4 — Edición
+## Sprint 5 · Obsidian y GitHub
 
-- Editor de texto plano con barra de ayudas y atajos (base de la v1).
-- Vista dividida con scroll sincronizado.
-- Ayudas al escribir: listas automáticas, indentado, pegar URL sobre selección.
-- Edición estructural incremental: renombrar encabezado actualiza enlaces
-  internos; pegar imagen la guarda y arma el enlace.
+- Wikilinks `[[nota]]` y `[[nota|alias]]`: resolver, navegar, marcar rotos.
+- Enlaces a encabezados y bloques.
+- Backlinks.
+- Repo clonado: enlaces relativos, raíz del repo, README automático.
 
-**Criterio de salida:** paridad de edición con la v1, más las ayudas
-estructurales que la v1 no tiene.
+**Pruebas automáticas:** ningún wikilink resuelve fuera de la bóveda; ciclos de
+embed detectados; el índice sobrevive a que se renombre un archivo por fuera.
 
-## Fase 5 — Distribución
+**Criterio de salida:** abrir una bóveda de Obsidian real y navegarla completa.
 
-- Empaquetado portable <7 MB.
-- Registro como programa predeterminado de Windows para `.md`.
-- Instalación en el equipo, desinstalación limpia.
-- Evaluar firma vía Microsoft Store para evitar SmartScreen (lección de Tinta).
+**Prueba manual:** sí, y es la más importante del proyecto. Usá tu bóveda real.
 
-**Criterio de salida:** un release descargable, verificable por hash, que se
-fija como predeterminado igual que la v1.
+---
 
-## Más allá — sujeto a que las fases anteriores cierren bien
+## Sprint 6 · Edición
 
-- Repaso espaciado desde el documento (ver `brainstorm-estudio.md`).
-- Modo estudio / foco, resaltado persistente.
-- Componente opcional de Mermaid nativo, si aparece una vía local viable.
-- Componente opcional de IA local (ver `inference.md`).
-- Grafo de notas, solo si la pila de dibujo demostró que rinde.
+- Editor de texto plano con barra de ayudas y atajos.
+- Vista dividida con scroll sincronizado —con el bug de la v1 ya resuelto de
+  origen: el panel donde se escribe manda, el otro sigue.
+- Listas automáticas, indentado, pegar URL sobre selección.
+- Lista numerada con el comportamiento corregido de la v1.
+- Pegar imagen del portapapeles: la guarda y arma el enlace.
+- Guardado atómico con codificación y fin de línea preservados.
 
-## Regla que gobierna el roadmap
+**Pruebas automáticas:** las de edición de la v1 portadas, incluidos los dos
+bugs corregidos como casos de regresión; guardar preserva codificación, BOM y
+fin de línea; un corte durante el guardado no corrompe el original.
 
-Ninguna fase avanza sin que la anterior tenga su criterio de salida cumplido y
-sus pruebas en verde. Es la disciplina que evita el destino de simpler-paper
-(archivado por un solo mantenedor sin red de seguridad): alcance acotado por
-fase, pruebas por fase, y honestidad para frenar en la Fase 0 si los números no
+**Criterio de salida:** paridad de edición con la v1, sin sus dos bugs.
+
+**Prueba manual:** sí. Escribí un documento largo entero.
+
+---
+
+## Sprint 7 · Anotaciones y estudio
+
+- Resaltado desde modo lectura, en sidecar por defecto, con opción de incrustar
+  como `==texto==`.
+- Estadísticas de lectura al pie del panel de índice.
+- Temporizador Pomodoro en configuración avanzada.
+- Exportar a PDF directo, sin pasar por imprimir.
+
+**Pruebas automáticas:** un resaltado sobrevive a que la nota se edite por
+fuera; incrustar y desincrustar es reversible sin pérdida; el sidecar
+manipulado no produce lectura fuera de la nota.
+
+**Criterio de salida:** se puede estudiar sobre un documento sin salir de él.
+
+**Prueba manual:** sí. Estudiá algo de verdad con la app.
+
+---
+
+## Sprint 8 · Distribución (Windows)
+
+- Empaquetado portable dentro del presupuesto.
+- Asociación de archivos y programa predeterminado.
+- Instalación y desinstalación limpias, sin permisos de administrador.
+- Release verificable por hash.
+- Envío a Microsoft Store.
+
+**Criterio de salida:** un release descargable que se fija como predeterminado
+igual que la v1.
+
+**Prueba manual:** sí. Instalación limpia en una VM.
+
+---
+
+## Sprint 9 · Linux
+
+- Empaquetado AppImage y `.deb`.
+- Asociación de archivos por `.desktop` y `xdg-mime`.
+- Capa de integración con el sistema completa.
+
+**Criterio de salida:** funciona en una VM de Ubuntu y de Fedora recién
+instaladas.
+
+**Prueba manual:** sí, en tus VMs descartables.
+
+---
+
+## Después de la v2.0, en orden de prioridad
+
+1. **Edición en vivo** (escribir sobre el documento renderizado, estilo
+   Obsidian). Es el objetivo grande que sigue: alto valor, alto costo, y hacerlo
+   mal es peor que no hacerlo. Ver `architecture.md`.
+2. **Mermaid nativo**, empezando por flowchart y secuencia.
+3. **IA local** por el camino barato: hablar con un Ollama que ya tengas.
+4. **macOS** publicado, si las pruebas en paralelo salieron bien.
+5. **Repaso espaciado** completo.
+6. Corrector ortográfico como componente descargable.
+7. Grafo de notas, referencias a nivel de bloque, plugins.
+
+## La regla que gobierna todo
+
+Ningún sprint avanza con el criterio de salida sin cumplir o con una suite
+anterior en rojo. Es la disciplina que evita terminar como simpler-paper
+—archivado por un mantenedor sin red de seguridad—: alcance acotado por sprint,
+pruebas por sprint, y honestidad para frenar en el Sprint 0 si los números no
 dan.

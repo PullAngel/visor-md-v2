@@ -24,7 +24,7 @@ Nada de esto está construido: es el mapa para decidir qué entra en cada fase.
   *A favor:* la mitad de los `.md` técnicos son código; sin color se leen mal.
   *En contra:* `syntect` con sus ~200 gramáticas pesa demasiado. La salida es
   embeber 15-20 lenguajes comunes y dejar el resto sin colorear. Decidido en
-  `calculos.md`.
+  `budget.md`.
 
 - [ ] **Botón de copiar en cada bloque de código** 🟢 ✳️
   *A favor:* la función más usada de la v1 en la práctica.
@@ -264,7 +264,7 @@ Nada de esto está construido: es el mapa para decidir qué entra en cada fase.
 
 - [ ] **Binario por debajo de 7 MB** 🔴 ✳️
   *En contra:* el presupuesto estimado da entre 2,9 y 7,6 MB. **El techo se
-  pasa.** Las palancas están en `calculos.md`; puede exigir renunciar a algo.
+  pasa.** Las palancas están en `budget.md`; puede exigir renunciar a algo.
 
 - [ ] **Parseo fuera del hilo de interfaz** 🟡 ✳️
   *A favor:* un `.md` de 20 MB no debe trabar la ventana. Moji lo hace, la v1

@@ -20,7 +20,7 @@ esa superficie por construcción: no hay JavaScript que ejecutar porque no hay
 intérprete. Es la lección central de Tinta.
 
 **Costo aceptado.** Perder la fidelidad "gratis" de un navegador: Mermaid,
-KaTeX y HTML arbitrario dejan de venir resueltos. Ver ADR-5 y `producto.md`.
+KaTeX y HTML arbitrario dejan de venir resueltos. Ver ADR-5 y `product.md`.
 
 ## ADR-2 — Lenguaje: Rust
 
@@ -61,7 +61,7 @@ barra lateral, menús, diálogos— sí puede usar un toolkit liviano.
 
 **Por qué.** Es lo que hace un lector serio y lo que evita pelear contra las
 suposiciones de un framework de widgets. `tiny-skia` (dibujo por software)
-sobre Skia completo mantiene el presupuesto de tamaño; ver `calculos.md`.
+sobre Skia completo mantiene el presupuesto de tamaño; ver `budget.md`.
 
 **Riesgo principal, declarado.** Esta es la parte más grande y más incierta del
 proyecto. Se valida con un prototipo antes que nada (ver `roadmap.md`, Fase 0).
@@ -115,7 +115,7 @@ los callouts y la estructura `.obsidian/`. GitHub: entender un repo ya clonado
 **Por qué.** Es lo más liviano y lo más seguro: no hay tokens, no hay red, no
 hay superficie nueva. Una bóveda de Obsidian *ya es* una carpeta de `.md`; un
 repo clonado *ya es* una carpeta de `.md`. La conexión más potente es también
-la más barata. Ver `conectividad.md`. **Alternativa más perezosa descartada:**
+la más barata. Ver `connectivity.md`. **Alternativa más perezosa descartada:**
 no hacer nada especial y tratar la bóveda como carpeta común — se descarta
 porque entender wikilinks es justo lo que ningún competidor liviano hace bien,
 y es barato.
@@ -134,3 +134,63 @@ presupuesto del núcleo. Nada de las notas sale del equipo jamás. Ver
 **Por qué.** Coherencia con toda la tesis de seguridad y privacidad: un
 segundo cerebro que manda tus notas a un servidor ajeno para "resumirlas" es
 exactamente lo que este proyecto existe para no hacer.
+
+## ADR-8 — Multiplataforma: Windows y Linux desde el día uno, macOS en paralelo
+
+**Contexto.** La v1 es solo Windows. Se pidieron VMs descartables de Linux, y
+se dejó a criterio decidir qué hacer con macOS.
+
+**Decisión.** Windows y Linux son objetivos de la v2.0. macOS se compila y se
+prueba desde temprano, pero no se publicita hasta tener pruebas propias.
+
+**Por qué.** Mantener la puerta abierta cuesta poco: elegir dependencias
+portables y aislar lo específico del sistema en una sola capa. Retrofitear
+después cuesta mucho, porque obliga a desarmar suposiciones ya metidas en todo
+el código. Barato ahora, sin deuda después.
+
+## ADR-9 — Resaltado: sidecar por defecto, incrustado en un clic
+
+**Contexto.** Se quería subrayar sin romper el `.md` ni cómo lo lee Obsidian.
+
+**Decisión.** Las anotaciones viven en un archivo paralelo por defecto. Un
+ajuste por documento las incrusta como `==texto==`.
+
+**Por qué.** `==texto==` **es la sintaxis nativa de Obsidian**, así que
+incrustar no rompe nada y el resaltado viaja con la nota. Aun así el valor por
+defecto es sidecar, porque un archivo ajeno no debería cambiar por haberlo
+abierto. El sidecar guarda el texto además del rango, para poder reubicar el
+resaltado si la nota se edita por fuera.
+
+## ADR-10 — Sin autoguardado por defecto
+
+**Contexto.** Pedido explícito: que no se autoguarde sobre el original, pero
+que no se pierda trabajo ante un cierre inesperado.
+
+**Decisión.** Las modificaciones no tocan el archivo original hasta guardar. La
+recuperación usa un archivo temporal aparte. El autoguardado se puede activar
+desde configuración avanzada.
+
+**Por qué.** Son dos necesidades distintas que suelen confundirse: no perder
+trabajo, y no modificar un archivo sin permiso. Un temporal aparte cubre la
+primera sin violar la segunda.
+
+## ADR-11 — Renombrar encabezados no actualiza enlaces en la v2.0
+
+**Contexto.** Se pidió revisar si choca con Obsidian.
+
+**Decisión.** Fuera de la v2.0.
+
+**Por qué.** Choca. Obsidian tiene su propia lógica de actualización de enlaces
+al renombrar, y dos herramientas reescribiendo los mismos archivos con
+criterios distintos es una receta para corromper una bóveda. Si entra después,
+será con confirmación explícita mostrando qué archivos va a tocar.
+
+## ADR-12 — Corrector ortográfico como componente descargable
+
+**Contexto.** Se preguntó cuánto pesa para español e inglés.
+
+**Decisión.** Fuera del núcleo; componente descargable en el futuro.
+
+**Por qué.** Los diccionarios de Hunspell pesan ~1 MB por idioma en disco, pero
+el de inglés solo usa ~4,5 MB de RAM al cargarse. Contra un presupuesto de 7 MB
+de binario, no cierra. Mismo trato que la IA local y por la misma razón.

@@ -66,4 +66,4 @@ No haría falta decidir esto de una vez. Un prototipo acotado —renderizar
 solo encabezados, párrafos, listas y tablas en nativo, medir el arranque y
 el peso reales, y comparar contra la Propuesta A ya construida— daría
 evidencia concreta antes de comprometer meses de trabajo en dos
-renderizadores. Ver `06-comparacion-y-decision.md`.
+renderizadores. Ver `06-comparison.md`.

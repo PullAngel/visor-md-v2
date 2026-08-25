@@ -1,6 +1,7 @@
 # Inferencia: IA local para estudio
 
-**Estado: exploración. No es parte de la v2.0** (ver `producto.md`). Este
+**Estado: exploración. No es parte de la v2.0**, pero el camino barato
+(hablar con un Ollama existente) es el punto 3 del futuro, no un "algún día" (ver `product.md`). Este
 documento fija los principios para el día que se sume, no un compromiso de
 sumarla ya.
 
