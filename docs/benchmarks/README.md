@@ -15,3 +15,7 @@ Generación:
 
 Una serie local no reemplaza CI ni una prueba en arranque frío. Los reportes se
 versionan cuando sirven como checkpoint de una decisión o regresión.
+
+La mediana de una cantidad par de muestras promedia los dos valores centrales.
+P95 usa nearest rank y el máximo se conserva por separado, de modo que una
+muestra lenta no desaparece por la elección del resumen estadístico.

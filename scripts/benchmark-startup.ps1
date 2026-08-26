@@ -40,6 +40,18 @@ function Get-Percentile {
     $sorted[[Math]::Max(0, $rank)]
 }
 
+function Get-Median {
+    param([double[]]$Values)
+
+    $sorted = @($Values | Sort-Object)
+    $middle = [Math]::Floor($sorted.Count / 2)
+    if ($sorted.Count % 2 -eq 0) {
+        ($sorted[$middle - 1] + $sorted[$middle]) / 2.0
+    } else {
+        $sorted[$middle]
+    }
+}
+
 Push-Location $repoRoot
 try {
     if (-not $SkipBuild) {
@@ -105,12 +117,14 @@ try {
             scrollFrames = $ScrollFrames
         }
         summaryMs = [ordered]@{
-            parseMedian = Get-Percentile $parseValues 0.5
+            parseMedian = Get-Median $parseValues
             parseP95 = Get-Percentile $parseValues 0.95
-            windowVisibleMedian = Get-Percentile $windowValues 0.5
+            windowVisibleMedian = Get-Median $windowValues
             windowVisibleP95 = Get-Percentile $windowValues 0.95
-            firstContentMedian = Get-Percentile $contentValues 0.5
+            windowVisibleMax = ($windowValues | Measure-Object -Maximum).Maximum
+            firstContentMedian = Get-Median $contentValues
             firstContentP95 = Get-Percentile $contentValues 0.95
+            firstContentMax = ($contentValues | Measure-Object -Maximum).Maximum
             scrollAverage = $scrollMs
         }
         samples = $samples
