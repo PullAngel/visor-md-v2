@@ -115,6 +115,13 @@ versión usaba **393 MB** porque mantenía vivos los 43 mil layouts de parley.
 Guardar solo la posición y rehacer el layout de lo visible bajó a 120 MB. Lo
 que queda es el árbol de comrak más el texto de los bloques, no el maquetado.
 
+La recuperación ahora conserva además el texto UTF-8 abierto durante toda la
+sesión para que selección, copia y edición futura partan de la fuente y no de
+la vista. Eso agrega como máximo el tamaño del texto decodificado al consumo de
+un documento. Es un coste deliberado de integridad de datos; la medición de
+memoria debe repetirse antes de cerrar el Sprint 1 porque las cifras históricas
+son anteriores a esa retención.
+
 ## Checkpoint de recuperación del 26 de agosto de 2026
 
 Estas cifras pertenecen al commit recuperado `a54c9d6`. Se midió el ejecutable
@@ -195,7 +202,7 @@ la selección y no habilita interacción sobre contenido no seleccionable.
 | Medida | Resultado |
 | --- | --- |
 | Binario Windows | 3.013.632 bytes, 2,874 MiB |
-| SHA-256 | `B46EEBE4745B76880FA482FB59A5B56E47FFBB4D6941D6143CFBF66437437E70` |
+| SHA-256 | `110104483C8066DCF12E7F9C40EA4CE9D9FD2899273601C9AFEDDC99EDA54EF4` |
 | Variación frente a la verificación anterior | 0 bytes |
 | Margen frente al límite deseado | 5,126 MiB |
 

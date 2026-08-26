@@ -18,6 +18,10 @@ La separación empezó de forma incremental y con la suite verde:
 - `src/limits.rs`: límites defensivos y causas de degradación;
 - `src/theme.rs`: paletas Papel y tinta y roles de color.
 
+El prototipo retiene durante la sesión el texto UTF-8 que abrió y sus rangos de
+modelo. Aún no retiene bytes originales ni metadatos de codificación, BOM o EOL:
+esa capa debe cerrarse antes del editor y del guardado fiel.
+
 Parser, modelo, layout y aplicación todavía comparten `main.rs`. Se extraerán en
 commits separados; esta lista describe el estado real y no la arquitectura final.
 

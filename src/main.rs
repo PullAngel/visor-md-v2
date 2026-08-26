@@ -1615,6 +1615,10 @@ fn blit(
 struct App {
     started: Instant,
     path: String,
+    /// Texto UTF-8 que se abrió. Se conserva junto a los rangos del modelo
+    /// para que futuras copias y ediciones no intenten reconstruir Markdown
+    /// desde la vista renderizada.
+    source: String,
     blocks: Vec<Block>,
     window: Option<Rc<Window>>,
     surface: Option<softbuffer::Surface<Rc<Window>, Rc<Window>>>,
@@ -2015,6 +2019,12 @@ impl App {
         let Some(last) = self.blocks.len().checked_sub(1) else {
             return;
         };
+        debug_assert!(
+            self.blocks
+                .iter()
+                .all(|block| block.source.is_valid_for(&self.source)),
+            "el modelo no conserva rangos validos para la fuente de la sesion"
+        );
         self.selection = Some(DocumentSelection {
             anchor: BlockCursor {
                 block: 0,
@@ -2488,6 +2498,7 @@ fn main() {
     let mut app = App {
         started,
         path,
+        source,
         blocks,
         window: None,
         surface: None,
