@@ -28,6 +28,9 @@ try {
     Write-Host "==> SBOM"
     & "$PSScriptRoot\generate-sbom.ps1" -Check
 
+    Write-Host "==> Documentacion"
+    & "$PSScriptRoot\check-docs.ps1"
+
     if (-not $SkipRelease) {
         Invoke-Checked "Build release" { cargo build --release }
     }

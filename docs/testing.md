@@ -117,7 +117,8 @@ cargo build --release
 
 En Windows, `scripts/check.ps1` ejecuta esas cuatro gates y se detiene en la
 primera que falla. `-SkipRelease` sirve para ciclos rápidos; no reemplaza el
-build release al cerrar un bloque.
+build release al cerrar un bloque. El mismo comando comprueba que el SBOM esté
+vigente y que los enlaces locales de la documentación rastreada sigan existiendo.
 
 Además:
 
