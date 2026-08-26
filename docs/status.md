@@ -76,7 +76,7 @@ protocolo estadístico que controle caché, carga y planificación del sistema.
 - verificación visual de task lists, decoraciones, temas y cursiva;
 - allowlist nativa de HTML semántico aprobada;
 - corpus CommonMark y GFM sistemático;
-- separación del `main.rs` monolítico;
+- separación incompleta de `main.rs`; fuentes y tema ya tienen módulos propios;
 - acceso directo a filesystem sin VFS;
 - parsing en el camino de UI;
 - virtualización y alturas todavía aproximadas;

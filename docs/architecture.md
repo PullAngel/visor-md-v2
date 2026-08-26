@@ -9,6 +9,17 @@ implementadas.
 
 Ver [`status.md`](status.md) para la fotografía actual.
 
+## Estructura implementada durante la recuperación
+
+La separación empezó de forma incremental y con la suite verde:
+
+- `src/main.rs`: aplicación, parser y modelo provisionales, layout y dibujo;
+- `src/fonts.rs`: familias embebidas y registro tipográfico;
+- `src/theme.rs`: paletas Papel y tinta y roles de color.
+
+Parser, modelo, layout y aplicación todavía comparten `main.rs`. Se extraerán en
+commits separados; esta lista describe el estado real y no la arquitectura final.
+
 ## Principios
 
 1. Sin motor de scripts o DOM.

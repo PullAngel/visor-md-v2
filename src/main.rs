@@ -12,6 +12,9 @@
 // existe y cuando exista se aisla en su propio modulo y se revisa a mano.
 #![forbid(unsafe_code)]
 
+mod fonts;
+mod theme;
+
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::rc::Rc;
@@ -35,43 +38,8 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Theme, Window, WindowId};
 
-/// Paleta Papel + Tinta. Los dos temas de `docs/design.md`, tabla completa:
-/// el acento cambia de tono entre temas a proposito, no es el mismo verde
-/// oscurecido, porque el que funciona sobre negro se lava sobre papel.
-#[derive(Clone, Copy)]
-struct Palette {
-    bg: (u8, u8, u8),
-    surface: (u8, u8, u8),
-    text: (u8, u8, u8),
-    dim: (u8, u8, u8),
-    accent: (u8, u8, u8),
-}
-
-const NIGHT: Palette = Palette {
-    bg: (0x0C, 0x0F, 0x0D),
-    surface: (0x12, 0x15, 0x13),
-    text: (0xE9, 0xE9, 0xE4),
-    dim: (0x8B, 0x91, 0x8C),
-    accent: (0x5F, 0xD0, 0x8A),
-};
-
-const DAY: Palette = Palette {
-    bg: (0xEB, 0xFA, 0xDC),
-    surface: (0xF7, 0xFD, 0xEF),
-    text: (0x13, 0x2A, 0x0A),
-    dim: (0x5A, 0x6B, 0x4F),
-    accent: (0x2E, 0x9E, 0x5B),
-};
-
-impl Palette {
-    fn resolve(self, role: Role) -> (u8, u8, u8) {
-        match role {
-            Role::Text => self.text,
-            Role::Dim => self.dim,
-            Role::Accent => self.accent,
-        }
-    }
-}
+use fonts::{FONT_CODE, FONT_DOC, register_embedded_fonts};
+use theme::{DAY, NIGHT, Palette, Role};
 
 const MARGIN: f32 = 48.0;
 const MAX_MEASURE: f32 = 720.0;
@@ -127,53 +95,8 @@ struct ParseOutcome {
     degradation: Option<Degradation>,
 }
 
-// Tipografia "Contraste editorial" de docs/design.md: Sora para la interfaz
-// (todavia sin chrome que la use), Newsreader para el documento, JetBrains
-// Mono para el codigo. Cuatro archivos variables, ~694 KB en total.
-// Origen y licencia (SIL OFL) en assets/fonts/README.md.
-// Sin uso todavia: no hay chrome que dibuje texto de interfaz.
-#[allow(dead_code)]
-const FONT_UI: &str = "Sora";
-const FONT_DOC: &str = "Newsreader";
-const FONT_CODE: &str = "JetBrains Mono";
-
-const SORA_TTF: &[u8] = include_bytes!("../assets/fonts/Sora.ttf");
-const NEWSREADER_TTF: &[u8] = include_bytes!("../assets/fonts/Newsreader.ttf");
-// La italica va en archivo aparte porque Newsreader no tiene eje de
-// inclinacion: en una familia seria la cursiva es un diseno propio, no la
-// romana torcida por software. Sin este archivo un `_texto_` se veia
-// identico al resto, que fue el defecto que aparecio al probarlo.
-const NEWSREADER_ITALIC_TTF: &[u8] = include_bytes!("../assets/fonts/Newsreader-Italic.ttf");
-const JETBRAINS_MONO_TTF: &[u8] = include_bytes!("../assets/fonts/JetBrainsMono.ttf");
-
-/// Registra las fuentes embebidas en la coleccion. Si algo saliera mal con un
-/// archivo (no deberia, se subsetean en el propio repo), la familia
-/// simplemente no aparece y el `FontFamily::List` cae al generico del
-/// sistema: nunca un panic por una fuente.
-fn register_embedded_fonts(font_cx: &mut FontContext) {
-    for bytes in [
-        SORA_TTF,
-        NEWSREADER_TTF,
-        NEWSREADER_ITALIC_TTF,
-        JETBRAINS_MONO_TTF,
-    ] {
-        let blob = parley::fontique::Blob::new(std::sync::Arc::new(bytes.to_vec()));
-        font_cx.collection.register_fonts(blob, None);
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 struct Brush(u8, u8, u8);
-
-/// A que rol de la paleta apunta un bloque. Se resuelve a un color concreto
-/// recien al maquetar, contra el tema activo: asi cambiar de tema no exige
-/// volver a aplanar el documento, solo volver a maquetar.
-#[derive(Clone, Copy, Debug)]
-enum Role {
-    Text,
-    Dim,
-    Accent,
-}
 
 /// Enfasis inline acumulado sobre un tramo de texto. Se acumula al bajar por
 /// el arbol: un `**texto _asi_**` llega al fondo con `strong` y `emph` juntos.
