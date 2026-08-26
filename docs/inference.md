@@ -1,57 +1,43 @@
-# Inferencia: IA local para estudio
+# Inferencia local: investigación histórica
 
-**Estado: exploración. No es parte de la v2.0**, pero el camino barato
-(hablar con un Ollama existente) es el punto 3 del futuro, no un "algún día" (ver `product.md`). Este
-documento fija los principios para el día que se sume, no un compromiso de
-sumarla ya.
+## Estado
 
-## Qué problema resolvería
+Esta idea fue reemplazada por el ADR-21. Visor MD no incorpora un modelo de IA
+local o remoto.
 
-El caso "tomar notas para y durante el estudio" tiene funciones donde la IA
-aporta de verdad: resumir una nota larga, generar tarjetas de repaso desde el
-contenido, responder preguntas sobre lo que uno ya escribió, sugerir enlaces
-entre notas relacionadas. Son exactamente las funciones por las que apps como
-RemNote o los plugins de IA de Obsidian tienen demanda.
+Se conserva el documento porque explica una alternativa evaluada y por qué se
+descartó. No pertenece al roadmap activo.
 
-## El principio que no se negocia
+## Problema que intentaba resolver
 
-Si Visor MD v2 suma IA, corre **100% local**. Ni una palabra de las notas sale
-del equipo. Esto no es una preferencia: es coherencia con toda la tesis del
-proyecto. Un segundo cerebro que manda tus notas, muchas veces lo más privado
-que uno escribe, a un servidor ajeno para "resumirlas" es precisamente lo que
-este proyecto existe para no ser. Una app que se vende como "seguro por
-construcción" y después filtra el contenido a una API de terceros sería una
-contradicción que la haría inservible para su público.
+La propuesta original buscaba generar preguntas, resúmenes o tarjetas de estudio
+sin enviar documentos a un servicio remoto.
 
-## Cómo encaja sin romper el presupuesto de 7 MB
+Se consideraron dos caminos:
 
-La IA local **no va en el núcleo**. Un modelo pequeño de lenguaje pesa cientos
-de MB o más, imposible dentro de los 7 MB. Por eso:
+- conectar con un runtime local ya instalado;
+- ofrecer un componente descargable separado del binario principal.
 
-- Es un **componente opcional, de descarga separada y explícita**. Quien no lo
-  quiere, no lo baja, y su Visor MD v2 sigue pesando <7 MB.
-- El núcleo habla con ese componente por un contrato local (un proceso aparte o
-  una librería cargada bajo demanda), no lo empaqueta.
-- **Alternativa más perezosa a evaluar primero:** en vez de embeber un runtime
-  de inferencia, detectar si el usuario ya tiene uno corriendo localmente
-  (por ejemplo Ollama, que mucha gente técnica ya usa) y hablarle a ese, por
-  loopback. Cero peso agregado, cero modelo que mantener, y respeta el
-  principio local. Solo si eso no alcanza se evalúa embeber un runtime propio.
+Ambos evitaban inflar directamente el núcleo, pero agregaban distribución,
+compatibilidad, permisos, modelos grandes y una nueva superficie de entrada.
 
-## Qué se evalúa cuando llegue el momento
+## Motivo de la decisión actual
 
-- Runtime de inferencia liviano en Rust (candidatos del ecosistema `candle` o
-  `llama.cpp` vía binding) contra "usar el Ollama del usuario".
-- Modelos pequeños suficientes para resumir y generar tarjetas (no hace falta
-  un modelo gigante para eso).
-- Que toda la interacción sea opt-in por documento: la IA no toca una nota
-  hasta que el usuario se lo pide en esa nota.
+El usuario principal ya trabaja con herramientas de IA. Visor MD aporta más valor
+si prepara y conserva buenos documentos que si duplica esas herramientas.
 
-## Qué NO haría, nunca
+La decisión actual permite:
 
-- Mandar notas a una API remota, ni siquiera "solo para esta función".
-- Correr en segundo plano indexando todo sin permiso.
-- Ser obligatoria para usar el resto de la app.
+- copiar Markdown estructurado;
+- fragmentar documentos largos;
+- comparar versiones;
+- preparar archivos para adjuntar;
+- estimar longitud si resulta casi gratuito.
 
-La IA es una herramienta opcional sobre un segundo cerebro privado, no la razón
-de ser del producto. Si genera dudas de privacidad, no entra.
+No se ejecuta inferencia y no se envía contenido.
+
+## Condición para reabrir
+
+Solo se reevalúa mediante una decisión de producto explícita, con threat model,
+privacidad, distribución, tamaño, mantenimiento y una razón que no pueda
+resolverse mejor mediante interoperabilidad.

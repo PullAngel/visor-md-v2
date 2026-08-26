@@ -1,7 +1,8 @@
 # Diseño visual
 
-Decisiones tomadas sobre las propuestas del lienzo. Esto ya no está abierto a
-discusión salvo que cambies de idea: es la referencia para construir.
+Sistema visual aprobado para construir y evaluar. Las decisiones de identidad son
+estables; medidas, contrastes e interacción pueden ajustarse cuando QA,
+accesibilidad o pruebas de uso aporten evidencia mejor.
 
 ## Identidad: Papel + Tinta
 
@@ -46,7 +47,11 @@ Cuatro niveles, del más visible al más escondido:
    o un elemento puntual y no necesita descubrirse por curioseo: cambiar
    mayúsculas y minúsculas de la selección, fijar una pestaña, las acciones
    de la papelera.
-4. **Configuración avanzada.** Funciones que cambian el comportamiento por
+4. **Paleta de comandos y paneles contextuales.** La paleta permite encontrar
+   acciones sin memorizar su ubicación. Los paneles aparecen para índice,
+   búsqueda, workspace, detalles o comparación y se cierran sin ocupar espacio
+   permanente.
+5. **Configuración avanzada.** Funciones que cambian el comportamiento por
    defecto del documento y que, si estuvieran activas para todos, generarían
    falsos positivos o sorpresas. Ejemplo decidido: las referencias de archivo
    en texto plano quedan apagadas por defecto y se activan acá, porque
@@ -89,12 +94,13 @@ en reposo**. En la v1 todos lo llevan y compiten con el documento. Estados:
 
 Preguntaste si tres familias pesan. **Sí, pero entra**: en una app nativa no hay
 CDN (no habría red) así que las fuentes van embebidas. Subconjunto latino de una
-variable por familia, unos 150–200 KB cada una: **~500 KB de los 7 MB, un 7 %
-del presupuesto**.
+variable por familia. El subset inicial medido fue de unos 410 KB. El working
+tree posterior, con Newsreader Italic y metadata corregida, ronda 694 KB. Sigue
+dentro del presupuesto menor de 8 MB, pero el proceso debe quedar reproducible.
 
 Vale la pena porque la interfaz geométrica y seca contra el documento cálido y
 literario es lo que señala qué es aplicación y qué es contenido. Si el
-presupuesto se ajusta en el Sprint 0, el plan de repliegue es en dos pasos:
+presupuesto se ajusta en una medición futura, el plan de repliegue es en dos pasos:
 primero bajar a dos familias (Newsreader + la sans del sistema), y solo después
 pasar a Neutro suizo (Archivo + Literata), tu opción B.
 
@@ -149,8 +155,34 @@ solo en confirmaciones.
 sale más rápido que lo que entra · se respeta `prefers-reduced-motion` · nada en
 bucle salvo progreso real.
 
+## Enlaces y estados de seguridad
+
+- Enlace web externo: azul convencional, subrayado o señal equivalente y destino
+  real visible antes de abrir.
+- Enlace interno o wikilink: verde de acento, diferenciado del externo.
+- Recurso bloqueado: placeholder discreto y acceso a detalles.
+- Archivo o destino inexistente: tono tenue, sin fingir que la acción funcionará.
+- Foco de teclado: visible incluso cuando no hay hover.
+
+El color nunca es la única señal. Esto mejora accesibilidad y reduce phishing.
+
+## Accesibilidad
+
+- contraste comprobado, no solo elegido a ojo;
+- zoom sin recortar controles;
+- navegación completa por teclado;
+- foco visible;
+- targets de mouse suficientemente grandes;
+- no depender solo de color;
+- reducir movimiento;
+- lectores de pantalla e IME considerados antes del editor;
+- alto contraste del sistema probado.
+
+La ventana sin borde no puede eliminar affordances necesarias para mover,
+redimensionar, cerrar o comprender el foco.
+
 ## El lienzo
 
-Las propuestas completas, con todo comparado lado a lado y las animaciones
-corriendo, están en el lienzo de diseño. Sirve como referencia visual mientras
-se construye.
+Los PNG, ZIP y MHTML recuperados en `Artifac opciones de diseño` son referencias
+locales. No son runtime ni código de producción. Las decisiones vigentes se
+mantienen en este documento para que el proyecto no dependa del artifact.

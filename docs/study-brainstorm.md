@@ -1,5 +1,10 @@
 # Estudio: ideas y explicaciones
 
+> Documento histórico. Conserva el razonamiento original y menciones a
+> competidores. Las decisiones vigentes están en `product.md`, `features.md`,
+> `roadmap.md` y ADR-20. En particular, la sintaxis portable es ahora la opción
+> normal y el sidecar queda para estado que Markdown no expresa limpiamente.
+
 Este documento tiene dos partes: primero las **explicaciones** de los conceptos
 que me pediste aclarar, y después el **estado de cada idea** con la decisión
 tomada.

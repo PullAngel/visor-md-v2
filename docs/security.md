@@ -1,259 +1,365 @@
 # Seguridad
 
-Documento maestro de seguridad de Visor MD v2. `threat-model.md` describe el
-modelo de amenaza; este documento es el trabajo de blindaje: qué se investigó,
-qué se decidió, y qué se sacrifica.
+## Propósito
 
-Está escrito para poder hablar con criterio del tema sin volver a razonarlo:
-cada decisión trae el ataque concreto que la motiva.
+Visor MD abre archivos que pueden provenir de Internet, repositorios, compañeros
+o una IA. Aunque Markdown parezca texto, puede contener rutas, enlaces, imágenes,
+HTML y estructuras diseñadas para explotar parsers o agotar recursos.
 
----
+La postura es tratar cada documento como entrada hostil sin volver alarmante el
+uso cotidiano.
 
-## 1 · El supuesto
+## Propiedades de seguridad
 
-Todo `.md` es contenido ajeno y potencialmente hostil hasta demostrar lo
-contrario. Llega de un repositorio, de un conversor de PDF, de una IA, de un
-adjunto. Puede estar diseñado para atacar, o simplemente roto por un conversor
-defectuoso. Los dos casos importan: **un parser que se cae con basura es tan
-inaceptable como uno que ejecuta código**.
+Durante apertura y render normales debe ser cierto que:
 
-## 2 · Lo que ganamos al dejar el motor web
+1. el documento no ejecuta código;
+2. el documento no inicia conexiones;
+3. el documento no lee archivos secundarios fuera de una política explícita;
+4. el documento no cambia configuración;
+5. entradas patológicas tienen límites y cancelación;
+6. guardar no corrompe ni reescribe contenido ajeno al cambio;
+7. toda excepción sensible requiere una acción consciente;
+8. los componentes conocen solo los permisos que necesitan.
 
-La v1 dedicaba la mitad de su trabajo de seguridad a contener un motor de
-scripts: DOMPurify, CSP, allowlist de protocolos, aislar Mermaid. Sin ese
-motor, esa mitad desaparece: no se contiene lo que no está.
+Estas son propiedades, no intenciones. Deben existir tests que observen red,
+filesystem, tiempo, memoria y salida.
 
-| Clase de ataque | En la v1 | En la v2 nativa |
-| --- | --- | --- |
-| XSS / ejecución de script | Contenida por sanitización | **No existe**: no hay intérprete |
-| Fuga de red por CSS, `srcset`, SVG | Contenida, y costó tres hallazgos encontrarla | **No existe**: no hay CSS ni HTML activos |
-| DOM clobbering | Contenida congelando referencias | **No existe**: no hay DOM |
-| Robo de credenciales por ruta UNC | Corregida en v1.1.0 | Se hereda la corrección, reforzada |
+## Conceptos importantes
 
-## 3 · Lo que ganamos al elegir Rust
+### Superficie de ataque
 
-Esta es la parte que un enfoque nativo ingenuo pasa por alto. Cambiar de un
-motor web a código nativo **cambia la clase de vulnerabilidad, no la elimina**:
-se pasa de XSS a corrupción de memoria. Un lector nativo en C o C++ que parsea
-entrada no confiable es terreno clásico de desbordamientos: el CVE-2026-5525 de
-Notepad++, un desbordamiento en el manejo de rutas por arrastre, es exactamente
-eso.
+Es el conjunto de lugares por los que una entrada puede alcanzar código y causar
+un efecto. Un parser, un decodificador de imágenes, un enlace y una dependencia
+nativa agregan superficies diferentes.
 
-Rust elimina esa clase entera en el código seguro. **Pero no es magia y hay que
-decirlo con precisión:**
+Reducir superficie no significa eliminar funciones útiles. Significa evitar
+motores generales cuando solo se necesita una capacidad pequeña y poner límites
+claros alrededor de cada entrada.
 
-- La garantía vale para el código `safe`. Un crate con bloques `unsafe` puede
-  reintroducir corrupción de memoria, y la base de datos RUSTSEC registra
-  varios casos reales: uso después de liberar, exposición de memoria sin
-  inicializar, desbordamientos de montículo en APIs que se presentan como
-  seguras.
-- Las dependencias con más `unsafe` en esta pila son justo las de bajo nivel:
-  rasterización de glifos, decodificación de imágenes, dibujo 2D.
+### Frontera de confianza
 
-### Lo que encontró la primera auditoría real (Sprint 0)
+Es el punto donde datos menos confiables entran a una zona con más permisos.
+Ejemplo: un path escrito dentro del Markdown cruza una frontera antes de llegar al
+filesystem. El VFS controla esa frontera.
 
-No es teoría: al compilar el prototipo y mirar el árbol de dependencias
-aparecieron dos cosas que valen como advertencia permanente.
+### Defensa en profundidad
 
-**1. Habíamos enlazado C sin querer.** Las funciones por defecto de `comrak`
-traen `syntect-onig`, que usa **Oniguruma**, una librería de expresiones
-regulares escrita en C, vía `onig_sys`. Nadie la pidió. Entró porque nadie
-miró qué arrastraba una dependencia por defecto. Un motor de expresiones
-regulares en C procesando entrada no confiable es exactamente la clase de
-superficie que el ADR-2 existe para evitar, y estaba adentro del binario que
-se presentaba como "sin C".
+Consiste en usar varias capas que no dependan de un único filtro. Una imagen
+local, por ejemplo, necesita contención de ruta, límite de bytes, validación de
+formato, límite de dimensiones y presupuesto de memoria.
 
-Se sacó con `default-features = false`. El árbol pasó de 144 a **96 crates**,
-**ninguno en C**, y el binario bajó 536 KB. Ver ADR-14.
+### Denegación de servicio
 
-**La lección, que vale más que el arreglo:** la tesis de seguridad no se
-sostiene sola por elegir Rust. Se sostiene revisando qué se enlaza. Toda
-dependencia nueva entra con `default-features = false` y se audita con
-`cargo tree` antes de agregarla.
+Un archivo puede intentar consumir pila, CPU o memoria hasta bloquear la app.
+Las 5.000 citas anidadas que causaron stack overflow son un ejemplo. Rust evita
+muchos errores de memoria, pero no evita automáticamente trabajo ilimitado.
 
-**2. Un crate sin mantenimiento.** `cargo audit` da cero vulnerabilidades, pero
-avisa que `ttf-parser` 0.25.1 está **sin mantenimiento**
-(RUSTSEC-2026-0192). Entra de forma transitiva por la pila de fuentes. No es
-un fallo hoy, pero es riesgo acumulado: si mañana aparece un problema en un
-crate que nadie mantiene, no va a haber parche y hay que reemplazarlo con
-apuro. Se revisa en el Sprint 1, al tocar la capa de fuentes.
+## Garantías no configurables
 
-**Mitigaciones concretas:**
+Nunca se permite:
 
-- `cargo audit` y `cargo deny` en cada compilación, con la construcción fallando
-  ante un advisory abierto. No es opcional ni "cuando nos acordemos".
-- **Ninguna dependencia en C.** Verificado en el Sprint 0 y a verificar en cada
-  dependencia nueva.
-- **Presupuesto de `unsafe` en código propio: cero.** `#![forbid(unsafe_code)]`
-  en todos los módulos salvo la capa de integración con el sistema operativo,
-  donde llamar a la API de Windows lo exige. Ese módulo se revisa aparte y a
-  mano.
-- Árbol de dependencias mínimo. Cada crate es código de terceros en el binario;
-  además ayuda al presupuesto de tamaño. Los dos objetivos empujan igual.
-- Auditoría explícita de qué crates traen `unsafe` y cuánto, con `cargo geiger`,
-  antes de fijar la pila en la Fase 0.
+- ejecutar JavaScript, scripts o macros procedentes de documentos;
+- interpretar event handlers HTML;
+- incorporar iframes o formularios activos;
+- permitir que contenido cambie preferencias de seguridad;
+- enviar documentos o fragmentos silenciosamente;
+- ocultar una conexión;
+- desactivar el validador de nodos;
+- cargar plugins con código arbitrario dentro del núcleo.
 
-## 4 · Superficies de ataque, una por una
+Un modo avanzado no elimina estas garantías.
 
-### 4.1 · El parser de Markdown
+## Markdown y HTML
 
-**Ataque:** documento con anidamiento patológico, tabla de un millón de celdas,
-enlace de referencia recursivo, o entrada que dispara un caso cuadrático.
+`comrak` transforma Markdown en AST. Después, el modelo propio y el validador
+deciden qué comportamiento existe.
 
-**Defensas:**
-- Topes duros: profundidad de anidamiento, cantidad de nodos, largo de línea.
-  Se calibran contra el corpus real, no a ojo.
-- Parseo en hilo aparte con cancelación: si un documento excede su presupuesto
-  de tiempo, se corta y se muestra lo que se alcanzó a parsear, con aviso.
-- **Fuzzing continuo** con `cargo-fuzz` sobre el parser. Barato en Rust y
-  encuentra lo que nadie imagina. La v1 no podía hacerlo con la misma facilidad
-  sobre su pipeline de JavaScript.
+Allowlist HTML inicial:
 
-### 4.2 · Rutas de archivo
+- `br`;
+- `kbd`;
+- `mark`;
+- `sub`;
+- `sup`.
 
-**Ataque:** el documento pide un recurso por una ruta que se sale de donde
-corresponde. Es el vector que en la v1 produjo la fuga de credenciales.
+`details` y `summary` solo pueden existir como controles nativos propios y
+simples. No se crea DOM.
 
-**Defensas** (heredadas y reforzadas):
-- Canonizar **antes** de validar. Validar la cadena original es inútil frente a
-  un junction o un enlace simbólico.
-- Rechazo incondicional de: rutas UNC (`\\servidor\recurso`), rutas de
-  dispositivo (`\\?\`, `\\.\`), flujos alternativos de NTFS (`archivo.png:oculto`),
-  y unidades de red mapeadas.
-- Contención al árbol de la carpeta del documento, con las carpetas de
-  confianza como única puerta y con registro auditable.
-- **Nuevo en la v2:** verificación de que el archivo abierto es el mismo que se
-  validó, comprobando el identificador de archivo del sistema. Cierra la ventana
-  TOCTOU entre validar y abrir, que en la v1 quedaba como riesgo residual
-  aceptado.
+HTML desconocido se muestra como texto inerte o fuente escapada. No se aceptan
+atributos de estilo, eventos, scripts, iframes, formularios o recursos activos.
 
-### 4.3 · Wikilinks e índice del workspace
+La allowlist se prueba por tipo de nodo y atributo. Escapar una cadena no alcanza
+si otra ruta puede construir el mismo comportamiento.
 
-Superficie nueva de la v2, y me pediste cuidado explícito acá.
+## Límites de recursos
 
-**Ataques:**
-- Un wikilink que resuelve fuera de la bóveda: `[[../../../.ssh/id_rsa]]`.
-- Una bomba de índice: una bóveda con cientos de miles de archivos, o nombres
-  de archivo diseñados para colisionar y hacer cuadrática la resolución.
-- Ciclos de embeds: `A` embebe `B` que embebe `A`.
-- Enlaces que apuntan a rutas absolutas o de red disfrazadas de nota.
+Se definirán límites blandos y absolutos para:
 
-**Defensas:**
-- Un wikilink **nunca** es una ruta: es un nombre que se busca en el índice de
-  la bóveda. Si no está en el índice, no existe: no se intenta abrir como
-  ruta. Esto sola cierra el traversal por completo.
-- El índice solo contiene archivos que ya pasaron la contención de rutas.
-- Tope de profundidad de embeds y detección de ciclos por conjunto de visitados.
-- Índice incremental con tope de archivos; pasado el tope, se avisa y se indexa
-  lo que entra en vez de colgarse.
+- bytes de archivo;
+- profundidad;
+- cantidad de nodos;
+- longitud de línea;
+- tamaño de texto producido;
+- tiempo de parsing y layout;
+- memoria de cache;
+- dimensiones y bytes de imágenes;
+- cantidad de archivos indexados;
+- tamaño y duración de exportación.
 
-### 4.4 · Imágenes
+El usuario avanzado puede aumentar límites blandos, especialmente el tamaño del
+archivo. Los límites absolutos y la cancelación permanecen.
 
-**Ataque:** un `.png` malformado que explota el decodificador. Es la superficie
-nativa más peligrosa que queda, porque los decodificadores de imagen son código
-de bajo nivel con `unsafe`.
+Al superar un límite de render enriquecido:
 
-**Defensas:**
-- Límite de dimensiones y de tamaño **antes** de decodificar, leyendo solo la
-  cabecera. Una imagen de 50.000 × 50.000 se rechaza sin haberla decodificado.
-- Solo formatos con decodificador en Rust puro donde exista. Si un formato
-  exige un decodificador en C, se evalúa dejarlo fuera antes que aceptarlo.
-- Las imágenes remotas siguen bloqueadas por defecto: la propiedad de red se
-  mantiene intacta desde la v1.
+1. cancelar trabajo pendiente;
+2. liberar estado parcial;
+3. abrir fuente inerte cuando sea seguro;
+4. mostrar un aviso discreto;
+5. ofrecer detalles técnicos opcionales.
 
-### 4.5 · Anotaciones sidecar
+Rechazar completamente solo si ni la vista inerte puede construirse dentro del
+presupuesto.
 
-Superficie nueva: un archivo que la app escribe y vuelve a leer.
+## Filesystem y VFS
 
-**Ataque:** un sidecar manipulado con rutas, tamaños absurdos o referencias a
-otros archivos.
+### Archivo principal
 
-**Defensas:** el sidecar se trata como entrada no confiable igual que el `.md`.
-Formato simple y tipado, sin rutas dentro, sin ejecución posible. Vive junto a
-la nota y no puede apuntar fuera de ella.
+Un archivo elegido explícitamente puede estar en disco local o UNC. La app lo
+trata como entrada, no como autorización para explorar su entorno.
 
-### 4.6 · Componentes opcionales (IA local, diagramas)
+### Recursos secundarios
 
-**Ataque:** el componente descargable es el eslabón débil: puede estar
-adulterado, o tener su propia superficie.
+El contenido no puede cargar automáticamente:
 
-**Defensas:**
-- Corren en **su propio proceso**, sin acceso al sistema de archivos, hablando
-  por un contrato de mensajes angosto y tipado.
-- Se verifican por hash antes de cargarse.
-- El núcleo funciona entero sin ellos. Si un componente falla, la app sigue.
-- Para la IA local: el texto va al componente, nunca a la red. El componente no
-  tiene cliente HTTP.
+- rutas UNC;
+- rutas de dispositivo;
+- `file://`;
+- rutas absolutas;
+- streams alternativos NTFS;
+- destinos fuera del espacio permitido;
+- symlinks o junctions que escapen de ese espacio.
 
-### 4.7 · Guardado de archivos
+Las rutas relativas locales pueden resolverse mediante VFS y límites. Seguir un
+enlace a otro archivo requiere una acción explícita.
 
-**Ataque:** perder trabajo del usuario, o corromper un archivo ajeno.
+### TOCTOU
 
-**Defensas:**
-- Guardado atómico: archivo temporal en la misma carpeta y reemplazo. Un corte
-  de luz no deja el archivo a medio escribir.
-- Codificación, BOM y fin de línea originales preservados. Un archivo ajeno no
-  cambia de formato por haberlo abierto.
-- **Sin autoguardado por defecto** (decisión tuya): las modificaciones no tocan
-  el original hasta que se guarda. La recuperación ante cierre inesperado usa un
-  archivo temporal aparte, nunca el original.
+TOCTOU significa comprobar algo y usarlo después, cuando pudo cambiar. Un atacante
+podría reemplazar un archivo o symlink entre la validación y la lectura.
 
-## 5 · Lo que cuesta esta postura
+Cuando el riesgo lo justifique, VFS debe abrir y validar identidad sobre el mismo
+handle o volver a comprobar identidad antes del uso. La implementación depende de
+la plataforma y necesita tests específicos.
 
-Me pediste avisarte si algo termina en una decisión de diseño con sacrificio.
-Estos son:
+## Workspace y confianza temporal
 
-| Se pierde | Por qué | Alternativa que se ofrece |
-| --- | --- | --- |
-| **HTML arbitrario en el documento** | Sin motor de render HTML, solo se dibuja lo que la allowlist contempla | Se cubren los casos reales: `<details>`, `<kbd>`, `<mark>`, `<sub>`, `<sup>`, `<br>`. Lo demás se muestra como texto inerte, no se descarta en silencio |
-| **CSS embebido en el documento** | Es un vector de fuga de red y de suplantación de la interfaz | Ninguna. Es un `no` definitivo |
-| **Formatos de imagen exóticos** | Decodificadores en C con superficie de memoria | PNG, JPEG, GIF, WebP cubren el uso real |
-| **Abrir directo desde una URL** | Introduce red y descarga automática de contenido no confiable | Clonar o descargar el archivo fuera y abrirlo |
+Confiar en una bóveda permite acceder a archivos locales dentro de una raíz
+delimitada para índice, navegación y recursos relativos.
 
-**Lo que NO se sacrifica:** Mermaid. Dijiste que es de las pocas cosas por las
-que subirías el límite de tamaño, y coincido: es lo que distingue un lector
-técnico de un lector de texto. El plan está en `product.md`.
+La confianza:
 
-## 6 · Lo que NO es configurable, nunca
+- tiene alcance y duración visibles;
+- se puede revocar;
+- no se hereda a rutas externas;
+- no activa red;
+- no ejecuta contenido;
+- no elimina límites absolutos;
+- no convierte archivos en inocuos.
 
-Se puede ampliar **a qué recursos accede** un documento. Nunca **qué puede
-ejecutar**. En concreto, no hay ni habrá ajuste para:
+Un índice es derivado y regenerable. No almacena secretos innecesarios ni se
+convierte en autoridad sobre el filesystem.
 
-- Desactivar el validador de nodos.
-- Permitir rutas de red.
-- Ejecutar HTML o CSS del documento.
-- Cargar un componente opcional sin verificar su hash.
+## Enlaces y phishing
 
-Un interruptor para cualquiera de esas sería el ajuste más atacado del
-programa: bastaría con convencer al usuario de activarlo una vez.
+Un clic explícito sobre `http` o `https` puede delegarse al navegador del sistema
+sin una confirmación repetitiva.
 
-## 7 · Cómo se demuestra
+Controles:
 
-Igual que en la v1, la suite afirma **propiedades**, no ausencia de crash. El
-corpus de ataque de la v1 se traslada entero y se amplía:
+- apariencia inequívoca de hipervínculo, con azul convencional;
+- destino real visible antes de abrir;
+- dominio Unicode normalizado o explicado cuando pueda confundir;
+- esquema permitido explícitamente;
+- nada de prefetch;
+- nada de navegación embebida;
+- ninguna URL controla texto de seguridad de la app.
 
-- [ ] Ningún `.md` del corpus produce una petición de red (se observa el
-      socket, no se confía en la ausencia).
-- [ ] Ninguna ruta del corpus de traversal se resuelve fuera de su carpeta.
-- [ ] Ningún wikilink resuelve fuera de la bóveda.
-- [ ] El corpus de conversión defectuosa renderiza entero sin panic.
-- [ ] Un documento con anidamiento patológico se corta en el tope, no cuelga.
-- [ ] El parser sobrevive a entrada aleatoria (fuzzing continuo).
-- [ ] Una imagen con dimensiones absurdas se rechaza sin decodificarse.
-- [ ] Un sidecar manipulado no produce lectura fuera de la nota.
-- [ ] `cargo audit` limpio en cada compilación.
+Phishing significa engañar al usuario para que crea que abre un destino distinto.
+El color azul ayuda a reconocer un enlace, pero no demuestra que su destino sea
+legítimo.
 
-## 8 · Riesgo residual
+## Imágenes locales
 
-Lo que queda, dicho sin maquillar:
+Antes de decodificar:
 
-- **Dependiente de crate externo.** Un fallo en `comrak`, `parley`, `tiny-skia`
-  o el decodificador de imágenes. `cargo audit` lo detecta cuando se publica;
-  entre la existencia del fallo y su publicación no hay defensa.
-- **Dependiente del sistema operativo.** El dibujo, las fuentes y los diálogos
-  nativos quedan en manos de Windows, Linux o macOS.
-- **Agotar memoria** con un documento gigante sigue siendo posible pese a los
-  topes. El usuario cierra la pestaña; no se pierde nada.
-- **El usuario decidiendo mal.** Una carpeta de confianza agregada a la ligera
-  amplía el acceso legítimamente. La bitácora auditable existe para que esa
-  decisión sea visible y revocable, no para impedirla.
+1. VFS resuelve y contiene la ruta;
+2. se limita tamaño en bytes;
+3. se identifica formato real;
+4. se leen dimensiones con presupuesto;
+5. se calcula memoria descomprimida;
+6. se cancela si supera límites.
+
+Una imagen comprimida pequeña puede expandirse a cientos de MB. El límite debe
+considerar dimensiones y memoria, no solo tamaño de archivo.
+
+## Imágenes remotas
+
+Bloqueadas por defecto. Un placeholder discreto informa el bloqueo.
+
+Después de consentimiento, la implementación deberá aislar la capacidad de red y
+aplicar:
+
+- `https` por defecto;
+- límites de redirecciones;
+- bloqueo de esquemas no previstos;
+- política contra destinos locales y redes privadas;
+- timeout;
+- límite de bytes;
+- tipo y dimensiones;
+- sin cookies, credenciales o referrer del documento;
+- cache explícito y borrable;
+- indicación de que el servidor conocerá la IP pública.
+
+Bloquear redes privadas evita que una URL maliciosa use la PC del usuario para
+consultar routers o servicios internos. Este riesgo se conoce como SSRF cuando un
+componente realiza solicitudes a destinos elegidos por un atacante.
+
+## Edición y guardado
+
+Amenazas principales:
+
+- archivo truncado por fallo;
+- escritura en destino equivocado;
+- pérdida de sintaxis desconocida;
+- conflicto con cambios externos;
+- reemplazo de archivo entre validación y guardado;
+- permisos alterados;
+- recuperación presentada como guardado real.
+
+Controles:
+
+- parches sobre rangos;
+- preservación de bytes no editados;
+- archivo temporal en el mismo filesystem;
+- reemplazo atómico;
+- identidad y revisión;
+- estado sucio visible;
+- diálogo de conflicto;
+- backup o recuperación separado cuando corresponda;
+- tests con fallos simulados.
+
+No hay autoguardado por defecto.
+
+## Sidecars
+
+Un sidecar contiene información adicional junto al documento. Se usa solo cuando
+Markdown no expresa bien el estado, por ejemplo fechas de repaso.
+
+Debe tener:
+
+- formato versionado;
+- vínculo verificable con el documento;
+- escritura atómica;
+- recuperación ante corrupción;
+- comportamiento seguro si la fuente cambia;
+- exclusión clara de secretos innecesarios.
+
+No aplicar una anotación a otro fragmento solo porque ocupa el mismo rango después
+de una edición.
+
+## Dependencias y supply chain
+
+Supply chain es la cadena de herramientas y bibliotecas que termina dentro del
+producto. Una dependencia comprometida puede afectar el binario aunque nuestro
+código sea seguro.
+
+Antes de incorporar una dependencia:
+
+- revisar mantenimiento y advisories;
+- revisar licencia;
+- inspeccionar features transitivas;
+- identificar C, C++ y `unsafe`;
+- buscar capacidades de red o filesystem;
+- medir tamaño;
+- fijar versión y registrar decisión cuando el riesgo sea relevante.
+
+Entregables:
+
+- `Cargo.lock`;
+- `cargo audit`;
+- política `cargo deny`;
+- SBOM;
+- notices de terceros;
+- inventario de `unsafe` y código nativo;
+- proceso reproducible de fuentes.
+
+Durante la auditoría inicial no había vulnerabilidades conocidas, pero
+`ttf-parser 0.25.1` estaba marcado como no mantenido. Debe vigilarse o reemplazarse
+cuando el grafo lo permita.
+
+## Rust y memoria
+
+Rust reduce use-after-free, double free y otras clases comunes de corrupción. No
+evita automáticamente:
+
+- lógica de autorización incorrecta;
+- path traversal;
+- agotamiento de memoria;
+- algoritmos lentos;
+- dependencias vulnerables;
+- `unsafe` incorrecto;
+- errores en bibliotecas nativas o del sistema.
+
+Por eso la elección de Rust es una defensa importante, no una certificación.
+
+## Privacidad y registros
+
+No hay telemetría. Los logs de diagnóstico:
+
+- no incluyen contenido completo por defecto;
+- evitan rutas privadas cuando no son necesarias;
+- distinguen errores técnicos de datos del usuario;
+- se generan localmente;
+- se comparten solo por acción explícita.
+
+## Configuración avanzada
+
+| Opción | Default | Alcance recomendado | Límite permanente |
+| --- | --- | --- | --- |
+| Imágenes remotas | Bloqueadas | Recurso o sesión | Sin credenciales ni red silenciosa |
+| Imágenes locales relativas | Permitidas por política | Documento o bóveda | VFS y límites |
+| Enlaces web | Clic explícito | Global | Esquemas permitidos y destino visible |
+| Enlaces a archivos | Acción explícita | Documento o bóveda | Contención y confirmación externa |
+| UNC principal | Apertura manual | Archivo | Sin recursos UNC secundarios |
+| Bóveda confiable | No confiable | Temporal o persistencia explícita | Sin ejecución ni red |
+| Archivo grande | Límite normal | Sesión o preferencia | Techo absoluto y fallback |
+
+La UI debe explicar riesgo, alcance y duración sin usar patrones engañosos.
+
+## Verificación
+
+Consultar [`testing.md`](testing.md) y [`test-matrix.md`](test-matrix.md).
+
+Pruebas críticas:
+
+- sockets observados durante apertura;
+- traversal con variantes de plataforma;
+- symlinks y junctions;
+- UNC explícita y secundaria;
+- HTML conocido y desconocido;
+- archivos profundos, anchos y grandes;
+- imágenes comprimidas maliciosas;
+- guardado interrumpido;
+- conflicto externo;
+- dependencias y licencias;
+- phishing visual y teclado.
+
+## Riesgo residual
+
+No se protege contra un sistema operativo ya comprometido, un administrador local
+malicioso o una biblioteca del sistema alterada. Tampoco existe seguridad
+absoluta frente a vulnerabilidades desconocidas.
+
+El objetivo es minimizar privilegios, limitar entradas, aislar capacidades y
+detectar regresiones con evidencia mantenible.

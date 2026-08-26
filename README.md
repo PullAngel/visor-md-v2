@@ -1,82 +1,154 @@
 # Visor MD v2
 
-**Estado: Sprint 0 cerrado.** Hay un prototipo que funciona y, sobre todo, hay
-mediciones reales que reemplazaron a las estimaciones.
+Visor MD v2 es una aplicación nativa para leer, editar y estudiar Markdown con
+la inmediatez de una herramienta de texto simple, calidad visual editorial y una
+postura de seguridad verificable.
 
-Segunda versión de [Visor MD](https://github.com/PullAngel/visor-md). La v1 está
-terminada, publicada y auditada, y corre sobre WebView2. La v2 cambia de
-dirección: **nativa, sin motor web, por debajo de 7 MB, para Windows y Linux**,
-con el modelo de seguridad de la v1 llevado más lejos y herramientas de estudio
-integradas.
+Está pensada principalmente para estudiantes y personas que trabajan con
+documentos producidos por IA. También busca integrarse de forma cómoda y no
+destructiva con bóvedas de Obsidian, repositorios y carpetas de documentación.
 
-En una frase: la herramienta que dejás como predeterminada para abrir cualquier
-`.md`, cómoda para estudiar, que se conecta con el segundo cerebro que ya usás,
-segura por construcción y tan liviana que arranca antes de que sueltes el mouse.
+El objetivo no es agregar la mayor cantidad posible de funciones. Es construir
+una aplicación cotidiana, rápida, bonita y confiable que trate cada documento
+como entrada potencialmente hostil.
 
-## Lo que dio el Sprint 0
+## Estado del proyecto
 
-El prototipo abre un `.md`, lo parsea con `comrak`, lo maqueta con `parley` y
-lo dibuja con `tiny-skia` sobre una ventana `winit` + `softbuffer`. Sin motor
-web, sin chrome todavía.
+El proyecto está en recuperación y estabilización del Sprint 1.
 
-| Métrica | Objetivo | Medido |
-| --- | --- | --- |
-| Tamaño del binario | < 7 MB | **2,14 MB** |
-| Ventana visible | < 150 ms | **79 ms** |
-| Primer pintado | < 400 ms | **119 ms** |
-| Scroll | 60 fps | **186 fps** |
-| RAM, documento típico | decenas de MB | **19 MB** |
-| Documento de 5 MB, abierto entero | | **698 ms** |
-| Dependencias | mínimas | **96, ninguna en C** |
+- `main` conserva el último estado estable del prototipo nativo.
+- El desarrollo activo ocurre en ramas separadas.
+- Existe trabajo local heredado de una sesión interrumpida que todavía no
+  compila y no debe confundirse con una versión terminada.
+- La documentación se está alineando con el producto y con la implementación
+  real antes de continuar el código.
 
-El detalle, con lo que salió mal antes de salir bien, está en
+La fotografía verificable del estado se mantiene en
+[`docs/status.md`](docs/status.md). El contexto completo del traspaso está en
+[`docs/workspace-handoff.md`](docs/workspace-handoff.md).
+
+## Qué quiere ofrecer
+
+- Apertura inmediata de `.md` mediante doble clic.
+- Lectura con tipografía y layout cuidados.
+- Cambio sencillo entre lectura, fuente y vista dividida.
+- Edición fiel que preserve sintaxis que Visor MD no comprenda.
+- Selección, copia, menú contextual y atajos de calidad profesional.
+- Herramientas de estudio expresadas mediante Markdown portable.
+- Trabajo cómodo con documentos creados por IA.
+- Wikilinks, backlinks, callouts y navegación de bóvedas existentes.
+- Exportación prioritaria a PDF, DOCX y formatos preparados para compartir.
+- Soporte seguro de otros textos inertes sin convertirse en un IDE.
+
+## Seguridad por diseño
+
+Visor MD no usa un motor web para representar documentos y no ejecuta HTML,
+JavaScript ni contenido incluido en un archivo.
+
+Durante apertura y render normales:
+
+- no hay telemetría;
+- no se carga contenido remoto;
+- no se siguen rutas locales automáticamente;
+- no se ejecutan scripts;
+- no se permite que un documento cambie la configuración;
+- los límites de recursos degradan a una vista de texto segura.
+
+Algunas acciones pueden habilitarse mediante consentimiento explícito, como
+mostrar una imagen remota o confiar temporalmente en una bóveda. Esas excepciones
+son delimitadas y nunca habilitan ejecución ni conexiones silenciosas.
+
+La explicación completa está en [`docs/security.md`](docs/security.md) y el
+análisis de atacantes, activos y escenarios está en
+[`docs/threat-model.md`](docs/threat-model.md).
+
+## Arquitectura
+
+La dirección actual usa Rust y una pila nativa pequeña:
+
+- `winit` para ventana y eventos;
+- `softbuffer` para presentar píxeles;
+- `tiny-skia` para dibujo 2D;
+- `parley` y `swash` para texto;
+- `comrak` para parsing Markdown.
+
+No hay WebView, DOM ni runtime JavaScript. El prototipo inicial todavía es
+monolítico y no implementa todas las capas documentadas. La recuperación debe
+separar modelo documental, parsing, políticas, VFS, layout, rendering, edición y
+guardado sin perder el presupuesto de tamaño.
+
+Ver [`docs/architecture.md`](docs/architecture.md).
+
+## Presupuesto
+
+- Menos de 6 MB: resultado extraordinario.
+- Alrededor de 7 MB: objetivo normal.
+- Menos de 8 MB: límite deseado.
+- Más de 8 MB: requiere medición, explicación y aprobación.
+
+La cifra nunca justifica reducir seguridad, estabilidad, accesibilidad, Unicode
+o funciones esenciales. Los resultados y el método de medición viven en
 [`docs/budget.md`](docs/budget.md).
 
-```bash
-cargo run --release -- documento.md
-```
+## Ingeniería verificable
 
-Modo de medición, sin depender de que nadie mire la pantalla:
+El repositorio trata como entregables de primera clase:
 
-```bash
-cargo run --release -- documento.md --bench
-```
+- threat model;
+- ADR;
+- matriz de pruebas;
+- fuzzing;
+- benchmarks reproducibles;
+- auditoría de dependencias;
+- SBOM y licencias;
+- evidencia Windows y Linux;
+- documentación sincronizada con el código.
 
-Pruebas:
-
-```bash
-cargo test
-```
+La estrategia de QA está en [`docs/testing.md`](docs/testing.md) y la matriz viva
+en [`docs/test-matrix.md`](docs/test-matrix.md).
 
 ## Documentación
 
-Empezá por **[`docs/roadmap.md`](docs/roadmap.md)**: es el documento operativo,
-el que dice qué se construye y en qué orden.
+La puerta de entrada es [`docs/README.md`](docs/README.md). Allí se distingue
+entre documentos vivos, evidencia de estado e investigación histórica.
 
-| Documento | Qué contiene |
-| --- | --- |
-| [`docs/roadmap.md`](docs/roadmap.md) | **Sprints en orden, con criterio de salida y pruebas.** El documento de trabajo |
-| [`docs/vision.md`](docs/vision.md) | Para qué existe y para quién |
-| [`docs/product.md`](docs/product.md) | Qué hace, modos de vista, alcance de la v2.0 |
-| [`docs/design.md`](docs/design.md) | Identidad visual decidida: color, ventana, iconos, tipografía, movimiento |
-| [`docs/architecture.md`](docs/architecture.md) | Cómo está construido y por qué |
-| [`docs/security.md`](docs/security.md) | **Blindaje: superficies de ataque, defensas y qué se sacrifica** |
-| [`docs/threat-model.md`](docs/threat-model.md) | Modelo de amenaza y las cuatro propiedades |
-| [`docs/features.md`](docs/features.md) | Catálogo completo de funciones en checklist, con pros y contras |
-| [`docs/study-brainstorm.md`](docs/study-brainstorm.md) | Estudio: explicaciones de cada concepto y estado de cada idea |
-| [`docs/connectivity.md`](docs/connectivity.md) | Obsidian, Logseq, GitHub y la puerta a IA local |
-| [`docs/budget.md`](docs/budget.md) | Presupuesto de tamaño y de arranque, con plan de medición |
-| [`docs/decisions.md`](docs/decisions.md) | Registro de decisiones con su motivo |
-| [`docs/inference.md`](docs/inference.md) | IA local: principios y límites |
-| [`docs/future.md`](docs/future.md) | Horizonte más allá del roadmap |
+Antes de contribuir o utilizar un agente de desarrollo, leer
+[`AGENTS.md`](AGENTS.md).
 
-## Cómo se llegó acá
+Las contribuciones siguen [`CONTRIBUTING.md`](CONTRIBUTING.md) y los reportes
+sensibles siguen [`SECURITY.md`](SECURITY.md).
 
-[`docs/research/`](docs/research) guarda la exploración previa: diez proyectos
-estudiados y tres arquitecturas comparadas, cuando el requisito de <7 MB sin
-WebView2 todavía no estaba fijo. Se conserva como bitácora de decisión, no como
-plan vigente.
+## Compilación
+
+Requisitos previstos:
+
+- Rust estable con target MSVC en Windows;
+- herramientas de compilación nativas de la plataforma;
+- dependencias resueltas por Cargo.
+
+Comandos normales una vez recuperado el working tree:
+
+```powershell
+cargo build --release
+cargo test
+```
+
+El source local heredado todavía está en recuperación. Consultar
+[`docs/status.md`](docs/status.md) antes de interpretar un fallo de build.
+
+## Desarrollo asistido por IA
+
+Visor MD se desarrolla mediante un flujo profesional asistido por IA. Angel
+David Durán Erazo define el producto, los criterios, las prioridades, la
+seguridad aceptable y las decisiones finales. Los agentes ayudan con
+investigación, implementación, revisión y documentación bajo reglas explícitas
+de preservación, evidencia y aprobación.
+
+El objetivo del repositorio no es exhibir texto generado, sino demostrar
+dirección de producto, ciberseguridad aplicada, QA verificable y capacidad para
+llevar software real hasta una distribución profesional.
 
 ## Licencia
 
-[GNU GPLv3](LICENSE), igual que la v1.
+Visor MD v2 se distribuye bajo GNU GPL v3. Las fuentes y dependencias conservan
+sus licencias respectivas y deben documentarse en los notices y la SBOM.

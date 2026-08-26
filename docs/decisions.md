@@ -1,8 +1,23 @@
 # Registro de decisiones
 
-Formato ADR liviano: cada decisión con contexto, opción elegida y el motivo
-por el que se descartó el resto. Fecha implícita: fase de planificación de la
-v2.
+Formato ADR liviano: cada decisión conserva contexto, opción elegida y motivo.
+Un ADR aceptado no se reescribe para fingir que siempre estuvo actualizado. Una
+decisión posterior lo reemplaza y este índice lo hace visible.
+
+## Estado y reemplazos
+
+| ADR | Estado | Nota |
+| --- | --- | --- |
+| 1 a 6 | Aceptados | Aplican con los límites actuales |
+| 7 | Reemplazado por ADR-21 | Visor MD no incorpora IA propia |
+| 8 | Reemplazado por ADR-25 | Windows y Linux en v2.0, macOS futuro |
+| 9 | Reemplazado por ADR-20 | Sintaxis portable por defecto |
+| 10 a 13 | Aceptados | Requieren implementación y evidencia |
+| 14 | Parcialmente reemplazado por ADR-24 | Se evalúa código nativo por plataforma |
+| 15 | Aceptado | Cache con presupuesto todavía pendiente |
+| 16 | Aceptado con condición | Estimar y corregir progresivamente |
+| 17 | Aceptado con gate | Reabrir si accesibilidad o UX lo exige |
+| 18 | Reemplazado por ADR-26 | `STAT`, itálica y reproducción revisadas |
 
 ## ADR-1: Nativo, sin motor web
 
@@ -353,3 +368,137 @@ para reproducirla o ajustarla, está en `assets/fonts/README.md`.
 modificar (el recorte lo es) y redistribuir. La única restricción real es no
 vender la fuente suelta bajo su nombre original sin permiso del autor, que no
 aplica a este uso.
+
+## ADR-19: El modelo documental preserva fuente y semántica
+
+**Contexto.** El prototipo convirtió el AST en bloques y tramos preparados para
+dibujo. Ese modelo pierde destinos, rangos, tablas, IDs y sintaxis desconocida.
+Es suficiente para demostrar rendering, pero no para editar y guardar sin pérdida.
+
+**Decisión.** El modelo canónico propio conserva rangos de fuente, estructura y
+semántica. Layout y display list son derivados descartables.
+
+**Por qué.** Selección, edición, comparación, anotaciones, enlaces y round-trip
+dependen de relacionar lo visible con los bytes originales. Arreglarlo después de
+workspace y estudio multiplicaría el retrabajo.
+
+**Costo.** Más tipos, tests y memoria que un modelo aplanado. Se controla con
+representaciones compactas y medición.
+
+## ADR-20: Anotaciones portables por defecto
+
+**Contexto.** El ADR-9 elegía sidecar por defecto para no tocar el `.md`. La
+definición de producto posterior prioriza compatibilidad con Obsidian y que una IA
+pueda releer el resultado.
+
+**Decisión.** Usar sintaxis Markdown u Obsidian portable cuando exista. Ejemplo:
+`==resaltado==`. Usar sidecar solo para estado que no se exprese limpiamente,
+como fechas de repaso.
+
+**Por qué.** El documento mantiene valor fuera de Visor MD. Evita un sistema de
+anotaciones invisible para otras herramientas.
+
+**Restricción.** No crear sintaxis exclusiva. Los sidecars restantes son
+versionados, atómicos y detectan cambios de fuente.
+
+## ADR-21: Sin IA propia dentro de Visor MD
+
+**Contexto.** El ADR-7 y `inference.md` exploraban un componente local opcional.
+La dirección de producto se refinó: los usuarios trabajan con IA, pero no quieren
+otro chatbot ni un modelo integrado.
+
+**Decisión.** Visor MD no incorpora modelo local o remoto. Ofrece herramientas de
+formato, copia, fragmentación, comparación y preparación de Markdown.
+
+**Por qué.** Mantiene privacidad, tamaño, superficie de ataque e identidad. La
+interoperabilidad con IA aporta valor sin ejecutar inferencia.
+
+## ADR-22: Presupuesto en tres bandas
+
+**Contexto.** La documentación anterior mezclaba objetivo de 7 MB y techo de
+9,44 MB. El producto necesita una regla simple que no convierta el tamaño en
+enemigo de funciones esenciales.
+
+**Decisión.** Menos de 6 MB es ideal extraordinario, alrededor de 7 MB es el
+objetivo y menos de 8 MB es el límite deseado. Superar 8 MB requiere medición,
+explicación y aprobación.
+
+**Por qué.** Conserva presión contra dependencias innecesarias sin recortar
+seguridad, estabilidad, accesibilidad o Unicode.
+
+## ADR-23: Excepciones de seguridad delimitadas, invariantes fijas
+
+**Contexto.** El núcleo offline debe trabajar con imágenes, enlaces y bóvedas
+reales. Un bloqueo absoluto de todo acceso manual sería seguro pero poco útil.
+
+**Decisión.** Configuración avanzada puede permitir imágenes remotas confirmadas,
+recursos locales relativos, enlaces manuales, UNC principal, bóvedas confiables y
+límites blandos mayores. El alcance es visible y revocable.
+
+Nunca se permite ejecución, eventos HTML, cambios ordenados por documentos,
+conexiones ocultas o desactivación del validador.
+
+**Por qué.** Separa capacidad de autoridad. El usuario puede pedir una acción
+concreta sin entregar permisos generales al documento.
+
+## ADR-24: Código nativo y `unsafe` se auditan por target
+
+**Contexto.** ADR-14 afirmaba que el árbol quedaba sin C. Era cierto para el
+camino Windows medido tras desactivar Oniguruma, pero Linux incluye dependencias
+nativas como fontconfig.
+
+**Decisión.** Mantener default features desactivadas cuando convenga, pero auditar
+el grafo real de cada target. C, C++ y `unsafe` no están prohibidos de manera
+absoluta; requieren justificación, aislamiento, mantenimiento y evidencia.
+
+**Por qué.** Una afirmación verificable por plataforma es más útil que una
+promesa universal incorrecta.
+
+## ADR-25: Windows y Linux son targets de v2.0
+
+**Contexto.** ADR-8 incluía macOS desde el primer día. El alcance actual prioriza
+terminar y validar Windows y Linux con un mantenedor y un presupuesto pequeño.
+
+**Decisión.** Mantener contratos portables, CI y releases para Windows y Linux.
+macOS es futuro y no bloquea v2.0.
+
+**Por qué.** Evita deuda específica de Windows sin sostener tres matrices de QA
+antes de que el núcleo madure.
+
+## ADR-26: Pipeline tipográfico reproducible y `STAT` conservado
+
+**Contexto.** El subset inicial descartó `STAT` y no incluyó Newsreader Italic.
+La inspección visual mostró emparejamiento incompleto de estilos. El working tree
+regeneró fuentes conservando `STAT` y agregó la variante itálica.
+
+**Decisión.** Conservar metadata necesaria para identificación y selección de
+estilo. Incluir Newsreader Italic si la cobertura y el emparejamiento lo exigen.
+Automatizar origen, hashes, versión de fonttools, Unicode, tablas y notices antes
+de cerrar la recuperación.
+
+**Por qué.** Ahorrar metadata no compensa cursiva incorrecta o un proceso
+imposible de reproducir. La identidad tipográfica cabe en el límite actual.
+
+## ADR-27: La edición básica se adelanta
+
+**Contexto.** El roadmap anterior construía workspace y Obsidian antes del
+editor. El producto se definió como lector y editor, y el guardado fiel afecta el
+modelo, anotaciones, índice y compatibilidad.
+
+**Decisión.** Después del lector completo y la validación base, construir editor
+fuente, vista dividida y guardado antes de workspace profundo.
+
+**Por qué.** Reduce el riesgo de diseñar varias capas sobre un modelo que luego no
+pueda preservar el documento.
+
+## ADR-28: QA y documentación son entregables
+
+**Contexto.** El proyecto también debe demostrar ingeniería verificable para
+ciberseguridad, QA y trabajo profesional asistido por IA.
+
+**Decisión.** Threat model, matriz de pruebas, fuzzing, benchmarks, SBOM, ADR,
+status y documentación de release forman parte de la definición de terminado.
+
+**Por qué.** Una afirmación de seguridad o rendimiento sin evidencia reproducible
+es una intención. Mantener los artefactos junto al código convierte criterios en
+controles revisables.

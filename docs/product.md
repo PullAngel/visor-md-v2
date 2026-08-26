@@ -1,115 +1,221 @@
 # Producto
 
-Qué hace la v2 y dónde termina el alcance de la primera versión. El pecado que
-este documento evita es prometer todo lo de la competencia junta y no entregar
-nada terminado.
+## Definición
 
-## Los cuatro modos de vista
+Visor MD v2 es una aplicación nativa para leer, editar y estudiar Markdown y
+otros archivos de texto inerte. Combina apertura inmediata, presentación
+editorial, edición fiel, integración con bóvedas y seguridad por construcción.
 
-| Modo | Qué es | En la v2.0 |
-| --- | --- | --- |
-| **Lectura** | Documento renderizado, con resaltado y anotaciones | Sí |
-| **Fuente** | Texto plano con las marcas visibles | Sí |
-| **Dividido** | Fuente y lectura lado a lado, scroll sincronizado | Sí |
-| **Edición en vivo** | Escribir sobre el documento renderizado | **No**, primer objetivo grande después |
+No es solo un visor. La edición, el guardado y el trabajo cotidiano con texto son
+parte del producto.
 
-El razonamiento sobre la edición en vivo está en `architecture.md`: es
-técnicamente el modo más difícil y hacerlo a medias es peor que no tenerlo.
+## Usuarios
 
-## Alcance de la v2.0
+### Principales
+
+1. Personas que reciben, corrigen y reutilizan documentos producidos por IA.
+2. Estudiantes que leen y enriquecen apuntes durante clases o sesiones de
+   estudio.
+
+### Secundarios
+
+3. Usuarios de Obsidian y segundos cerebros.
+4. Profesionales técnicos que abren documentación y texto desconocido.
+
+El producto debe ser fácil para alguien que no domina Markdown y suficientemente
+predecible para quien depende de su sintaxis y estructura.
+
+## Promesa
+
+Visor MD debe abrir un `.md` con la inmediatez de una aplicación de texto simple,
+mostrarlo como un documento terminado y permitir corregirlo sin romper lo que
+otra herramienta o una IA necesita leer después.
+
+Debe sentirse elegante, técnico, poderoso y confiable. No debe sentirse
+sobrecargado, genérico, frágil ni como un Bloc de notas con formato superficial.
+
+## Experiencias prioritarias
+
+1. Doble clic, apertura inmediata y lectura cómoda.
+2. Corrección rápida y guardado fiel.
+3. Estudio de un documento largo.
+4. Apertura de una respuesta producida por IA.
+5. Varios documentos abiertos.
+6. Copia limpia de fragmentos.
+7. Comparación entre fuente y resultado.
+8. Creación de documentos.
+9. Navegación por notas conectadas.
+10. Búsqueda en carpetas y bóvedas.
+
+El orden ayuda a resolver dependencias. No convierte las últimas experiencias en
+opcionales.
+
+## Modos de documento
 
 ### Lectura
-CommonMark + GFM completo. Alertas de GitHub y callouts de Obsidian. Resaltado
-de sintaxis. Imágenes locales, remotas bloqueadas por defecto. Índice lateral
-con contador de palabras y tiempo estimado al pie. Plegado de secciones. Temas
-claro y oscuro. Tipografía ajustable.
 
-Mermaid: la fuente del diagrama se muestra en un bloque con estilo. El render
-nativo es el segundo objetivo grande después de la v2.0, y la única función por
-la que vale subir el presupuesto de tamaño.
+Modo inicial para un documento abierto por primera vez. Prioriza tipografía,
+ancho de lectura, índice, enlaces, selección y navegación.
 
-### Edición
-Editor de texto plano con barra de ayudas y atajos. Vista dividida con scroll
-sincronizado. Listas automáticas, indentado, pegar URL sobre selección. Pegar
-imagen del portapapeles. Guardado atómico preservando codificación y fin de
-línea.
+### Fuente
 
-**Sin autoguardado por defecto.** Las modificaciones no tocan el original hasta
-que guardás. La recuperación ante cierre inesperado usa un archivo temporal
-aparte. Se puede activar el autoguardado desde configuración avanzada.
+Edición Markdown directa con ayudas discretas. No intenta ocultar la sintaxis ni
+reescribirla automáticamente.
 
-### Ventanas y pestañas
-Pestañas y ventanas al estilo navegador, con arrastre entre ellas. Dividir a la
-derecha y abajo, abriendo una pestaña **nueva** con la opción de crear archivo,
-abrir archivo o cerrar, no un duplicado. Menú contextual por zona. Siempre
-encima. Pantalla completa.
+### Dividida
 
-### Workspace
-Abrir una carpeta como espacio de trabajo, con árbol lateral. Recientes y
-favoritos persistentes. Búsqueda en toda la carpeta. Sesión restaurada.
+Fuente y resultado visibles a la vez, con posición sincronizada cuando el modelo
+documental lo permita de forma correcta.
 
-### Segundos cerebros
-Wikilinks, backlinks, callouts, `==resaltado==`, frontmatter. Repos clonados con
-enlaces relativos y README automático. Ver `connectivity.md`.
+### Edición en vivo
 
-### Estudio
-Resaltado persistente desde modo lectura. Repaso espaciado en su forma simple.
-Pomodoro. Exportar a PDF directo.
+Objetivo posterior y de mayor complejidad. No bloquea el editor básico ni la
+vista dividida.
 
-### Seguridad
-Las cuatro propiedades de la v1, ahora por construcción. Ver `security.md`.
+La aplicación recuerda localmente el último modo usado para cada archivo. No
+escribe preferencias dentro del documento.
 
-## Anotaciones: el formato
+## Edición y fidelidad
 
-El sidecar es un archivo junto a la nota, con nombre `nota.md.anot`. Guarda:
+El usuario puede modificar el documento sin ser experto en sintaxis. Las ayudas
+deben producir Markdown comprensible para Obsidian, GitHub, editores y modelos de
+IA.
 
-- Resaltados: rango de caracteres, color, y el texto resaltado como respaldo.
-- Estado de repaso: qué se marcó, cuándo se vio, cuándo toca de nuevo.
+Reglas:
 
-**Por qué guarda el texto además del rango:** si la nota se edita por fuera, el
-rango deja de servir. Con el texto se puede reubicar el resaltado; si no se
-encuentra, se avisa en vez de perderlo en silencio.
+- preservar contenido no editado;
+- conservar sintaxis desconocida en la medida técnicamente posible;
+- no reformatear el archivo completo al guardar;
+- no normalizar EOL, BOM o espacios silenciosamente;
+- guardar de forma atómica;
+- detectar cambios externos;
+- hacer visible todo riesgo de pérdida.
 
-Es texto plano, tipado y simple, sin rutas adentro. Se trata como entrada no
-confiable igual que el `.md`.
+## Estudio
 
-## Fuera del alcance de la v2.0
+Visor MD aprovecha el propio documento antes de crear sistemas paralelos.
 
-| Función | Por qué |
-| --- | --- |
-| Edición en vivo | El modo más difícil; a medias es peor que nada |
-| Mermaid nativo | El ítem más caro del proyecto |
-| KaTeX nativo | Igual de pesado; iría como plugin descargable |
-| Corrector ortográfico | 2 MB en disco y ~4,5 MB de RAM por idioma. Componente aparte |
-| IA local | Componente opt-in aparte |
-| Grafo de notas | Más bonito que útil |
-| Crear referencias de bloque | Cambia el modelo de datos |
-| Colaboración en vivo | Rompe la política de red |
-| Plugins de terceros | Multiplica la superficie de confianza |
-| macOS publicado | Se compila y prueba, pero no se publicita todavía |
+Funciones buscadas:
 
-## Renombrar un encabezado y sus enlaces
+- resaltado portable;
+- preguntas y respuestas;
+- contenido ocultable para practicar memoria;
+- estados entendido, dudoso o pendiente;
+- resúmenes;
+- listas de conceptos;
+- relaciones entre documentos;
+- exportación a otras herramientas.
 
-Pediste revisar si choca con Obsidian. **Sí choca, parcialmente**, y por eso se
-pospone: Obsidian tiene su propia lógica de actualización de enlaces al
-renombrar, y dos herramientas reescribiendo los mismos archivos con criterios
-distintos es una receta para corromper una bóveda.
+Usar sintaxis compatible con Obsidian cuando exista. Los datos que no encajen en
+Markdown pueden vivir en sidecars documentados. No crear sintaxis exclusiva de
+Visor MD.
 
-**Decisión: fuera de la v2.0.** Si entra después, será con confirmación
-explícita y mostrando qué archivos va a tocar antes de tocarlos.
+## Trabajo con IA
 
-## Comparación de posición
+Visor MD no incorpora un modelo de IA.
 
-| | Tinta | ThisIs-Dev | Obsidian | **Visor MD v2** |
-| --- | --- | --- | --- | --- |
-| Nativo y liviano | Sí (1,9 MB) | No (web) | No (Electron) | **Sí (<7 MB)** |
-| Seguridad declarada | No documentada | Parcial | Buena | **Por construcción** |
-| Workspace | Sí | Sí | Sí | **Sí** |
-| Wikilinks | No | No | Es el creador | **Sí, sin ser Obsidian** |
-| Herramientas de estudio | No | No | Vía plugins | **Integradas** |
-| Mermaid nativo | Sí | Vía servicios externos | Plugin | **No en 2.0** |
-| Predeterminado del sistema | Sí | No | No | **Sí** |
-| Linux | No | Vía web | Sí | **Sí** |
+Ayudas previstas:
 
-La casilla donde la v2 está sola: **liviano + seguro por construcción + entiende
-Obsidian + sirve para estudiar**.
+- copiar el Markdown original de un bloque;
+- dividir documentos largos en fragmentos;
+- comparar versiones;
+- generar archivos listos para adjuntar;
+- preparar copias para Discord, correo u otras plataformas;
+- estimar tokens solo si el coste es insignificante.
+
+El producto optimiza el formato y el flujo, no reemplaza a la herramienta de IA.
+
+## Obsidian y segundo cerebro
+
+Visor MD es un buen ciudadano dentro de bóvedas existentes.
+
+Esencial:
+
+- wikilinks;
+- backlinks;
+- callouts;
+- búsqueda de carpeta;
+- índice;
+- navegación rápida;
+- apertura sin migración ni cambios inesperados.
+
+Deseable:
+
+- etiquetas;
+- frontmatter;
+- adjuntos;
+- referencias a encabezados o bloques;
+- grafo visual.
+
+No pretende reemplazar Obsidian. Convertirlo en un segundo cerebro completo
+requeriría una decisión de producto separada.
+
+## Otros archivos de texto
+
+Reconocer `.txt`, `.json`, `.yaml`, `.toml`, `.csv`, archivos de código y otros
+formatos textuales seguros. Se muestran como texto inerte y nunca se ejecutan.
+Puede existir edición básica, pero no inteligencia de IDE, compilación o
+ejecución.
+
+## Exportación
+
+Prioridades:
+
+1. PDF visualmente fiel.
+2. DOCX para universidad y trabajo.
+3. Copia preparada para Discord, correo y otras plataformas.
+
+HTML autónomo, texto plano e impresión son deseables. Los componentes pesados se
+aislarán cuando ayude a conservar el núcleo pequeño.
+
+## Seguridad percibida
+
+La seguridad es silenciosa en el uso normal. Cuando bloquea algo:
+
+- muestra un aviso discreto;
+- explica brevemente qué ocurrió;
+- ofrece detalles técnicos opcionales;
+- no responsabiliza al usuario por contenido hostil.
+
+La configuración avanzada puede ofrecer excepciones delimitadas, pero nunca
+ejecución de scripts, cambios ordenados por documentos o conexiones ocultas.
+
+## Alcance de v2.0
+
+La versión estable debe entregar:
+
+- lector Markdown profesional;
+- editor básico y vista dividida;
+- guardado fiel;
+- chrome, pestañas, búsqueda y menú contextual;
+- workspace de carpetas;
+- compatibilidad esencial con Obsidian;
+- herramientas de estudio priorizadas;
+- exportación PDF y una estrategia cerrada para DOCX;
+- instalación Windows y Linux;
+- threat model, QA, benchmarks, SBOM y documentación de release.
+
+Las funciones se entregarán mediante hitos internos utilizables. La etiqueta
+v2.0 no justifica construir todo simultáneamente.
+
+## Fuera de alcance actual
+
+- IA propia o chatbot embebido;
+- ejecución de HTML o JavaScript;
+- plugins con código arbitrario;
+- emulación completa de Obsidian;
+- IDE o compilador;
+- motores remotos de diagramas;
+- cifrado de una bóveda secreta;
+- colaboración en tiempo real.
+
+## Criterio de éxito
+
+Visor MD cumple su propósito cuando:
+
+- se convierte en la aplicación predeterminada para Markdown y texto seguro;
+- se usa habitualmente para estudiar;
+- da confianza al abrir documentos desconocidos;
+- se recomienda por su diseño;
+- otras personas lo adoptan;
+- el repositorio demuestra dirección de producto, ciberseguridad y QA reales.

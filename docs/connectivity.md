@@ -1,103 +1,141 @@
-# Conectividad con segundos cerebros
+# Conectividad y confianza
 
-La idea central: un segundo cerebro basado en Markdown **ya es una carpeta de
-archivos**. Conectarse a él no es integrarse con una API, es entender esa
-carpeta mejor que un explorador de archivos. Es la conexión más potente y a la
-vez la más barata y la más segura: sin tokens, sin red, sin superficie nueva.
+## Principio
 
-## El formato común
+Visor MD funciona offline. Abrir, leer, editar, buscar y navegar una bóveda local
+no requieren cuenta ni Internet.
 
-Casi todas las herramientas de segundo cerebro convergieron en lo mismo:
-archivos `.md` planos, en una carpeta, con enlaces entre ellos. Las diferencias
-son de dialecto, no de fondo.
+Conectividad tiene dos significados distintos:
 
-| Herramienta | Formato | Qué la distingue |
-| --- | --- | --- |
-| **Obsidian** | `.md` + `.obsidian/` | Wikilinks `[[nota]]`, callouts, `==resaltado==`, frontmatter YAML |
-| **Logseq** | `.md` en `pages/` y `journals/` | Todo es una lista anidada; cada viñeta es un bloque con identidad |
-| **Foam** | `.md` en un repo | Wikilinks sobre VS Code; es Obsidian sin la app |
-| **Dendron** | `.md` con nombres jerárquicos | La jerarquía está en el nombre: `proyecto.tema.subtema.md` |
-| **Zettlr / Joplin** | `.md` + adjuntos | Markdown estándar, sin dialecto propio |
-| **Repo de GitHub** | `.md` + `.git/` | Enlaces relativos, GFM |
+1. conexión con otras herramientas mediante archivos locales;
+2. conexión de red opcional y explícita para una acción concreta.
 
-**La conclusión práctica:** soportar bien **wikilinks + frontmatter + callouts +
-`==resaltado==` + enlaces relativos** cubre de una vez Obsidian, Foam, Dendron,
-Zettlr, Joplin y cualquier repo. No hay que integrar con cada herramienta: hay
-que hablar bien el dialecto común.
+No deben mezclarse.
 
-Logseq es el único que pide algo extra (su modelo de bloques) y por eso queda
-como soporte de segunda: sus archivos se leen perfecto como Markdown normal,
-solo que sin entender las referencias a nivel de bloque.
+## Estado normal
+
+Durante apertura y render:
+
+- no hay cliente HTTP activo;
+- no hay telemetría;
+- no hay actualización silenciosa;
+- no se descargan fuentes;
+- no se precargan enlaces;
+- las imágenes remotas quedan bloqueadas;
+- el contenido no puede solicitar red.
+
+La ausencia de red se comprueba observando sockets en tests.
+
+## Enlaces web
+
+Un clic explícito sobre `http` o `https` delega la apertura al navegador del
+sistema. Visor MD no representa la página.
+
+Antes del clic debe ser posible conocer el destino real. El hipervínculo se
+distingue en azul, tiene estados de foco y no usa texto de seguridad controlado
+por el documento.
+
+## Imágenes remotas
+
+Bloqueadas por defecto. El usuario puede autorizar una imagen o un alcance
+limitado desde configuración avanzada.
+
+La capacidad futura de descarga debe aislarse del núcleo y no enviar cookies,
+credenciales, contenido, rutas o referrer. Se aplican timeout, límites, control
+de redirects y bloqueo de destinos privados.
+
+Mostrar una imagen remota revela al servidor al menos la IP de salida. La UI debe
+explicarlo en lenguaje natural.
+
+## Archivos locales
+
+El documento principal puede abrirse desde cualquier ubicación elegida
+explícitamente, incluida UNC manual.
+
+Los recursos relativos y enlaces locales pasan por VFS. Un documento no obtiene
+permiso sobre todo el disco por haber sido abierto.
 
 ## Obsidian
 
-- **Wikilinks** `[[nota]]` y `[[nota|alias]]`: se resuelven contra el índice de
-  la bóveda, se navegan con un clic, y se marcan visualmente cuando apuntan a
-  una nota que no existe: en Obsidian eso es trabajo pendiente, no un error.
-- **Enlaces a encabezados y bloques**: `[[nota#encabezado]]`, `[[nota^bloque]]`.
-- **Embeds** `![[nota]]`: en la v2.0 como enlace destacado; el embed real es
-  incremental, con tope de profundidad y detección de ciclos.
-- **Callouts** `> [!info]`: casi idénticos a las alertas de GitHub que la v1 ya
-  renderiza. Mismo mecanismo.
-- **`==resaltado==`**: nativo de Obsidian y la base de nuestro resaltado
-  incrustado. Ver `vision.md`.
-- **Frontmatter YAML**: se oculta como en GitHub, y sus campos alimentan el
-  índice.
-- **`.obsidian/` no se toca.** Visor MD v2 es una ventana sobre la bóveda, no un
-  segundo dueño de su configuración.
+La integración usa el formato común del filesystem:
 
-## GitHub
+- `.md`;
+- carpetas;
+- wikilinks;
+- callouts;
+- frontmatter y etiquetas elegidos;
+- adjuntos locales permitidos.
 
-No un cliente de la API (eso sería red y tokens) sino entender un repositorio
-**ya clonado**:
+No requiere API, cuenta o plugin de Obsidian. Visor MD abre una bóveda existente
+sin migrarla.
 
-- GFM fiel: tablas, tareas, alertas, autolinks, como en github.com.
-- Enlaces relativos correctos, resolviendo contra la raíz del repo.
-- Detección de la raíz buscando `.git/`, para resolver rutas absolutas del repo
-  (`/docs/x.md`) igual que lo haría GitHub.
-- README renderizado automáticamente al abrir una carpeta.
+Confiar temporalmente en la bóveda permite indexar y navegar dentro de su raíz.
+No habilita scripts, red o acceso externo.
 
-**Descartado por ahora:** abrir directo desde una URL de GitHub. Introduce red y
-descarga automática de contenido no confiable, justo lo que la política evita.
+## GitHub y Git
 
-## Guardar en un servicio de sincronización
+La compatibilidad principal ocurre mediante archivos Markdown que Git puede
+versionar sin ruido.
 
-Preguntaste por guardar directamente en un drive. La respuesta es que **ya
-funciona sin que hagamos nada**: una carpeta de OneDrive, Dropbox o Google Drive
-sincronizada es, para el sistema operativo, una carpeta normal. Abrir una bóveda
-que vive ahí no requiere ninguna integración.
+Visor MD no necesita token de GitHub para leer o editar un checkout local. Abrir
+una página de GitHub usa el navegador tras clic explícito. Clonar, pull, push y
+credenciales quedan fuera del núcleo salvo una decisión futura separada.
 
-Lo que **no** vamos a hacer es hablar con la API de esos servicios: eso sí sería
-red, tokens y una superficie de ataque nueva por una comodidad menor.
+El guardado debe evitar reformatos masivos que oculten el cambio real en un diff.
 
-Lo que sí hay que cuidar, y va al roadmap como caso de prueba: un archivo que
-cambia por debajo mientras lo tenés abierto porque el cliente de sincronización
-lo bajó. La detección de cambios externos de la v1 ya cubre el caso; hay que
-probarlo específicamente contra una carpeta sincronizada de verdad.
+## Servicios de sincronización
 
-## Puerta a IA local
+OneDrive, Dropbox, Syncthing, Git u otras herramientas pueden sincronizar la
+carpeta por fuera de Visor MD. La app las ve como filesystem local.
 
-Pediste una puerta segura a IA local, sin que agregue complejidad ni vectores
-innecesarios. El diseño que cumple las dos cosas:
+Debe tolerar:
 
-- La IA corre en **su propio proceso**, sin acceso al sistema de archivos.
-- El núcleo le manda **texto** y recibe **texto**. Nada más. No hay rutas, no
-  hay comandos, no hay archivos cruzando esa frontera.
-- El componente **no tiene cliente HTTP**. No puede llamar a una API remota
-  aunque quisiera.
-- Es **opt-in y por documento**: la IA no toca una nota hasta que se lo pedís en
-  esa nota.
-- El camino más barato y el que se evalúa primero: **hablar con un Ollama que ya
-  tengas instalado**, por loopback. Cero peso agregado, cero modelo que
-  mantener, y el principio local se respeta porque Ollama corre en tu máquina.
+- archivos que cambian externamente;
+- archivos temporalmente no disponibles;
+- conflictos y copias duplicadas;
+- reemplazos de identidad;
+- latencia de rutas UNC o proveedores cloud.
 
-Con esas cinco reglas, la superficie que agrega es un socket local hablando
-texto plano con un proceso sin privilegios. Es de las integraciones más seguras
-posibles. El detalle está en `inference.md`.
+No afirmar que los datos permanecen en el equipo si el usuario eligió una carpeta
+sincronizada. Visor MD no realiza el envío, pero el proveedor puede hacerlo.
 
-## Lo que todas las conexiones comparten
+## Sidecars
 
-- **Cero red.** Todo es lectura de carpetas locales.
-- **Cero credenciales.** No hay login, no hay token.
-- **Lectura y anotación, no gestión.** Visor MD v2 no se vuelve el dueño de tu
-  bóveda ni de tu repo. Se mete adentro, con respeto, y se va.
+Los sidecars viajan junto al documento solo cuando el usuario y su herramienta de
+sincronización incluyen esos archivos. Su formato debe ser visible, documentado y
+versionable. No contienen tokens o secretos.
+
+## Componentes opcionales
+
+Exportadores o renderers futuros no heredan red automáticamente. Cada componente
+declara:
+
+- si toca disco;
+- si toca red;
+- qué datos recibe;
+- qué límites aplica;
+- cómo se cancela;
+- qué evidencia lo prueba.
+
+No hay componente de IA previsto para Visor MD.
+
+## Matriz de acciones
+
+| Acción | Red | Disco secundario | Consentimiento |
+| --- | --- | --- | --- |
+| Abrir Markdown | No | No automático | Archivo elegido |
+| Render normal | No | Solo recursos locales permitidos | Política local |
+| Abrir enlace web | Navegador externo | No | Clic |
+| Mostrar imagen remota | Componente aislado | No | Confirmación |
+| Abrir enlace local | No | VFS | Clic y política |
+| Abrir UNC principal | Posible red de filesystem | Archivo elegido | Acción manual |
+| Indexar bóveda | No | Dentro de raíz | Confianza delimitada |
+| Exportar | No por defecto | Destino elegido | Acción explícita |
+
+## Lo que nunca cambia
+
+- un documento no activa conectividad;
+- confiar en una carpeta no habilita Internet;
+- no hay telemetría oculta;
+- no se envía contenido a IA;
+- toda conexión opcional es visible, limitada y revocable.
