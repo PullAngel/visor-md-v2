@@ -34,6 +34,7 @@ UNICODES = (
 class FontJob:
     source: str
     output: str
+    source_size: int
     source_sha256: str
     output_sha256: str
 
@@ -42,24 +43,28 @@ JOBS = (
     FontJob(
         "ofl/sora/Sora[wght].ttf",
         "Sora.ttf",
+        111_400,
         "84FF7096AE3EC6C8BE47D906D1A0BA4DE7F2CE78C615275C77301964A316E16C",
         "B7A8C6B38D6FE8C7C5F885D18723FA1C74A55642CA616957A1FD04B7215ED458",
     ),
     FontJob(
         "ofl/newsreader/Newsreader[opsz,wght].ttf",
         "Newsreader.ttf",
+        451_664,
         "8A08D13F8A6C0D51BE379A60AF84F945F65369A67E509EE3C3BDCC421254D7C1",
         "569B6D439BE49457D7B6206FC882409E3AC7B63B09BDE7110E185FAEFAC15C5D",
     ),
     FontJob(
         "ofl/newsreader/Newsreader-Italic[opsz,wght].ttf",
         "Newsreader-Italic.ttf",
+        495_684,
         "796668611F80B64D5ADF182FDE3B6F29ED83B4E7CBEC7B96937E84AC01364792",
         "22EBF5B00E350863EE3810B0B2D04EADDEE8B7D020EC63810B2F538A109EA207",
     ),
     FontJob(
         "ofl/jetbrainsmono/JetBrainsMono[wght].ttf",
         "JetBrainsMono.ttf",
+        187_208,
         "48715A42EC242C21E9F02692891E147D022299A52E48D5E413E1A942193FFEDA",
         "299571DBB072C0FF6982F7A07E3DD769E3A1ED7573CD444EAC27095CB017A138",
     ),
@@ -88,7 +93,12 @@ def download(job: FontJob, destination: Path) -> None:
         headers={"User-Agent": "visor-md-font-reproducer/1"},
     )
     with urllib.request.urlopen(request, timeout=60) as response:
-        destination.write_bytes(response.read())
+        data = response.read(job.source_size + 1)
+    if len(data) != job.source_size:
+        raise RuntimeError(
+            f"tamaño de entrada inesperado para {job.source}: {len(data)}"
+        )
+    destination.write_bytes(data)
     actual = sha256(destination)
     if actual != job.source_sha256:
         raise RuntimeError(
