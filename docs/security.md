@@ -294,9 +294,10 @@ Entregables:
 - inventario de `unsafe` y código nativo;
 - proceso reproducible de fuentes.
 
-Durante la auditoría inicial no había vulnerabilidades conocidas, pero
-`ttf-parser 0.25.1` estaba marcado como no mantenido. Debe vigilarse o reemplazarse
-cuando el grafo lo permita.
+La auditoría repetida el 26 de agosto de 2026 no encontró vulnerabilidades
+conocidas. `ttf-parser 0.25.1` sigue marcado como no mantenido y entra por las
+decoraciones Wayland de `winit`, no por el camino Windows medido. El análisis y
+las alternativas están en [`dependencies.md`](dependencies.md).
 
 ## Rust y memoria
 

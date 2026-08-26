@@ -34,6 +34,7 @@ Estos documentos deben cambiar cuando cambia el producto o su implementación:
 | [`connectivity.md`](connectivity.md) | Disco, red, Obsidian, GitHub y confianza |
 | [`testing.md`](testing.md) | Estrategia de QA y definición de gates |
 | [`test-matrix.md`](test-matrix.md) | Cobertura verificable por riesgo y plataforma |
+| [`dependencies.md`](dependencies.md) | Auditorías, grafo, advisories y deuda de suministro |
 | [`glossary.md`](glossary.md) | Conceptos técnicos explicados de forma breve |
 | [`budget.md`](budget.md) | Tamaño, arranque, memoria y reproducción |
 | [`roadmap.md`](roadmap.md) | Secuencia, dependencias y criterios de salida |

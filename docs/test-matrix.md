@@ -75,7 +75,7 @@ Estados permitidos:
 
 | Propiedad | Nivel | Estado | Evidencia actual |
 | --- | --- | --- | --- |
-| Advisories conocidos | Audit | Parcial | Sin vulnerabilidades, un crate no mantenido |
+| Advisories conocidos | Audit | Verificado el 2026-08-26 | Cero vulnerabilidades, un crate no mantenido |
 | Licencias compatibles | Legal | Parcial | Falta inventario completo |
 | SBOM reproducible | Release | Pendiente | No implementado |
 | Dependencias C y `unsafe` conocidas | Audit | Parcial | Diferencias Windows y Linux |
