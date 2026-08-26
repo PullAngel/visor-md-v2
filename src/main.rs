@@ -65,7 +65,33 @@ struct ParseOutcome {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
-struct Brush(u8, u8, u8);
+struct Brush {
+    foreground: (u8, u8, u8),
+    background: Option<(u8, u8, u8)>,
+    baseline_shift: i8,
+}
+
+impl Brush {
+    fn text(foreground: (u8, u8, u8)) -> Self {
+        Self {
+            foreground,
+            background: None,
+            baseline_shift: 0,
+        }
+    }
+
+    fn semantic(
+        foreground: (u8, u8, u8),
+        background: Option<(u8, u8, u8)>,
+        baseline_shift: i8,
+    ) -> Self {
+        Self {
+            foreground,
+            background,
+            baseline_shift,
+        }
+    }
+}
 
 /// Enfasis inline acumulado sobre un tramo de texto. Se acumula al bajar por
 /// el arbol: un `**texto _asi_**` llega al fondo con `strong` y `emph` juntos.
@@ -76,6 +102,10 @@ struct Emphasis {
     code: bool,
     link: bool,
     strike: bool,
+    kbd: bool,
+    mark: bool,
+    sub: bool,
+    sup: bool,
 }
 
 impl Emphasis {
@@ -331,14 +361,161 @@ struct InlineOutput {
     targets: Vec<InlineTarget>,
 }
 
-/// Reconoce la unica forma HTML que el renderer interpreta por ahora. La
-/// comparacion es cerrada y no acepta atributos: una etiqueta aparentemente
-/// inocua con `onclick` u otra carga sigue visible como fuente inerte.
-fn is_native_break(html: &str) -> bool {
-    matches!(
-        html.trim().to_ascii_lowercase().as_str(),
-        "<br>" | "<br/>" | "<br />"
-    )
+/// La allowlist es deliberadamente pequeña. Estas etiquetas no crean un DOM,
+/// no aceptan atributos y no activan recursos: solo se traducen a estilo
+/// nativo de texto. Cualquier otra forma de HTML queda como fuente visible.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum NativeHtml {
+    Break,
+    Open(HtmlSemantic),
+    Close(HtmlSemantic),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HtmlSemantic {
+    Kbd,
+    Mark,
+    Sub,
+    Sup,
+}
+
+fn native_html(html: &str) -> Option<NativeHtml> {
+    match html.trim().to_ascii_lowercase().as_str() {
+        "<br>" | "<br/>" | "<br />" => Some(NativeHtml::Break),
+        "<kbd>" => Some(NativeHtml::Open(HtmlSemantic::Kbd)),
+        "</kbd>" => Some(NativeHtml::Close(HtmlSemantic::Kbd)),
+        "<mark>" => Some(NativeHtml::Open(HtmlSemantic::Mark)),
+        "</mark>" => Some(NativeHtml::Close(HtmlSemantic::Mark)),
+        "<sub>" => Some(NativeHtml::Open(HtmlSemantic::Sub)),
+        "</sub>" => Some(NativeHtml::Close(HtmlSemantic::Sub)),
+        "<sup>" => Some(NativeHtml::Open(HtmlSemantic::Sup)),
+        "</sup>" => Some(NativeHtml::Close(HtmlSemantic::Sup)),
+        _ => None,
+    }
+}
+
+impl HtmlSemantic {
+    fn apply(self, style: &mut Emphasis) {
+        match self {
+            Self::Kbd => style.kbd = true,
+            Self::Mark => style.mark = true,
+            Self::Sub => style.sub = true,
+            Self::Sup => style.sup = true,
+        }
+    }
+}
+
+struct HtmlScope {
+    semantic: HtmlSemantic,
+    raw_open: String,
+    source: SourceRange,
+    output: InlineOutput,
+}
+
+/// Los tags HTML no forman parte del árbol de comrak: llegan como hermanos de
+/// sus textos. Esta pequeña pila retiene solo las etiquetas permitidas hasta
+/// ver su cierre exacto. Así una apertura malformada no puede ocultarse ni
+/// cambiar el estilo del resto del documento.
+#[derive(Default)]
+struct InlineCollector {
+    output: InlineOutput,
+    scopes: Vec<HtmlScope>,
+}
+
+impl InlineCollector {
+    fn current_mut(&mut self) -> &mut InlineOutput {
+        self.scopes
+            .last_mut()
+            .map(|scope| &mut scope.output)
+            .unwrap_or(&mut self.output)
+    }
+
+    fn len(&self) -> usize {
+        self.scopes
+            .last()
+            .map(|scope| scope.output.text.len())
+            .unwrap_or(self.output.text.len())
+    }
+
+    fn literal(&mut self, text: &str, style: Emphasis, source: SourceRange) {
+        if text.is_empty() {
+            return;
+        }
+        // El texto dentro de una etiqueta pendiente conserva incluso su tramo
+        // plano: al cerrar se le aplica la semántica nativa sin volver a
+        // recorrer ni partir los offsets UTF-8.
+        let retain_plain_span = !self.scopes.is_empty();
+        let output = self.current_mut();
+        let start = output.text.len();
+        output.text.push_str(text);
+        if retain_plain_span || !style.is_plain() {
+            output.spans.push(Span {
+                start,
+                end: output.text.len(),
+                source,
+                style,
+            });
+        }
+    }
+
+    fn append_output(&mut self, mut child: InlineOutput) {
+        let offset = self.len();
+        for span in &mut child.spans {
+            span.start += offset;
+            span.end += offset;
+        }
+        for target in &mut child.targets {
+            target.start += offset;
+            target.end += offset;
+        }
+        let output = self.current_mut();
+        output.text.push_str(&child.text);
+        output.spans.extend(child.spans);
+        output.targets.extend(child.targets);
+    }
+
+    fn open(&mut self, semantic: HtmlSemantic, raw_open: String, source: SourceRange) {
+        self.scopes.push(HtmlScope {
+            semantic,
+            raw_open,
+            source,
+            output: InlineOutput::default(),
+        });
+    }
+
+    fn close(&mut self, semantic: HtmlSemantic) -> bool {
+        if !self
+            .scopes
+            .last()
+            .is_some_and(|scope| scope.semantic == semantic)
+        {
+            return false;
+        }
+        let mut scope = self
+            .scopes
+            .pop()
+            .expect("se verifico que la pila no esta vacia");
+        for span in &mut scope.output.spans {
+            semantic.apply(&mut span.style);
+        }
+        self.append_output(scope.output);
+        true
+    }
+
+    fn finish(mut self) -> InlineOutput {
+        // Una etiqueta permitida pero sin cierre no recibe semántica. Su tag
+        // de apertura vuelve a la salida como código visible, antes de su
+        // contenido, para no esconder Markdown defectuoso o hostil.
+        while let Some(scope) = self.scopes.pop() {
+            let inert = Emphasis {
+                code: true,
+                ..Emphasis::default()
+            };
+            self.literal(&scope.raw_open, inert, scope.source);
+            self.append_output(scope.output);
+        }
+        self.output
+    }
 }
 
 /// Recorre los hijos inline de un nodo acumulando texto y sus tramos con
@@ -350,7 +527,7 @@ fn inline_into<'a>(
     nest: u16,
     source_index: &SourceIndex,
     traversal: &mut TraversalState,
-    output: &mut InlineOutput,
+    output: &mut InlineCollector,
 ) {
     // Tope de anidamiento: ver MAX_NEST.
     if nest > MAX_NEST {
@@ -362,32 +539,14 @@ fn inline_into<'a>(
         // recursion con el prestamo vivo entra en panico.
         let value = child.data.borrow().value.clone();
 
-        // Marca el texto literal que produzca este nodo con el enfasis dado.
-        let literal =
-            |text: &str, style: Emphasis, source: SourceRange, output: &mut InlineOutput| {
-                if text.is_empty() {
-                    return;
-                }
-                let start = output.text.len();
-                output.text.push_str(text);
-                if !style.is_plain() {
-                    output.spans.push(Span {
-                        start,
-                        end: output.text.len(),
-                        source,
-                        style,
-                    });
-                }
-            };
-
         let child_source = source_index.range_of(child);
 
         match value {
-            NodeValue::Text(t) => literal(&t, state, child_source, output),
+            NodeValue::Text(t) => output.literal(&t, state, child_source),
             NodeValue::Code(c) => {
                 let mut s = state;
                 s.code = true;
-                literal(&c.literal, s, child_source, output);
+                output.literal(&c.literal, s, child_source);
             }
             NodeValue::Emph => {
                 let mut s = state;
@@ -407,11 +566,11 @@ fn inline_into<'a>(
             NodeValue::Link(link) => {
                 let mut s = state;
                 s.link = true;
-                let start = output.text.len();
+                let start = output.len();
                 inline_into(child, s, nest + 1, source_index, traversal, output);
-                let end = output.text.len();
+                let end = output.len();
                 if start < end {
-                    output.targets.push(InlineTarget {
+                    output.current_mut().targets.push(InlineTarget {
                         kind: InlineTargetKind::Link,
                         start,
                         end,
@@ -424,7 +583,7 @@ fn inline_into<'a>(
             // Las imagenes son del Sprint 2. Por ahora se anuncia su texto
             // alternativo en vez de desaparecer en silencio.
             NodeValue::Image(link) => {
-                let mut alt = InlineOutput::default();
+                let mut alt = InlineCollector::default();
                 inline_into(
                     child,
                     Emphasis::default(),
@@ -433,6 +592,7 @@ fn inline_into<'a>(
                     traversal,
                     &mut alt,
                 );
+                let alt = alt.finish();
                 let mut s = state;
                 s.code = true;
                 let etiqueta = if alt.text.trim().is_empty() {
@@ -440,32 +600,37 @@ fn inline_into<'a>(
                 } else {
                     format!("[imagen: {}]", alt.text.trim())
                 };
-                let start = output.text.len();
-                literal(&etiqueta, s, child_source, output);
-                output.targets.push(InlineTarget {
+                let start = output.len();
+                output.literal(&etiqueta, s, child_source);
+                let end = output.len();
+                output.current_mut().targets.push(InlineTarget {
                     kind: InlineTargetKind::Image,
                     start,
-                    end: output.text.len(),
+                    end,
                     source: child_source,
                     destination: link.url,
                     title: link.title,
                 });
             }
-            // HTML nunca se entrega a un navegador ni se interpreta. Hasta
-            // que cada elemento de la allowlist tenga un componente nativo,
-            // se hace visible como fuente inerte para que el documento no
-            // esconda contenido ni parezca distinto de lo que contiene.
             NodeValue::HtmlInline(html) => {
-                if is_native_break(&html) {
-                    output.text.push('\n');
-                } else {
-                    let mut inert = state;
-                    inert.code = true;
-                    literal(&html, inert, child_source, output);
+                match native_html(&html) {
+                    Some(NativeHtml::Break) => output.literal("\n", state, child_source),
+                    Some(NativeHtml::Open(semantic)) => output.open(semantic, html, child_source),
+                    Some(NativeHtml::Close(semantic)) if output.close(semantic) => {}
+                    Some(NativeHtml::Close(_)) | None => {
+                        // Un cierre desparejo, atributos o HTML desconocido
+                        // no se interpretan. Se ven como fuente monoespaciada.
+                        // Nunca llegan al sistema, a una red o a un DOM.
+                        let inert = Emphasis {
+                            code: true,
+                            ..state
+                        };
+                        output.literal(&html, inert, child_source);
+                    }
                 }
             }
-            NodeValue::SoftBreak => output.text.push(' '),
-            NodeValue::LineBreak => output.text.push('\n'),
+            NodeValue::SoftBreak => output.literal(" ", state, child_source),
+            NodeValue::LineBreak => output.literal("\n", state, child_source),
             _ => inline_into(child, state, nest + 1, source_index, traversal, output),
         }
     }
@@ -477,7 +642,7 @@ fn inline_of<'a>(
     source_index: &SourceIndex,
     traversal: &mut TraversalState,
 ) -> (String, Vec<Span>, Vec<InlineTarget>) {
-    let mut output = InlineOutput::default();
+    let mut output = InlineCollector::default();
     inline_into(
         node,
         Emphasis::default(),
@@ -486,6 +651,7 @@ fn inline_of<'a>(
         traversal,
         &mut output,
     );
+    let output = output.finish();
     (output.text, output.spans, output.targets)
 }
 
@@ -957,7 +1123,7 @@ fn build_layout(
     };
 
     let mut builder = layout_cx.ranged_builder(font_cx, &block.text, 1.0, true);
-    builder.push_default(StyleProperty::Brush(Brush(color.0, color.1, color.2)));
+    builder.push_default(StyleProperty::Brush(Brush::text(color)));
     builder.push_default(StyleProperty::FontFamily(FontFamily::List(
         std::borrow::Cow::Borrowed(stack),
     )));
@@ -996,15 +1162,50 @@ fn build_layout(
             // El monoespaciado se ve mas grande al mismo cuerpo: se compensa.
             builder.push(StyleProperty::FontSize(size * 0.92), range.clone());
             let c = palette.accent;
-            builder.push(StyleProperty::Brush(Brush(c.0, c.1, c.2)), range.clone());
+            builder.push(StyleProperty::Brush(Brush::text(c)), range.clone());
         }
         if span.style.link {
             let c = palette.accent;
-            builder.push(StyleProperty::Brush(Brush(c.0, c.1, c.2)), range.clone());
+            builder.push(StyleProperty::Brush(Brush::text(c)), range.clone());
             builder.push(StyleProperty::Underline(true), range.clone());
         }
         if span.style.strike {
             builder.push(StyleProperty::Strikethrough(true), range.clone());
+        }
+        if span.style.kbd {
+            builder.push(
+                StyleProperty::FontFamily(FontFamily::List(std::borrow::Cow::Borrowed(mono_stack))),
+                range.clone(),
+            );
+            builder.push(StyleProperty::FontSize(size * 0.86), range.clone());
+        }
+        if span.style.sub || span.style.sup {
+            builder.push(StyleProperty::FontSize(size * 0.72), range.clone());
+        }
+        if span.style.kbd || span.style.mark || span.style.sub || span.style.sup {
+            let foreground = if span.style.code || span.style.link {
+                palette.accent
+            } else {
+                color
+            };
+            let background = if span.style.mark {
+                Some(palette.mark)
+            } else if span.style.kbd {
+                Some(palette.kbd)
+            } else {
+                None
+            };
+            let shift = if span.style.sup {
+                -1
+            } else if span.style.sub {
+                1
+            } else {
+                0
+            };
+            builder.push(
+                StyleProperty::Brush(Brush::semantic(foreground, background, shift)),
+                range,
+            );
         }
     }
 
@@ -1033,7 +1234,7 @@ fn build_marker_layout(
     ];
 
     let mut builder = layout_cx.ranged_builder(font_cx, marker, 1.0, true);
-    builder.push_default(StyleProperty::Brush(Brush(c.0, c.1, c.2)));
+    builder.push_default(StyleProperty::Brush(Brush::text(c)));
     builder.push_default(StyleProperty::FontFamily(FontFamily::List(
         std::borrow::Cow::Borrowed(stack),
     )));
@@ -1151,6 +1352,33 @@ struct CachedGlyph {
 
 type GlyphCache = HashMap<GlyphKey, Option<CachedGlyph>>;
 
+/// Fondo discreto de `mark` y `kbd`. Se pinta por run antes de texto y
+/// decoraciones, sin crear cajas interactivas ni interpretar atributos HTML.
+fn draw_run_background(
+    pixmap: &mut Pixmap,
+    run: &GlyphRun<'_, Brush>,
+    origin_x: f32,
+    origin_y: f32,
+) {
+    let brush = run.style().brush;
+    let Some(color) = brush.background else {
+        return;
+    };
+    let metrics = run.run().metrics();
+    let pad_x = 2.0;
+    let pad_y = 1.0;
+    let x = origin_x + run.offset() - pad_x;
+    let y = origin_y + run.baseline() - metrics.ascent - pad_y;
+    let width = run.advance() + pad_x * 2.0;
+    let height = metrics.ascent + metrics.descent + pad_y * 2.0;
+    let Some(rect) = Rect::from_xywh(x, y, width, height) else {
+        return;
+    };
+    let mut paint = Paint::default();
+    paint.set_color(Color::from_rgba8(color.0, color.1, color.2, 255));
+    pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+}
+
 fn draw_glyph_run(
     pixmap: &mut Pixmap,
     scale_cx: &mut ScaleContext,
@@ -1162,7 +1390,7 @@ fn draw_glyph_run(
     let mut run_x = run.offset();
     let run_y = run.baseline();
     let brush = run.style().brush;
-    let color = (brush.0, brush.1, brush.2);
+    let color = brush.foreground;
 
     let r = run.run();
     let font = r.font();
@@ -1178,7 +1406,8 @@ fn draw_glyph_run(
 
     for glyph in run.glyphs() {
         let gx = origin_x + run_x + glyph.x;
-        let gy = origin_y + run_y + glyph.y;
+        let shift = brush.baseline_shift as f32 * font_size * 0.25;
+        let gy = origin_y + run_y + glyph.y + shift;
         run_x += glyph.advance;
 
         // Fuera de la ventana no se rasteriza. Esta es la virtualizacion real:
@@ -1248,9 +1477,10 @@ fn draw_glyph_run(
 fn draw_decorations(pixmap: &mut Pixmap, run: &GlyphRun<'_, Brush>, origin_x: f32, origin_y: f32) {
     let style = run.style();
     let metrics = run.run().metrics();
+    let shift = style.brush.baseline_shift as f32 * run.run().font_size() * 0.25;
 
     let mut trazar = |offset: f32, grosor: f32, brush: Brush| {
-        let y = origin_y + run.baseline() - offset;
+        let y = origin_y + run.baseline() + shift - offset;
         let x = origin_x + run.offset();
         // Minimo de 1 px: con cuerpos chicos el grosor calculado puede
         // redondear a cero y la linea desaparece sin aviso.
@@ -1259,7 +1489,12 @@ fn draw_decorations(pixmap: &mut Pixmap, run: &GlyphRun<'_, Brush>, origin_x: f3
             return;
         };
         let mut paint = Paint::default();
-        paint.set_color(Color::from_rgba8(brush.0, brush.1, brush.2, 255));
+        paint.set_color(Color::from_rgba8(
+            brush.foreground.0,
+            brush.foreground.1,
+            brush.foreground.2,
+            255,
+        ));
         paint.anti_alias = false;
         pixmap.fill_rect(rect, &paint, Transform::identity(), None);
     };
@@ -1663,6 +1898,12 @@ impl App {
                         for line in marker.lines() {
                             for entry in line.items() {
                                 if let PositionedLayoutItem::GlyphRun(run) = entry {
+                                    draw_run_background(
+                                        pixmap,
+                                        &run,
+                                        slot.x - ancho_marca - 8.0,
+                                        top,
+                                    );
                                     draw_glyph_run(
                                         pixmap,
                                         scale_cx,
@@ -1694,6 +1935,7 @@ impl App {
             for line in layout.lines() {
                 for entry in line.items() {
                     if let PositionedLayoutItem::GlyphRun(run) = entry {
+                        draw_run_background(pixmap, &run, slot.x, top);
                         draw_decorations(pixmap, &run, slot.x, top);
                         draw_glyph_run(pixmap, scale_cx, glyphs, &run, slot.x, top);
                     }
@@ -2441,6 +2683,75 @@ Pagina 14 de 14"#;
         assert!(blocks[0].text.contains("onclick"));
         assert!(!blocks[0].text.contains('\n'));
         assert!(blocks[0].targets.is_empty());
+    }
+
+    #[test]
+    fn la_allowlist_html_se_vuelve_estilo_nativo_sin_atributos() {
+        let md = "Usa <kbd>Ctrl</kbd>, <mark>importante</mark>, H<sub>2</sub>O y x<sup>2</sup>.";
+        let block = &aplanar(md)[0];
+        for tag in [
+            "<kbd>", "</kbd>", "<mark>", "</mark>", "<sub>", "</sub>", "<sup>", "</sup>",
+        ] {
+            assert!(
+                !block.text.contains(tag),
+                "la etiqueta permitida quedo visible: {tag}"
+            );
+        }
+        assert!(enfasis_de(md, "Ctrl").kbd);
+        assert!(enfasis_de(md, "importante").mark);
+        let sub_pos = block.text.find("H2O").expect("formula visible") + 1;
+        let sup_pos = block.text.find("x2").expect("potencia visible") + 1;
+        assert!(
+            block
+                .spans
+                .iter()
+                .any(|span| span.start <= sub_pos && sub_pos < span.end && span.style.sub)
+        );
+        assert!(
+            block
+                .spans
+                .iter()
+                .any(|span| span.start <= sup_pos && sup_pos < span.end && span.style.sup)
+        );
+
+        let con_atributos = aplanar("<mark onclick=alert(1)>no seguro</mark>");
+        assert!(con_atributos[0].text.contains("onclick"));
+        assert!(con_atributos[0].targets.is_empty());
+    }
+
+    #[test]
+    fn html_permitido_sin_cierre_no_oculta_su_marca() {
+        let block = &aplanar("antes <mark>despues")[0];
+        assert_eq!(block.text, "antes <mark>despues");
+        assert!(!enfasis_de("antes <mark>despues", "despues").mark);
+    }
+
+    #[test]
+    fn semantica_html_llega_al_layout_y_al_dibujo() {
+        let block = &aplanar("<kbd>Ctrl</kbd> <mark>clave</mark> H<sub>2</sub>O x<sup>2</sup>")[0];
+        let mut font_cx = FontContext::new();
+        register_embedded_fonts(&mut font_cx);
+        let mut layout_cx = LayoutContext::new();
+        let layout = build_layout(block, &mut font_cx, &mut layout_cx, 900.0, NIGHT);
+        let mut kbd = false;
+        let mut mark = false;
+        let mut sub = false;
+        let mut sup = false;
+        for line in layout.lines() {
+            for item in line.items() {
+                if let PositionedLayoutItem::GlyphRun(run) = item {
+                    let brush = run.style().brush;
+                    kbd |= brush.background == Some(NIGHT.kbd);
+                    mark |= brush.background == Some(NIGHT.mark);
+                    sub |= brush.baseline_shift > 0;
+                    sup |= brush.baseline_shift < 0;
+                }
+            }
+        }
+        assert!(
+            kbd && mark && sub && sup,
+            "una semantica HTML no llego al layout"
+        );
     }
 
     #[test]

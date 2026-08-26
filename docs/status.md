@@ -53,18 +53,20 @@ exacto del traspaso.
 - destinos de enlaces e imágenes preservados como datos;
 - semántica de tablas y lenguaje de bloques de código;
 - HTML desconocido visible e inerte;
+- allowlist HTML nativa y sin atributos: `br`, `kbd`, `mark`, `sub` y `sup`;
 - búsqueda binaria del tramo visible;
 - scroll limitado por el viewport real;
 - fallos de inicialización y presentación gráfica reportados sin `panic`;
-- 40 pruebas unitarias y adversariales.
+- 43 pruebas unitarias y adversariales.
 
 Evidencia actual en Windows:
 
 - `cargo check`: verde;
 - `cargo fmt -- --check`: verde;
 - `cargo clippy --all-targets -- -D warnings`: verde;
-- `cargo test`: 40 de 40 pruebas verdes;
-- release de `6176a82`: 2.996.736 bytes, 2,858 MiB;
+- `cargo test`: 43 de 43 pruebas verdes;
+- último release de `6176a82`: 2.996.736 bytes, 2,858 MiB;
+- working tree con allowlist HTML: 3.000.320 bytes, 2,861 MiB;
 - primer pintado mediano sobre diez ejecuciones: 102,5 ms;
 - P95 de primer pintado: 612 ms;
 - scroll automatizado: 4,4 ms por cuadro.
@@ -76,7 +78,6 @@ causa porque todavía no se controlan caché, carga y planificación del sistema
 ## Pendientes inmediatos
 
 - verificación visual de task lists, decoraciones, temas y cursiva;
-- completar la allowlist nativa de HTML semántico; `br` ya está implementado;
 - corpus CommonMark y GFM sistemático;
 - separación incompleta de `main.rs`; fuentes y tema ya tienen módulos propios;
 - acceso directo a filesystem sin VFS;

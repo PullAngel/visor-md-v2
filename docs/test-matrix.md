@@ -17,7 +17,7 @@ Estados permitidos:
 | CommonMark aplicable | Corpus | Parcial | Pendiente | Inline, saltos, escapes, entidades, setext y bloques vacíos cubiertos; falta corpus oficial |
 | Formato inline anidado | Integración | Verificado | Pendiente | `el_enfasis_anidado_se_acumula` y tests de rangos |
 | Listas y task lists | Integración y visual | Parcial | Pendiente | Parser, layout y píxeles verificados; falta evidencia estética |
-| HTML no permitido queda inerte | Seguridad | Verificado | Pendiente | `br` exacto es nativo; corpus hostil de v1 permanece visible e inerte |
+| Allowlist HTML y HTML no permitido | Seguridad e integración | Verificado | Pendiente | `br`, `kbd`, `mark`, `sub` y `sup` sin atributos llegan a layout; HTML hostil, atributos y cierres defectuosos quedan visibles e inertes |
 | Profundidad limitada | Adversarial | Verificado | Pendiente | 5.000 citas, listas e inline anidado |
 | Fallback a fuente segura | Modelo y end to end | Parcial | Pendiente | Fuente completa y título de aviso verificados; falta QA visual |
 | Unicode y fallback | Corpus y manual | Pendiente | Pendiente | Fuentes latinas parciales |

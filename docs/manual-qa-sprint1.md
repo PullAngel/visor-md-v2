@@ -24,6 +24,8 @@ Registrar antes de comenzar:
 - El título, cuerpo y código usan familias distinguibles y legibles.
 - Negrita, cursiva, combinación anidada y tachado se distinguen sin deformar la
   altura de línea.
+- `kbd`, `mark`, subíndice y superíndice se distinguen sin desplazar ni tapar
+  el texto vecino; una etiqueta HTML con atributo se ve como fuente inerte.
 - Los caracteres no latinos y emoji no desaparecen ni se convierten en cuadros
   vacíos.
 - Las líneas largas ajustan sin cortar glifos ni salir del margen.

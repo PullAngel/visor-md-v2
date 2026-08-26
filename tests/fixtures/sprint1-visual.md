@@ -3,6 +3,10 @@
 Texto normal con **negrita**, _cursiva_, **negrita con _cursiva anidada_**,
 `código inline`, ~~tachado~~ y un [enlace visible](https://example.com).
 
+HTML semántico seguro: <kbd>Ctrl</kbd> + <kbd>S</kbd>, <mark>idea clave</mark>,
+H<sub>2</sub>O y x<sup>2</sup>. El HTML con atributos sigue siendo visible como
+fuente: <mark onclick="alert(1)">no se interpreta</mark>.
+
 ## Listas y tareas
 
 - Primer elemento con una línea suficientemente larga para comprobar que el

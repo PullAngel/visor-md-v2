@@ -59,7 +59,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Límites de anidamiento | Recuperación | Tiempo, memoria y fallback |
 | VFS central | Planificado | Único acceso secundario a disco |
 | Política de rutas | Planificado | UNC, traversal, symlinks y junctions |
-| Allowlist HTML semántica | Parcial | `br` nativo; el resto permanece inerte |
+| Allowlist HTML semántica | Recuperación | `br`, `kbd`, `mark`, `sub` y `sup` nativos sin atributos; falta corpus sistemático y QA visual |
 | Límites de imágenes | Planificado | Tipo, bytes, dimensiones y memoria |
 | Consentimiento remoto | Planificado | Aislado, explícito y revocable |
 | Confianza temporal de bóveda | Planificado | Solo amplía acceso local delimitado |

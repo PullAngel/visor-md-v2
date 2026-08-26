@@ -34,6 +34,34 @@ final de cada hito.
 | Exportación | Pendiente | PDF, DOCX y copias preparadas |
 | Distribución | Pendiente | Windows y Linux profesionales |
 
+## Plan de sprints ejecutables
+
+Los sprints ordenan entregables pequeños y verificables. No representan fechas
+ni autorizan adelantar una dependencia de seguridad para mostrar una función.
+La siguiente unidad se inicia solo sobre una base verde y con el criterio de
+salida de la anterior cubierto.
+
+| Sprint | Objetivo | Criterio verificable de cierre |
+| --- | --- | --- |
+| 1A | Semántica segura de lectura | Inline, bloques, allowlist HTML cerrada, límites y modo seguro probados desde parser hasta dibujo. |
+| 1B | Interacción de lectura | Selección, copia, navegación por teclado, foco y menú contextual inicial sin alterar archivos. |
+| 1C | Robustez del lector | Corpus CommonMark y GFM acordado, límites de recursos, resize, DPI, Unicode y rendimiento con evidencia. |
+| 2A | Frontera de archivos | VFS, tipo de texto inerte, límites de apertura y política de rutas demostrables antes de cargar recursos secundarios. |
+| 2B | Editor y guardado fiel | Fuente, vista relacionada, undo, codificaciones, guardado atómico, conflictos y round-trip sin reescrituras. |
+| 3 | Chrome de aplicación | Ventana sin borde, pestañas, comandos, menú y estados de documento sin pérdida de datos. |
+| 4 | Workspace seguro | Carpetas, índice, búsqueda y cambios externos dentro de una política de VFS y confianza limitada. |
+| 5 | Compatibilidad Obsidian | Wikilinks, backlinks, callouts y rutas relativas sin migrar ni reescribir bóvedas. |
+| 6 | Estudio y flujos para IA | Herramientas Markdown portables, fragmentación, comparación y preparación de copias sin IA embebida. |
+| 7 | Exportación aislada | PDF fiel, DOCX útil y copias de plataforma sin alterar el documento ni ampliar el núcleo innecesariamente. |
+| 8 | Distribución verificable | CI, paquetes Windows y Linux, SBOM, notices, benchmarks y matriz de release. |
+
+### Orden inmediato
+
+El trabajo activo termina 1A antes de iniciar 1B. Sus pendientes concretas son
+la validación visual de la tipografía y de la allowlist HTML, más el corpus
+sistemático que confirma que cada sintaxis anunciada llega al dibujo. No se
+inicia edición ni carga de archivos secundarios durante este cierre.
+
 ## Sprint 0: viabilidad nativa
 
 ### Objetivo

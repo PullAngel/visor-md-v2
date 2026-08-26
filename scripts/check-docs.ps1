@@ -11,6 +11,13 @@ try {
 
     foreach ($relativeDocument in $documents) {
         $document = Join-Path $repoRoot $relativeDocument
+        # Un archivo rastreado puede estar eliminado en el working tree antes
+        # de que se confirme su borrado. No hay contenido que inspeccionar;
+        # los enlaces hacia ese destino siguen fallando desde los documentos
+        # que sí existen.
+        if (-not (Test-Path -LiteralPath $document)) {
+            continue
+        }
         $lineNumber = 0
         foreach ($line in [IO.File]::ReadLines($document)) {
             $lineNumber++

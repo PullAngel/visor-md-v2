@@ -16,7 +16,7 @@ compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
 | **Objetivo de trabajo** | alrededor de 7 MB |
 | **Límite deseado** | < 8 MB |
 | **Medido en el Sprint 0** | **2,14 MB** |
-| **Checkpoint de recuperación actual** | **2.996.736 bytes, 2,858 MiB** |
+| **Checkpoint de recuperación actual** | **3.000.320 bytes, 2,861 MiB** |
 
 Superar 8 MB exige medición, explicación y aprobación. El límite no se usa para
 recortar seguridad, estabilidad, accesibilidad, Unicode o funciones esenciales.
@@ -158,6 +158,24 @@ Las cinco medidas de primer pintado fueron 104, 87, 631, 103 y 99 ms. Cuatro
 quedaron dentro del presupuesto de 400 ms y una reprodujo la variación de
 creación de ventana observada antes. Todavía falta un protocolo que explique esa
 variación en Windows. No se presenta la mediana como garantía de arranque frío.
+
+### Allowlist HTML nativa
+
+Tras agregar la representación nativa cerrada de `kbd`, `mark`, `sub` y `sup`,
+además de `br`, se reconstruyó el perfil release desde el working tree. No se
+tomó como medida de arranque: este build solo verifica el impacto de tamaño.
+
+| Medida | Resultado |
+| --- | --- |
+| Binario Windows | 3.000.320 bytes, 2,861 MiB |
+| SHA-256 | `A869BBBA56E286C9B218C6CA0B290CCC4663EEF29B0A432757CD2E9C12106DEA` |
+| Variación frente a `6176a82` | +3.584 bytes |
+| Margen frente al límite deseado | 5,139 MiB |
+
+El aumento es menor que 0,2 % y procede de lógica y dibujo ya presentes, sin
+agregar dependencias, fuentes ni capacidades de red o disco. La evidencia de
+arranque anterior permanece vigente para el comportamiento no modificado; este
+cambio todavía requiere QA visual de ambos temas.
 
 ### Serie automatizada inicial
 
