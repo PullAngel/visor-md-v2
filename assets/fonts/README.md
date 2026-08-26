@@ -4,11 +4,11 @@
 
 La identidad usa Newsreader, Sora y JetBrains Mono. El commit estable contiene
 una primera generación de tres fuentes. El working tree heredado regeneró esos
-archivos y agregó Newsreader Italic, pero el pipeline exacto todavía debe
-reconstruirse y automatizarse antes de aceptar los binarios definitivos.
+archivos y agregó Newsreader Italic. La recuperación reconstruyó el proceso y
+reprodujo los cuatro binarios byte por byte.
 
-No ejecutar nuevamente un subset a mano y sobrescribir estos archivos sin
-preservar la evidencia actual.
+No ejecutar un subset a mano. Usar `scripts/subset-fonts.py`, que valida entradas
+y salidas antes de permitir un reemplazo explícito.
 
 ## Archivos del working tree auditado
 
@@ -21,14 +21,14 @@ preservar la evidencia actual.
 
 Total local: 694.332 bytes.
 
-Los hashes documentan la evidencia heredada. No certifican todavía que el
-pipeline sea reproducible o que estos sean los archivos finales.
+Los cuatro hashes fueron reproducidos con el script versionado.
 
-## Procedencia reconstruida
+## Procedencia verificada
 
-- Google Fonts como fuente de descarga.
+- Google Fonts, commit
+  `6a003b5eb672dc8bf5bff5937cf5863f8b175445`.
 - Familias bajo SIL Open Font License 1.1.
-- Subset realizado con fonttools.
+- Subset realizado con fonttools 4.63.0.
 - Cobertura latina y puntuación general.
 - Fuentes variables conservando `fvar`.
 - Primera generación sin `STAT`.
@@ -53,32 +53,28 @@ debe usar fallback del sistema. El objetivo no es incluir CJK completo dentro de
 ## Licencias
 
 SIL OFL permite embeber, modificar y redistribuir las fuentes bajo sus
-condiciones. Antes de cerrar la recuperación deben versionarse notices o copias
-de licencia suficientes para la distribución y la SBOM.
+condiciones. Los avisos de copyright y el texto completo que acompaña a los
+subconjuntos están en [`LICENSE.txt`](LICENSE.txt).
 
-No afirmar que una licencia guardada solo en una carpeta local `raw/` acompaña al
-producto. La evidencia necesaria debe existir en el repositorio o en el paquete
-de release.
+## Pipeline reproducible
 
-## Pipeline requerido
+[`../../scripts/subset-fonts.py`](../../scripts/subset-fonts.py):
 
-La recuperación debe producir un script versionado que:
+- fija commit y hashes de las fuentes completas;
+- exige una versión conocida de fonttools;
+- conserva las features, nombres, `STAT` y ejes variables necesarios;
+- verifica los hashes de salida y los archivos versionados;
+- trabaja en un directorio temporal de forma predeterminada;
+- solo reemplaza artefactos mediante `--write` explícito.
 
-1. fije URLs o commits de origen;
-2. verifique hashes de las fuentes completas;
-3. registre versión de fonttools;
-4. aplique una lista Unicode revisable;
-5. conserve features de layout necesarias;
-6. conserve IDs de nombre usados por fontique;
-7. conserve `STAT` y ejes variables necesarios;
-8. genere regular e italic correctos;
-9. produzca hashes y tamaños de salida;
-10. compruebe licencia y notices;
-11. ejecute una prueba de registro y selección de estilo;
-12. compruebe fallback para glifos no embebidos.
+Verificación sin modificar el repositorio:
 
-El script debe fallar si cambia inesperadamente una tabla, familia interna,
-estilo, hash de entrada o cobertura.
+```powershell
+python scripts/subset-fonts.py
+```
+
+La reproducción descarga entradas de build. La aplicación final no las descarga
+ni realiza conexiones para cargar tipografía.
 
 ## Casillas y símbolos
 
@@ -97,3 +93,6 @@ simple antes de ampliar cobertura sin medir.
 - notices acompañan el producto;
 - otra máquina puede reproducir archivos con los mismos hashes;
 - tamaño y tiempo de registro quedan medidos.
+
+La reproducción de hashes y los notices están cerrados. La selección visual,
+fallback y cobertura completa siguen en la lista de QA del Sprint 1.
