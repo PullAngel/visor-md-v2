@@ -149,13 +149,13 @@ correctas.
 
 ## Riesgos abiertos durante la recuperación
 
-- source local no compilable;
-- límites recursivos parciales;
 - VFS no implementado;
-- modelo sin rangos completos;
+- límite absoluto de archivo y cancelación todavía no implementados;
+- round-trip y rangos finos todavía no demostrados para toda sintaxis;
+- modo seguro sin validación visual end to end;
 - red no verificada mediante monitor;
 - renderer sin accesibilidad demostrada;
-- proceso de fuentes no reproducible;
+- parsing todavía síncrono en el camino de apertura;
 - dependencia transitiva no mantenida;
 - Linux sin evidencia equivalente a Windows.
 

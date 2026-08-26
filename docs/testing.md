@@ -110,7 +110,7 @@ Base mínima:
 
 ```powershell
 cargo fmt --check
-cargo clippy --all-targets --all-features
+cargo clippy --all-targets -- -D warnings
 cargo test
 cargo build --release
 ```
@@ -148,3 +148,17 @@ arreglo y pase después.
 
 Los tests antiguos se recompilan. Un ejecutable anterior no demuestra el estado
 del working tree actual.
+
+## Checkpoint de recuperación
+
+El 25 de agosto de 2026 el working tree de recuperación alcanzó:
+
+- 27 pruebas unitarias y adversariales verdes en Windows MSVC;
+- formato verde;
+- `clippy` sin advertencias permitidas;
+- build release verde;
+- fixture manual [`../tests/fixtures/sprint1-visual.md`](../tests/fixtures/sprint1-visual.md).
+
+La fixture no cuenta como prueba aprobada hasta registrar una inspección visual.
+Sirve para repetir siempre el mismo documento con temas, énfasis, listas, tareas,
+citas, tabla, código, HTML inerte, emoji y fallback Unicode.

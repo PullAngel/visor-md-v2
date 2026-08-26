@@ -52,7 +52,8 @@ scroll sin WebView.
 
 ### Deuda que no se oculta
 
-- reproducibilidad incompleta;
+- reproducibilidad tipográfica incompleta en aquel checkpoint, cerrada durante
+  la recuperación;
 - Linux no medido con la misma profundidad;
 - auditoría de `unsafe` y C parcial;
 - fuente y toolchain no fijados completamente;

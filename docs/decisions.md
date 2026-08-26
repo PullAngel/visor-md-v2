@@ -502,3 +502,44 @@ status y documentación de release forman parte de la definición de terminado.
 **Por qué.** Una afirmación de seguridad o rendimiento sin evidencia reproducible
 es una intención. Mantener los artefactos junto al código convierte criterios en
 controles revisables.
+
+## ADR-29: Un límite defensivo degrada el documento completo
+
+**Contexto.** El recorrido recursivo necesita topes contra citas, listas e inline
+patológicos. Cortar una rama evita el stack overflow, pero produce una vista
+parcial que puede ocultar contenido y luego guardarse como si fuera completa.
+
+**Decisión.** Si el render enriquecido supera profundidad o cantidad de bloques,
+se descarta todo el modelo derivado y se muestra la fuente completa como texto
+inerte. El estado se comunica como modo seguro. Solo se rechaza el archivo si ni
+esa representación cabe dentro de límites absolutos.
+
+**Por qué.** En seguridad, fallar de forma cerrada no significa perder datos en
+silencio. El fallback conserva verdad, disponibilidad y una ruta de lectura sin
+interpretar contenido hostil.
+
+## ADR-30: HTML desconocido es visible e inerte
+
+**Contexto.** El prototipo no ejecutaba HTML, pero nodos inline y de bloque sin
+hijos podían desaparecer durante el aplanado. Un documento que oculta parte de
+su fuente rompe la confianza aunque no ejecute scripts.
+
+**Decisión.** HTML no reconocido se representa literalmente con estilo de código
+y nunca crea destinos activos, recursos, DOM o eventos. La allowlist aprobada de
+`br`, `kbd`, `mark`, `sub` y `sup` se implementará como semántica nativa cerrada.
+
+**Por qué.** El usuario ve lo que el archivo contiene y puede copiarlo o editarlo
+sin exponer la aplicación a una superficie de navegador.
+
+## ADR-31: El scroll consulta solo el intervalo visible
+
+**Contexto.** La virtualización evitaba maquetar bloques lejanos, pero cada cuadro
+recorría todos los slots para descubrir cuáles eran visibles y buscaba índices en
+un vector. El coste seguía creciendo con el documento completo.
+
+**Decisión.** Mantener slots ordenados y obtener inicio y fin visibles mediante
+búsqueda binaria. Podar y dibujar solo ese rango. Calcular además el scroll máximo
+con el alto real del viewport, no con una constante.
+
+**Por qué.** El trabajo por cuadro queda principalmente ligado al contenido en
+pantalla y el resize no permite desplazarse hacia una zona vacía inexistente.

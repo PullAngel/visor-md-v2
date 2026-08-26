@@ -2,7 +2,7 @@
 
 Este documento conserva las mediciones históricas de Sprint 0 y define cómo se
 medirán las siguientes etapas. Los números de Sprint 0 describen el commit y el
-corpus medidos, no el working tree incompleto actual.
+corpus medidos. El checkpoint de recuperación se identifica por separado.
 
 Equipo de medición: Windows 10 Pro, toolchain MSVC, `rustc` 1.98.0. Binario
 compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
@@ -16,6 +16,7 @@ compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
 | **Objetivo de trabajo** | alrededor de 7 MB |
 | **Límite deseado** | < 8 MB |
 | **Medido en el Sprint 0** | **2,14 MB** |
+| **Checkpoint de recuperación** | **2.995.712 bytes, 2,86 MiB** |
 
 Superar 8 MB exige medición, explicación y aprobación. El límite no se usa para
 recortar seguridad, estabilidad, accesibilidad, Unicode o funciones esenciales.
@@ -114,6 +115,26 @@ versión usaba **393 MB** porque mantenía vivos los 43 mil layouts de parley.
 Guardar solo la posición y rehacer el layout de lo visible bajó a 120 MB. Lo
 que queda es el árbol de comrak más el texto de los bloques, no el maquetado.
 
+## Checkpoint de recuperación del 26 de agosto de 2026
+
+Estas cifras pertenecen al commit recuperado `a54c9d6`. Se midió el ejecutable
+directamente después de compilar release, para no confundir LTO con tiempo de
+apertura.
+
+| Medida | Resultado |
+| --- | --- |
+| Binario Windows | 2.995.712 bytes, 2,86 MiB |
+| SHA-256 | `8E63A6843BED47DF1DD12F94630C2D9E307E5209A32DFE85834FD9AE122CF0B2` |
+| Documento | `docs/architecture.md`, 10,4 KB, 207 bloques |
+| Parseo | 1 ms |
+| Primer pintado, ejecución cálida | 110 ms |
+| Primeras ejecuciones atípicas observadas | 388 ms y 965 ms |
+| Scroll automatizado, 240 cuadros | 4,9 ms, 203 fps equivalentes |
+
+La variación es evidencia, no todavía una conclusión sobre arranque frío. El
+protocolo futuro debe realizar varias ejecuciones, registrar percentiles y
+declarar estado de caché, equipo y carga del sistema.
+
 ---
 
 ## Presupuesto de tamaño: estimado contra medido
@@ -140,8 +161,8 @@ exportación o todas las dependencias multiplataforma. No se usa como promesa.
 **Las fuentes iniciales, medidas.** Las primeras tres familias recortadas sumaron
 409,8 KB y costaron cerca de 1 ms de registro. El working tree posterior agregó
 Newsreader Italic y regeneró los subconjuntos conservando `STAT`; los cuatro
-archivos locales suman aproximadamente 694 KB. El proceso nuevo todavía debe
-automatizarse antes de publicar una cifra definitiva. Ver
+archivos locales suman 694.332 bytes. La recuperación automatizó el proceso y
+reprodujo los cuatro hashes con fonttools 4.63.0. Ver
 `assets/fonts/README.md`.
 
 Las palancas siguen disponibles pero ya no hacen falta con urgencia:
@@ -154,7 +175,8 @@ Las palancas siguen disponibles pero ya no hacen falta con urgencia:
 4. **Bajar a dos familias tipográficas.** Con el margen actual, esta palanca
    probablemente no se necesite: la identidad tipográfica se puede pagar.
 
-Ninguna fuente del sistema se embebe: solo los tres subconjuntos propios.
+Ninguna fuente del sistema se embebe: solo cuatro archivos de tres familias
+propias, incluida Newsreader Italic.
 
 ## Presupuesto de arranque
 
@@ -166,7 +188,7 @@ Ninguna fuente del sistema se embebe: solo los tres subconjuntos propios.
 
 El único que no cumple es el documento gigante, y se sabe exactamente por qué:
 522 ms de parseo sincrónico. La palanca 3 de abajo lo resuelve y está en el
-Sprint 2.
+cierre de Sprint 1.
 
 **Las cuatro palancas de arranque:**
 
@@ -193,22 +215,20 @@ No cuentan contra el presupuesto del núcleo porque se descargan aparte:
 ## Cómo reproducir estas mediciones
 
 El prototipo trae un modo de medición que no depende de que nadie mire la
-pantalla ni mueva el mouse. El source heredado debe volver a compilar antes de
-repetirlos:
+pantalla ni mueva el mouse. Compilar una vez y ejecutar el binario evita sumar
+el tiempo de compilación a la apertura:
 
-```bash
-# Recorre el documento entero, 240 cuadros, y reporta el promedio
-cargo run --release -- documento.md --bench
+```powershell
+cargo build --release
+& ".\target\release\visor-md.exe" documento.md --bench=240
 ```
 
-```bash
-# Pinta un solo cuadro y sale: sirve para cronometrar el arranque real
-cargo run --release -- documento.md --bench=0
+```powershell
+& ".\target\release\visor-md.exe" documento.md --bench=0
 ```
 
-```bash
-# Fuerza la medida exacta en vez de la estimada, para comparar (ADR-16)
-cargo run --release -- documento.md --bench=0 --exacto
+```powershell
+& ".\target\release\visor-md.exe" documento.md --bench=0 --exacto
 ```
 
 Las mediciones se acumulan en memoria y se imprimen recién al salir. No es un

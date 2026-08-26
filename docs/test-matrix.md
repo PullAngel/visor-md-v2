@@ -1,7 +1,7 @@
 # Matriz de pruebas
 
-Estado de esta matriz: diseño inicial. Se completará con identificadores de tests
-y evidencia durante la recuperación.
+Estado de esta matriz: recuperación activa. Los nombres de tests indicados viven
+en `src/main.rs` hasta que el proyecto se divida en módulos.
 
 Estados permitidos:
 
@@ -15,11 +15,11 @@ Estados permitidos:
 | Propiedad | Nivel | Windows | Linux | Evidencia actual |
 | --- | --- | --- | --- | --- |
 | CommonMark aplicable | Corpus | Parcial | Pendiente | Tests unitarios parciales |
-| Formato inline anidado | Integración | Parcial | Pendiente | Working tree heredado |
-| Listas y task lists | Integración y visual | Parcial | Pendiente | Source no compilable |
-| HTML no permitido queda inerte | Seguridad | Pendiente | Pendiente | Política documentada |
-| Profundidad limitada | Adversarial | Parcial | Pendiente | Caso de 5.000 citas |
-| Fallback a fuente segura | End to end | Pendiente | Pendiente | No implementado |
+| Formato inline anidado | Integración | Verificado | Pendiente | `el_enfasis_anidado_se_acumula` y tests de rangos |
+| Listas y task lists | Integración y visual | Parcial | Pendiente | Parser y marcador verificados; falta evidencia visual |
+| HTML no permitido queda inerte | Seguridad | Verificado | Pendiente | `el_html_desconocido_permanece_visible_e_inerte` |
+| Profundidad limitada | Adversarial | Verificado | Pendiente | 5.000 citas, listas e inline anidado |
+| Fallback a fuente segura | Modelo y end to end | Parcial | Pendiente | Fuente completa verificada; aviso end to end pendiente |
 | Unicode y fallback | Corpus y manual | Pendiente | Pendiente | Fuentes latinas parciales |
 
 ## Archivos y edición
@@ -31,7 +31,8 @@ Estados permitidos:
 | Traversal y escape bloqueados | Seguridad | Pendiente | Pendiente | VFS no implementado |
 | Symlinks y junctions | Seguridad | Pendiente | Pendiente | VFS no implementado |
 | Guardado atómico | Integración | Bloqueado | Bloqueado | Editor pendiente |
-| Sintaxis desconocida preservada | Property | Bloqueado | Bloqueado | Modelo pendiente |
+| Rangos de fuente preservados | Integración | Parcial | Pendiente | Bloques, tramos y destinos verificados |
+| Sintaxis desconocida preservada | Property | Parcial | Pendiente | HTML inerte verificado; falta corpus general |
 | Cambios externos detectados | End to end | Bloqueado | Bloqueado | Editor pendiente |
 | EOL, BOM y UTF-8 | Corpus | Bloqueado | Bloqueado | Política pendiente de implementar |
 
@@ -66,9 +67,9 @@ Estados permitidos:
 | Ventana visible | Benchmark | Verificado en Sprint 0 | Pendiente | Cerca de 120 ms reportados |
 | Primer contenido normal | Benchmark | Verificado en Sprint 0 | Pendiente | `budget.md` |
 | Documento de 5 MB | Benchmark | Verificado en Sprint 0 | Pendiente | `budget.md` |
-| Scroll proporcional a visible | Benchmark | Parcial | Pendiente | Riesgo O(n) conocido |
+| Scroll proporcional a visible | Unitario y benchmark | Parcial | Pendiente | Rango visible por búsqueda binaria; 4,9 ms medidos |
 | Memoria estable | Benchmark | Parcial | Pendiente | Medición inicial |
-| Binario menor de 8 MB | Release | Verificado en Sprint 0 | Pendiente | Prototipo debajo del límite |
+| Binario menor de 8 MB | Release | Verificado | Pendiente | 2.995.712 bytes en `a54c9d6` |
 
 ## Cadena de suministro
 
@@ -78,7 +79,7 @@ Estados permitidos:
 | Licencias compatibles | Legal | Parcial | Falta inventario completo |
 | SBOM reproducible | Release | Pendiente | No implementado |
 | Dependencias C y `unsafe` conocidas | Audit | Parcial | Diferencias Windows y Linux |
-| Fuentes reproducibles | Supply chain | Parcial | Falta cerrar subset y hashes |
+| Fuentes reproducibles | Supply chain | Verificado | Script reproduce cuatro hashes y licencia versionada |
 
 ## Regla de actualización
 
