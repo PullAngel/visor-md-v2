@@ -137,7 +137,7 @@ declarar estado de caché, equipo y carga del sistema.
 
 ### HEAD actual después de estabilizar el modelo
 
-El commit `28c7887` se compiló de nuevo después de los cambios de modelo,
+El commit `92eef4f` se compiló de nuevo después de los cambios de modelo,
 límites y separación modular. La validación usó `rustc 1.98.0`
 (`x86_64-pc-windows-msvc`) y el mismo perfil release. No se reutilizó el binario
 de `a54c9d6`.
@@ -145,20 +145,19 @@ de `a54c9d6`.
 | Medida | Resultado |
 | --- | --- |
 | Binario Windows | 2.996.736 bytes, 2,858 MiB |
-| SHA-256 | `337CA566647C4FD871E202C81FA11D9FB7EE008CB455616817C1C7B1685DCC34` |
+| SHA-256 | `91D0E4B9F7BA9FEF91EC8BE462702FF18B87EA1BEB1EFB938F4D5F0E520A9B8A` |
 | Documento | `docs/architecture.md`, 11,0 KB, 214 bloques |
 | Repeticiones consecutivas | 5 |
 | Parseo | 2 a 4 ms |
-| Ventana visible, mediana | 109 ms |
-| Primer pintado, mediana | 122 ms |
-| Scroll, mediana de promedios | 4,8 ms por cuadro |
-| Máximo de primer pintado en la serie | 145 ms |
+| Ventana visible, mediana | 90 ms |
+| Primer pintado, mediana | 103 ms |
+| Scroll, mediana de promedios | 4,5 ms por cuadro |
+| Outlier de primer pintado en la serie | 631 ms |
 
-Las cinco medidas de primer pintado fueron 145, 99, 128, 122 y 97 ms. La serie
-actual quedó dentro del presupuesto de 400 ms. Las series anteriores sí tuvieron
-outliers, por lo que todavía falta un protocolo que explique la variación de
-creación de ventana en Windows. No se presenta la mediana como garantía de
-arranque frío.
+Las cinco medidas de primer pintado fueron 104, 87, 631, 103 y 99 ms. Cuatro
+quedaron dentro del presupuesto de 400 ms y una reprodujo la variación de
+creación de ventana observada antes. Todavía falta un protocolo que explique esa
+variación en Windows. No se presenta la mediana como garantía de arranque frío.
 
 ---
 

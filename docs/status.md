@@ -64,13 +64,13 @@ Evidencia actual en Windows:
 - `cargo fmt -- --check`: verde;
 - `cargo clippy --all-targets -- -D warnings`: verde;
 - `cargo test`: 38 de 38 pruebas verdes;
-- release de `28c7887`: 2.996.736 bytes, 2,858 MiB;
-- primer pintado mediano sobre cinco ejecuciones: 122 ms;
-- scroll automatizado mediano: 4,8 ms por cuadro.
+- release de `92eef4f`: 2.996.736 bytes, 2,858 MiB;
+- primer pintado mediano sobre cinco ejecuciones: 103 ms;
+- scroll automatizado mediano: 4,5 ms por cuadro.
 
-En series anteriores se observaron ejecuciones de 388, 587 y 965 ms. Se
-conservan como outliers sin atribuirles causa porque todavía no existe un
-protocolo estadístico que controle caché, carga y planificación del sistema.
+Se observó una ejecución actual de 631 ms y ejecuciones anteriores de 388, 587 y
+965 ms. Se conservan como outliers sin atribuirles causa porque todavía no existe
+un protocolo estadístico que controle caché, carga y planificación del sistema.
 
 ## Pendientes inmediatos
 
