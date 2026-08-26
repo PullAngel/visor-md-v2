@@ -14,7 +14,7 @@ Estados permitidos:
 
 | Propiedad | Nivel | Windows | Linux | Evidencia actual |
 | --- | --- | --- | --- | --- |
-| CommonMark aplicable | Corpus | Parcial | Pendiente | Tests unitarios parciales |
+| CommonMark aplicable | Corpus | Parcial | Pendiente | Inline, saltos y bloques vacíos cubiertos; falta corpus oficial |
 | Formato inline anidado | Integración | Verificado | Pendiente | `el_enfasis_anidado_se_acumula` y tests de rangos |
 | Listas y task lists | Integración y visual | Parcial | Pendiente | Parser, layout y píxeles verificados; falta evidencia estética |
 | HTML no permitido queda inerte | Seguridad | Verificado | Pendiente | `el_html_desconocido_permanece_visible_e_inerte` |

@@ -187,6 +187,25 @@ struct TableCell {
     text: String,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CellAlignment {
+    None,
+    Left,
+    Center,
+    Right,
+}
+
+impl From<comrak::nodes::TableAlignment> for CellAlignment {
+    fn from(value: comrak::nodes::TableAlignment) -> Self {
+        match value {
+            comrak::nodes::TableAlignment::None => Self::None,
+            comrak::nodes::TableAlignment::Left => Self::Left,
+            comrak::nodes::TableAlignment::Center => Self::Center,
+            comrak::nodes::TableAlignment::Right => Self::Right,
+        }
+    }
+}
+
 /// Un bloque del documento ya aplanado: el arbol tipado de comrak reducido a
 /// lo que el renderizador sabe dibujar.
 #[derive(Clone, Copy, Debug)]
@@ -218,6 +237,9 @@ struct Block {
     /// Celdas originales. El texto unido con `|` es solo una representacion
     /// temporal para el renderer del prototipo.
     table_cells: Vec<TableCell>,
+    /// Alineación por columna, repetida en cada fila mientras el renderer use
+    /// bloques aplanados. El modelo definitivo la conservará en la tabla.
+    table_alignments: Vec<CellAlignment>,
     /// Profundidad semantica de cita, independiente de la sangria visual.
     quote_depth: u8,
     kind: Kind,
@@ -241,6 +263,7 @@ impl Block {
             targets,
             code_info: None,
             table_cells: Vec::new(),
+            table_alignments: Vec::new(),
             quote_depth: 0,
             kind,
             marker: None,
@@ -427,7 +450,8 @@ fn inline_into<'a>(
                 inert.code = true;
                 literal(&html, inert, child_source, output);
             }
-            NodeValue::SoftBreak | NodeValue::LineBreak => output.text.push(' '),
+            NodeValue::SoftBreak => output.text.push(' '),
+            NodeValue::LineBreak => output.text.push('\n'),
             _ => inline_into(child, state, nest + 1, source_index, traversal, output),
         }
     }
@@ -617,7 +641,8 @@ fn flatten<'a>(
                 out,
             ),
             NodeValue::CodeBlock(cb) => {
-                for line in cb.literal.lines() {
+                let empty_line = std::iter::once("").filter(|_| cb.literal.is_empty());
+                for line in empty_line.chain(cb.literal.lines()) {
                     if out.len() >= MAX_BLOCKS {
                         traversal.mark(Degradation::BlockLimit);
                         break;
@@ -646,6 +671,21 @@ fn flatten<'a>(
                         source_index.range_of(child),
                         Vec::new(),
                     ));
+                }
+            }
+            NodeValue::Table(table) => {
+                let before = out.len();
+                flatten(child, depth, nest + 1, source_index, traversal, out);
+                let alignments: Vec<_> = table
+                    .alignments
+                    .iter()
+                    .copied()
+                    .map(CellAlignment::from)
+                    .collect();
+                for block in &mut out[before..] {
+                    if matches!(block.kind, Kind::TableRow { .. }) {
+                        block.table_alignments = alignments.clone();
+                    }
                 }
             }
             NodeValue::TableRow(header) => {
@@ -763,6 +803,11 @@ fn validate_model(source: &str, blocks: &[Block]) -> Result<(), &'static str> {
             .any(|cell| !cell.source.is_valid_for(source))
         {
             return Err("rango de fuente invalido en celda");
+        }
+        if matches!(block.kind, Kind::TableRow { .. })
+            && block.table_alignments.len() != block.table_cells.len()
+        {
+            return Err("cantidad de alineaciones invalida en tabla");
         }
     }
     Ok(())
@@ -1945,6 +1990,14 @@ con dos lineas
         assert_eq!(codigo[0].text, "uno");
         assert_eq!(codigo[2].text, "tres");
     }
+
+    #[test]
+    fn el_bloque_de_codigo_vacio_no_desaparece() {
+        let blocks = aplanar("```\n```");
+        assert_eq!(blocks.len(), 1);
+        assert!(matches!(blocks[0].kind, Kind::Code));
+        assert!(blocks[0].text.is_empty());
+    }
 }
 
 // -------------------------------------------- pruebas del formato inline
@@ -1988,6 +2041,14 @@ mod pruebas_inline {
         assert!(!texto.contains('_'), "quedaron guiones bajos: {texto:?}");
         assert!(!texto.contains('`'), "quedaron backticks: {texto:?}");
         assert!(texto.contains("negrita") && texto.contains("cursiva"));
+    }
+
+    #[test]
+    fn el_salto_forzado_no_se_aplana_como_espacio() {
+        let hard = aplanar("uno  \ndos");
+        let soft = aplanar("uno\ndos");
+        assert_eq!(hard[0].text, "uno\ndos");
+        assert_eq!(soft[0].text, "uno dos");
     }
 
     #[test]
@@ -2247,6 +2308,24 @@ mod pruebas_inline {
         assert_eq!(row.table_cells.len(), 2);
         assert_eq!(row.table_cells[1].text, "dos");
         assert!(row.spans.iter().any(|span| span.style.strong));
+    }
+
+    #[test]
+    fn las_tablas_conservan_alineacion_por_columna() {
+        let blocks =
+            aplanar("| izquierda | centro | derecha |\n| :--- | :---: | ---: |\n| a | b | c |");
+        let row = blocks
+            .iter()
+            .find(|block| matches!(block.kind, Kind::TableRow { header: false }))
+            .unwrap();
+        assert_eq!(
+            row.table_alignments,
+            vec![
+                CellAlignment::Left,
+                CellAlignment::Center,
+                CellAlignment::Right
+            ]
+        );
     }
 
     #[test]
