@@ -67,6 +67,8 @@ Evidencia actual en Windows:
 - `cargo fmt -- --check`: verde;
 - `cargo clippy --all-targets -- -D warnings`: verde;
 - `cargo test`: 50 de 50 pruebas verdes;
+- `scripts/check.ps1`: verde el 26 de agosto de 2026 (formato, Clippy, pruebas,
+  SBOM, documentación y release);
 - último release de `6176a82`: 2.996.736 bytes, 2,858 MiB;
 - working tree con allowlist HTML: 3.000.320 bytes, 2,861 MiB;
 - working tree con selección por bloque: 3.009.536 bytes, 2,870 MiB;
