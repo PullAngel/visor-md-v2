@@ -64,7 +64,7 @@ Evidencia actual en Windows:
 - `cargo fmt -- --check`: verde;
 - `cargo clippy --all-targets -- -D warnings`: verde;
 - `cargo test`: 40 de 40 pruebas verdes;
-- release de `92eef4f`: 2.996.736 bytes, 2,858 MiB;
+- release de `6176a82`: 2.996.736 bytes, 2,858 MiB;
 - primer pintado mediano sobre diez ejecuciones: 102,5 ms;
 - P95 de primer pintado: 612 ms;
 - scroll automatizado: 4,4 ms por cuadro.

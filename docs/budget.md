@@ -137,7 +137,7 @@ declarar estado de caché, equipo y carga del sistema.
 
 ### HEAD actual después de estabilizar el modelo
 
-El commit `92eef4f` se compiló de nuevo después de los cambios de modelo,
+El commit `6176a82` se compiló de nuevo después de los cambios de modelo,
 límites y separación modular. La validación usó `rustc 1.98.0`
 (`x86_64-pc-windows-msvc`) y el mismo perfil release. No se reutilizó el binario
 de `a54c9d6`.
@@ -145,7 +145,7 @@ de `a54c9d6`.
 | Medida | Resultado |
 | --- | --- |
 | Binario Windows | 2.996.736 bytes, 2,858 MiB |
-| SHA-256 | `91D0E4B9F7BA9FEF91EC8BE462702FF18B87EA1BEB1EFB938F4D5F0E520A9B8A` |
+| SHA-256 | `5BE94A1980BC4A042A760EAE7626BC8404067C92CE0BD909DBA26DD377A527A1` |
 | Documento | `docs/architecture.md`, 11,0 KB, 214 bloques |
 | Repeticiones consecutivas | 5 |
 | Parseo | 2 a 4 ms |

@@ -69,7 +69,7 @@ Estados permitidos:
 | Documento de 5 MB | Benchmark | Verificado en Sprint 0 | Pendiente | `budget.md` |
 | Scroll proporcional a visible | Unitario y benchmark | Parcial | Pendiente | Rango visible por búsqueda binaria; 4,4 ms medidos |
 | Memoria estable | Benchmark | Parcial | Pendiente | Medición inicial |
-| Binario menor de 8 MB | Release | Verificado | Pendiente | 2.996.736 bytes en `92eef4f` |
+| Binario menor de 8 MB | Release | Verificado | Pendiente | 2.996.736 bytes en `6176a82` |
 
 ## Cadena de suministro
 
