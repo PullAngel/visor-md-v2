@@ -25,6 +25,9 @@ try {
     Invoke-Checked "Clippy" { cargo clippy --all-targets --all-features -- -D warnings }
     Invoke-Checked "Pruebas" { cargo test }
 
+    Write-Host "==> SBOM"
+    & "$PSScriptRoot\generate-sbom.ps1" -Check
+
     if (-not $SkipRelease) {
         Invoke-Checked "Build release" { cargo build --release }
     }

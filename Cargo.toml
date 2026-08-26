@@ -2,6 +2,7 @@
 name = "visor-md"
 version = "0.1.0"
 edition = "2024"
+license = "GPL-3.0-only"
 
 # Perfil de medicion del Sprint 0: las palancas de tamano de docs/budget.md
 # aplicadas todas juntas, para que el binario medido sea el que se distribuye.

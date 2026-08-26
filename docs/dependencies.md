@@ -65,11 +65,29 @@ fuerzan versiones transitivas sin comprobar compatibilidad.
 ## Gates pendientes
 
 - política y archivo de configuración de `cargo deny`;
-- inventario completo de licencias;
-- SBOM reproducible por target;
+- revisión de compatibilidad y notices de licencias;
+- validación independiente del SBOM;
 - inventario de `unsafe`, C y C++ por target;
 - auditoría Windows y Linux en CI;
 - criterio de caducidad para aceptaciones temporales.
 
 Cada release candidata debe repetir la auditoría contra una base RustSec actual y
 registrar commit, fecha, target y resultado.
+
+## SBOM
+
+`scripts/generate-sbom.ps1` genera `sbom.cdx.json` en formato CycloneDX 1.6 a
+partir del grafo resuelto por `cargo metadata --locked`. Incluye todos los
+paquetes de `Cargo.lock`, también los específicos de otras plataformas, y sus
+relaciones. El archivo no lleva fecha, rutas locales ni identificadores
+aleatorios, por lo que dos ejecuciones sobre el mismo lockfile producen el mismo
+contenido.
+
+```powershell
+.\scripts\generate-sbom.ps1
+```
+
+Cargo conserva dos expresiones históricas de licencia con `/`. El generador las
+normaliza a su significado SPDX con `OR`; no cambia ni selecciona una licencia.
+El SBOM permite localizar componentes y versiones, pero no reemplaza `cargo
+audit`, revisión de licencias ni análisis de código nativo.

@@ -132,6 +132,12 @@ Validación completa en Windows:
 .\scripts\check.ps1
 ```
 
+El inventario reproducible de componentes se actualiza con:
+
+```powershell
+.\scripts\generate-sbom.ps1
+```
+
 Los comandos de Cargo también pueden ejecutarse por separado. Consultar
 [`docs/status.md`](docs/status.md) antes de interpretar el alcance de una prueba
 verde: muchas funciones del producto todavía están planificadas.

@@ -76,8 +76,8 @@ Estados permitidos:
 | Propiedad | Nivel | Estado | Evidencia actual |
 | --- | --- | --- | --- |
 | Advisories conocidos | Audit | Verificado el 2026-08-26 | Cero vulnerabilidades, un crate no mantenido |
-| Licencias compatibles | Legal | Parcial | Falta inventario completo |
-| SBOM reproducible | Release | Pendiente | No implementado |
+| Licencias compatibles | Legal | Parcial | SBOM completo; falta revisión de compatibilidad y notices |
+| SBOM reproducible | Release | Parcial | Generador CycloneDX desde metadata bloqueada; falta validador independiente |
 | Dependencias C y `unsafe` conocidas | Audit | Parcial | Diferencias Windows y Linux |
 | Fuentes reproducibles | Supply chain | Verificado | Script reproduce cuatro hashes y licencia versionada |
 

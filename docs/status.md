@@ -81,7 +81,8 @@ protocolo estadístico que controle caché, carga y planificación del sistema.
 - parsing en el camino de UI;
 - virtualización y alturas todavía aproximadas;
 - cobertura y fallback tipográfico todavía sin matriz completa;
-- ausencia de CI, fuzzing, SBOM y gates multiplataforma.
+- ausencia de CI, fuzzing, validación independiente del SBOM y gates
+  multiplataforma.
 
 ## Evidencia disponible
 
