@@ -1,6 +1,6 @@
 # Roadmap
 
-Última revisión: 25 de agosto de 2026.
+Última revisión: 26 de agosto de 2026.
 
 El roadmap ordena dependencias y criterios de salida. No promete fechas. Una
 etapa solo se cierra con evidencia y el producto debe quedar en un punto útil al
@@ -22,9 +22,9 @@ final de cada hito.
 | Etapa | Estado | Resultado |
 | --- | --- | --- |
 | Sprint 0 | Cerrado con deuda documental | Prototipo nativo medido |
-| Recuperación | Activa | Working tree heredado estable |
+| Recuperación | En cierre | Código preservado y estable; falta QA visual |
 | Sprint 1 | Parcial | Lector mínimo profesional |
-| Validación base | Pendiente | Gates y evidencia reproducible |
+| Validación base | Iniciada | Gates Windows, auditoría, SBOM y benchmarks |
 | Lector completo | Pendiente | Markdown cotidiano completo |
 | Editor básico | Pendiente | Edición y guardado fiel |
 | Chrome | Pendiente | Ventana, pestañas y comandos |
@@ -89,6 +89,14 @@ establecer una base compilable que no bloquee edición futura.
 - fuentes reproducibles y licenciadas;
 - ningún cambio heredado perdido sin decisión registrada;
 - diff dividido en commits coherentes.
+
+### Estado verificable
+
+La parte automatizable de la recuperación está cerrada: compila, tiene 40 tests,
+fallback completo, modelo con rangos, fuentes reproducibles, commits separados y
+release medido. La inspección visual y tipográfica continúa pendiente. El
+contrato de round-trip debe revisarse antes del editor, no simularse mediante un
+guardado que todavía no existe.
 
 ## Etapa 2: cierre de Sprint 1
 

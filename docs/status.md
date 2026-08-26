@@ -107,3 +107,7 @@ La recuperación inicial termina cuando:
 - la selección de estilos y fallback tipográfico supera QA visual;
 - el diff puede revisarse en commits pequeños;
 - no se perdió trabajo heredado sin decisión explícita.
+
+Las comprobaciones automatizables de esa lista están cubiertas. El cierre sigue
+abierto por QA visual y por la revisión del contrato de round-trip; no por un
+working tree roto.
