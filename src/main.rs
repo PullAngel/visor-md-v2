@@ -20,7 +20,9 @@ use std::time::Instant;
 use comrak::nodes::{AstNode, NodeValue};
 use comrak::{Arena, Options, parse_document};
 use parley::layout::{Alignment, GlyphRun, Layout, PositionedLayoutItem};
-use parley::style::{FontFamily, FontFamilyName, FontWeight, GenericFamily, StyleProperty};
+use parley::style::{
+    FontFamily, FontFamilyName, FontStyle, FontWeight, GenericFamily, StyleProperty,
+};
 use parley::{AlignmentOptions, FontContext, LayoutContext, LineHeight};
 use swash::FontRef;
 use swash::scale::image::Content;
@@ -74,9 +76,60 @@ impl Palette {
 const MARGIN: f32 = 48.0;
 const MAX_MEASURE: f32 = 720.0;
 
+/// Tope duro de anidamiento al recorrer el arbol, de `docs/security.md`
+/// ("bombas de recursos"). Un `.md` con miles de citas o listas anidadas
+/// produce un arbol igual de profundo, y recorrerlo recursivamente sin tope
+/// desborda la pila: el proceso muere sin que ningun `Result` lo atrape.
+///
+/// 64 esta muy por encima de cualquier documento real y muy por debajo de lo
+/// que la pila aguanta. Pasado el tope se abandona el render enriquecido y se
+/// muestra la fuente completa como texto inerte, nunca un arbol truncado.
+const MAX_NEST: u16 = 64;
+
+/// Tope de bloques producidos por el modelo. Evita que una entrada pequena
+/// en bytes expanda estructuras sin limite durante la conversion.
+const MAX_BLOCKS: usize = 100_000;
+
+/// Tope visual de sangria. Independiente del anterior: a partir de cierta
+/// profundidad la sangria se come el ancho util y el texto queda ilegible.
+const MAX_INDENT_DEPTH: u8 = 8;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Degradation {
+    DepthLimit,
+    BlockLimit,
+}
+
+impl Degradation {
+    fn explanation(self) -> &'static str {
+        match self {
+            Self::DepthLimit => "se excedio el limite de anidamiento",
+            Self::BlockLimit => "se excedio el limite de bloques",
+        }
+    }
+}
+
+#[derive(Default)]
+struct TraversalState {
+    degradation: Option<Degradation>,
+}
+
+impl TraversalState {
+    fn mark(&mut self, reason: Degradation) {
+        if self.degradation.is_none() {
+            self.degradation = Some(reason);
+        }
+    }
+}
+
+struct ParseOutcome {
+    blocks: Vec<Block>,
+    degradation: Option<Degradation>,
+}
+
 // Tipografia "Contraste editorial" de docs/design.md: Sora para la interfaz
 // (todavia sin chrome que la use), Newsreader para el documento, JetBrains
-// Mono para el codigo. Subconjunto latino, variables, ~410 KB los tres.
+// Mono para el codigo. Cuatro archivos variables, ~694 KB en total.
 // Origen y licencia (SIL OFL) en assets/fonts/README.md.
 // Sin uso todavia: no hay chrome que dibuje texto de interfaz.
 #[allow(dead_code)]
@@ -86,14 +139,24 @@ const FONT_CODE: &str = "JetBrains Mono";
 
 const SORA_TTF: &[u8] = include_bytes!("../assets/fonts/Sora.ttf");
 const NEWSREADER_TTF: &[u8] = include_bytes!("../assets/fonts/Newsreader.ttf");
+// La italica va en archivo aparte porque Newsreader no tiene eje de
+// inclinacion: en una familia seria la cursiva es un diseno propio, no la
+// romana torcida por software. Sin este archivo un `_texto_` se veia
+// identico al resto, que fue el defecto que aparecio al probarlo.
+const NEWSREADER_ITALIC_TTF: &[u8] = include_bytes!("../assets/fonts/Newsreader-Italic.ttf");
 const JETBRAINS_MONO_TTF: &[u8] = include_bytes!("../assets/fonts/JetBrainsMono.ttf");
 
-/// Registra las tres fuentes embebidas en la coleccion. Si algo saliera mal
-/// con un archivo (no debería, se subsetean en el propio repo), la familia
+/// Registra las fuentes embebidas en la coleccion. Si algo saliera mal con un
+/// archivo (no deberia, se subsetean en el propio repo), la familia
 /// simplemente no aparece y el `FontFamily::List` cae al generico del
 /// sistema: nunca un panic por una fuente.
 fn register_embedded_fonts(font_cx: &mut FontContext) {
-    for bytes in [SORA_TTF, NEWSREADER_TTF, JETBRAINS_MONO_TTF] {
+    for bytes in [
+        SORA_TTF,
+        NEWSREADER_TTF,
+        NEWSREADER_ITALIC_TTF,
+        JETBRAINS_MONO_TTF,
+    ] {
         let blob = parley::fontique::Blob::new(std::sync::Arc::new(bytes.to_vec()));
         font_cx.collection.register_fonts(blob, None);
     }
@@ -112,21 +175,185 @@ enum Role {
     Accent,
 }
 
+/// Enfasis inline acumulado sobre un tramo de texto. Se acumula al bajar por
+/// el arbol: un `**texto _asi_**` llega al fondo con `strong` y `emph` juntos.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct Emphasis {
+    strong: bool,
+    emph: bool,
+    code: bool,
+    link: bool,
+    strike: bool,
+}
+
+impl Emphasis {
+    fn is_plain(self) -> bool {
+        self == Self::default()
+    }
+}
+
+/// Un tramo del texto de un bloque con su enfasis. Los rangos son offsets de
+/// bytes dentro de `Block::text`, que es lo que espera parley.
+#[derive(Clone, Debug)]
+struct Span {
+    start: usize,
+    end: usize,
+    /// Rango equivalente en la fuente Markdown. A diferencia de `start` y
+    /// `end`, no apunta al texto renderizado sino al archivo original.
+    source: SourceRange,
+    style: Emphasis,
+}
+
+/// Rango de bytes semiabierto dentro de la fuente original: `start..end`.
+/// Comrak entrega linea y columna; `SourceIndex` lo convierte una sola vez a
+/// offsets que luego sirven para seleccion, edicion y round-trip.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct SourceRange {
+    start: usize,
+    end: usize,
+}
+
+impl SourceRange {
+    fn is_valid_for(self, source: &str) -> bool {
+        self.start <= self.end
+            && self.end <= source.len()
+            && source.is_char_boundary(self.start)
+            && source.is_char_boundary(self.end)
+    }
+}
+
+/// Indice compacto de comienzos de linea. Las columnas de comrak son offsets
+/// UTF-8 de base uno, de modo que se pueden convertir sin recorrer el archivo
+/// por cada nodo.
+struct SourceIndex {
+    line_starts: Vec<usize>,
+    len: usize,
+}
+
+impl SourceIndex {
+    fn new(source: &str) -> Self {
+        let mut line_starts = vec![0];
+        for (i, byte) in source.bytes().enumerate() {
+            if byte == b'\n' {
+                line_starts.push(i + 1);
+            }
+        }
+        Self {
+            line_starts,
+            len: source.len(),
+        }
+    }
+
+    fn range(&self, pos: comrak::nodes::Sourcepos) -> SourceRange {
+        let start_line = self
+            .line_starts
+            .get(pos.start.line.saturating_sub(1))
+            .copied()
+            .unwrap_or(self.len);
+        let end_line = self
+            .line_starts
+            .get(pos.end.line.saturating_sub(1))
+            .copied()
+            .unwrap_or(self.len);
+        let start = start_line
+            .saturating_add(pos.start.column.saturating_sub(1))
+            .min(self.len);
+        // `end.column` apunta al ultimo byte del nodo; el rango propio usa
+        // fin exclusivo, por eso no se resta uno.
+        let end = end_line.saturating_add(pos.end.column).min(self.len);
+        SourceRange {
+            start,
+            end: end.max(start),
+        }
+    }
+
+    fn range_of(&self, node: &AstNode<'_>) -> SourceRange {
+        self.range(node.data.borrow().sourcepos)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum InlineTargetKind {
+    Link,
+    Image,
+}
+
+/// Semantica interactiva que no puede perderse al producir texto visible.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct InlineTarget {
+    kind: InlineTargetKind,
+    start: usize,
+    end: usize,
+    source: SourceRange,
+    destination: String,
+    title: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct TableCell {
+    source: SourceRange,
+    text: String,
+}
+
 /// Un bloque del documento ya aplanado: el arbol tipado de comrak reducido a
-/// lo que el Sprint 0 sabe dibujar.
+/// lo que el renderizador sabe dibujar.
 #[derive(Clone, Copy, Debug)]
 enum Kind {
     Heading(u8),
     Para,
     Item(u8),
     Code,
-    TableRow { header: bool },
+    TableRow {
+        header: bool,
+    },
     Quote,
+    /// Linea horizontal (`---`). No lleva texto.
+    Rule,
 }
 
 struct Block {
     text: String,
+    /// Tramos con enfasis. Vacio en el caso comun (texto sin formato), que es
+    /// la mayoria de las lineas de un documento real.
+    spans: Vec<Span>,
+    /// Posicion del bloque en el archivo original.
+    source: SourceRange,
+    /// Links e imagenes conservan su destino aunque el renderer actual solo
+    /// pinte el texto visible.
+    targets: Vec<InlineTarget>,
+    /// Lenguaje o info string de un bloque de codigo.
+    code_info: Option<String>,
+    /// Celdas originales. El texto unido con `|` es solo una representacion
+    /// temporal para el renderer del prototipo.
+    table_cells: Vec<TableCell>,
+    /// Profundidad semantica de cita, independiente de la sangria visual.
+    quote_depth: u8,
     kind: Kind,
+    /// Vineta, numero o casilla de un item de lista. Se dibuja en el margen,
+    /// fuera del ancho de medida del texto.
+    marker: Option<Marker>,
+}
+
+impl Block {
+    fn new(
+        text: String,
+        spans: Vec<Span>,
+        kind: Kind,
+        source: SourceRange,
+        targets: Vec<InlineTarget>,
+    ) -> Self {
+        Self {
+            text,
+            spans,
+            source,
+            targets,
+            code_info: None,
+            table_cells: Vec::new(),
+            quote_depth: 0,
+            kind,
+            marker: None,
+        }
+    }
 }
 
 impl Kind {
@@ -143,6 +370,7 @@ impl Kind {
             Kind::TableRow { header: true } => (15.0, 600.0, Role::Text, true),
             Kind::TableRow { header: false } => (15.0, 400.0, Role::Dim, true),
             Kind::Quote => (16.0, 400.0, Role::Dim, false),
+            Kind::Rule => (16.0, 400.0, Role::Dim, false),
         }
     }
 
@@ -165,14 +393,15 @@ impl Kind {
             Kind::Heading(_) => 24.0,
             Kind::Item(_) => 4.0,
             Kind::Code | Kind::TableRow { .. } => 2.0,
+            Kind::Rule => 28.0,
             _ => 16.0,
         }
     }
 
     fn indent(self) -> f32 {
         match self {
-            Kind::Item(d) => 20.0 * d as f32,
-            Kind::Quote => 16.0,
+            Kind::Item(d) => 22.0 * d.min(MAX_INDENT_DEPTH) as f32,
+            Kind::Quote => 20.0,
             _ => 0.0,
         }
     }
@@ -180,71 +409,542 @@ impl Kind {
 
 // ---------------------------------------------------------------- parseo
 
-fn inline_text<'a>(node: &'a AstNode<'a>, out: &mut String) {
+#[derive(Default)]
+struct InlineOutput {
+    text: String,
+    spans: Vec<Span>,
+    targets: Vec<InlineTarget>,
+}
+
+/// Recorre los hijos inline de un nodo acumulando texto y sus tramos con
+/// enfasis. `state` baja por el arbol, asi un `**a _b_**` sale con los dos
+/// enfasis puestos sobre `b`.
+fn inline_into<'a>(
+    node: &'a AstNode<'a>,
+    state: Emphasis,
+    nest: u16,
+    source_index: &SourceIndex,
+    traversal: &mut TraversalState,
+    output: &mut InlineOutput,
+) {
+    // Tope de anidamiento: ver MAX_NEST.
+    if nest > MAX_NEST {
+        traversal.mark(Degradation::DepthLimit);
+        return;
+    }
     for child in node.children() {
-        match &child.data.borrow().value {
-            NodeValue::Text(t) => out.push_str(t),
-            NodeValue::Code(c) => out.push_str(&c.literal),
-            NodeValue::SoftBreak | NodeValue::LineBreak => out.push(' '),
-            _ => inline_text(child, out),
+        // El prestamo se suelta antes de recurrir: comrak usa RefCell y una
+        // recursion con el prestamo vivo entra en panico.
+        let value = child.data.borrow().value.clone();
+
+        // Marca el texto literal que produzca este nodo con el enfasis dado.
+        let literal =
+            |text: &str, style: Emphasis, source: SourceRange, output: &mut InlineOutput| {
+                if text.is_empty() {
+                    return;
+                }
+                let start = output.text.len();
+                output.text.push_str(text);
+                if !style.is_plain() {
+                    output.spans.push(Span {
+                        start,
+                        end: output.text.len(),
+                        source,
+                        style,
+                    });
+                }
+            };
+
+        let child_source = source_index.range_of(child);
+
+        match value {
+            NodeValue::Text(t) => literal(&t, state, child_source, output),
+            NodeValue::Code(c) => {
+                let mut s = state;
+                s.code = true;
+                literal(&c.literal, s, child_source, output);
+            }
+            NodeValue::Emph => {
+                let mut s = state;
+                s.emph = true;
+                inline_into(child, s, nest + 1, source_index, traversal, output);
+            }
+            NodeValue::Strong => {
+                let mut s = state;
+                s.strong = true;
+                inline_into(child, s, nest + 1, source_index, traversal, output);
+            }
+            NodeValue::Strikethrough => {
+                let mut s = state;
+                s.strike = true;
+                inline_into(child, s, nest + 1, source_index, traversal, output);
+            }
+            NodeValue::Link(link) => {
+                let mut s = state;
+                s.link = true;
+                let start = output.text.len();
+                inline_into(child, s, nest + 1, source_index, traversal, output);
+                let end = output.text.len();
+                if start < end {
+                    output.targets.push(InlineTarget {
+                        kind: InlineTargetKind::Link,
+                        start,
+                        end,
+                        source: child_source,
+                        destination: link.url,
+                        title: link.title,
+                    });
+                }
+            }
+            // Las imagenes son del Sprint 2. Por ahora se anuncia su texto
+            // alternativo en vez de desaparecer en silencio.
+            NodeValue::Image(link) => {
+                let mut alt = InlineOutput::default();
+                inline_into(
+                    child,
+                    Emphasis::default(),
+                    nest + 1,
+                    source_index,
+                    traversal,
+                    &mut alt,
+                );
+                let mut s = state;
+                s.code = true;
+                let etiqueta = if alt.text.trim().is_empty() {
+                    "[imagen]".to_string()
+                } else {
+                    format!("[imagen: {}]", alt.text.trim())
+                };
+                let start = output.text.len();
+                literal(&etiqueta, s, child_source, output);
+                output.targets.push(InlineTarget {
+                    kind: InlineTargetKind::Image,
+                    start,
+                    end: output.text.len(),
+                    source: child_source,
+                    destination: link.url,
+                    title: link.title,
+                });
+            }
+            // HTML nunca se entrega a un navegador ni se interpreta. Hasta
+            // que la allowlist semantica tenga componentes nativos, se hace
+            // visible como fuente inerte para que el documento no esconda
+            // contenido ni parezca distinto de lo que realmente contiene.
+            NodeValue::HtmlInline(html) => {
+                let mut inert = state;
+                inert.code = true;
+                literal(&html, inert, child_source, output);
+            }
+            NodeValue::SoftBreak | NodeValue::LineBreak => output.text.push(' '),
+            _ => inline_into(child, state, nest + 1, source_index, traversal, output),
         }
     }
 }
 
-fn flatten<'a>(node: &'a AstNode<'a>, depth: u8, out: &mut Vec<Block>) {
+/// Texto y tramos de un nodo, empezando sin enfasis.
+fn inline_of<'a>(
+    node: &'a AstNode<'a>,
+    source_index: &SourceIndex,
+    traversal: &mut TraversalState,
+) -> (String, Vec<Span>, Vec<InlineTarget>) {
+    let mut output = InlineOutput::default();
+    inline_into(
+        node,
+        Emphasis::default(),
+        0,
+        source_index,
+        traversal,
+        &mut output,
+    );
+    (output.text, output.spans, output.targets)
+}
+
+/// Como se marca un item de lista.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Marker {
+    /// Vineta o numero, que se maqueta como texto.
+    Text(String),
+    /// Casilla de tarea, que **se dibuja**, no se escribe. Newsreader no
+    /// tiene los glifos U+2610/2611 (ninguna de las tres familias los trae),
+    /// asi que depender de un caracter dejaba la casilla invisible. Un
+    /// rectangulo y dos lineas no dependen de la cobertura de la fuente.
+    Task { done: bool },
+}
+
+/// Marcador de un item, resuelto contra la lista que lo contiene.
+fn marker_for(list: &comrak::nodes::NodeList, index: usize, task: Option<char>) -> Marker {
+    if let Some(mark) = task {
+        return Marker::Task { done: mark != ' ' };
+    }
+    match list.list_type {
+        comrak::nodes::ListType::Ordered => Marker::Text(format!("{}.", list.start + index)),
+        comrak::nodes::ListType::Bullet => Marker::Text("•".into()),
+    }
+}
+
+/// Dibuja la casilla de una tarea: cuadrado con borde y, si esta hecha,
+/// relleno con su tilde.
+fn draw_checkbox(pixmap: &mut Pixmap, x: f32, y: f32, size: f32, done: bool, palette: Palette) {
+    let borde = palette.dim;
+    let acento = palette.accent;
+    let fondo = palette.bg;
+
+    let mut paint = Paint {
+        anti_alias: true,
+        ..Default::default()
+    };
+
+    if done {
+        // Relleno de acento, con la tilde calada en el color de fondo.
+        paint.set_color(Color::from_rgba8(acento.0, acento.1, acento.2, 255));
+        if let Some(r) = Rect::from_xywh(x, y, size, size) {
+            pixmap.fill_rect(r, &paint, Transform::identity(), None);
+        }
+        let mut pb = tiny_skia::PathBuilder::new();
+        pb.move_to(x + size * 0.24, y + size * 0.52);
+        pb.line_to(x + size * 0.43, y + size * 0.71);
+        pb.line_to(x + size * 0.78, y + size * 0.29);
+        if let Some(path) = pb.finish() {
+            let mut tilde = Paint {
+                anti_alias: true,
+                ..Default::default()
+            };
+            tilde.set_color(Color::from_rgba8(fondo.0, fondo.1, fondo.2, 255));
+            let stroke = tiny_skia::Stroke {
+                width: (size * 0.14).max(1.2),
+                line_cap: tiny_skia::LineCap::Round,
+                line_join: tiny_skia::LineJoin::Round,
+                ..Default::default()
+            };
+            pixmap.stroke_path(&path, &tilde, &stroke, Transform::identity(), None);
+        }
+    } else {
+        // Solo el contorno: cuatro filetes finos, sin relleno.
+        paint.set_color(Color::from_rgba8(borde.0, borde.1, borde.2, 255));
+        let g = (size * 0.10).max(1.0);
+        for r in [
+            Rect::from_xywh(x, y, size, g),
+            Rect::from_xywh(x, y + size - g, size, g),
+            Rect::from_xywh(x, y, g, size),
+            Rect::from_xywh(x + size - g, y, g, size),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            pixmap.fill_rect(r, &paint, Transform::identity(), None);
+        }
+    }
+}
+
+fn flatten<'a>(
+    node: &'a AstNode<'a>,
+    depth: u8,
+    nest: u16,
+    source_index: &SourceIndex,
+    traversal: &mut TraversalState,
+    out: &mut Vec<Block>,
+) {
+    // Tope de anidamiento: ver MAX_NEST. Sin esto, `> `.repeat(5000) produce
+    // 5000 niveles de recursion y el proceso muere por desbordar la pila.
+    if nest > MAX_NEST {
+        traversal.mark(Degradation::DepthLimit);
+        return;
+    }
+    if out.len() >= MAX_BLOCKS {
+        traversal.mark(Degradation::BlockLimit);
+        return;
+    }
     for child in node.children() {
-        // El borrow se suelta antes de recurrir: comrak usa RefCell y una
-        // recursion con el prestamo vivo entra en panico.
+        if out.len() >= MAX_BLOCKS {
+            traversal.mark(Degradation::BlockLimit);
+            break;
+        }
         let value = child.data.borrow().value.clone();
         match value {
             NodeValue::Heading(h) => {
-                let mut text = String::new();
-                inline_text(child, &mut text);
-                push(out, text, Kind::Heading(h.level));
+                let (text, spans, targets) = inline_of(child, source_index, traversal);
+                push(
+                    out,
+                    text,
+                    spans,
+                    Kind::Heading(h.level),
+                    None,
+                    source_index.range_of(child),
+                    targets,
+                );
             }
             NodeValue::Paragraph => {
-                let mut text = String::new();
-                inline_text(child, &mut text);
+                let (text, spans, targets) = inline_of(child, source_index, traversal);
                 // Un parrafo dentro de un item de lista se dibuja como item.
                 let kind = if depth == 0 {
                     Kind::Para
                 } else {
                     Kind::Item(depth)
                 };
-                push(out, text, kind);
+                push(
+                    out,
+                    text,
+                    spans,
+                    kind,
+                    None,
+                    source_index.range_of(child),
+                    targets,
+                );
             }
-            NodeValue::Item(_) | NodeValue::TaskItem(_) => flatten(child, depth + 1, out),
+            // La lista reparte marcadores a sus items; el item solo aporta
+            // profundidad. Hacerlo aca es lo que permite numerar bien las
+            // ordenadas, porque el indice lo conoce la lista, no el item.
+            NodeValue::List(list) => {
+                for (index, item) in child.children().enumerate() {
+                    let task = match &item.data.borrow().value {
+                        NodeValue::TaskItem(t) => Some(t.symbol.unwrap_or(' ')),
+                        _ => None,
+                    };
+                    let marker = marker_for(&list, index, task);
+                    let antes = out.len();
+                    flatten(
+                        item,
+                        depth.saturating_add(1),
+                        nest + 1,
+                        source_index,
+                        traversal,
+                        out,
+                    );
+                    // El marcador va al primer bloque que produjo el item.
+                    if let Some(primero) = out.get_mut(antes) {
+                        primero.marker = Some(marker);
+                    }
+                }
+            }
+            NodeValue::Item(_) | NodeValue::TaskItem(_) => flatten(
+                child,
+                depth.saturating_add(1),
+                nest + 1,
+                source_index,
+                traversal,
+                out,
+            ),
             NodeValue::CodeBlock(cb) => {
                 for line in cb.literal.lines() {
-                    out.push(Block {
-                        text: line.to_string(),
-                        kind: Kind::Code,
-                    });
+                    if out.len() >= MAX_BLOCKS {
+                        traversal.mark(Degradation::BlockLimit);
+                        break;
+                    }
+                    let mut block = Block::new(
+                        line.to_string(),
+                        Vec::new(),
+                        Kind::Code,
+                        source_index.range_of(child),
+                        Vec::new(),
+                    );
+                    block.code_info = (!cb.info.is_empty()).then(|| cb.info.clone());
+                    out.push(block);
+                }
+            }
+            NodeValue::HtmlBlock(html) => {
+                for line in html.literal.lines() {
+                    if out.len() >= MAX_BLOCKS {
+                        traversal.mark(Degradation::BlockLimit);
+                        break;
+                    }
+                    out.push(Block::new(
+                        line.to_string(),
+                        Vec::new(),
+                        Kind::Code,
+                        source_index.range_of(child),
+                        Vec::new(),
+                    ));
                 }
             }
             NodeValue::TableRow(header) => {
+                let mut text = String::new();
+                let mut spans = Vec::new();
+                let mut targets = Vec::new();
                 let mut cells = Vec::new();
                 for cell in child.children() {
-                    let mut text = String::new();
-                    inline_text(cell, &mut text);
-                    cells.push(text);
+                    let (cell_text, mut cell_spans, mut cell_targets) =
+                        inline_of(cell, source_index, traversal);
+                    if !text.is_empty() {
+                        text.push_str("  |  ");
+                    }
+                    let offset = text.len();
+                    text.push_str(&cell_text);
+                    for span in &mut cell_spans {
+                        span.start += offset;
+                        span.end += offset;
+                    }
+                    for target in &mut cell_targets {
+                        target.start += offset;
+                        target.end += offset;
+                    }
+                    spans.extend(cell_spans);
+                    targets.extend(cell_targets);
+                    cells.push(TableCell {
+                        source: source_index.range_of(cell),
+                        text: cell_text,
+                    });
                 }
-                push(out, cells.join("  |  "), Kind::TableRow { header });
+                let mut block = Block::new(
+                    text,
+                    spans,
+                    Kind::TableRow { header },
+                    source_index.range_of(child),
+                    targets,
+                );
+                block.table_cells = cells;
+                out.push(block);
             }
             NodeValue::BlockQuote => {
-                let mut text = String::new();
-                inline_text(child, &mut text);
-                push(out, text, Kind::Quote);
+                // Se recurre para conservar la estructura interna (varios
+                // parrafos, listas dentro de la cita) en vez de aplastarla.
+                let antes = out.len();
+                flatten(child, depth, nest + 1, source_index, traversal, out);
+                for block in &mut out[antes..] {
+                    block.quote_depth = block.quote_depth.saturating_add(1);
+                    if matches!(block.kind, Kind::Para) {
+                        block.kind = Kind::Quote;
+                    }
+                }
             }
-            _ => flatten(child, depth, out),
+            NodeValue::ThematicBreak => out.push(Block::new(
+                String::new(),
+                Vec::new(),
+                Kind::Rule,
+                source_index.range_of(child),
+                Vec::new(),
+            )),
+            _ => flatten(child, depth, nest + 1, source_index, traversal, out),
         }
     }
 }
 
-fn push(out: &mut Vec<Block>, text: String, kind: Kind) {
+fn push(
+    out: &mut Vec<Block>,
+    text: String,
+    spans: Vec<Span>,
+    kind: Kind,
+    marker: Option<Marker>,
+    source: SourceRange,
+    targets: Vec<InlineTarget>,
+) {
     if !text.trim().is_empty() {
-        out.push(Block { text, kind });
+        let mut block = Block::new(text, spans, kind, source, targets);
+        block.marker = marker;
+        out.push(block);
     }
+}
+
+/// Comprueba invariantes del modelo antes de entregarlo a layout. Un rango
+/// corrupto no debe llegar hasta parley ni quedar latente para el editor.
+fn validate_model(source: &str, blocks: &[Block]) -> Result<(), &'static str> {
+    for block in blocks {
+        if !block.source.is_valid_for(source) {
+            return Err("rango de fuente invalido en bloque");
+        }
+        for span in &block.spans {
+            if span.start >= span.end
+                || span.end > block.text.len()
+                || !block.text.is_char_boundary(span.start)
+                || !block.text.is_char_boundary(span.end)
+            {
+                return Err("rango renderizado invalido en tramo inline");
+            }
+            if !span.source.is_valid_for(source) {
+                return Err("rango de fuente invalido en tramo inline");
+            }
+        }
+        for target in &block.targets {
+            if target.start >= target.end
+                || target.end > block.text.len()
+                || !block.text.is_char_boundary(target.start)
+                || !block.text.is_char_boundary(target.end)
+            {
+                return Err("rango renderizado invalido en destino inline");
+            }
+            if !target.source.is_valid_for(source) {
+                return Err("rango de fuente invalido en destino inline");
+            }
+        }
+        if block
+            .table_cells
+            .iter()
+            .any(|cell| !cell.source.is_valid_for(source))
+        {
+            return Err("rango de fuente invalido en celda");
+        }
+    }
+    Ok(())
+}
+
+fn markdown_options() -> Options<'static> {
+    let mut options = Options::default();
+    options.extension.table = true;
+    options.extension.strikethrough = true;
+    options.extension.autolink = true;
+    options.extension.tasklist = true;
+    options
+}
+
+/// Convierte la fuente a bloques inertes para el modo seguro. Se conserva una
+/// linea por bloque para que virtualizar siga siendo posible y no haya que
+/// maquetar un archivo entero solo porque el render enriquecido se degrado.
+fn safe_source_blocks(
+    source: &str,
+    source_index: &SourceIndex,
+) -> Result<Vec<Block>, &'static str> {
+    if source.is_empty() {
+        return Ok(vec![Block::new(
+            String::new(),
+            Vec::new(),
+            Kind::Code,
+            SourceRange::default(),
+            Vec::new(),
+        )]);
+    }
+
+    let mut blocks = Vec::new();
+    let mut start = 0;
+    for raw in source.split_inclusive('\n') {
+        if blocks.len() >= MAX_BLOCKS {
+            return Err("demasiadas lineas para la vista segura");
+        }
+        let end = start + raw.len();
+        let without_lf = raw.strip_suffix('\n').unwrap_or(raw);
+        let text = without_lf
+            .strip_suffix('\r')
+            .unwrap_or(without_lf)
+            .to_string();
+        let range = SourceRange { start, end };
+        debug_assert!(range.is_valid_for(source));
+        blocks.push(Block::new(text, Vec::new(), Kind::Code, range, Vec::new()));
+        start = end;
+    }
+
+    // Evita que el parametro quede puramente documental: el indice y los
+    // rangos deben coincidir también en la ultima linea.
+    debug_assert_eq!(source_index.len, source.len());
+    Ok(blocks)
+}
+
+fn parse_blocks(source: &str) -> Result<ParseOutcome, &'static str> {
+    let arena = Arena::new();
+    let options = markdown_options();
+    let root = parse_document(&arena, source, &options);
+    let source_index = SourceIndex::new(source);
+    let mut traversal = TraversalState::default();
+    let mut blocks = Vec::new();
+    flatten(root, 0, 0, &source_index, &mut traversal, &mut blocks);
+
+    let degradation = traversal.degradation;
+    if degradation.is_some() {
+        blocks = safe_source_blocks(source, &source_index)?;
+    }
+    validate_model(source, &blocks)?;
+
+    Ok(ParseOutcome {
+        blocks,
+        degradation,
+    })
 }
 
 // ---------------------------------------------------------------- maquetado
@@ -260,6 +960,19 @@ struct Slot {
     kind: Kind,
 }
 
+/// Busca el tramo visible sin recorrer todos los bloques en cada cuadro.
+/// `slots` esta ordenado por `y`, por lo que dos busquedas binarias hacen que
+/// el trabajo de scroll dependa de lo visible, no del largo del documento.
+fn visible_range(slots: &[Slot], view_top: f32, view_bottom: f32) -> std::ops::Range<usize> {
+    let start = slots.partition_point(|slot| slot.y + slot.height < view_top);
+    let end = start + slots[start..].partition_point(|slot| slot.y <= view_bottom);
+    start..end
+}
+
+fn max_scroll(doc_height: f32, viewport_height: f32) -> f32 {
+    (doc_height - viewport_height).max(0.0)
+}
+
 fn build_layout(
     block: &Block,
     font_cx: &mut FontContext,
@@ -269,9 +982,7 @@ fn build_layout(
 ) -> Layout<Brush> {
     let (size, weight, role, mono) = block.kind.style();
     let color = palette.resolve(role);
-    let advance = (width - MARGIN * 2.0 - block.kind.indent())
-        .min(MAX_MEASURE)
-        .max(80.0);
+    let advance = (width - MARGIN * 2.0 - block.kind.indent()).clamp(80.0, MAX_MEASURE);
 
     // Nombre embebido primero, generico del sistema como red de seguridad si
     // el registro fallara. Ver docs/design.md, "Contraste editorial".
@@ -298,25 +1009,111 @@ fn build_layout(
         block.kind.line_height(),
     )));
 
+    // Enfasis inline. Cada tramo aplica solo lo suyo, encima del estilo base
+    // del bloque, asi un `**negrita**` dentro de un encabezado sigue siendo
+    // del tamano del encabezado.
+    let mono_stack: &[FontFamilyName] = &[
+        FontFamilyName::Named(std::borrow::Cow::Borrowed(FONT_CODE)),
+        FontFamilyName::Generic(GenericFamily::Monospace),
+    ];
+    for span in &block.spans {
+        let range = span.start..span.end;
+        if span.style.strong {
+            // Sobre un encabezado que ya es 700, sube a 800 para que la
+            // negrita se distinga de su alrededor en vez de desaparecer.
+            let peso = if weight >= 700.0 { 800.0 } else { 700.0 };
+            builder.push(
+                StyleProperty::FontWeight(FontWeight::new(peso)),
+                range.clone(),
+            );
+        }
+        if span.style.emph {
+            builder.push(StyleProperty::FontStyle(FontStyle::Italic), range.clone());
+        }
+        if span.style.code {
+            builder.push(
+                StyleProperty::FontFamily(FontFamily::List(std::borrow::Cow::Borrowed(mono_stack))),
+                range.clone(),
+            );
+            // El monoespaciado se ve mas grande al mismo cuerpo: se compensa.
+            builder.push(StyleProperty::FontSize(size * 0.92), range.clone());
+            let c = palette.accent;
+            builder.push(StyleProperty::Brush(Brush(c.0, c.1, c.2)), range.clone());
+        }
+        if span.style.link {
+            let c = palette.accent;
+            builder.push(StyleProperty::Brush(Brush(c.0, c.1, c.2)), range.clone());
+            builder.push(StyleProperty::Underline(true), range.clone());
+        }
+        if span.style.strike {
+            builder.push(StyleProperty::Strikethrough(true), range.clone());
+        }
+    }
+
     let mut layout: Layout<Brush> = builder.build(&block.text);
     layout.break_all_lines(Some(advance));
     layout.align(Alignment::Start, AlignmentOptions::default());
     layout
 }
 
+/// Maqueta la vineta o el numero de un item, como pieza aparte del texto.
+/// Va aparte a proposito: si el marcador viviera dentro del mismo texto, la
+/// segunda linea de un item largo quedaria alineada bajo la vineta en vez de
+/// bajo el texto, que es el defecto clasico de las listas mal hechas.
+fn build_marker_layout(
+    marker: &str,
+    kind: Kind,
+    font_cx: &mut FontContext,
+    layout_cx: &mut LayoutContext<Brush>,
+    palette: Palette,
+) -> Layout<Brush> {
+    let (size, _, _, _) = kind.style();
+    let c = palette.dim;
+    let stack: &[FontFamilyName] = &[
+        FontFamilyName::Named(std::borrow::Cow::Borrowed(FONT_DOC)),
+        FontFamilyName::Generic(GenericFamily::SystemUi),
+    ];
+
+    let mut builder = layout_cx.ranged_builder(font_cx, marker, 1.0, true);
+    builder.push_default(StyleProperty::Brush(Brush(c.0, c.1, c.2)));
+    builder.push_default(StyleProperty::FontFamily(FontFamily::List(
+        std::borrow::Cow::Borrowed(stack),
+    )));
+    builder.push_default(StyleProperty::FontSize(size));
+    builder.push_default(StyleProperty::LineHeight(LineHeight::FontSizeRelative(
+        kind.line_height(),
+    )));
+
+    let mut layout: Layout<Brush> = builder.build(marker);
+    layout.break_all_lines(None);
+    layout.align(Alignment::Start, AlignmentOptions::default());
+    layout
+}
+
+/// Representacion cacheada de un marcador visible. Los marcadores de texto
+/// usan parley; las tareas conservan solo su estado y se dibujan con tiny-skia.
+enum CachedMarker {
+    Text(Box<Layout<Brush>>),
+    Task { done: bool },
+}
+
 /// Alto aproximado de un bloque **sin maquetarlo**: cuenta caracteres y
 /// estima cuantos entran por linea. No sirve para dibujar, solo para saber
 /// donde cae cada bloque en la barra de scroll.
 fn estimate_height(block: &Block, width: f32) -> f32 {
+    // La linea horizontal no tiene texto: su alto es el del filete.
+    if matches!(block.kind, Kind::Rule) {
+        return 1.0;
+    }
     let (size, _, _, mono) = block.kind.style();
-    let advance = (width - MARGIN * 2.0 - block.kind.indent())
-        .min(MAX_MEASURE)
-        .max(80.0);
+    let advance = (width - MARGIN * 2.0 - block.kind.indent()).clamp(80.0, MAX_MEASURE);
     // Ancho medio de caracter como fraccion del tamano de fuente. Aproximado
     // a proposito: el error se corrige al maquetar de verdad el bloque.
     let char_w = size * if mono { 0.60 } else { 0.50 };
     let per_line = (advance / char_w).max(1.0);
-    let lines = (block.text.chars().count() as f32 / per_line).ceil().max(1.0);
+    let lines = (block.text.chars().count() as f32 / per_line)
+        .ceil()
+        .max(1.0);
     lines * size * block.kind.line_height()
 }
 
@@ -334,7 +1131,9 @@ fn measure_all(
     let mut y = MARGIN;
 
     for block in blocks {
-        let height = if exact {
+        let height = if matches!(block.kind, Kind::Rule) {
+            1.0
+        } else if exact {
             // El color no afecta el alto: la paleta es irrelevante aca.
             build_layout(block, font_cx, layout_cx, width, NIGHT).height()
         } else {
@@ -375,7 +1174,7 @@ fn blend(px: &mut PremultipliedColorU8, color: (u8, u8, u8), alpha: u8) {
 /// Identidad de un glifo ya rasterizado. Sin posicion subpixel: parley ya
 /// entrega las posiciones alineadas a pixel (`quantize = true`), asi que una
 /// sola mascara por glifo y tamano alcanza.
-#[derive(PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct GlyphKey {
     blob: u64,
     index: u32,
@@ -437,7 +1236,7 @@ fn draw_glyph_run(
             glyph: glyph.id as u16,
         };
 
-        if !cache.contains_key(&key) {
+        if let std::collections::hash_map::Entry::Vacant(vacant) = cache.entry(key) {
             if scaler.is_none() {
                 let Some(font_ref) = FontRef::from_index(font.data.as_ref(), index as usize) else {
                     return;
@@ -462,7 +1261,7 @@ fn draw_glyph_run(
             .offset(Vector::new(0.0, 0.0))
             .render(s, glyph.id as u16);
 
-            let entry = match rendered {
+            let cached = match rendered {
                 Some(image) if matches!(image.content, Content::Mask) => Some(CachedGlyph {
                     left: image.placement.left,
                     top: image.placement.top,
@@ -472,26 +1271,48 @@ fn draw_glyph_run(
                 }),
                 _ => None,
             };
-            cache.insert(key, entry);
-
-            // Se vuelve a buscar abajo con la clave recien insertada.
-            let key = GlyphKey {
-                blob,
-                index,
-                size: font_size.to_bits(),
-                glyph: glyph.id as u16,
-            };
-            let Some(Some(g)) = cache.get(&key) else {
-                continue;
-            };
-            blit(pixmap, g, gx, gy, color, width, height);
-            continue;
+            vacant.insert(cached);
         }
 
         let Some(Some(g)) = cache.get(&key) else {
             continue;
         };
         blit(pixmap, g, gx, gy, color, width, height);
+    }
+}
+
+/// Subrayado y tachado. parley resuelve *si* van y *donde*, leyendo las
+/// metricas de la fuente (cada tipografia dice a que altura corre su propio
+/// subrayado); dibujarlos es cosa nuestra. Sin esto, un enlace se veia solo
+/// coloreado y un `~~tachado~~` no se distinguia del texto normal.
+fn draw_decorations(pixmap: &mut Pixmap, run: &GlyphRun<'_, Brush>, origin_x: f32, origin_y: f32) {
+    let style = run.style();
+    let metrics = run.run().metrics();
+
+    let mut trazar = |offset: f32, grosor: f32, brush: Brush| {
+        let y = origin_y + run.baseline() - offset;
+        let x = origin_x + run.offset();
+        // Minimo de 1 px: con cuerpos chicos el grosor calculado puede
+        // redondear a cero y la linea desaparece sin aviso.
+        let alto = grosor.max(1.0);
+        let Some(rect) = Rect::from_xywh(x, y, run.advance(), alto) else {
+            return;
+        };
+        let mut paint = Paint::default();
+        paint.set_color(Color::from_rgba8(brush.0, brush.1, brush.2, 255));
+        paint.anti_alias = false;
+        pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+    };
+
+    if let Some(d) = &style.underline {
+        let offset = d.offset.unwrap_or(metrics.underline_offset);
+        let grosor = d.size.unwrap_or(metrics.underline_size);
+        trazar(offset, grosor, d.brush);
+    }
+    if let Some(d) = &style.strikethrough {
+        let offset = d.offset.unwrap_or(metrics.strikethrough_offset);
+        let grosor = d.size.unwrap_or(metrics.strikethrough_size);
+        trazar(offset, grosor, d.brush);
     }
 }
 
@@ -539,7 +1360,7 @@ struct App {
     pixmap: Option<Pixmap>,
     slots: Vec<Slot>,
     /// Layouts de los bloques visibles, por indice. Se poda cada cuadro.
-    live: HashMap<usize, Layout<Brush>>,
+    live: HashMap<usize, (Layout<Brush>, Option<CachedMarker>)>,
     doc_height: f32,
     laid_for_width: f32,
     scroll: f32,
@@ -560,6 +1381,9 @@ struct App {
     /// Tema activo. Arranca siguiendo al sistema operativo (`Window::theme`);
     /// `T` lo alterna a mano. Ver docs/design.md.
     palette: Palette,
+    /// Indica que el render enriquecido excedio un limite defensivo. En ese
+    /// caso `blocks` contiene la fuente inerte, no un arbol truncado.
+    safe_mode: Option<Degradation>,
 }
 
 impl ApplicationHandler for App {
@@ -572,8 +1396,13 @@ impl ApplicationHandler for App {
             self.started.elapsed().as_secs_f64() * 1000.0
         ));
 
+        let mode = if self.safe_mode.is_some() {
+            " · modo seguro"
+        } else {
+            ""
+        };
         let attrs = Window::default_attributes()
-            .with_title(format!("Visor MD v2 · Sprint 0 · {}", self.path))
+            .with_title(format!("Visor MD v2 · {}{}", self.path, mode))
             .with_inner_size(winit::dpi::LogicalSize::new(900.0, 760.0));
         let t = Instant::now();
         let window = Rc::new(event_loop.create_window(attrs).unwrap());
@@ -610,7 +1439,11 @@ impl ApplicationHandler for App {
                 event_loop.exit();
             }
             WindowEvent::ThemeChanged(theme) => {
-                self.palette = if matches!(theme, Theme::Light) { DAY } else { NIGHT };
+                self.palette = if matches!(theme, Theme::Light) {
+                    DAY
+                } else {
+                    NIGHT
+                };
                 self.live.clear();
                 if let Some(w) = &self.window {
                     w.request_redraw();
@@ -638,7 +1471,12 @@ impl ApplicationHandler for App {
                     MouseScrollDelta::LineDelta(_, y) => y * 60.0,
                     MouseScrollDelta::PixelDelta(p) => p.y as f32,
                 };
-                let max = (self.doc_height - 200.0).max(0.0);
+                let viewport_height = self
+                    .window
+                    .as_ref()
+                    .map(|window| window.inner_size().height as f32)
+                    .unwrap_or(0.0);
+                let max = max_scroll(self.doc_height, viewport_height);
                 self.scroll = (self.scroll - dy).clamp(0.0, max);
                 if let Some(w) = &self.window {
                     w.request_redraw();
@@ -655,7 +1493,12 @@ impl ApplicationHandler for App {
                         // Avanza un salto fijo por cuadro, dando la vuelta al
                         // documento entero para que la medicion no se quede
                         // midiendo siempre la misma pantalla.
-                        let max = (self.doc_height - 200.0).max(1.0);
+                        let viewport_height = self
+                            .window
+                            .as_ref()
+                            .map(|window| window.inner_size().height as f32)
+                            .unwrap_or(0.0);
+                        let max = max_scroll(self.doc_height, viewport_height).max(1.0);
                         self.scroll = (self.scroll + max / total as f32) % max;
                         if let Some(w) = &self.window {
                             w.request_redraw();
@@ -693,11 +1536,18 @@ impl App {
             self.slots = slots;
             self.doc_height = height;
             self.laid_for_width = size.width as f32;
+            self.scroll = self
+                .scroll
+                .min(max_scroll(self.doc_height, size.height as f32));
             self.live.clear();
             self.log.push(format!(
                 "[medicion] posicionar {} bloques ({}): {:.0} ms  (alto {:.0} px)",
                 self.blocks.len(),
-                if self.exact_measure { "exacto" } else { "estimado" },
+                if self.exact_measure {
+                    "exacto"
+                } else {
+                    "estimado"
+                },
                 t.elapsed().as_secs_f64() * 1000.0,
                 height
             ));
@@ -706,26 +1556,31 @@ impl App {
         // Que bloques caen en pantalla este cuadro.
         let view_top = self.scroll;
         let view_bottom = self.scroll + size.height as f32;
-        let visible: Vec<usize> = self
-            .slots
-            .iter()
-            .enumerate()
-            .filter(|(_, s)| s.y + s.height >= view_top && s.y <= view_bottom)
-            .map(|(i, _)| i)
-            .collect();
+        let visible = visible_range(&self.slots, view_top, view_bottom);
 
         // Solo los visibles conservan su layout vivo.
         self.live.retain(|i, _| visible.contains(i));
-        for &i in &visible {
+        for i in visible.clone() {
             if !self.live.contains_key(&i) {
+                let block = &self.blocks[i];
                 let layout = build_layout(
-                    &self.blocks[i],
+                    block,
                     &mut self.font_cx,
                     &mut self.layout_cx,
                     size.width as f32,
                     self.palette,
                 );
-                self.live.insert(i, layout);
+                let marker = block.marker.as_ref().map(|m| match m {
+                    Marker::Text(text) => CachedMarker::Text(Box::new(build_marker_layout(
+                        text,
+                        block.kind,
+                        &mut self.font_cx,
+                        &mut self.layout_cx,
+                        self.palette,
+                    ))),
+                    Marker::Task { done } => CachedMarker::Task { done: *done },
+                });
+                self.live.insert(i, (layout, marker));
             }
         }
 
@@ -757,26 +1612,99 @@ impl App {
         pixmap.fill(Color::from_rgba8(bg.0, bg.1, bg.2, 255));
 
         let mut paint = Paint::default();
-        paint.set_color(Color::from_rgba8(surface_color.0, surface_color.1, surface_color.2, 255));
+        paint.set_color(Color::from_rgba8(
+            surface_color.0,
+            surface_color.1,
+            surface_color.2,
+            255,
+        ));
 
-        for &i in &visible {
+        let mut accent_paint = Paint::default();
+        let ac = palette.accent;
+        accent_paint.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 255));
+
+        let mut dim_paint = Paint::default();
+        let dc = palette.dim;
+        dim_paint.set_color(Color::from_rgba8(dc.0, dc.1, dc.2, 160));
+
+        let ancho_texto = (w.get() as f32 - MARGIN * 2.0).min(MAX_MEASURE);
+
+        for i in visible {
             let slot = &slots[i];
-            let Some(layout) = live.get(&i) else { continue };
+            let Some((layout, marker)) = live.get(&i) else {
+                continue;
+            };
             let top = slot.y - *scroll;
 
-            // Fondo de los bloques de codigo, dibujado con tiny-skia.
-            if matches!(slot.kind, Kind::Code) {
-                let rect_w = (w.get() as f32 - MARGIN * 2.0 + 24.0).min(MAX_MEASURE + 24.0);
-                if let Some(rect) =
-                    Rect::from_xywh(slot.x - 12.0, top - 2.0, rect_w, slot.height + 4.0)
-                {
-                    pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+            match slot.kind {
+                // Fondo de los bloques de codigo, dibujado con tiny-skia.
+                Kind::Code => {
+                    if let Some(rect) = Rect::from_xywh(
+                        slot.x - 12.0,
+                        top - 2.0,
+                        ancho_texto + 24.0,
+                        slot.height + 4.0,
+                    ) {
+                        pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+                    }
+                }
+                // Filete de acento a la izquierda de la cita, como las alertas.
+                Kind::Quote => {
+                    if let Some(rect) = Rect::from_xywh(slot.x - 20.0, top, 3.0, slot.height) {
+                        pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
+                    }
+                }
+                // Linea horizontal: un filete tenue, no un borde grueso.
+                Kind::Rule => {
+                    if let Some(rect) = Rect::from_xywh(slot.x, top, ancho_texto, 1.0) {
+                        pixmap.fill_rect(rect, &dim_paint, Transform::identity(), None);
+                    }
+                    continue;
+                }
+                _ => {}
+            }
+
+            // La vineta va en el margen, a la izquierda del texto, para que
+            // las lineas siguientes de un item largo queden bajo el texto.
+            if let Some(marker) = marker {
+                match marker {
+                    CachedMarker::Text(marker) => {
+                        let ancho_marca = marker.width();
+                        for line in marker.lines() {
+                            for entry in line.items() {
+                                if let PositionedLayoutItem::GlyphRun(run) = entry {
+                                    draw_glyph_run(
+                                        pixmap,
+                                        scale_cx,
+                                        glyphs,
+                                        &run,
+                                        slot.x - ancho_marca - 8.0,
+                                        top,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    CachedMarker::Task { done } => {
+                        let (font_size, _, _, _) = slot.kind.style();
+                        let size = (font_size * 0.82).max(12.0);
+                        let line_box = font_size * slot.kind.line_height();
+                        draw_checkbox(
+                            pixmap,
+                            slot.x - size - 8.0,
+                            top + (line_box - size).max(0.0) * 0.5,
+                            size,
+                            *done,
+                            *palette,
+                        );
+                    }
                 }
             }
 
             for line in layout.lines() {
                 for entry in line.items() {
                     if let PositionedLayoutItem::GlyphRun(run) = entry {
+                        draw_decorations(pixmap, &run, slot.x, top);
                         draw_glyph_run(pixmap, scale_cx, glyphs, &run, slot.x, top);
                     }
                 }
@@ -831,7 +1759,11 @@ fn main() {
     // scroll sumados al tiempo total del proceso.
     let bench = args.iter().find_map(|a| {
         let rest = a.strip_prefix("--bench")?;
-        Some(rest.strip_prefix('=').and_then(|n| n.parse().ok()).unwrap_or(240))
+        Some(
+            rest.strip_prefix('=')
+                .and_then(|n| n.parse().ok())
+                .unwrap_or(240),
+        )
     });
     let exact_measure = args.iter().any(|a| a == "--exacto");
     let Some(path) = args.iter().find(|a| !a.starts_with("--")).cloned() else {
@@ -848,21 +1780,27 @@ fn main() {
     };
 
     let t = Instant::now();
-    let arena = Arena::new();
-    let mut options = Options::default();
-    options.extension.table = true;
-    options.extension.strikethrough = true;
-    options.extension.autolink = true;
-    options.extension.tasklist = true;
-    let root = parse_document(&arena, &source, &options);
-    let mut blocks = Vec::new();
-    flatten(root, 0, &mut blocks);
+    let outcome = match parse_blocks(&source) {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            eprintln!("el documento no se pudo preparar de forma segura: {error}");
+            std::process::exit(1);
+        }
+    };
+    let blocks = outcome.blocks;
+    let degradation = outcome.degradation;
     let mut log = vec![format!(
         "[medicion] parseo de {:.1} KB: {:.0} ms  ({} bloques)",
         source.len() as f64 / 1024.0,
         t.elapsed().as_secs_f64() * 1000.0,
         blocks.len()
     )];
+    if let Some(reason) = degradation {
+        log.push(format!(
+            "[seguridad] {}; se muestra la fuente inerte",
+            reason.explanation()
+        ));
+    }
 
     let t = Instant::now();
     let event_loop = EventLoop::new().unwrap();
@@ -882,7 +1820,7 @@ fn main() {
     let t = Instant::now();
     register_embedded_fonts(&mut font_cx);
     log.push(format!(
-        "[medicion]   registrar 3 fuentes embebidas: {:.0} ms",
+        "[medicion]   registrar 4 archivos de 3 familias embebidas: {:.0} ms",
         t.elapsed().as_secs_f64() * 1000.0
     ));
 
@@ -909,6 +1847,7 @@ fn main() {
         exact_measure,
         log,
         palette: NIGHT,
+        safe_mode: degradation,
     };
 
     event_loop.run_app(&mut app).unwrap();
@@ -921,16 +1860,9 @@ mod pruebas {
     use super::*;
 
     fn aplanar(md: &str) -> Vec<Block> {
-        let arena = Arena::new();
-        let mut options = Options::default();
-        options.extension.table = true;
-        options.extension.strikethrough = true;
-        options.extension.autolink = true;
-        options.extension.tasklist = true;
-        let root = parse_document(&arena, md, &options);
-        let mut blocks = Vec::new();
-        flatten(root, 0, &mut blocks);
-        blocks
+        parse_blocks(md)
+            .expect("el documento de prueba debe ser valido")
+            .blocks
     }
 
     /// El parser no puede caerse con entrada hostil. Es la propiedad, no la
@@ -954,6 +1886,57 @@ mod pruebas {
         for caso in casos {
             let _ = aplanar(&caso);
         }
+    }
+
+    #[test]
+    fn un_documento_normal_no_entra_en_modo_seguro() {
+        let outcome = parse_blocks("# Titulo\n\nTexto con **formato**.")
+            .expect("el documento normal debe poder prepararse");
+        assert_eq!(outcome.degradation, None);
+        assert!(outcome.blocks.iter().any(|block| block.spans.len() == 1));
+    }
+
+    #[test]
+    fn el_modo_seguro_conserva_la_fuente_completa() {
+        let md = "> ".repeat(5_000) + "linea final sin salto";
+        let outcome = parse_blocks(&md).expect("la vista segura debe ser representable");
+        assert_eq!(outcome.degradation, Some(Degradation::DepthLimit));
+
+        let reconstructed = outcome
+            .blocks
+            .iter()
+            .map(|block| &md[block.source.start..block.source.end])
+            .collect::<String>();
+        assert_eq!(reconstructed, md, "el fallback perdio parte de la fuente");
+        assert!(
+            outcome
+                .blocks
+                .iter()
+                .all(|block| matches!(block.kind, Kind::Code)),
+            "la vista segura intento interpretar la fuente"
+        );
+    }
+
+    #[test]
+    fn la_busqueda_visible_no_recorre_ni_incluye_bloques_lejanos() {
+        let slots: Vec<_> = (0..10)
+            .map(|i| Slot {
+                y: i as f32 * 100.0,
+                height: 50.0,
+                x: 0.0,
+                kind: Kind::Para,
+            })
+            .collect();
+
+        assert_eq!(visible_range(&slots, 175.0, 325.0), 2..4);
+        assert_eq!(visible_range(&slots, 0.0, 50.0), 0..1);
+        assert_eq!(visible_range(&slots, 951.0, 1_100.0), 10..10);
+    }
+
+    #[test]
+    fn el_scroll_respeta_el_alto_real_de_la_ventana() {
+        assert_eq!(max_scroll(1_000.0, 760.0), 240.0);
+        assert_eq!(max_scroll(500.0, 760.0), 0.0);
     }
 
     /// Un bloque siempre ocupa algo. Un alto de cero haria que se superpongan
@@ -1037,5 +2020,298 @@ con dos lineas
         assert_eq!(codigo.len(), 3, "se esperaban 3 lineas de codigo");
         assert_eq!(codigo[0].text, "uno");
         assert_eq!(codigo[2].text, "tres");
+    }
+}
+
+// -------------------------------------------- pruebas del formato inline
+
+#[cfg(test)]
+mod pruebas_inline {
+    use super::*;
+
+    fn aplanar(md: &str) -> Vec<Block> {
+        parse_blocks(md)
+            .expect("el documento de prueba debe ser valido")
+            .blocks
+    }
+
+    /// Devuelve el enfasis que cubre el primer caracter de `aguja`.
+    fn enfasis_de(md: &str, aguja: &str) -> Emphasis {
+        let blocks = aplanar(md);
+        for b in &blocks {
+            if let Some(pos) = b.text.find(aguja) {
+                for s in &b.spans {
+                    if s.start <= pos && pos < s.end {
+                        return s.style;
+                    }
+                }
+                return Emphasis::default();
+            }
+        }
+        panic!(
+            "no se encontro {aguja:?} en {:?}",
+            blocks.iter().map(|b| &b.text).collect::<Vec<_>>()
+        );
+    }
+
+    /// Las marcas de Markdown no se dibujan: se convierten en estilo. Si el
+    /// texto plano todavia contiene los asteriscos, es que no se parsearon.
+    #[test]
+    fn las_marcas_no_quedan_en_el_texto() {
+        let blocks = aplanar("Un **negrita** y un _cursiva_ y un `codigo`.");
+        let texto = &blocks[0].text;
+        assert!(!texto.contains('*'), "quedaron asteriscos: {texto:?}");
+        assert!(!texto.contains('_'), "quedaron guiones bajos: {texto:?}");
+        assert!(!texto.contains('`'), "quedaron backticks: {texto:?}");
+        assert!(texto.contains("negrita") && texto.contains("cursiva"));
+    }
+
+    #[test]
+    fn cada_enfasis_llega_a_su_tramo() {
+        assert!(enfasis_de("un **fuerte** aca", "fuerte").strong);
+        assert!(enfasis_de("un _suave_ aca", "suave").emph);
+        assert!(enfasis_de("un `mono` aca", "mono").code);
+        assert!(enfasis_de("un ~~tachado~~ aca", "tachado").strike);
+        assert!(enfasis_de("un [enlace](http://x) aca", "enlace").link);
+    }
+
+    /// El caso que justifica acumular el estilo al bajar por el arbol en vez
+    /// de pisarlo: un enfasis dentro de otro tiene que llegar con los dos.
+    #[test]
+    fn el_enfasis_anidado_se_acumula() {
+        let e = enfasis_de("**fuerte con _suave_ adentro**", "suave");
+        assert!(e.strong && e.emph, "se perdio un enfasis al anidar: {e:?}");
+    }
+
+    /// El texto sin formato no debe generar tramos: es el caso comun y
+    /// llenar un `Vec` por cada linea normal seria peso al pedo.
+    #[test]
+    fn el_texto_plano_no_genera_tramos() {
+        let blocks = aplanar("Una linea comun y corriente, sin nada de formato.");
+        assert!(
+            blocks[0].spans.is_empty(),
+            "tramos de mas: {:?}",
+            blocks[0].spans
+        );
+    }
+
+    /// Los rangos son offsets de bytes y se los pasamos a parley tal cual.
+    /// Si cayeran fuera del texto o en mitad de un caracter multibyte,
+    /// parley entra en panico. Con acentos y emoji es facil equivocarse.
+    #[test]
+    fn los_rangos_caen_en_limites_de_caracter() {
+        for md in [
+            "**ñandú** y **camión**",
+            "un `código` acentuado",
+            "**😀 emoji** y _más_",
+            "**a_b_c** mezclado",
+        ] {
+            for b in aplanar(md) {
+                for s in &b.spans {
+                    assert!(s.end <= b.text.len(), "rango fuera de texto en {md:?}");
+                    assert!(s.start < s.end, "rango vacio o invertido en {md:?}");
+                    assert!(
+                        b.text.is_char_boundary(s.start) && b.text.is_char_boundary(s.end),
+                        "rango parte un caracter en {md:?}: {s:?} sobre {:?}",
+                        b.text
+                    );
+                }
+            }
+        }
+    }
+
+    /// Las listas ordenadas numeran desde donde diga el documento, no
+    /// siempre desde 1, y las viñetas no llevan numero.
+    #[test]
+    fn los_marcadores_de_lista_se_numeran_bien() {
+        let ordenada = aplanar("3. tres\n4. cuatro\n5. cinco");
+        let marcas: Vec<_> = ordenada.iter().filter_map(|b| b.marker.clone()).collect();
+        assert_eq!(
+            marcas,
+            vec![
+                Marker::Text("3.".into()),
+                Marker::Text("4.".into()),
+                Marker::Text("5.".into())
+            ],
+            "numeracion mal"
+        );
+
+        let vinetas = aplanar("- uno\n- dos");
+        let marcas: Vec<_> = vinetas.iter().filter_map(|b| b.marker.clone()).collect();
+        assert_eq!(
+            marcas,
+            vec![Marker::Text("•".into()), Marker::Text("•".into())]
+        );
+    }
+
+    #[test]
+    fn las_tareas_marcan_su_casilla() {
+        let blocks = aplanar("- [ ] pendiente\n- [x] hecha");
+        let marcas: Vec<_> = blocks.iter().filter_map(|b| b.marker.clone()).collect();
+        assert_eq!(
+            marcas,
+            vec![Marker::Task { done: false }, Marker::Task { done: true }]
+        );
+    }
+
+    /// Una cita con varios parrafos no se aplasta en uno solo, y todos
+    /// quedan marcados como cita para que les toque el filete de acento.
+    #[test]
+    fn la_cita_conserva_su_estructura() {
+        let blocks = aplanar("> primero\n>\n> segundo");
+        let citas: Vec<_> = blocks
+            .iter()
+            .filter(|b| matches!(b.kind, Kind::Quote))
+            .collect();
+        assert_eq!(citas.len(), 2, "la cita se aplasto: {blocks:?}",);
+    }
+
+    #[test]
+    fn la_linea_horizontal_produce_un_bloque() {
+        let blocks = aplanar("antes\n\n---\n\ndespues");
+        assert!(
+            blocks.iter().any(|b| matches!(b.kind, Kind::Rule)),
+            "no se genero la linea horizontal"
+        );
+    }
+
+    /// Las imagenes son del Sprint 2, pero no pueden desaparecer en silencio:
+    /// se anuncian con su texto alternativo.
+    /// Regresion concreta: al pasar el aplanado a recorrer las citas en vez
+    /// de aplastarlas, 5000 citas anidadas desbordaron la pila y mataron el
+    /// proceso. El tope de MAX_NEST existe por esto. La prueba fija el
+    /// comportamiento: se corta, no se cae.
+    #[test]
+    fn el_anidamiento_profundo_se_corta_en_vez_de_desbordar() {
+        for md in [
+            "> ".repeat(5_000) + "hola",
+            "- ".repeat(5_000) + "item",
+            "*".repeat(4_000) + "x" + &"*".repeat(4_000),
+            "> - > - ".repeat(1_000) + "mezclado",
+        ] {
+            let outcome = parse_blocks(&md).expect("debe degradar sin caerse");
+            assert_eq!(
+                outcome.degradation,
+                Some(Degradation::DepthLimit),
+                "la entrada profunda no activo el modo seguro"
+            );
+            assert!(outcome.blocks.len() < MAX_BLOCKS, "explosion de bloques");
+        }
+    }
+
+    /// La sangria no puede crecer sin limite: a cierta profundidad se comeria
+    /// el ancho util y dejaria el texto en una columna de un caracter.
+    #[test]
+    fn la_sangria_tiene_tope() {
+        let profundo = Kind::Item(200).indent();
+        let tope = Kind::Item(MAX_INDENT_DEPTH).indent();
+        assert_eq!(profundo, tope, "la sangria no se topo");
+        assert!(
+            tope < MAX_MEASURE / 2.0,
+            "el tope de sangria es demasiado grande"
+        );
+    }
+
+    #[test]
+    fn la_imagen_se_anuncia_en_vez_de_desaparecer() {
+        let blocks = aplanar("mira ![un gato](gato.png) aca");
+        assert!(
+            blocks[0].text.contains("un gato"),
+            "se perdio la imagen: {:?}",
+            blocks[0].text
+        );
+    }
+
+    #[test]
+    fn el_html_desconocido_permanece_visible_e_inerte() {
+        let inline = aplanar("antes <script src=\"https://evil.test/x.js\"> despues");
+        assert!(inline[0].text.contains("<script"));
+        assert!(inline[0].targets.is_empty(), "HTML creo un destino activo");
+
+        let block = aplanar("<iframe src=\"file:///secreto\">\ncontenido\n</iframe>");
+        let visible = block
+            .iter()
+            .map(|item| item.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(visible.contains("<iframe"));
+        assert!(visible.contains("file:///secreto"));
+        assert!(block.iter().all(|item| item.targets.is_empty()));
+    }
+
+    #[test]
+    fn los_rangos_de_fuente_son_validos_y_apuntan_al_original() {
+        let md = "# Titulo\n\nUn **ñandú** y un [enlace](destino.md).";
+        let blocks = aplanar(md);
+        validate_model(md, &blocks).expect("el modelo debe tener rangos validos");
+
+        let span = blocks
+            .iter()
+            .flat_map(|block| &block.spans)
+            .find(|span| md[span.source.start..span.source.end].contains("ñandú"))
+            .expect("el texto enfatizado conserva su origen");
+        assert_eq!(&md[span.source.start..span.source.end], "ñandú");
+
+        let heading = blocks
+            .iter()
+            .find(|block| matches!(block.kind, Kind::Heading(1)))
+            .unwrap();
+        assert_eq!(&md[heading.source.start..heading.source.end], "# Titulo");
+    }
+
+    #[test]
+    fn los_enlaces_e_imagenes_conservan_su_destino() {
+        let blocks =
+            aplanar("Un [documento](docs/uno.md \"nota\") y ![captura](img/a.png \"imagen\").");
+        let targets: Vec<_> = blocks.iter().flat_map(|block| &block.targets).collect();
+        assert_eq!(targets.len(), 2);
+        assert_eq!(targets[0].kind, InlineTargetKind::Link);
+        assert_eq!(targets[0].destination, "docs/uno.md");
+        assert_eq!(targets[0].title, "nota");
+        assert_eq!(targets[1].kind, InlineTargetKind::Image);
+        assert_eq!(targets[1].destination, "img/a.png");
+        assert_eq!(targets[1].title, "imagen");
+    }
+
+    #[test]
+    fn el_codigo_conserva_el_lenguaje() {
+        let blocks = aplanar("```rust\nfn main() {}\n```");
+        let code = blocks
+            .iter()
+            .find(|block| matches!(block.kind, Kind::Code))
+            .unwrap();
+        assert_eq!(code.code_info.as_deref(), Some("rust"));
+    }
+
+    #[test]
+    fn las_tablas_conservan_sus_celdas() {
+        let blocks = aplanar("| nombre | valor |\n| --- | --- |\n| uno | **dos** |");
+        let row = blocks
+            .iter()
+            .find(|block| {
+                matches!(block.kind, Kind::TableRow { header: false })
+                    && block
+                        .table_cells
+                        .first()
+                        .is_some_and(|cell| cell.text == "uno")
+            })
+            .expect("fila de datos");
+        assert_eq!(row.table_cells.len(), 2);
+        assert_eq!(row.table_cells[1].text, "dos");
+        assert!(row.spans.iter().any(|span| span.style.strong));
+    }
+
+    #[test]
+    fn las_citas_anidadas_conservan_profundidad() {
+        let blocks = aplanar("> exterior\n>\n> > interior");
+        let depths: Vec<_> = blocks.iter().map(|block| block.quote_depth).collect();
+        assert!(depths.contains(&1), "falta cita exterior: {depths:?}");
+        assert!(depths.contains(&2), "falta cita interior: {depths:?}");
+    }
+}
+
+impl std::fmt::Debug for Block {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}({:?})", self.kind, self.text)
     }
 }
