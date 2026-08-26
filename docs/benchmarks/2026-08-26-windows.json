@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "measuredAtUtc": "2026-08-26T10:44:12.3524465Z",
+  "commit": "f7caff86a358ddf9deaa8fa5e202eca0535d44fa",
+  "trackedWorkingTreeClean": true,
+  "platform": {
+    "os": "Microsoft Windows NT 10.0.19045.0",
+    "architecture": "X64",
+    "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+    "cargo": "cargo 1.98.0 (797e8a9bc 2026-08-05)"
+  },
+  "executable": {
+    "bytes": 2996736,
+    "sha256": "91D0E4B9F7BA9FEF91EC8BE462702FF18B87EA1BEB1EFB938F4D5F0E520A9B8A"
+  },
+  "corpus": {
+    "path": "docs\\architecture.md",
+    "bytes": 11238
+  },
+  "protocol": {
+    "runs": 10,
+    "cacheState": "sequential-uncontrolled",
+    "systemLoad": "uncontrolled",
+    "scrollFrames": 240
+  },
+  "summaryMs": {
+    "parseMedian": 2.0,
+    "parseP95": 17.0,
+    "windowVisibleMedian": 89.0,
+    "windowVisibleP95": 600.0,
+    "windowVisibleMax": 600.0,
+    "firstContentMedian": 102.5,
+    "firstContentP95": 612.0,
+    "firstContentMax": 612.0,
+    "scrollAverage": 4.4
+  },
+  "samples": [
+    {
+      "run": 1,
+      "parseMs": 2.0,
+      "windowVisibleMs": 90.0,
+      "firstContentMs": 101.0
+    },
+    {
+      "run": 2,
+      "parseMs": 2.0,
+      "windowVisibleMs": 84.0,
+      "firstContentMs": 103.0
+    },
+    {
+      "run": 3,
+      "parseMs": 2.0,
+      "windowVisibleMs": 84.0,
+      "firstContentMs": 102.0
+    },
+    {
+      "run": 4,
+      "parseMs": 2.0,
+      "windowVisibleMs": 86.0,
+      "firstContentMs": 99.0
+    },
+    {
+      "run": 5,
+      "parseMs": 2.0,
+      "windowVisibleMs": 110.0,
+      "firstContentMs": 125.0
+    },
+    {
+      "run": 6,
+      "parseMs": 17.0,
+      "windowVisibleMs": 111.0,
+      "firstContentMs": 134.0
+    },
+    {
+      "run": 7,
+      "parseMs": 4.0,
+      "windowVisibleMs": 88.0,
+      "firstContentMs": 102.0
+    },
+    {
+      "run": 8,
+      "parseMs": 4.0,
+      "windowVisibleMs": 106.0,
+      "firstContentMs": 119.0
+    },
+    {
+      "run": 9,
+      "parseMs": 5.0,
+      "windowVisibleMs": 600.0,
+      "firstContentMs": 612.0
+    },
+    {
+      "run": 10,
+      "parseMs": 2.0,
+      "windowVisibleMs": 84.0,
+      "firstContentMs": 97.0
+    }
+  ]
+}

@@ -159,6 +159,24 @@ quedaron dentro del presupuesto de 400 ms y una reprodujo la variación de
 creación de ventana observada antes. Todavía falta un protocolo que explique esa
 variación en Windows. No se presenta la mediana como garantía de arranque frío.
 
+### Serie automatizada inicial
+
+El reporte versionado
+[`benchmarks/2026-08-26-windows.json`](benchmarks/2026-08-26-windows.json) se
+generó en `f7caff8` con diez procesos consecutivos y el working tree rastreado
+limpio. El ejecutable es el mismo build release de `92eef4f`.
+
+| Medida | Mediana | P95 | Máximo |
+| --- | --- | --- | --- |
+| Parseo | 2 ms | 17 ms | 17 ms |
+| Ventana visible | 89 ms | 600 ms | 600 ms |
+| Primer contenido | 102,5 ms | 612 ms | 612 ms |
+
+El scroll de 240 cuadros promedió 4,4 ms. Nueve aperturas entregaron contenido
+entre 97 y 134 ms; una tardó 612 ms. El P95 usa nearest rank, por lo que en una
+serie de diez conserva el peor valor. La evidencia apunta a creación de ventana
+y no al parser, pero todavía no demuestra su causa.
+
 ---
 
 ## Presupuesto de tamaño: estimado contra medido

@@ -64,10 +64,10 @@ Estados permitidos:
 
 | Propiedad | Nivel | Windows | Linux | Evidencia actual |
 | --- | --- | --- | --- | --- |
-| Ventana visible | Benchmark | Verificado en Sprint 0 | Pendiente | Cerca de 120 ms reportados |
-| Primer contenido normal | Benchmark | Verificado en Sprint 0 | Pendiente | `budget.md` |
+| Ventana visible | Benchmark | Verificado | Pendiente | Mediana 89 ms y P95 600 ms en diez ejecuciones |
+| Primer contenido normal | Benchmark | Verificado | Pendiente | Mediana 102,5 ms y P95 612 ms; muestras versionadas |
 | Documento de 5 MB | Benchmark | Verificado en Sprint 0 | Pendiente | `budget.md` |
-| Scroll proporcional a visible | Unitario y benchmark | Parcial | Pendiente | Rango visible por búsqueda binaria; 4,9 ms medidos |
+| Scroll proporcional a visible | Unitario y benchmark | Parcial | Pendiente | Rango visible por búsqueda binaria; 4,4 ms medidos |
 | Memoria estable | Benchmark | Parcial | Pendiente | Medición inicial |
 | Binario menor de 8 MB | Release | Verificado | Pendiente | 2.996.736 bytes en `92eef4f` |
 

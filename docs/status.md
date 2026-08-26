@@ -65,12 +65,13 @@ Evidencia actual en Windows:
 - `cargo clippy --all-targets -- -D warnings`: verde;
 - `cargo test`: 38 de 38 pruebas verdes;
 - release de `92eef4f`: 2.996.736 bytes, 2,858 MiB;
-- primer pintado mediano sobre cinco ejecuciones: 103 ms;
-- scroll automatizado mediano: 4,5 ms por cuadro.
+- primer pintado mediano sobre diez ejecuciones: 102,5 ms;
+- P95 de primer pintado: 612 ms;
+- scroll automatizado: 4,4 ms por cuadro.
 
-Se observó una ejecución actual de 631 ms y ejecuciones anteriores de 388, 587 y
-965 ms. Se conservan como outliers sin atribuirles causa porque todavía no existe
-un protocolo estadístico que controle caché, carga y planificación del sistema.
+La serie automatizada conserva una ejecución de 612 ms y las muestras crudas.
+Ejecuciones anteriores alcanzaron 388, 587, 631 y 965 ms. No se les atribuye
+causa porque todavía no se controlan caché, carga y planificación del sistema.
 
 ## Pendientes inmediatos
 

@@ -16,6 +16,11 @@ Generación:
 Una serie local no reemplaza CI ni una prueba en arranque frío. Los reportes se
 versionan cuando sirven como checkpoint de una decisión o regresión.
 
+Reportes actuales:
+
+- [`2026-08-26-windows.json`](2026-08-26-windows.json): recuperación del Sprint
+  1, diez aperturas y 240 cuadros de scroll.
+
 La mediana de una cantidad par de muestras promedia los dos valores centrales.
 P95 usa nearest rank y el máximo se conserva por separado, de modo que una
 muestra lenta no desaparece por la elección del resumen estadístico.
