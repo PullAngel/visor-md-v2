@@ -161,7 +161,7 @@ del working tree actual.
 
 El 25 de agosto de 2026 el working tree de recuperación alcanzó:
 
-- 38 pruebas unitarias y adversariales verdes en Windows MSVC;
+- 40 pruebas unitarias y adversariales verdes en Windows MSVC;
 - formato verde;
 - `clippy` sin advertencias permitidas;
 - build release verde;
@@ -173,3 +173,7 @@ citas, tabla, código, HTML inerte, emoji y fallback Unicode.
 
 El recorrido y los datos que deben registrarse están en
 [`manual-qa-sprint1.md`](manual-qa-sprint1.md).
+
+La recuperación ya portó dos regresiones conceptuales de v1: HTML hostil y
+Markdown defectuoso de conversores. Se adaptaron a la arquitectura nativa; no se
+copiaron sus aserciones sobre DOM o WebView, que ya no existen en v2.

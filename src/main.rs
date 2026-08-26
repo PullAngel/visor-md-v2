@@ -2370,6 +2370,66 @@ mod pruebas_inline {
         assert!(block.iter().all(|item| item.targets.is_empty()));
     }
 
+    /// Regresión portada del corpus de seguridad de v1. En la arquitectura
+    /// nativa no hay DOM que pueda ejecutar estos nodos, pero además deben
+    /// seguir visibles para que un payload no se esconda del lector.
+    #[test]
+    fn html_hostil_historico_sigue_visible_y_sin_destinos() {
+        let md = r#"<script>window.__XSS = true</script>
+<img src=x onerror="alert(1)">
+<form action="https://atacante.example"><input autofocus></form>
+<style>body { display: none }</style>
+<svg onload="alert(2)"><foreignObject>texto</foreignObject></svg>
+<div style="position:fixed;inset:0">barra falsa</div>"#;
+        let blocks = aplanar(md);
+        let visible = blocks
+            .iter()
+            .map(|block| block.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        for evidence in [
+            "<script>",
+            "onerror",
+            "<form",
+            "<style>",
+            "<svg",
+            "barra falsa",
+        ] {
+            assert!(visible.contains(evidence), "se oculto {evidence:?}");
+        }
+        assert!(blocks.iter().all(|block| block.targets.is_empty()));
+    }
+
+    /// Las conversiones PDF a Markdown suelen dejar tablas irregulares y
+    /// vallas sin cerrar. El documento puede degradar visualmente, pero no
+    /// puede perder su final ni abortar el aplanado.
+    #[test]
+    fn markdown_defectuoso_historico_llega_hasta_el_final() {
+        let md = r#"# Documento convertido
+
+| cabecera | con | columnas |
+| --- | --- |
+| fila corta |
+
+![](imagen_que_no_existe.png)
+
+```python
+def ejemplo():
+    return "falta la valla de cierre"
+
+Pagina 14 de 14"#;
+        let blocks = aplanar(md);
+        let visible = blocks
+            .iter()
+            .map(|block| block.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(visible.contains("Documento convertido"));
+        assert!(visible.contains("Pagina 14 de 14"));
+        validate_model(md, &blocks).expect("el documento defectuoso conserva un modelo valido");
+    }
+
     #[test]
     fn br_es_nativo_pero_sus_atributos_no_se_interpretan() {
         for tag in ["<br>", "<BR/>", "<br />"] {

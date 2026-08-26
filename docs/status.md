@@ -56,14 +56,14 @@ exacto del traspaso.
 - búsqueda binaria del tramo visible;
 - scroll limitado por el viewport real;
 - fallos de inicialización y presentación gráfica reportados sin `panic`;
-- 38 pruebas unitarias y adversariales.
+- 40 pruebas unitarias y adversariales.
 
 Evidencia actual en Windows:
 
 - `cargo check`: verde;
 - `cargo fmt -- --check`: verde;
 - `cargo clippy --all-targets -- -D warnings`: verde;
-- `cargo test`: 38 de 38 pruebas verdes;
+- `cargo test`: 40 de 40 pruebas verdes;
 - release de `92eef4f`: 2.996.736 bytes, 2,858 MiB;
 - primer pintado mediano sobre diez ejecuciones: 102,5 ms;
 - P95 de primer pintado: 612 ms;

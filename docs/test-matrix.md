@@ -17,7 +17,7 @@ Estados permitidos:
 | CommonMark aplicable | Corpus | Parcial | Pendiente | Inline, saltos, escapes, entidades, setext y bloques vacíos cubiertos; falta corpus oficial |
 | Formato inline anidado | Integración | Verificado | Pendiente | `el_enfasis_anidado_se_acumula` y tests de rangos |
 | Listas y task lists | Integración y visual | Parcial | Pendiente | Parser, layout y píxeles verificados; falta evidencia estética |
-| HTML no permitido queda inerte | Seguridad | Verificado | Pendiente | `br` exacto es nativo; atributos y HTML desconocido quedan inertes |
+| HTML no permitido queda inerte | Seguridad | Verificado | Pendiente | `br` exacto es nativo; corpus hostil de v1 permanece visible e inerte |
 | Profundidad limitada | Adversarial | Verificado | Pendiente | 5.000 citas, listas e inline anidado |
 | Fallback a fuente segura | Modelo y end to end | Parcial | Pendiente | Fuente completa y título de aviso verificados; falta QA visual |
 | Unicode y fallback | Corpus y manual | Pendiente | Pendiente | Fuentes latinas parciales |
@@ -32,7 +32,7 @@ Estados permitidos:
 | Symlinks y junctions | Seguridad | Pendiente | Pendiente | VFS no implementado |
 | Guardado atómico | Integración | Bloqueado | Bloqueado | Editor pendiente |
 | Rangos de fuente preservados | Integración | Parcial | Pendiente | Bloques, tramos y destinos verificados |
-| Sintaxis desconocida preservada | Property | Parcial | Pendiente | HTML inerte verificado; falta corpus general |
+| Sintaxis desconocida preservada | Property | Parcial | Pendiente | HTML inerte y documento defectuoso histórico; falta round-trip |
 | Cambios externos detectados | End to end | Bloqueado | Bloqueado | Editor pendiente |
 | EOL, BOM y UTF-8 | Corpus | Bloqueado | Bloqueado | Política pendiente de implementar |
 
