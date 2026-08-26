@@ -87,8 +87,8 @@ causa porque todavía no se controlan caché, carga y planificación del sistema
 - cobertura y fallback tipográfico todavía sin matriz completa;
 - ausencia de CI, fuzzing, validación independiente del SBOM y gates
   multiplataforma.
-- selección parcial por bloque con mouse, flechas y Escape; falta selección
-  entre bloques, copia y QA manual.
+- selección parcial con mouse entre bloques visibles, flechas y Escape; falta
+  autoscroll, copia y QA manual.
 
 ## Evidencia disponible
 

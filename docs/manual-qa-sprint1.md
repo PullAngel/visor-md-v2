@@ -49,11 +49,11 @@ Registrar antes de comenzar:
 - La rueda llega al principio y al final sin zonas inaccesibles.
 - Texto, enlaces, decoración y casillas conservan contraste suficiente.
 - La sensación de scroll es estable, sin saltos perceptibles.
-- Arrastrar dentro de un mismo bloque pinta una selección que coincide con los
-  glifos y sus líneas envueltas.
+- Arrastrar entre bloques que estén en pantalla pinta una selección que coincide
+  con los glifos y sus líneas envueltas.
 - Un clic muestra un cursor fino; las flechas lo desplazan dentro del bloque y
   Escape elimina el cursor o selección. Aún no se espera selección entre
-  bloques ni copia.
+  zonas que requieren autoscroll ni copia.
 
 ## Registro
 

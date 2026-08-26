@@ -2,7 +2,7 @@
 //
 // Nucleo nativo en recuperacion. Abre un .md, lo parsea con comrak, lo maqueta
 // con parley y lo dibuja con tiny-skia sobre una ventana winit + softbuffer.
-// Todavía no tiene chrome, selección entre bloques, copia ni edición.
+// Todavía no tiene chrome, copia ni edición.
 //
 // Lo que se mide con esto va a docs/budget.md. El criterio de salida del
 // Sprint 0 esta en docs/roadmap.md.
@@ -280,14 +280,52 @@ struct Block {
     marker: Option<Marker>,
 }
 
-/// Selección temporal del lector. Los offsets viven en el texto renderizado
-/// del bloque, igual que los layouts de Parley; el editor posterior la
-/// relacionará con rangos de fuente persistentes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct BlockSelection {
+/// Punto temporal del lector. Los offsets viven en el texto renderizado del
+/// bloque, igual que los layouts de Parley; el editor posterior lo relacionará
+/// con rangos de fuente persistentes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct BlockCursor {
     block: usize,
-    anchor: usize,
-    focus: usize,
+    offset: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct DocumentSelection {
+    anchor: BlockCursor,
+    focus: BlockCursor,
+}
+
+impl DocumentSelection {
+    fn collapsed(cursor: BlockCursor) -> Self {
+        Self {
+            anchor: cursor,
+            focus: cursor,
+        }
+    }
+
+    /// Devuelve el rango que corresponde pintar dentro de un bloque. Los
+    /// bloques intermedios se seleccionan completos, sin inventar offsets.
+    fn range_for(self, block: usize, text_len: usize) -> Option<(usize, usize)> {
+        let (first, last) = if self.anchor <= self.focus {
+            (self.anchor, self.focus)
+        } else {
+            (self.focus, self.anchor)
+        };
+        if !(first.block..=last.block).contains(&block) {
+            return None;
+        }
+        let start = if block == first.block {
+            first.offset.min(text_len)
+        } else {
+            0
+        };
+        let end = if block == last.block {
+            last.offset.min(text_len)
+        } else {
+            text_len
+        };
+        Some((start, end))
+    }
 }
 
 impl Block {
@@ -1595,7 +1633,7 @@ struct App {
     pointer: Option<(f32, f32)>,
     /// Mientras está activo, mover el mouse extiende la selección del bloque.
     selecting: bool,
-    selection: Option<BlockSelection>,
+    selection: Option<DocumentSelection>,
     /// Conserva el resultado fatal para devolver un codigo de salida distinto
     /// de cero despues de cerrar ordenadamente el event loop.
     fatal_error: bool,
@@ -1698,7 +1736,10 @@ impl ApplicationHandler for App {
                 ..
             } => match state {
                 ElementState::Pressed => {
-                    self.selection = self.pointer.and_then(|(x, y)| self.selection_at(x, y));
+                    self.selection = self
+                        .pointer
+                        .and_then(|(x, y)| self.cursor_at(x, y))
+                        .map(DocumentSelection::collapsed);
                     self.selecting = self.selection.is_some();
                     if let Some(w) = &self.window {
                         w.request_redraw();
@@ -1817,7 +1858,7 @@ impl ApplicationHandler for App {
 }
 
 impl App {
-    fn selection_at(&self, x: f32, y: f32) -> Option<BlockSelection> {
+    fn cursor_at(&self, x: f32, y: f32) -> Option<BlockCursor> {
         self.slots.iter().enumerate().find_map(|(block, slot)| {
             let top = slot.y - self.scroll;
             if y < top || y > top + slot.height {
@@ -1825,10 +1866,9 @@ impl App {
             }
             let (layout, _) = self.live.get(&block)?;
             let cursor = Cursor::from_point(layout, x - slot.x, y - top);
-            Some(BlockSelection {
+            Some(BlockCursor {
                 block,
-                anchor: cursor.index(),
-                focus: cursor.index(),
+                offset: cursor.index(),
             })
         })
     }
@@ -1837,22 +1877,12 @@ impl App {
         let Some(selection) = self.selection else {
             return;
         };
-        let Some(slot) = self.slots.get(selection.block) else {
+        let Some(focus) = self.cursor_at(x, y) else {
             return;
         };
-        let Some((layout, _)) = self.live.get(&selection.block) else {
-            return;
-        };
-        let anchor = Cursor::from_byte_index(layout, selection.anchor, Affinity::Downstream);
-        let current = Selection::new(
-            anchor,
-            Cursor::from_byte_index(layout, selection.focus, Affinity::Downstream),
-        );
-        let next = current.extend_to_point(layout, x - slot.x, y - (slot.y - self.scroll));
-        self.selection = Some(BlockSelection {
-            block: selection.block,
-            anchor: next.anchor().index(),
-            focus: next.focus().index(),
+        self.selection = Some(DocumentSelection {
+            anchor: selection.anchor,
+            focus,
         });
     }
 
@@ -1860,22 +1890,36 @@ impl App {
         let Some(selection) = self.selection else {
             return;
         };
-        let Some((layout, _)) = self.live.get(&selection.block) else {
+        if selection.anchor.block != selection.focus.block {
+            let boundary = if forward {
+                selection.anchor.max(selection.focus)
+            } else {
+                selection.anchor.min(selection.focus)
+            };
+            self.selection = Some(DocumentSelection::collapsed(boundary));
+            return;
+        }
+        let Some((layout, _)) = self.live.get(&selection.focus.block) else {
             return;
         };
         let current = Selection::new(
-            Cursor::from_byte_index(layout, selection.anchor, Affinity::Downstream),
-            Cursor::from_byte_index(layout, selection.focus, Affinity::Downstream),
+            Cursor::from_byte_index(layout, selection.anchor.offset, Affinity::Downstream),
+            Cursor::from_byte_index(layout, selection.focus.offset, Affinity::Downstream),
         );
         let next = if forward {
             current.next_visual(layout, false)
         } else {
             current.previous_visual(layout, false)
         };
-        self.selection = Some(BlockSelection {
-            block: selection.block,
-            anchor: next.anchor().index(),
-            focus: next.focus().index(),
+        self.selection = Some(DocumentSelection {
+            anchor: BlockCursor {
+                block: selection.focus.block,
+                offset: next.anchor().index(),
+            },
+            focus: BlockCursor {
+                block: selection.focus.block,
+                offset: next.focus().index(),
+            },
         });
     }
 
@@ -1975,6 +2019,7 @@ impl App {
             surface,
             palette,
             selection,
+            blocks,
             ..
         } = self;
         let pixmap = pixmap
@@ -2080,17 +2125,27 @@ impl App {
                 }
             }
 
-            if let Some(selection) = selection.filter(|selection| selection.block == i) {
-                let focus = Cursor::from_byte_index(layout, selection.focus, Affinity::Downstream);
+            if let Some((start, end)) =
+                selection.and_then(|selection| selection.range_for(i, blocks[i].text.len()))
+            {
                 let ac = palette.accent;
                 let mut selection_paint = Paint::default();
                 selection_paint.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 92));
-                let geometry = if selection.anchor == selection.focus {
-                    vec![(focus.geometry(layout, 1.25), 0)]
+                let geometry = if start == end {
+                    let focus = selection
+                        .filter(|selection| selection.focus.block == i)
+                        .map(|selection| {
+                            Cursor::from_byte_index(
+                                layout,
+                                selection.focus.offset,
+                                Affinity::Downstream,
+                            )
+                        });
+                    focus.map_or_else(Vec::new, |focus| vec![(focus.geometry(layout, 1.25), 0)])
                 } else {
                     Selection::new(
-                        Cursor::from_byte_index(layout, selection.anchor, Affinity::Downstream),
-                        focus,
+                        Cursor::from_byte_index(layout, start, Affinity::Downstream),
+                        Cursor::from_byte_index(layout, end, Affinity::Downstream),
                     )
                     .geometry(layout)
                 };
@@ -2488,6 +2543,37 @@ con dos lineas
             Cursor::from_byte_index(&layout, start, Affinity::Downstream).geometry(&layout, 1.25);
         assert!(caret.width().is_finite() && caret.height().is_finite());
         assert!(caret.width() > 0.0 && caret.height() > 0.0);
+    }
+
+    #[test]
+    fn la_seleccion_entre_bloques_abarca_los_intermedios() {
+        let forward = DocumentSelection {
+            anchor: BlockCursor {
+                block: 1,
+                offset: 3,
+            },
+            focus: BlockCursor {
+                block: 3,
+                offset: 2,
+            },
+        };
+        let backward = DocumentSelection {
+            anchor: forward.focus,
+            focus: forward.anchor,
+        };
+        for selection in [forward, backward] {
+            assert_eq!(selection.range_for(0, 8), None);
+            assert_eq!(selection.range_for(1, 10), Some((3, 10)));
+            assert_eq!(selection.range_for(2, 6), Some((0, 6)));
+            assert_eq!(selection.range_for(3, 7), Some((0, 2)));
+            assert_eq!(selection.range_for(4, 8), None);
+        }
+
+        let collapsed = DocumentSelection::collapsed(BlockCursor {
+            block: 2,
+            offset: 4,
+        });
+        assert_eq!(collapsed.range_for(2, 9), Some((4, 4)));
     }
 
     /// Los encabezados y las filas de tabla tienen que sobrevivir el

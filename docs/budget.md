@@ -177,7 +177,7 @@ agregar dependencias, fuentes ni capacidades de red o disco. La evidencia de
 arranque anterior permanece vigente para el comportamiento no modificado; este
 cambio todavía requiere QA visual de ambos temas.
 
-### Selección por bloque
+### Selección entre bloques visibles
 
 La selección inicial usa el mismo layout de Parley que determina las líneas y
 los glifos. Esto evita una segunda geometría aproximada: el rectángulo pintado
@@ -188,13 +188,15 @@ flechas no muevan un foco invisible.
 | Medida | Resultado |
 | --- | --- |
 | Binario Windows | 3.009.536 bytes, 2,870 MiB |
-| SHA-256 | `B760956468CC6EC310D9042F9930CAC3E00ED2DAEFA68D98F435A3598A5EBD5C` |
-| Variación frente a allowlist HTML | +9.216 bytes |
+| SHA-256 | `5B8DEFE016FCECD3AE8DB32F83D58723E63CC9EDFB6AB04BA7A1C1018C6A6646` |
+| Variación frente a selección por bloque | 0 bytes |
 | Margen frente al límite deseado | 5,130 MiB |
 
 No se agregaron dependencias ni capacidades nuevas. La medición verifica tamaño,
 no reemplaza la QA manual de selección, contraste y comportamiento en pantallas
-con distintas escalas.
+con distintas escalas. Los hashes difieren porque las compilaciones no son aún
+reproducibles bit a bit; el tamaño idéntico confirma que la ampliación no
+introdujo una regresión medible en el presupuesto.
 
 ### Serie automatizada inicial
 
