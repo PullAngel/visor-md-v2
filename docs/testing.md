@@ -174,6 +174,12 @@ El 25 de agosto de 2026 el working tree de recuperación alcanzó:
 - build release verde;
 - fixture manual [`../tests/fixtures/sprint1-visual.md`](../tests/fixtures/sprint1-visual.md).
 
+El corpus de integración
+[`../tests/fixtures/commonmark-gfm-reader.md`](../tests/fixtures/commonmark-gfm-reader.md)
+acompaña la sintaxis que el lector representa hoy. No sustituye la suite oficial
+CommonMark: evita que una ampliación futura declare soporte de una construcción
+que no conserva modelo, rangos y representación.
+
 La fixture no cuenta como prueba aprobada hasta registrar una inspección visual.
 Sirve para repetir siempre el mismo documento con temas, énfasis, listas, tareas,
 citas, tabla, código, HTML inerte, emoji y fallback Unicode.

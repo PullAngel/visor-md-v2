@@ -27,7 +27,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Formato inline real | Recuperación | Modelo, layout, dibujo y corpus |
 | Listas, citas y reglas | Recuperación | Casos anidados y visuales |
 | Task list checkboxes | Recuperación | Parser a dibujo sin glifos externos |
-| CommonMark aplicable | Planificado | Corpus oficial y política HTML |
+| CommonMark aplicable | Parcial | Corpus versionado de sintaxis soportada y política HTML; falta suite oficial seleccionada |
 | GFM elegido | Planificado | Tablas, tachado, tareas, autolinks y footnotes definidos |
 | Índice de encabezados | Planificado | Navegable, filtrable y accesible |
 | Plegado de secciones | Planificado | Sin perder posición ni selección |

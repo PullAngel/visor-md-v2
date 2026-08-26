@@ -57,14 +57,14 @@ exacto del traspaso.
 - búsqueda binaria del tramo visible;
 - scroll limitado por el viewport real;
 - fallos de inicialización y presentación gráfica reportados sin `panic`;
-- 43 pruebas unitarias y adversariales.
+- 44 pruebas unitarias y adversariales, incluido un corpus integrado de lector.
 
 Evidencia actual en Windows:
 
 - `cargo check`: verde;
 - `cargo fmt -- --check`: verde;
 - `cargo clippy --all-targets -- -D warnings`: verde;
-- `cargo test`: 43 de 43 pruebas verdes;
+- `cargo test`: 44 de 44 pruebas verdes;
 - último release de `6176a82`: 2.996.736 bytes, 2,858 MiB;
 - working tree con allowlist HTML: 3.000.320 bytes, 2,861 MiB;
 - primer pintado mediano sobre diez ejecuciones: 102,5 ms;
@@ -78,7 +78,7 @@ causa porque todavía no se controlan caché, carga y planificación del sistema
 ## Pendientes inmediatos
 
 - verificación visual de task lists, decoraciones, temas y cursiva;
-- corpus CommonMark y GFM sistemático;
+- selección de ejemplos de la suite oficial CommonMark y ampliación GFM sistemática;
 - separación incompleta de `main.rs`; fuentes y tema ya tienen módulos propios;
 - acceso directo a filesystem sin VFS;
 - parsing en el camino de UI;

@@ -2318,6 +2318,92 @@ con dos lineas
         assert!(matches!(blocks[0].kind, Kind::Code));
         assert!(blocks[0].text.is_empty());
     }
+
+    /// Corpus de integración para la semántica que el lector ya declara. No
+    /// convierte cada ejemplo de CommonMark en una promesa de render completo:
+    /// exige que lo soportado llegue como modelo válido hasta layout.
+    #[test]
+    fn corpus_commonmark_gfm_del_lector_llega_al_modelo() {
+        let source = include_str!("../tests/fixtures/commonmark-gfm-reader.md");
+        let outcome = parse_blocks(source).expect("el corpus debe parsearse");
+        assert_eq!(outcome.degradation, None, "el corpus normal no se degrada");
+        validate_model(source, &outcome.blocks).expect("el corpus conserva rangos validos");
+
+        assert!(
+            outcome
+                .blocks
+                .iter()
+                .any(|block| matches!(block.kind, Kind::Heading(1)))
+        );
+        assert!(
+            outcome
+                .blocks
+                .iter()
+                .any(|block| matches!(block.kind, Kind::Heading(2)))
+        );
+        assert!(
+            outcome
+                .blocks
+                .iter()
+                .any(|block| matches!(block.kind, Kind::Quote) && block.quote_depth >= 2)
+        );
+        assert!(
+            outcome
+                .blocks
+                .iter()
+                .any(|block| matches!(block.kind, Kind::Rule))
+        );
+        assert!(outcome.blocks.iter().any(|block| {
+            matches!(block.kind, Kind::Code) && block.code_info.as_deref() == Some("rust")
+        }));
+        assert!(outcome.blocks.iter().any(|block| {
+            matches!(block.kind, Kind::TableRow { header: true })
+                && block.table_alignments == vec![CellAlignment::Left, CellAlignment::Right]
+        }));
+
+        let markers: Vec<_> = outcome
+            .blocks
+            .iter()
+            .filter_map(|block| block.marker.as_ref())
+            .collect();
+        assert!(
+            markers
+                .iter()
+                .any(|marker| matches!(marker, Marker::Text(text) if text == "3."))
+        );
+        assert!(
+            markers
+                .iter()
+                .any(|marker| matches!(marker, Marker::Task { done: false }))
+        );
+        assert!(
+            markers
+                .iter()
+                .any(|marker| matches!(marker, Marker::Task { done: true }))
+        );
+
+        let targets: Vec<_> = outcome
+            .blocks
+            .iter()
+            .flat_map(|block| &block.targets)
+            .collect();
+        assert!(targets.iter().any(|target| {
+            target.kind == InlineTargetKind::Link
+                && target.destination == "https://example.com/ruta"
+        }));
+        assert!(targets.iter().any(|target| {
+            target.kind == InlineTargetKind::Image && target.destination == "diagram.png"
+        }));
+
+        let visible = outcome
+            .blocks
+            .iter()
+            .map(|block| block.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(visible.contains("concepto clave"));
+        assert!(visible.contains("<script"));
+    }
 }
 
 // -------------------------------------------- pruebas del formato inline
