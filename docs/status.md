@@ -55,6 +55,7 @@ exacto del traspaso.
 - HTML desconocido visible e inerte;
 - búsqueda binaria del tramo visible;
 - scroll limitado por el viewport real;
+- fallos de inicialización y presentación gráfica reportados sin `panic`;
 - 38 pruebas unitarias y adversariales.
 
 Evidencia actual en Windows:

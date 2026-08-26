@@ -1208,7 +1208,9 @@ fn draw_glyph_run(
                         .build(),
                 );
             }
-            let s = scaler.as_mut().unwrap();
+            let Some(s) = scaler.as_mut() else {
+                return;
+            };
 
             let rendered = Render::new(&[
                 Source::ColorOutline(0),
@@ -1342,6 +1344,9 @@ struct App {
     /// Indica que el render enriquecido excedio un limite defensivo. En ese
     /// caso `blocks` contiene la fuente inerte, no un arbol truncado.
     safe_mode: Option<Degradation>,
+    /// Conserva el resultado fatal para devolver un codigo de salida distinto
+    /// de cero despues de cerrar ordenadamente el event loop.
+    fatal_error: bool,
 }
 
 impl ApplicationHandler for App {
@@ -1358,7 +1363,13 @@ impl ApplicationHandler for App {
             .with_title(window_title(&self.path, self.safe_mode))
             .with_inner_size(winit::dpi::LogicalSize::new(900.0, 760.0));
         let t = Instant::now();
-        let window = Rc::new(event_loop.create_window(attrs).unwrap());
+        let window = match event_loop.create_window(attrs) {
+            Ok(window) => Rc::new(window),
+            Err(error) => {
+                self.fail_and_exit(event_loop, format!("no se pudo crear la ventana: {error}"));
+                return;
+            }
+        };
         self.log.push(format!(
             "[medicion]   create_window: {:.0} ms",
             t.elapsed().as_secs_f64() * 1000.0
@@ -1369,8 +1380,26 @@ impl ApplicationHandler for App {
         ));
 
         let t = Instant::now();
-        let context = softbuffer::Context::new(window.clone()).unwrap();
-        let surface = softbuffer::Surface::new(&context, window.clone()).unwrap();
+        let context = match softbuffer::Context::new(window.clone()) {
+            Ok(context) => context,
+            Err(error) => {
+                self.fail_and_exit(
+                    event_loop,
+                    format!("no se pudo crear el contexto grafico: {error}"),
+                );
+                return;
+            }
+        };
+        let surface = match softbuffer::Surface::new(&context, window.clone()) {
+            Ok(surface) => surface,
+            Err(error) => {
+                self.fail_and_exit(
+                    event_loop,
+                    format!("no se pudo crear la superficie grafica: {error}"),
+                );
+                return;
+            }
+        };
         self.log.push(format!(
             "[medicion]   superficie softbuffer: {:.0} ms",
             t.elapsed().as_secs_f64() * 1000.0
@@ -1436,7 +1465,10 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::RedrawRequested => {
-                self.redraw();
+                if let Err(error) = self.redraw() {
+                    self.fail_and_exit(event_loop, error);
+                    return;
+                }
 
                 if let Some(total) = self.bench {
                     if self.frames >= total {
@@ -1465,13 +1497,13 @@ impl ApplicationHandler for App {
 }
 
 impl App {
-    fn redraw(&mut self) {
+    fn redraw(&mut self) -> Result<(), String> {
         let Some(window) = self.window.clone() else {
-            return;
+            return Ok(());
         };
         let size = window.inner_size();
         let (Some(w), Some(h)) = (NonZeroU32::new(size.width), NonZeroU32::new(size.height)) else {
-            return;
+            return Ok(());
         };
 
         let frame_start = Instant::now();
@@ -1544,7 +1576,10 @@ impl App {
             .as_ref()
             .is_none_or(|p| p.width() != w.get() || p.height() != h.get());
         if needs_new {
-            self.pixmap = Some(Pixmap::new(w.get(), h.get()).unwrap());
+            self.pixmap = Some(
+                Pixmap::new(w.get(), h.get())
+                    .ok_or_else(|| "no hay memoria para el framebuffer".to_string())?,
+            );
         }
         // Se desarma `self` en campos sueltos para que el prestamo del pixmap
         // no choque con el de la cache de glifos ni con el de los bloques.
@@ -1559,7 +1594,9 @@ impl App {
             palette,
             ..
         } = self;
-        let pixmap = pixmap.as_mut().unwrap();
+        let pixmap = pixmap
+            .as_mut()
+            .ok_or_else(|| "el framebuffer no esta disponible".to_string())?;
         let bg = palette.bg;
         let surface_color = palette.surface;
         pixmap.fill(Color::from_rgba8(bg.0, bg.1, bg.2, 255));
@@ -1665,13 +1702,21 @@ impl App {
         }
 
         // Volcado del pixmap a la ventana.
-        let surface = surface.as_mut().unwrap();
-        surface.resize(w, h).unwrap();
-        let mut buffer = surface.buffer_mut().unwrap();
+        let surface = surface
+            .as_mut()
+            .ok_or_else(|| "la superficie grafica no esta disponible".to_string())?;
+        surface
+            .resize(w, h)
+            .map_err(|error| format!("no se pudo redimensionar la superficie: {error}"))?;
+        let mut buffer = surface
+            .buffer_mut()
+            .map_err(|error| format!("no se pudo obtener el buffer grafico: {error}"))?;
         for (dst, src) in buffer.iter_mut().zip(pixmap.pixels()) {
             *dst = ((src.red() as u32) << 16) | ((src.green() as u32) << 8) | src.blue() as u32;
         }
-        buffer.present().unwrap();
+        buffer
+            .present()
+            .map_err(|error| format!("no se pudo presentar el cuadro: {error}"))?;
 
         let ms = frame_start.elapsed().as_secs_f64() * 1000.0;
         if self.first_paint_done {
@@ -1684,6 +1729,14 @@ impl App {
                 self.started.elapsed().as_secs_f64() * 1000.0
             ));
         }
+        Ok(())
+    }
+
+    fn fail_and_exit(&mut self, event_loop: &ActiveEventLoop, error: String) {
+        self.fatal_error = true;
+        self.log.push(format!("[error] {error}"));
+        self.report();
+        event_loop.exit();
     }
 
     /// Se llama una sola vez, al salir: recien ahi se toca stderr.
@@ -1756,7 +1809,13 @@ fn main() {
     }
 
     let t = Instant::now();
-    let event_loop = EventLoop::new().unwrap();
+    let event_loop = match EventLoop::new() {
+        Ok(event_loop) => event_loop,
+        Err(error) => {
+            eprintln!("no se pudo iniciar la interfaz: {error}");
+            std::process::exit(1);
+        }
+    };
     event_loop.set_control_flow(ControlFlow::Wait);
     log.push(format!(
         "[medicion]   EventLoop::new: {:.0} ms",
@@ -1801,9 +1860,16 @@ fn main() {
         log,
         palette: NIGHT,
         safe_mode: degradation,
+        fatal_error: false,
     };
 
-    event_loop.run_app(&mut app).unwrap();
+    if let Err(error) = event_loop.run_app(&mut app) {
+        eprintln!("la interfaz termino con un error: {error}");
+        std::process::exit(1);
+    }
+    if app.fatal_error {
+        std::process::exit(1);
+    }
 }
 
 // ---------------------------------------------------------------- pruebas
