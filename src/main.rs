@@ -1771,10 +1771,15 @@ impl ApplicationHandler for App {
             }
             WindowEvent::CursorLeft { .. } => {
                 self.pointer = None;
+                self.selecting = false;
                 self.text_cursor_hover = false;
                 if let Some(w) = &self.window {
                     w.set_cursor(CursorIcon::Default);
                 }
+            }
+            WindowEvent::Focused(false) => {
+                self.selecting = false;
+                self.modifiers = ModifiersState::empty();
             }
             WindowEvent::MouseInput {
                 state,

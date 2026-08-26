@@ -202,7 +202,7 @@ la selección y no habilita interacción sobre contenido no seleccionable.
 | Medida | Resultado |
 | --- | --- |
 | Binario Windows | 3.013.632 bytes, 2,874 MiB |
-| SHA-256 | `110104483C8066DCF12E7F9C40EA4CE9D9FD2899273601C9AFEDDC99EDA54EF4` |
+| SHA-256 | `89E29E2411E5FE5CE46763F6C36BD6CC9336BB91A999EB69F4F53D4E685C14A8` |
 | Variación frente a la verificación anterior | 0 bytes |
 | Margen frente al límite deseado | 5,126 MiB |
 

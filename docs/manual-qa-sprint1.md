@@ -58,6 +58,8 @@ Registrar antes de comenzar:
   incluidas las líneas envueltas. Shift+flechas extiende la selección y Escape
   elimina el cursor o selección.
 - Ctrl+A abarca todo el documento. Aún no se espera copia.
+- Si se inicia una selección y el cursor o foco salen de la ventana, el
+  arrastre se detiene sin borrar la selección ya conseguida.
 
 ## Registro
 

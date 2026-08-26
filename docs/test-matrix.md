@@ -56,6 +56,7 @@ Estados permitidos:
 | DPI y zoom | Manual y visual | Pendiente | Pendiente | Sin evidencia |
 | Selección con mouse | Integración y visual | Parcial | Pendiente | Hit testing y geometría de Parley comparten el layout; autoscroll probado, pero falta QA manual, selección general y copia |
 | Cursor de texto sobre contenido | Manual | Parcial | Pendiente | Cambia con el mismo hit testing de selección; requiere QA visual |
+| Pérdida de foco durante selección | Manual | Parcial | Pendiente | Cancela arrastre y modificadores, conserva selección; requiere QA manual |
 | Selección con teclado | Accesibilidad | Parcial | Pendiente | Flechas verticales y horizontales, Shift+flechas, Ctrl+A y Escape funcionan; falta foco y atajos de línea completos |
 | Menú contextual | End to end | Bloqueado | Bloqueado | Referencia en v1 |
 | IME | Manual | Bloqueado | Bloqueado | Editor pendiente |
