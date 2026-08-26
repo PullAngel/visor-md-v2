@@ -54,7 +54,7 @@ Registrar antes de comenzar:
   sus líneas envueltas.
 - Un clic muestra un cursor fino; las flechas lo desplazan dentro del bloque,
   Shift+flechas extiende la selección y Escape elimina el cursor o selección.
-  Aún no se espera selección entre zonas que requieren autoscroll ni copia.
+- Ctrl+A abarca todo el documento. Aún no se espera copia.
 
 ## Registro
 

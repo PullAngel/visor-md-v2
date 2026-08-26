@@ -1817,6 +1817,21 @@ impl ApplicationHandler for App {
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::KeyA),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } if self.modifiers.control_key() => {
+                self.select_document();
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
                         physical_key: PhysicalKey::Code(KeyCode::KeyT),
                         state: ElementState::Pressed,
                         repeat: false,
@@ -1941,6 +1956,22 @@ impl App {
             focus: BlockCursor {
                 block: selection.focus.block,
                 offset: next.focus().index(),
+            },
+        });
+    }
+
+    fn select_document(&mut self) {
+        let Some(last) = self.blocks.len().checked_sub(1) else {
+            return;
+        };
+        self.selection = Some(DocumentSelection {
+            anchor: BlockCursor {
+                block: 0,
+                offset: 0,
+            },
+            focus: BlockCursor {
+                block: last,
+                offset: self.blocks[last].text.len(),
             },
         });
     }
@@ -2632,6 +2663,23 @@ con dos lineas
         assert!(selection_scroll_delta(0.0, 800.0) < 0.0);
         assert!(selection_scroll_delta(799.0, 800.0) > 0.0);
         assert_eq!(selection_scroll_delta(10.0, 60.0), 0.0);
+    }
+
+    #[test]
+    fn seleccionar_todo_abarca_desde_el_primer_hasta_el_ultimo_bloque() {
+        let blocks = aplanar("primer bloque\n\nsegundo bloque");
+        let selection = DocumentSelection {
+            anchor: BlockCursor {
+                block: 0,
+                offset: 0,
+            },
+            focus: BlockCursor {
+                block: blocks.len() - 1,
+                offset: blocks.last().expect("hay bloques").text.len(),
+            },
+        };
+        assert_eq!(selection.range_for(0, blocks[0].text.len()), Some((0, 13)));
+        assert_eq!(selection.range_for(1, blocks[1].text.len()), Some((0, 14)));
     }
 
     /// Los encabezados y las filas de tabla tienen que sobrevivir el

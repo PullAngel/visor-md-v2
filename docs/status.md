@@ -70,6 +70,7 @@ Evidencia actual en Windows:
 - working tree con selección por bloque: 3.009.536 bytes, 2,870 MiB;
 - working tree con selección de teclado: 3.010.048 bytes, 2,871 MiB;
 - working tree con autoscroll de selección: 3.011.584 bytes, 2,872 MiB;
+- working tree con Ctrl+A: 3.012.096 bytes, 2,873 MiB;
 - primer pintado mediano sobre diez ejecuciones: 102,5 ms;
 - P95 de primer pintado: 612 ms;
 - scroll automatizado: 4,4 ms por cuadro.
@@ -89,8 +90,8 @@ causa porque todavía no se controlan caché, carga y planificación del sistema
 - cobertura y fallback tipográfico todavía sin matriz completa;
 - ausencia de CI, fuzzing, validación independiente del SBOM y gates
   multiplataforma.
-- selección parcial con mouse y autoscroll, flechas, Shift+flechas y Escape;
-  falta selección general, copia y QA manual.
+- selección parcial con mouse y autoscroll, flechas, Shift+flechas, Ctrl+A y
+  Escape; falta copia y QA manual.
 
 ## Evidencia disponible
 
