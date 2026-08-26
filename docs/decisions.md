@@ -18,6 +18,8 @@ decisión posterior lo reemplaza y este índice lo hace visible.
 | 16 | Aceptado con condición | Estimar y corregir progresivamente |
 | 17 | Aceptado con gate | Reabrir si accesibilidad o UX lo exige |
 | 18 | Reemplazado por ADR-26 | `STAT`, itálica y reproducción revisadas |
+| 19 a 31 | Aceptados | Modelo, alcance, seguridad y recuperación |
+| 32 | Aceptado | Contexto progresivo y verificación proporcional |
 
 ## ADR-1: Nativo, sin motor web
 
@@ -543,3 +545,22 @@ con el alto real del viewport, no con una constante.
 
 **Por qué.** El trabajo por cuadro queda principalmente ligado al contenido en
 pantalla y el resize no permite desplazarse hacia una zona vacía inexistente.
+
+## ADR-32: Contexto progresivo y verificación proporcional
+
+**Contexto.** `AGENTS.md` acumuló propósito, seguridad, UX, arquitectura, QA y
+presupuestos que ya estaban descritos en documentación especializada. Sus 614
+líneas hacían que una tarea local cargara reglas ajenas y podía inducir gates
+globales para cambios que no afectaban esas propiedades.
+
+**Decisión.** `AGENTS.md` conserva prioridades, invariantes, relación de trabajo,
+preservación Git, economía de implementación, mapa de autoridad y niveles de
+riesgo. Las reglas detalladas permanecen en `security.md`, `threat-model.md`,
+`connectivity.md`, `architecture.md`, `testing.md`, `budget.md`, `design.md`,
+`product.md` y `dependencies.md`. La verificación se elige por comportamiento
+afectado: normal, sensible o auditoría.
+
+**Por qué.** Menos contexto recurrente mejora velocidad y foco sin reducir las
+garantías. Un cambio documental no necesita recompilar release; parser, VFS,
+guardado, red o dependencias siguen exigiendo evidencia más profunda. La tabla
+de enrutamiento evita que la simplificación se convierta en omisión.

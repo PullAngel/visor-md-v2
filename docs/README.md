@@ -19,6 +19,10 @@ Para comprender el proyecto en poco tiempo:
 8. [`glossary.md`](glossary.md): jerga de ciberseguridad y QA en lenguaje
    natural.
 
+La plantilla reutilizable para iniciar otros repositorios está en
+[`../AGENT_WORKFLOW_TEMPLATE.md`](../AGENT_WORKFLOW_TEMPLATE.md). No es una
+instrucción activa hasta adaptarla y renombrarla deliberadamente.
+
 ## Documentos vivos
 
 Estos documentos deben cambiar cuando cambia el producto o su implementación:

@@ -104,21 +104,27 @@ que se observa; probar una propiedad comprueba lo que el sistema puede hacer.
 
 ## Gates por cambio
 
-Todo cambio usa las gates proporcionales a su riesgo.
+`AGENTS.md` decide el nivel de riesgo. Esta sección describe las evidencias que
+corresponden a cada dominio; no exige una auditoría completa para un cambio que
+no puede invalidarla.
 
-Base mínima:
+| Tipo de cambio | Mínimo | Evidencia adicional cuando aplica |
+| --- | --- | --- |
+| Documentación | enlaces locales y `git diff --check` | ADR o estado si cambia una decisión |
+| UI aislada | formatter, lint y tests cercanos | QA visual, teclado, DPI o accesibilidad |
+| Parser o Markdown | formatter, lint, tests y corpus afectado | patologías, rangos, property test o fuzzing |
+| Rendering o fuentes | layout y tests cercanos | regresión visual, Unicode, rendimiento |
+| VFS, rutas o guardado | unitarios e integración | traversal, symlinks, fallos, round-trip |
+| Red, HTML, enlaces o imágenes | casos positivos y negativos | ausencia de red, evasiones y phishing |
+| Dependencias | build, tests y SBOM vigente | audit, deny, licencias, transitivas y tamaño |
+| Release o milestone | gate local completo | auditoría, benchmark, matriz manual y riesgos |
 
-```powershell
-cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-cargo test
-cargo build --release
-```
-
-En Windows, `scripts/check.ps1` ejecuta esas cuatro gates y se detiene en la
-primera que falla. `-SkipRelease` sirve para ciclos rápidos; no reemplaza el
-build release al cerrar un bloque. El mismo comando comprueba que el SBOM esté
-vigente y que los enlaces locales de la documentación rastreada sigan existiendo.
+En Windows, `scripts/check.ps1` ejecuta el gate local completo: formatter,
+Clippy, tests, SBOM, enlaces de documentación y build release. `-SkipRelease`
+sirve para ciclos de código rápidos; no reemplaza release al cerrar un bloque
+sensible. Para una edición puramente documental, `scripts/check-docs.ps1` y
+`git diff --check` son la evidencia normal, salvo que cambie una decisión que
+requiera auditoría.
 
 Además:
 
