@@ -51,9 +51,9 @@ Registrar antes de comenzar:
 - La sensación de scroll es estable, sin saltos perceptibles.
 - Arrastrar entre bloques que estén en pantalla pinta una selección que coincide
   con los glifos y sus líneas envueltas.
-- Un clic muestra un cursor fino; las flechas lo desplazan dentro del bloque y
-  Escape elimina el cursor o selección. Aún no se espera selección entre
-  zonas que requieren autoscroll ni copia.
+- Un clic muestra un cursor fino; las flechas lo desplazan dentro del bloque,
+  Shift+flechas extiende la selección y Escape elimina el cursor o selección.
+  Aún no se espera selección entre zonas que requieren autoscroll ni copia.
 
 ## Registro
 

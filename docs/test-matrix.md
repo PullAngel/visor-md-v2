@@ -54,7 +54,7 @@ Estados permitidos:
 | Resize sin layout corrupto | Integración | Parcial | Pendiente | Prototipo |
 | DPI y zoom | Manual y visual | Pendiente | Pendiente | Sin evidencia |
 | Selección con mouse | Integración y visual | Parcial | Pendiente | Hit testing y geometría de Parley comparten el layout; abarca bloques visibles, pero falta QA manual, autoscroll y copia |
-| Selección con teclado | Accesibilidad | Parcial | Pendiente | Flechas y Escape funcionan sobre la selección actual; falta extensión, foco y navegación entre bloques |
+| Selección con teclado | Accesibilidad | Parcial | Pendiente | Flechas, Shift+flechas y Escape funcionan sobre la selección actual; falta foco, navegación vertical y entre bloques |
 | Menú contextual | End to end | Bloqueado | Bloqueado | Referencia en v1 |
 | IME | Manual | Bloqueado | Bloqueado | Editor pendiente |
 | Lector de pantalla | Accesibilidad | Bloqueado | Bloqueado | Estrategia pendiente |

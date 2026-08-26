@@ -38,7 +38,7 @@ use tiny_skia::{Color, Paint, Pixmap, PremultipliedColorU8, Rect, Transform};
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
-use winit::keyboard::{KeyCode, PhysicalKey};
+use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 use winit::window::{Theme, Window, WindowId};
 
 use fonts::{FONT_CODE, FONT_DOC, register_embedded_fonts};
@@ -1634,6 +1634,7 @@ struct App {
     /// Mientras está activo, mover el mouse extiende la selección del bloque.
     selecting: bool,
     selection: Option<DocumentSelection>,
+    modifiers: ModifiersState,
     /// Conserva el resultado fatal para devolver un codigo de salida distinto
     /// de cero despues de cerrar ordenadamente el event loop.
     fatal_error: bool,
@@ -1747,6 +1748,7 @@ impl ApplicationHandler for App {
                 }
                 ElementState::Released => self.selecting = false,
             },
+            WindowEvent::ModifiersChanged(modifiers) => self.modifiers = modifiers.state(),
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
@@ -1772,7 +1774,7 @@ impl ApplicationHandler for App {
                     },
                 ..
             } => {
-                self.move_selection_visually(false);
+                self.move_selection_visually(false, self.modifiers.shift_key());
                 if let Some(w) = &self.window {
                     w.request_redraw();
                 }
@@ -1787,7 +1789,7 @@ impl ApplicationHandler for App {
                     },
                 ..
             } => {
-                self.move_selection_visually(true);
+                self.move_selection_visually(true, self.modifiers.shift_key());
                 if let Some(w) = &self.window {
                     w.request_redraw();
                 }
@@ -1886,11 +1888,11 @@ impl App {
         });
     }
 
-    fn move_selection_visually(&mut self, forward: bool) {
+    fn move_selection_visually(&mut self, forward: bool, extend: bool) {
         let Some(selection) = self.selection else {
             return;
         };
-        if selection.anchor.block != selection.focus.block {
+        if !extend && selection.anchor.block != selection.focus.block {
             let boundary = if forward {
                 selection.anchor.max(selection.focus)
             } else {
@@ -1907,9 +1909,9 @@ impl App {
             Cursor::from_byte_index(layout, selection.focus.offset, Affinity::Downstream),
         );
         let next = if forward {
-            current.next_visual(layout, false)
+            current.next_visual(layout, extend)
         } else {
-            current.previous_visual(layout, false)
+            current.previous_visual(layout, extend)
         };
         self.selection = Some(DocumentSelection {
             anchor: BlockCursor {
@@ -2335,6 +2337,7 @@ fn main() {
         pointer: None,
         selecting: false,
         selection: None,
+        modifiers: ModifiersState::empty(),
         fatal_error: false,
     };
 
