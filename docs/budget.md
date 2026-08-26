@@ -16,7 +16,7 @@ compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
 | **Objetivo de trabajo** | alrededor de 7 MB |
 | **Límite deseado** | < 8 MB |
 | **Medido en el Sprint 0** | **2,14 MB** |
-| **Checkpoint de recuperación actual** | **3.013.120 bytes, 2,874 MiB** |
+| **Checkpoint de recuperación actual** | **3.013.632 bytes, 2,874 MiB** |
 
 Superar 8 MB exige medición, explicación y aprobación. El límite no se usa para
 recortar seguridad, estabilidad, accesibilidad, Unicode o funciones esenciales.
@@ -189,13 +189,14 @@ borde, el scroll avanza en pasos acotados y vuelve a calcular el foco con el
 layout visible. Ctrl+A crea una selección del documento completo sin requerir
 portapapeles ni capacidades adicionales. Las flechas verticales consultan el
 layout para saltar entre líneas envueltas, en vez de calcular posiciones por
-cantidad de caracteres.
+cantidad de caracteres. El cursor de mouse usa la misma prueba de impacto que
+la selección y no habilita interacción sobre contenido no seleccionable.
 
 | Medida | Resultado |
 | --- | --- |
-| Binario Windows | 3.013.120 bytes, 2,874 MiB |
-| SHA-256 | `B94B6CCE07A478D0F2F993051301DB76B574E3552237E872A06FD813577FBF15` |
-| Variación frente a Ctrl+A | +1.024 bytes |
+| Binario Windows | 3.013.632 bytes, 2,874 MiB |
+| SHA-256 | `CEB6A8A2488184D2ED96738FD9B8F0B05586FD930FC64A00D3660AFB0689232E` |
+| Variación frente a navegación vertical | +512 bytes |
 | Margen frente al límite deseado | 5,126 MiB |
 
 No se agregaron dependencias ni capacidades nuevas. La medición verifica tamaño,

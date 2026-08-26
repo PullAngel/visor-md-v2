@@ -39,7 +39,7 @@ use winit::application::ApplicationHandler;
 use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
-use winit::window::{Theme, Window, WindowId};
+use winit::window::{CursorIcon, Theme, Window, WindowId};
 
 use fonts::{FONT_CODE, FONT_DOC, register_embedded_fonts};
 use limits::{Degradation, MAX_BLOCKS, MAX_INDENT_DEPTH, MAX_NEST};
@@ -1655,6 +1655,7 @@ struct App {
     selecting: bool,
     selection: Option<DocumentSelection>,
     modifiers: ModifiersState,
+    text_cursor_hover: bool,
     /// Conserva el resultado fatal para devolver un codigo de salida distinto
     /// de cero despues de cerrar ordenadamente el event loop.
     fatal_error: bool,
@@ -1744,11 +1745,31 @@ impl ApplicationHandler for App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.pointer = Some((position.x as f32, position.y as f32));
+                let text_cursor_hover = self
+                    .cursor_at(position.x as f32, position.y as f32)
+                    .is_some();
+                if text_cursor_hover != self.text_cursor_hover {
+                    self.text_cursor_hover = text_cursor_hover;
+                    if let Some(w) = &self.window {
+                        w.set_cursor(if text_cursor_hover {
+                            CursorIcon::Text
+                        } else {
+                            CursorIcon::Default
+                        });
+                    }
+                }
                 if self.selecting {
                     self.extend_selection_to(position.x as f32, position.y as f32);
                     if let Some(w) = &self.window {
                         w.request_redraw();
                     }
+                }
+            }
+            WindowEvent::CursorLeft { .. } => {
+                self.pointer = None;
+                self.text_cursor_hover = false;
+                if let Some(w) = &self.window {
+                    w.set_cursor(CursorIcon::Default);
                 }
             }
             WindowEvent::MouseInput {
@@ -2492,6 +2513,7 @@ fn main() {
         selecting: false,
         selection: None,
         modifiers: ModifiersState::empty(),
+        text_cursor_hover: false,
         fatal_error: false,
     };
 

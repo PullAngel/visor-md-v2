@@ -72,6 +72,7 @@ Evidencia actual en Windows:
 - working tree con autoscroll de selección: 3.011.584 bytes, 2,872 MiB;
 - working tree con Ctrl+A: 3.012.096 bytes, 2,873 MiB;
 - working tree con navegación vertical: 3.013.120 bytes, 2,874 MiB;
+- working tree con cursor contextual: 3.013.632 bytes, 2,874 MiB;
 - primer pintado mediano sobre diez ejecuciones: 102,5 ms;
 - P95 de primer pintado: 612 ms;
 - scroll automatizado: 4,4 ms por cuadro.

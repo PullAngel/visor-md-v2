@@ -52,6 +52,8 @@ Registrar antes de comenzar:
 - Arrastrar cerca de un borde desplaza el documento de manera controlable y
   conserva la selección; dentro de la pantalla, esta coincide con los glifos y
   sus líneas envueltas.
+- El cursor de mouse cambia a texto sobre contenido seleccionable y vuelve al
+  cursor habitual al salir de él.
 - Un clic muestra un cursor fino; las flechas lo desplazan dentro del bloque,
   incluidas las líneas envueltas. Shift+flechas extiende la selección y Escape
   elimina el cursor o selección.
