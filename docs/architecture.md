@@ -15,6 +15,7 @@ La separación empezó de forma incremental y con la suite verde:
 
 - `src/main.rs`: aplicación, parser y modelo provisionales, layout y dibujo;
 - `src/fonts.rs`: familias embebidas y registro tipográfico;
+- `src/limits.rs`: límites defensivos y causas de degradación;
 - `src/theme.rs`: paletas Papel y tinta y roles de color.
 
 Parser, modelo, layout y aplicación todavía comparten `main.rs`. Se extraerán en

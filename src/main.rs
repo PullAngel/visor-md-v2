@@ -13,6 +13,7 @@
 #![forbid(unsafe_code)]
 
 mod fonts;
+mod limits;
 mod theme;
 
 use std::collections::HashMap;
@@ -39,43 +40,11 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Theme, Window, WindowId};
 
 use fonts::{FONT_CODE, FONT_DOC, register_embedded_fonts};
+use limits::{Degradation, MAX_BLOCKS, MAX_INDENT_DEPTH, MAX_NEST};
 use theme::{DAY, NIGHT, Palette, Role};
 
 const MARGIN: f32 = 48.0;
 const MAX_MEASURE: f32 = 720.0;
-
-/// Tope duro de anidamiento al recorrer el arbol, de `docs/security.md`
-/// ("bombas de recursos"). Un `.md` con miles de citas o listas anidadas
-/// produce un arbol igual de profundo, y recorrerlo recursivamente sin tope
-/// desborda la pila: el proceso muere sin que ningun `Result` lo atrape.
-///
-/// 64 esta muy por encima de cualquier documento real y muy por debajo de lo
-/// que la pila aguanta. Pasado el tope se abandona el render enriquecido y se
-/// muestra la fuente completa como texto inerte, nunca un arbol truncado.
-const MAX_NEST: u16 = 64;
-
-/// Tope de bloques producidos por el modelo. Evita que una entrada pequena
-/// en bytes expanda estructuras sin limite durante la conversion.
-const MAX_BLOCKS: usize = 100_000;
-
-/// Tope visual de sangria. Independiente del anterior: a partir de cierta
-/// profundidad la sangria se come el ancho util y el texto queda ilegible.
-const MAX_INDENT_DEPTH: u8 = 8;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Degradation {
-    DepthLimit,
-    BlockLimit,
-}
-
-impl Degradation {
-    fn explanation(self) -> &'static str {
-        match self {
-            Self::DepthLimit => "se excedio el limite de anidamiento",
-            Self::BlockLimit => "se excedio el limite de bloques",
-        }
-    }
-}
 
 #[derive(Default)]
 struct TraversalState {
