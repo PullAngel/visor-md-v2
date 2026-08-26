@@ -34,7 +34,7 @@ fn main() {
 | :--- | ---: |
 | texto | 42 |
 
-![Diagrama local](diagram.png "No se carga todavía")
+![Diagrama remoto](https://example.com/diagram.png "No se carga todavía")
 
 Atajo <kbd>Ctrl</kbd> + <kbd>S</kbd>, <mark>concepto clave</mark>,
 H<sub>2</sub>O y x<sup>2</sup>.

@@ -2,7 +2,7 @@
 //
 // Nucleo nativo en recuperacion. Abre un .md, lo parsea con comrak, lo maqueta
 // con parley y lo dibuja con tiny-skia sobre una ventana winit + softbuffer.
-// Todavia no tiene chrome, seleccion ni edicion.
+// Todavía no tiene chrome, selección entre bloques, copia ni edición.
 //
 // Lo que se mide con esto va a docs/budget.md. El criterio de salida del
 // Sprint 0 esta en docs/roadmap.md.
@@ -23,7 +23,9 @@ use std::time::Instant;
 
 use comrak::nodes::{AstNode, NodeValue};
 use comrak::{Arena, Options, parse_document};
-use parley::layout::{Alignment, GlyphRun, Layout, PositionedLayoutItem};
+use parley::layout::{
+    Affinity, Alignment, Cursor, GlyphRun, Layout, PositionedLayoutItem, Selection,
+};
 use parley::style::{
     FontFamily, FontFamilyName, FontStyle, FontWeight, GenericFamily, StyleProperty,
 };
@@ -34,7 +36,7 @@ use swash::scale::{Render, ScaleContext, Source, StrikeWith};
 use swash::zeno::{Format, Vector};
 use tiny_skia::{Color, Paint, Pixmap, PremultipliedColorU8, Rect, Transform};
 use winit::application::ApplicationHandler;
-use winit::event::{ElementState, KeyEvent, MouseScrollDelta, WindowEvent};
+use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Theme, Window, WindowId};
@@ -276,6 +278,16 @@ struct Block {
     /// Vineta, numero o casilla de un item de lista. Se dibuja en el margen,
     /// fuera del ancho de medida del texto.
     marker: Option<Marker>,
+}
+
+/// Selección temporal del lector. Los offsets viven en el texto renderizado
+/// del bloque, igual que los layouts de Parley; el editor posterior la
+/// relacionará con rangos de fuente persistentes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct BlockSelection {
+    block: usize,
+    anchor: usize,
+    focus: usize,
 }
 
 impl Block {
@@ -1579,6 +1591,11 @@ struct App {
     /// Indica que el render enriquecido excedio un limite defensivo. En ese
     /// caso `blocks` contiene la fuente inerte, no un arbol truncado.
     safe_mode: Option<Degradation>,
+    /// Punto actual del cursor dentro de la ventana, en pixeles físicos.
+    pointer: Option<(f32, f32)>,
+    /// Mientras está activo, mover el mouse extiende la selección del bloque.
+    selecting: bool,
+    selection: Option<BlockSelection>,
     /// Conserva el resultado fatal para devolver un codigo de salida distinto
     /// de cero despues de cerrar ordenadamente el event loop.
     fatal_error: bool,
@@ -1666,6 +1683,74 @@ impl ApplicationHandler for App {
                     w.request_redraw();
                 }
             }
+            WindowEvent::CursorMoved { position, .. } => {
+                self.pointer = Some((position.x as f32, position.y as f32));
+                if self.selecting {
+                    self.extend_selection_to(position.x as f32, position.y as f32);
+                    if let Some(w) = &self.window {
+                        w.request_redraw();
+                    }
+                }
+            }
+            WindowEvent::MouseInput {
+                state,
+                button: MouseButton::Left,
+                ..
+            } => match state {
+                ElementState::Pressed => {
+                    self.selection = self.pointer.and_then(|(x, y)| self.selection_at(x, y));
+                    self.selecting = self.selection.is_some();
+                    if let Some(w) = &self.window {
+                        w.request_redraw();
+                    }
+                }
+                ElementState::Released => self.selecting = false,
+            },
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::Escape),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } => {
+                self.selection = None;
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::ArrowLeft),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } => {
+                self.move_selection_visually(false);
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::ArrowRight),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } => {
+                self.move_selection_visually(true);
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
+            }
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
@@ -1732,6 +1817,68 @@ impl ApplicationHandler for App {
 }
 
 impl App {
+    fn selection_at(&self, x: f32, y: f32) -> Option<BlockSelection> {
+        self.slots.iter().enumerate().find_map(|(block, slot)| {
+            let top = slot.y - self.scroll;
+            if y < top || y > top + slot.height {
+                return None;
+            }
+            let (layout, _) = self.live.get(&block)?;
+            let cursor = Cursor::from_point(layout, x - slot.x, y - top);
+            Some(BlockSelection {
+                block,
+                anchor: cursor.index(),
+                focus: cursor.index(),
+            })
+        })
+    }
+
+    fn extend_selection_to(&mut self, x: f32, y: f32) {
+        let Some(selection) = self.selection else {
+            return;
+        };
+        let Some(slot) = self.slots.get(selection.block) else {
+            return;
+        };
+        let Some((layout, _)) = self.live.get(&selection.block) else {
+            return;
+        };
+        let anchor = Cursor::from_byte_index(layout, selection.anchor, Affinity::Downstream);
+        let current = Selection::new(
+            anchor,
+            Cursor::from_byte_index(layout, selection.focus, Affinity::Downstream),
+        );
+        let next = current.extend_to_point(layout, x - slot.x, y - (slot.y - self.scroll));
+        self.selection = Some(BlockSelection {
+            block: selection.block,
+            anchor: next.anchor().index(),
+            focus: next.focus().index(),
+        });
+    }
+
+    fn move_selection_visually(&mut self, forward: bool) {
+        let Some(selection) = self.selection else {
+            return;
+        };
+        let Some((layout, _)) = self.live.get(&selection.block) else {
+            return;
+        };
+        let current = Selection::new(
+            Cursor::from_byte_index(layout, selection.anchor, Affinity::Downstream),
+            Cursor::from_byte_index(layout, selection.focus, Affinity::Downstream),
+        );
+        let next = if forward {
+            current.next_visual(layout, false)
+        } else {
+            current.previous_visual(layout, false)
+        };
+        self.selection = Some(BlockSelection {
+            block: selection.block,
+            anchor: next.anchor().index(),
+            focus: next.focus().index(),
+        });
+    }
+
     fn redraw(&mut self) -> Result<(), String> {
         let Some(window) = self.window.clone() else {
             return Ok(());
@@ -1827,6 +1974,7 @@ impl App {
             scroll,
             surface,
             palette,
+            selection,
             ..
         } = self;
         let pixmap = pixmap
@@ -1929,6 +2077,33 @@ impl App {
                             *palette,
                         );
                     }
+                }
+            }
+
+            if let Some(selection) = selection.filter(|selection| selection.block == i) {
+                let focus = Cursor::from_byte_index(layout, selection.focus, Affinity::Downstream);
+                let ac = palette.accent;
+                let mut selection_paint = Paint::default();
+                selection_paint.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 92));
+                let geometry = if selection.anchor == selection.focus {
+                    vec![(focus.geometry(layout, 1.25), 0)]
+                } else {
+                    Selection::new(
+                        Cursor::from_byte_index(layout, selection.anchor, Affinity::Downstream),
+                        focus,
+                    )
+                    .geometry(layout)
+                };
+                for (rect, _) in geometry {
+                    let Some(rect) = Rect::from_xywh(
+                        slot.x + rect.x0 as f32,
+                        top + rect.y0 as f32,
+                        rect.width() as f32,
+                        rect.height() as f32,
+                    ) else {
+                        continue;
+                    };
+                    pixmap.fill_rect(rect, &selection_paint, Transform::identity(), None);
                 }
             }
 
@@ -2102,6 +2277,9 @@ fn main() {
         log,
         palette: NIGHT,
         safe_mode: degradation,
+        pointer: None,
+        selecting: false,
+        selection: None,
         fatal_error: false,
     };
 
@@ -2284,6 +2462,34 @@ con dos lineas
         );
     }
 
+    #[test]
+    fn la_seleccion_tiene_geometria_dibujable() {
+        let block = &aplanar("Selecciona estas palabras con el mouse.")[0];
+        let start = block.text.find("estas").expect("texto de prueba");
+        let end = start + "estas palabras".len();
+        let mut font_cx = FontContext::new();
+        register_embedded_fonts(&mut font_cx);
+        let mut layout_cx = LayoutContext::new();
+        let layout = build_layout(block, &mut font_cx, &mut layout_cx, 900.0, NIGHT);
+        let selection = Selection::new(
+            Cursor::from_byte_index(&layout, start, Affinity::Downstream),
+            Cursor::from_byte_index(&layout, end, Affinity::Downstream),
+        );
+        let geometry = selection.geometry(&layout);
+        assert!(!geometry.is_empty(), "la seleccion no produjo rectangulos");
+        assert!(geometry.iter().all(|(rect, _)| {
+            rect.width().is_finite()
+                && rect.height().is_finite()
+                && rect.width() > 0.0
+                && rect.height() > 0.0
+        }));
+
+        let caret =
+            Cursor::from_byte_index(&layout, start, Affinity::Downstream).geometry(&layout, 1.25);
+        assert!(caret.width().is_finite() && caret.height().is_finite());
+        assert!(caret.width() > 0.0 && caret.height() > 0.0);
+    }
+
     /// Los encabezados y las filas de tabla tienen que sobrevivir el
     /// aplanado con su tipo puesto: es lo que decide como se dibujan.
     #[test]
@@ -2392,7 +2598,8 @@ con dos lineas
                 && target.destination == "https://example.com/ruta"
         }));
         assert!(targets.iter().any(|target| {
-            target.kind == InlineTargetKind::Image && target.destination == "diagram.png"
+            target.kind == InlineTargetKind::Image
+                && target.destination == "https://example.com/diagram.png"
         }));
 
         let visible = outcome

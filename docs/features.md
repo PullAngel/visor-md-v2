@@ -69,8 +69,8 @@ La evidencia detallada vive en [`status.md`](status.md) y
 
 | Función | Estado | Criterio mínimo |
 | --- | --- | --- |
-| Selección con mouse | Planificado | Hit testing y copia fiel |
-| Selección con teclado | Planificado | Navegación y foco visibles |
+| Selección con mouse | Parcial | Selección visible dentro de un bloque; falta cruzar bloques y copiar |
+| Selección con teclado | Parcial | Flechas y Escape sobre el bloque seleccionado; falta extender, foco y navegación completa |
 | Copiar bloque o documento | Planificado | Texto visible y fuente distinguibles |
 | Alto contraste | Planificado | Matriz Windows y Linux |
 | Reduce motion | Planificado | Todas las transiciones respetan preferencia |

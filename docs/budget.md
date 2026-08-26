@@ -16,7 +16,7 @@ compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
 | **Objetivo de trabajo** | alrededor de 7 MB |
 | **Límite deseado** | < 8 MB |
 | **Medido en el Sprint 0** | **2,14 MB** |
-| **Checkpoint de recuperación actual** | **3.000.320 bytes, 2,861 MiB** |
+| **Checkpoint de recuperación actual** | **3.009.536 bytes, 2,870 MiB** |
 
 Superar 8 MB exige medición, explicación y aprobación. El límite no se usa para
 recortar seguridad, estabilidad, accesibilidad, Unicode o funciones esenciales.
@@ -176,6 +176,25 @@ El aumento es menor que 0,2 % y procede de lógica y dibujo ya presentes, sin
 agregar dependencias, fuentes ni capacidades de red o disco. La evidencia de
 arranque anterior permanece vigente para el comportamiento no modificado; este
 cambio todavía requiere QA visual de ambos temas.
+
+### Selección por bloque
+
+La selección inicial usa el mismo layout de Parley que determina las líneas y
+los glifos. Esto evita una segunda geometría aproximada: el rectángulo pintado
+corresponde a lo que la persona ve, incluso cuando el texto se ajusta de línea.
+También se pinta un cursor fino cuando la selección está colapsada, para que las
+flechas no muevan un foco invisible.
+
+| Medida | Resultado |
+| --- | --- |
+| Binario Windows | 3.009.536 bytes, 2,870 MiB |
+| SHA-256 | `B760956468CC6EC310D9042F9930CAC3E00ED2DAEFA68D98F435A3598A5EBD5C` |
+| Variación frente a allowlist HTML | +9.216 bytes |
+| Margen frente al límite deseado | 5,130 MiB |
+
+No se agregaron dependencias ni capacidades nuevas. La medición verifica tamaño,
+no reemplaza la QA manual de selección, contraste y comportamiento en pantallas
+con distintas escalas.
 
 ### Serie automatizada inicial
 

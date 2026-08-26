@@ -57,16 +57,17 @@ exacto del traspaso.
 - búsqueda binaria del tramo visible;
 - scroll limitado por el viewport real;
 - fallos de inicialización y presentación gráfica reportados sin `panic`;
-- 44 pruebas unitarias y adversariales, incluido un corpus integrado de lector.
+- 45 pruebas unitarias y adversariales, incluido un corpus integrado de lector.
 
 Evidencia actual en Windows:
 
 - `cargo check`: verde;
 - `cargo fmt -- --check`: verde;
 - `cargo clippy --all-targets -- -D warnings`: verde;
-- `cargo test`: 44 de 44 pruebas verdes;
+- `cargo test`: 45 de 45 pruebas verdes;
 - último release de `6176a82`: 2.996.736 bytes, 2,858 MiB;
 - working tree con allowlist HTML: 3.000.320 bytes, 2,861 MiB;
+- working tree con selección por bloque: 3.009.536 bytes, 2,870 MiB;
 - primer pintado mediano sobre diez ejecuciones: 102,5 ms;
 - P95 de primer pintado: 612 ms;
 - scroll automatizado: 4,4 ms por cuadro.
@@ -86,6 +87,8 @@ causa porque todavía no se controlan caché, carga y planificación del sistema
 - cobertura y fallback tipográfico todavía sin matriz completa;
 - ausencia de CI, fuzzing, validación independiente del SBOM y gates
   multiplataforma.
+- selección parcial por bloque con mouse, flechas y Escape; falta selección
+  entre bloques, copia y QA manual.
 
 ## Evidencia disponible
 
