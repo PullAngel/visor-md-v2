@@ -53,7 +53,7 @@ Estados permitidos:
 | Tema claro y oscuro | Visual | Parcial | Pendiente | Commit `090e9de` |
 | Resize sin layout corrupto | Integración | Parcial | Pendiente | Prototipo |
 | DPI y zoom | Manual y visual | Pendiente | Pendiente | Sin evidencia |
-| Selección con mouse | Integración y visual | Parcial | Pendiente | Hit testing y geometría de Parley comparten el layout; abarca bloques visibles, pero falta QA manual, autoscroll y copia |
+| Selección con mouse | Integración y visual | Parcial | Pendiente | Hit testing y geometría de Parley comparten el layout; autoscroll probado, pero falta QA manual, selección general y copia |
 | Selección con teclado | Accesibilidad | Parcial | Pendiente | Flechas, Shift+flechas y Escape funcionan sobre la selección actual; falta foco, navegación vertical y entre bloques |
 | Menú contextual | End to end | Bloqueado | Bloqueado | Referencia en v1 |
 | IME | Manual | Bloqueado | Bloqueado | Editor pendiente |

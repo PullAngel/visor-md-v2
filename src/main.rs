@@ -47,6 +47,8 @@ use theme::{DAY, NIGHT, Palette, Role};
 
 const MARGIN: f32 = 48.0;
 const MAX_MEASURE: f32 = 720.0;
+const SELECTION_SCROLL_EDGE: f32 = 32.0;
+const SELECTION_SCROLL_MAX_STEP: f32 = 18.0;
 
 #[derive(Default)]
 struct TraversalState {
@@ -1138,6 +1140,24 @@ fn max_scroll(doc_height: f32, viewport_height: f32) -> f32 {
     (doc_height - viewport_height).max(0.0)
 }
 
+fn selection_scroll_delta(pointer_y: f32, viewport_height: f32) -> f32 {
+    if viewport_height <= SELECTION_SCROLL_EDGE * 2.0 {
+        return 0.0;
+    }
+    if pointer_y < SELECTION_SCROLL_EDGE {
+        let intensity = (SELECTION_SCROLL_EDGE - pointer_y).clamp(0.0, SELECTION_SCROLL_EDGE)
+            / SELECTION_SCROLL_EDGE;
+        return -SELECTION_SCROLL_MAX_STEP * intensity.max(0.2);
+    }
+    if pointer_y > viewport_height - SELECTION_SCROLL_EDGE {
+        let intensity = (pointer_y - (viewport_height - SELECTION_SCROLL_EDGE))
+            .clamp(0.0, SELECTION_SCROLL_EDGE)
+            / SELECTION_SCROLL_EDGE;
+        return SELECTION_SCROLL_MAX_STEP * intensity.max(0.2);
+    }
+    0.0
+}
+
 fn window_title(path: &str, safe_mode: Option<Degradation>) -> String {
     let mode = if safe_mode.is_some() {
         " · modo seguro"
@@ -1925,6 +1945,29 @@ impl App {
         });
     }
 
+    /// Desplaza mientras se arrastra cerca de un borde. El foco se recalcula
+    /// contra el layout visible de este cuadro, nunca contra coordenadas de
+    /// documento estimadas.
+    fn autoscroll_selection(&mut self, viewport_height: f32) -> bool {
+        if !self.selecting {
+            return false;
+        }
+        let Some((x, y)) = self.pointer else {
+            return false;
+        };
+        let delta = selection_scroll_delta(y, viewport_height);
+        if delta == 0.0 {
+            return false;
+        }
+        let next = (self.scroll + delta).clamp(0.0, max_scroll(self.doc_height, viewport_height));
+        if (next - self.scroll).abs() < f32::EPSILON {
+            return false;
+        }
+        self.scroll = next;
+        self.extend_selection_to(x, y);
+        true
+    }
+
     fn redraw(&mut self) -> Result<(), String> {
         let Some(window) = self.window.clone() else {
             return Ok(());
@@ -1995,6 +2038,10 @@ impl App {
                 });
                 self.live.insert(i, (layout, marker));
             }
+        }
+
+        if self.autoscroll_selection(size.height as f32) {
+            window.request_redraw();
         }
 
         // El pixmap se reusa entre cuadros: reservar 2,7 MB por cuadro y
@@ -2577,6 +2624,14 @@ con dos lineas
             offset: 4,
         });
         assert_eq!(collapsed.range_for(2, 9), Some((4, 4)));
+    }
+
+    #[test]
+    fn el_autoscroll_de_seleccion_respeta_los_bordes() {
+        assert_eq!(selection_scroll_delta(400.0, 800.0), 0.0);
+        assert!(selection_scroll_delta(0.0, 800.0) < 0.0);
+        assert!(selection_scroll_delta(799.0, 800.0) > 0.0);
+        assert_eq!(selection_scroll_delta(10.0, 60.0), 0.0);
     }
 
     /// Los encabezados y las filas de tabla tienen que sobrevivir el

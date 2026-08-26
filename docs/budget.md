@@ -16,7 +16,7 @@ compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
 | **Objetivo de trabajo** | alrededor de 7 MB |
 | **Límite deseado** | < 8 MB |
 | **Medido en el Sprint 0** | **2,14 MB** |
-| **Checkpoint de recuperación actual** | **3.010.048 bytes, 2,871 MiB** |
+| **Checkpoint de recuperación actual** | **3.011.584 bytes, 2,872 MiB** |
 
 Superar 8 MB exige medición, explicación y aprobación. El límite no se usa para
 recortar seguridad, estabilidad, accesibilidad, Unicode o funciones esenciales.
@@ -177,21 +177,23 @@ agregar dependencias, fuentes ni capacidades de red o disco. La evidencia de
 arranque anterior permanece vigente para el comportamiento no modificado; este
 cambio todavía requiere QA visual de ambos temas.
 
-### Selección entre bloques visibles y teclado
+### Selección, teclado y autoscroll
 
 La selección inicial usa el mismo layout de Parley que determina las líneas y
 los glifos. Esto evita una segunda geometría aproximada: el rectángulo pintado
 corresponde a lo que la persona ve, incluso cuando el texto se ajusta de línea.
 También se pinta un cursor fino cuando la selección está colapsada, para que las
 flechas no muevan un foco invisible. Shift+flechas conserva el ancla y extiende
-el foco, sin usar un modelo de coordenadas paralelo.
+el foco, sin usar un modelo de coordenadas paralelo. Al arrastrar cerca de un
+borde, el scroll avanza en pasos acotados y vuelve a calcular el foco con el
+layout visible.
 
 | Medida | Resultado |
 | --- | --- |
-| Binario Windows | 3.010.048 bytes, 2,871 MiB |
-| SHA-256 | `FA0D7BCA7B0C7DA3CD19916087B69E030D9D5B635E02D281EFABCD295163581C` |
-| Variación frente a selección entre bloques | +512 bytes |
-| Margen frente al límite deseado | 5,129 MiB |
+| Binario Windows | 3.011.584 bytes, 2,872 MiB |
+| SHA-256 | `B33B39074254D9EC0D4DCC8BAEBAB62D3565B526EA92E6737C436AC35CBB7BAD` |
+| Variación frente a selección de teclado | +1.536 bytes |
+| Margen frente al límite deseado | 5,128 MiB |
 
 No se agregaron dependencias ni capacidades nuevas. La medición verifica tamaño,
 no reemplaza la QA manual de selección, contraste y comportamiento en pantallas

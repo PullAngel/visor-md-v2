@@ -49,8 +49,9 @@ Registrar antes de comenzar:
 - La rueda llega al principio y al final sin zonas inaccesibles.
 - Texto, enlaces, decoración y casillas conservan contraste suficiente.
 - La sensación de scroll es estable, sin saltos perceptibles.
-- Arrastrar entre bloques que estén en pantalla pinta una selección que coincide
-  con los glifos y sus líneas envueltas.
+- Arrastrar cerca de un borde desplaza el documento de manera controlable y
+  conserva la selección; dentro de la pantalla, esta coincide con los glifos y
+  sus líneas envueltas.
 - Un clic muestra un cursor fino; las flechas lo desplazan dentro del bloque,
   Shift+flechas extiende la selección y Escape elimina el cursor o selección.
   Aún no se espera selección entre zonas que requieren autoscroll ni copia.
