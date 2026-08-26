@@ -55,14 +55,14 @@ exacto del traspaso.
 - HTML desconocido visible e inerte;
 - búsqueda binaria del tramo visible;
 - scroll limitado por el viewport real;
-- 33 pruebas unitarias y adversariales.
+- 38 pruebas unitarias y adversariales.
 
 Evidencia actual en Windows:
 
 - `cargo check`: verde;
 - `cargo fmt -- --check`: verde;
 - `cargo clippy --all-targets -- -D warnings`: verde;
-- `cargo test`: 33 de 33 pruebas verdes;
+- `cargo test`: 38 de 38 pruebas verdes;
 - release de `cb16892`: 2.996.224 bytes, 2,857 MiB;
 - primer pintado mediano sobre cinco ejecuciones: 110 ms;
 - scroll automatizado mediano: 4,8 ms por cuadro.
@@ -75,7 +75,7 @@ planificación del sistema.
 ## Pendientes inmediatos
 
 - verificación visual de task lists, decoraciones, temas y cursiva;
-- allowlist nativa de HTML semántico aprobada;
+- completar la allowlist nativa de HTML semántico; `br` ya está implementado;
 - corpus CommonMark y GFM sistemático;
 - separación incompleta de `main.rs`; fuentes y tema ya tienen módulos propios;
 - acceso directo a filesystem sin VFS;

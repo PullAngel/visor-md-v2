@@ -83,6 +83,11 @@ Allowlist HTML inicial:
 - `sub`;
 - `sup`.
 
+Estado actual: solo `br`, sin atributos, tiene representación nativa. `kbd`,
+`mark`, `sub` y `sup` permanecen visibles como fuente inerte hasta contar con
+modelo, layout, dibujo y pruebas coherentes. Una etiqueta `br` con cualquier
+atributo tampoco entra en la allowlist.
+
 `details` y `summary` solo pueden existir como controles nativos propios y
 simples. No se crea DOM.
 

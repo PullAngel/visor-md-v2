@@ -157,7 +157,7 @@ del working tree actual.
 
 El 25 de agosto de 2026 el working tree de recuperación alcanzó:
 
-- 33 pruebas unitarias y adversariales verdes en Windows MSVC;
+- 38 pruebas unitarias y adversariales verdes en Windows MSVC;
 - formato verde;
 - `clippy` sin advertencias permitidas;
 - build release verde;

@@ -331,6 +331,16 @@ struct InlineOutput {
     targets: Vec<InlineTarget>,
 }
 
+/// Reconoce la unica forma HTML que el renderer interpreta por ahora. La
+/// comparacion es cerrada y no acepta atributos: una etiqueta aparentemente
+/// inocua con `onclick` u otra carga sigue visible como fuente inerte.
+fn is_native_break(html: &str) -> bool {
+    matches!(
+        html.trim().to_ascii_lowercase().as_str(),
+        "<br>" | "<br/>" | "<br />"
+    )
+}
+
 /// Recorre los hijos inline de un nodo acumulando texto y sus tramos con
 /// enfasis. `state` baja por el arbol, asi un `**a _b_**` sale con los dos
 /// enfasis puestos sobre `b`.
@@ -442,13 +452,17 @@ fn inline_into<'a>(
                 });
             }
             // HTML nunca se entrega a un navegador ni se interpreta. Hasta
-            // que la allowlist semantica tenga componentes nativos, se hace
-            // visible como fuente inerte para que el documento no esconda
-            // contenido ni parezca distinto de lo que realmente contiene.
+            // que cada elemento de la allowlist tenga un componente nativo,
+            // se hace visible como fuente inerte para que el documento no
+            // esconda contenido ni parezca distinto de lo que contiene.
             NodeValue::HtmlInline(html) => {
-                let mut inert = state;
-                inert.code = true;
-                literal(&html, inert, child_source, output);
+                if is_native_break(&html) {
+                    output.text.push('\n');
+                } else {
+                    let mut inert = state;
+                    inert.code = true;
+                    literal(&html, inert, child_source, output);
+                }
             }
             NodeValue::SoftBreak => output.text.push(' '),
             NodeValue::LineBreak => output.text.push('\n'),
@@ -632,14 +646,12 @@ fn flatten<'a>(
                     }
                 }
             }
-            NodeValue::Item(_) | NodeValue::TaskItem(_) => flatten(
-                child,
-                depth.saturating_add(1),
-                nest + 1,
-                source_index,
-                traversal,
-                out,
-            ),
+            // La lista ya incremento `depth` al entrar al item. El nodo Item
+            // es solo un contenedor; sumarle otra vez provocaba que una lista de
+            // primer nivel se dibujara con sangria de segundo nivel.
+            NodeValue::Item(_) | NodeValue::TaskItem(_) => {
+                flatten(child, depth, nest + 1, source_index, traversal, out)
+            }
             NodeValue::CodeBlock(cb) => {
                 let empty_line = std::iter::once("").filter(|_| cb.literal.is_empty());
                 for line in empty_line.chain(cb.literal.lines()) {
@@ -2052,12 +2064,43 @@ mod pruebas_inline {
     }
 
     #[test]
+    fn escapes_y_entidades_llegan_como_texto_visible() {
+        let blocks = aplanar(r"\*literal\* &amp; &#x1F600;");
+        assert_eq!(blocks[0].text, "*literal* & 😀");
+        assert!(blocks[0].spans.is_empty());
+    }
+
+    #[test]
+    fn encabezado_setext_conserva_nivel_y_origen() {
+        let md = "Titulo\n======";
+        let blocks = aplanar(md);
+        assert_eq!(blocks.len(), 1);
+        assert!(matches!(blocks[0].kind, Kind::Heading(1)));
+        assert_eq!(blocks[0].text, "Titulo");
+        assert_eq!(&md[blocks[0].source.start..blocks[0].source.end], md);
+    }
+
+    #[test]
     fn cada_enfasis_llega_a_su_tramo() {
         assert!(enfasis_de("un **fuerte** aca", "fuerte").strong);
         assert!(enfasis_de("un _suave_ aca", "suave").emph);
         assert!(enfasis_de("un `mono` aca", "mono").code);
         assert!(enfasis_de("un ~~tachado~~ aca", "tachado").strike);
         assert!(enfasis_de("un [enlace](http://x) aca", "enlace").link);
+    }
+
+    #[test]
+    fn autolinks_conservan_texto_y_destino() {
+        let blocks = aplanar("Visita https://example.com/ruta y <correo@example.com>.");
+        let block = &blocks[0];
+        assert_eq!(block.targets.len(), 2);
+        assert_eq!(block.targets[0].kind, InlineTargetKind::Link);
+        assert_eq!(block.targets[0].destination, "https://example.com/ruta");
+        assert_eq!(block.targets[1].destination, "mailto:correo@example.com");
+        for target in &block.targets {
+            assert!(block.text.is_char_boundary(target.start));
+            assert!(block.text.is_char_boundary(target.end));
+        }
     }
 
     #[test]
@@ -2154,6 +2197,19 @@ mod pruebas_inline {
     }
 
     #[test]
+    fn cada_lista_incrementa_una_sola_vez_la_sangria() {
+        let blocks = aplanar("- primero\n  - segundo");
+        let depths: Vec<_> = blocks
+            .iter()
+            .filter_map(|block| match block.kind {
+                Kind::Item(depth) => Some(depth),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(depths, vec![1, 2]);
+    }
+
+    #[test]
     fn las_tareas_marcan_su_casilla() {
         let blocks = aplanar("- [ ] pendiente\n- [x] hecha");
         let marcas: Vec<_> = blocks.iter().filter_map(|b| b.marker.clone()).collect();
@@ -2246,6 +2302,19 @@ mod pruebas_inline {
         assert!(visible.contains("<iframe"));
         assert!(visible.contains("file:///secreto"));
         assert!(block.iter().all(|item| item.targets.is_empty()));
+    }
+
+    #[test]
+    fn br_es_nativo_pero_sus_atributos_no_se_interpretan() {
+        for tag in ["<br>", "<BR/>", "<br />"] {
+            let blocks = aplanar(&format!("antes{tag}despues"));
+            assert_eq!(blocks[0].text, "antes\ndespues");
+        }
+
+        let blocks = aplanar("antes<br onclick=\"alert(1)\">despues");
+        assert!(blocks[0].text.contains("onclick"));
+        assert!(!blocks[0].text.contains('\n'));
+        assert!(blocks[0].targets.is_empty());
     }
 
     #[test]
