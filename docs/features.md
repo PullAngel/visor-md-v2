@@ -70,7 +70,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Función | Estado | Criterio mínimo |
 | --- | --- | --- |
 | Selección con mouse | Parcial | Selección visible con autoscroll; falta cruzar cualquier límite y copiar |
-| Selección con teclado | Parcial | Flechas, Shift+flechas, Ctrl+A y Escape; falta foco y navegación vertical completa |
+| Selección con teclado | Parcial | Flechas, Shift+flechas, Ctrl+A y Escape; falta foco y atajos de línea completos |
 | Copiar bloque o documento | Planificado | Texto visible y fuente distinguibles |
 | Alto contraste | Planificado | Matriz Windows y Linux |
 | Reduce motion | Planificado | Todas las transiciones respetan preferencia |

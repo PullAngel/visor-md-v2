@@ -16,7 +16,7 @@ compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
 | **Objetivo de trabajo** | alrededor de 7 MB |
 | **Límite deseado** | < 8 MB |
 | **Medido en el Sprint 0** | **2,14 MB** |
-| **Checkpoint de recuperación actual** | **3.012.096 bytes, 2,873 MiB** |
+| **Checkpoint de recuperación actual** | **3.013.120 bytes, 2,874 MiB** |
 
 Superar 8 MB exige medición, explicación y aprobación. El límite no se usa para
 recortar seguridad, estabilidad, accesibilidad, Unicode o funciones esenciales.
@@ -187,14 +187,16 @@ flechas no muevan un foco invisible. Shift+flechas conserva el ancla y extiende
 el foco, sin usar un modelo de coordenadas paralelo. Al arrastrar cerca de un
 borde, el scroll avanza en pasos acotados y vuelve a calcular el foco con el
 layout visible. Ctrl+A crea una selección del documento completo sin requerir
-portapapeles ni capacidades adicionales.
+portapapeles ni capacidades adicionales. Las flechas verticales consultan el
+layout para saltar entre líneas envueltas, en vez de calcular posiciones por
+cantidad de caracteres.
 
 | Medida | Resultado |
 | --- | --- |
-| Binario Windows | 3.012.096 bytes, 2,873 MiB |
-| SHA-256 | `A0A9957FD7C8453360EF3D96E96CE0FD8C74D07762018A70D742C43512A3DEAE` |
-| Variación frente a autoscroll | +512 bytes |
-| Margen frente al límite deseado | 5,127 MiB |
+| Binario Windows | 3.013.120 bytes, 2,874 MiB |
+| SHA-256 | `B94B6CCE07A478D0F2F993051301DB76B574E3552237E872A06FD813577FBF15` |
+| Variación frente a Ctrl+A | +1.024 bytes |
+| Margen frente al límite deseado | 5,126 MiB |
 
 No se agregaron dependencias ni capacidades nuevas. La medición verifica tamaño,
 no reemplaza la QA manual de selección, contraste y comportamiento en pantallas

@@ -1787,6 +1787,36 @@ impl ApplicationHandler for App {
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::ArrowUp),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } => {
+                self.move_selection_line(false, self.modifiers.shift_key());
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::ArrowDown),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } => {
+                self.move_selection_line(true, self.modifiers.shift_key());
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
                         physical_key: PhysicalKey::Code(KeyCode::ArrowLeft),
                         state: ElementState::Pressed,
                         repeat: false,
@@ -1972,6 +2002,52 @@ impl App {
             focus: BlockCursor {
                 block: last,
                 offset: self.blocks[last].text.len(),
+            },
+        });
+    }
+
+    fn move_selection_line(&mut self, down: bool, extend: bool) {
+        let Some(selection) = self.selection else {
+            return;
+        };
+        if !extend && selection.anchor.block != selection.focus.block {
+            let boundary = if down {
+                selection.anchor.max(selection.focus)
+            } else {
+                selection.anchor.min(selection.focus)
+            };
+            self.selection = Some(DocumentSelection::collapsed(boundary));
+            return;
+        }
+        let Some((layout, _)) = self.live.get(&selection.focus.block) else {
+            return;
+        };
+        let focus = Cursor::from_byte_index(layout, selection.focus.offset, Affinity::Downstream);
+        let current = if selection.anchor.block == selection.focus.block {
+            Selection::new(
+                Cursor::from_byte_index(layout, selection.anchor.offset, Affinity::Downstream),
+                focus,
+            )
+        } else {
+            Selection::new(focus, focus)
+        };
+        let next = if down {
+            current.next_line(layout, extend)
+        } else {
+            current.previous_line(layout, extend)
+        };
+        self.selection = Some(DocumentSelection {
+            anchor: if extend && selection.anchor.block != selection.focus.block {
+                selection.anchor
+            } else {
+                BlockCursor {
+                    block: selection.focus.block,
+                    offset: next.anchor().index(),
+                }
+            },
+            focus: BlockCursor {
+                block: selection.focus.block,
+                offset: next.focus().index(),
             },
         });
     }
@@ -2680,6 +2756,19 @@ con dos lineas
         };
         assert_eq!(selection.range_for(0, blocks[0].text.len()), Some((0, 13)));
         assert_eq!(selection.range_for(1, blocks[1].text.len()), Some((0, 14)));
+    }
+
+    #[test]
+    fn la_seleccion_vertical_usa_lineas_del_layout() {
+        let block = &aplanar("uno dos tres cuatro cinco seis siete ocho nueve")[0];
+        let mut font_cx = FontContext::new();
+        register_embedded_fonts(&mut font_cx);
+        let mut layout_cx = LayoutContext::new();
+        let layout = build_layout(block, &mut font_cx, &mut layout_cx, 180.0, NIGHT);
+        assert!(layout.lines().count() > 1, "la fixture debe envolver");
+        let cursor = Cursor::from_byte_index(&layout, 2, Affinity::Downstream);
+        let next = Selection::new(cursor, cursor).next_line(&layout, false);
+        assert_ne!(next.focus().index(), cursor.index());
     }
 
     /// Los encabezados y las filas de tabla tienen que sobrevivir el
