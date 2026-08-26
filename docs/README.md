@@ -38,6 +38,7 @@ Estos documentos deben cambiar cuando cambia el producto o su implementación:
 | [`dependencies.md`](dependencies.md) | Auditorías, grafo, advisories y deuda de suministro |
 | [`glossary.md`](glossary.md) | Conceptos técnicos explicados de forma breve |
 | [`budget.md`](budget.md) | Tamaño, arranque, memoria y reproducción |
+| [`benchmarks/`](benchmarks/) | Reportes crudos de rendimiento versionados |
 | [`roadmap.md`](roadmap.md) | Secuencia, dependencias y criterios de salida |
 | [`design.md`](design.md) | Sistema visual e interacción |
 | [`decisions.md`](decisions.md) | ADR y decisiones reemplazadas |

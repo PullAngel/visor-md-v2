@@ -261,3 +261,14 @@ redirigida a un archivo, **cada `eprintln` costaba más que el trabajo que
 pretendía cronometrar**. Llegó a reportar 1247 ms de primer pintado donde el
 proceso entero tardaba 168 ms. Una herramienta de medición que se mide a sí
 misma miente, y en este caso mintió por un factor de diez.
+
+Para una serie con muestras crudas, mediana y percentil 95:
+
+```powershell
+.\scripts\benchmark-startup.ps1 -Document .\docs\architecture.md -Runs 10
+```
+
+El reporte incluye commit, estado del working tree, toolchain, tamaño y hash del
+ejecutable. `cacheState` y `systemLoad` quedan declarados como no controlados; la
+herramienta hace repetible la recolección, pero no convierte una serie cálida en
+una medición de arranque frío.

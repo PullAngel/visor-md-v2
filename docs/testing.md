@@ -128,6 +128,10 @@ Además:
 - rendimiento: benchmark antes y después;
 - seguridad: caso positivo, negativo y forma de evasión.
 
+Las series de arranque y scroll se recogen con
+`scripts/benchmark-startup.ps1`. El reporte conserva muestras crudas para que un
+promedio o una mediana no oculten outliers.
+
 ## Evidencia de release
 
 Una release candidata necesita:
