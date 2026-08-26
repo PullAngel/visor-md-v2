@@ -2561,6 +2561,41 @@ mod pruebas {
         }
     }
 
+    /// Barrido reproducible de combinaciones raras. No sustituye una campaña
+    /// de fuzzing: fija una muestra amplia y barata en cada ejecución normal.
+    #[test]
+    fn barrido_adversarial_determinista_no_entra_en_panico() {
+        const FRAGMENTOS: &[&str] = &[
+            "# título\n",
+            "> cita ",
+            "- [x] tarea\n",
+            "**énfasis",
+            "[enlace](https://example.com/a?b=c)",
+            "<script>alert(1)</script>",
+            "<mark atributo=\"inert\">",
+            "</mark>",
+            "`código`",
+            "|a|b|\n|-|-|\n",
+            "😀\u{202e}\u{200b}",
+            "[",
+            "](",
+            "```rust\n",
+            "\n",
+        ];
+        for seed in 0..128_u64 {
+            let mut state = seed.wrapping_add(0x9e37_79b9);
+            let mut input = String::new();
+            for _ in 0..96 {
+                state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+                let fragment = FRAGMENTOS[(state as usize) % FRAGMENTOS.len()];
+                input.push_str(fragment);
+            }
+            let parsed =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| parse_blocks(&input)));
+            assert!(parsed.is_ok(), "el seed {seed} produjo un panic");
+        }
+    }
+
     #[test]
     fn un_documento_normal_no_entra_en_modo_seguro() {
         let outcome = parse_blocks("# Titulo\n\nTexto con **formato**.")

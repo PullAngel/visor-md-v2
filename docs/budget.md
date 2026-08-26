@@ -195,8 +195,8 @@ la selección y no habilita interacción sobre contenido no seleccionable.
 | Medida | Resultado |
 | --- | --- |
 | Binario Windows | 3.013.632 bytes, 2,874 MiB |
-| SHA-256 | `CEB6A8A2488184D2ED96738FD9B8F0B05586FD930FC64A00D3660AFB0689232E` |
-| Variación frente a navegación vertical | +512 bytes |
+| SHA-256 | `B46EEBE4745B76880FA482FB59A5B56E47FFBB4D6941D6143CFBF66437437E70` |
+| Variación frente a la verificación anterior | 0 bytes |
 | Margen frente al límite deseado | 5,126 MiB |
 
 No se agregaron dependencias ni capacidades nuevas. La medición verifica tamaño,

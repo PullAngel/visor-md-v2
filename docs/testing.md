@@ -48,6 +48,12 @@ Se usarán:
 En lugar de comprobar solo ejemplos concretos, genera muchas variantes y verifica
 propiedades. Ejemplo: editar un rango no debe modificar bytes fuera de ese rango.
 
+El núcleo actual también ejecuta un **barrido adversarial determinista**: 128
+combinaciones reproducibles de fragmentos Markdown, HTML inerte, Unicode y
+estructura incompleta. Es una red de regresión barata que comprueba ausencia de
+`panic` en cada suite normal. No se presenta como fuzzing ni sustituye una
+campaña de fuzzing con corpus, cobertura y duración registrados.
+
 ### Fuzzing
 
 Un fuzzer genera entradas inesperadas continuamente. Busca panic, bloqueos,

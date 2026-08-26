@@ -57,14 +57,15 @@ exacto del traspaso.
 - búsqueda binaria del tramo visible;
 - scroll limitado por el viewport real;
 - fallos de inicialización y presentación gráfica reportados sin `panic`;
-- 45 pruebas unitarias y adversariales, incluido un corpus integrado de lector.
+- 50 pruebas unitarias y adversariales, incluido un corpus integrado de lector
+  y un barrido adversarial determinista.
 
 Evidencia actual en Windows:
 
 - `cargo check`: verde;
 - `cargo fmt -- --check`: verde;
 - `cargo clippy --all-targets -- -D warnings`: verde;
-- `cargo test`: 45 de 45 pruebas verdes;
+- `cargo test`: 50 de 50 pruebas verdes;
 - último release de `6176a82`: 2.996.736 bytes, 2,858 MiB;
 - working tree con allowlist HTML: 3.000.320 bytes, 2,861 MiB;
 - working tree con selección por bloque: 3.009.536 bytes, 2,870 MiB;
