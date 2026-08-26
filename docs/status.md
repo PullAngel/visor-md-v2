@@ -63,13 +63,14 @@ Evidencia actual en Windows:
 - `cargo fmt -- --check`: verde;
 - `cargo clippy --all-targets -- -D warnings`: verde;
 - `cargo test`: 33 de 33 pruebas verdes;
-- release local: 2.995.712 bytes;
-- primer pintado cálido sobre `docs/architecture.md`: 110 ms;
-- scroll automatizado: 4,9 ms por cuadro.
+- release de `cb16892`: 2.996.224 bytes, 2,857 MiB;
+- primer pintado mediano sobre cinco ejecuciones: 110 ms;
+- scroll automatizado mediano: 4,8 ms por cuadro.
 
-También se observaron primeras ejecuciones de 388 y 965 ms bajo carga variable.
-Se conservan como outliers sin atribuirles causa porque todavía no existe un
-protocolo estadístico que controle caché, carga y planificación del sistema.
+También se observaron ejecuciones anteriores de 388 y 965 ms y una ejecución de
+587 ms en la serie actual. Se conservan como outliers sin atribuirles causa
+porque todavía no existe un protocolo estadístico que controle caché, carga y
+planificación del sistema.
 
 ## Pendientes inmediatos
 

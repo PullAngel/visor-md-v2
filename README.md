@@ -17,11 +17,11 @@ como entrada potencialmente hostil.
 El proyecto está en recuperación y estabilización del Sprint 1.
 
 - `main` conserva el último estado estable del prototipo nativo.
-- El desarrollo activo ocurre en ramas separadas.
-- Existe trabajo local heredado de una sesión interrumpida que todavía no
-  compila y no debe confundirse con una versión terminada.
-- La documentación se está alineando con el producto y con la implementación
-  real antes de continuar el código.
+- El desarrollo activo ocurre en `codex/sprint-1-recovery`.
+- El trabajo heredado ya fue preservado, reconstruido y vuelve a compilar con
+  sus pruebas verdes. Sigue siendo una recuperación en revisión, no una versión
+  terminada.
+- La documentación distingue lo comprobado, lo parcial y lo planificado.
 
 La fotografía verificable del estado se mantiene en
 [`docs/status.md`](docs/status.md). El contexto completo del traspaso está en
@@ -126,15 +126,15 @@ Requisitos previstos:
 - herramientas de compilación nativas de la plataforma;
 - dependencias resueltas por Cargo.
 
-Comandos normales una vez recuperado el working tree:
+Validación completa en Windows:
 
 ```powershell
-cargo build --release
-cargo test
+.\scripts\check.ps1
 ```
 
-El source local heredado todavía está en recuperación. Consultar
-[`docs/status.md`](docs/status.md) antes de interpretar un fallo de build.
+Los comandos de Cargo también pueden ejecutarse por separado. Consultar
+[`docs/status.md`](docs/status.md) antes de interpretar el alcance de una prueba
+verde: muchas funciones del producto todavía están planificadas.
 
 ## Desarrollo asistido por IA
 

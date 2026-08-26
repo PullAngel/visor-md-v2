@@ -22,7 +22,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Apertura de `.md` por argumento | Estable | Muestra ventana y contenido |
 | Parsing Markdown básico | Estable | Casos actuales del prototipo |
 | Tema claro y oscuro | Estable | Sistema y alternancia manual |
-| Tipografía embebida | Parcial | Procedencia y subset reproducibles pendientes |
+| Tipografía embebida | Parcial | Reproducción verificada; falta matriz Unicode y fallback |
 | Virtualización inicial | Parcial | Debe eliminar recorridos O(n) por frame |
 | Formato inline real | Recuperación | Modelo, layout, dibujo y corpus |
 | Listas, citas y reglas | Recuperación | Casos anidados y visuales |

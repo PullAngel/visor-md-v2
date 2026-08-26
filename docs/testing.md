@@ -115,6 +115,10 @@ cargo test
 cargo build --release
 ```
 
+En Windows, `scripts/check.ps1` ejecuta esas cuatro gates y se detiene en la
+primera que falla. `-SkipRelease` sirve para ciclos rápidos; no reemplaza el
+build release al cerrar un bloque.
+
 Además:
 
 - cambios Markdown: corpus y patologías;
@@ -162,3 +166,6 @@ El 25 de agosto de 2026 el working tree de recuperación alcanzó:
 La fixture no cuenta como prueba aprobada hasta registrar una inspección visual.
 Sirve para repetir siempre el mismo documento con temas, énfasis, listas, tareas,
 citas, tabla, código, HTML inerte, emoji y fallback Unicode.
+
+El recorrido y los datos que deben registrarse están en
+[`manual-qa-sprint1.md`](manual-qa-sprint1.md).
