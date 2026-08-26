@@ -55,14 +55,14 @@ exacto del traspaso.
 - HTML desconocido visible e inerte;
 - búsqueda binaria del tramo visible;
 - scroll limitado por el viewport real;
-- 27 pruebas unitarias y adversariales.
+- 30 pruebas unitarias y adversariales.
 
 Evidencia actual en Windows:
 
 - `cargo check`: verde;
 - `cargo fmt -- --check`: verde;
 - `cargo clippy --all-targets -- -D warnings`: verde;
-- `cargo test`: 27 de 27 pruebas verdes;
+- `cargo test`: 30 de 30 pruebas verdes;
 - release local: 2.995.712 bytes;
 - primer pintado cálido sobre `docs/architecture.md`: 110 ms;
 - scroll automatizado: 4,9 ms por cuadro.

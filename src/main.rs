@@ -1,8 +1,8 @@
-// Visor MD v2 - Sprint 0
+// Visor MD v2
 //
-// Prototipo de medicion, no de producto. Abre un .md, lo parsea con comrak,
-// lo maqueta con parley y lo dibuja con tiny-skia sobre una ventana
-// winit + softbuffer. Sin chrome, sin pestanas, sin Mermaid.
+// Nucleo nativo en recuperacion. Abre un .md, lo parsea con comrak, lo maqueta
+// con parley y lo dibuja con tiny-skia sobre una ventana winit + softbuffer.
+// Todavia no tiene chrome, seleccion ni edicion.
 //
 // Lo que se mide con esto va a docs/budget.md. El criterio de salida del
 // Sprint 0 esta en docs/roadmap.md.
@@ -973,6 +973,15 @@ fn max_scroll(doc_height: f32, viewport_height: f32) -> f32 {
     (doc_height - viewport_height).max(0.0)
 }
 
+fn window_title(path: &str, safe_mode: Option<Degradation>) -> String {
+    let mode = if safe_mode.is_some() {
+        " · modo seguro"
+    } else {
+        ""
+    };
+    format!("Visor MD v2 · {path}{mode}")
+}
+
 fn build_layout(
     block: &Block,
     font_cx: &mut FontContext,
@@ -1396,13 +1405,8 @@ impl ApplicationHandler for App {
             self.started.elapsed().as_secs_f64() * 1000.0
         ));
 
-        let mode = if self.safe_mode.is_some() {
-            " · modo seguro"
-        } else {
-            ""
-        };
         let attrs = Window::default_attributes()
-            .with_title(format!("Visor MD v2 · {}{}", self.path, mode))
+            .with_title(window_title(&self.path, self.safe_mode))
             .with_inner_size(winit::dpi::LogicalSize::new(900.0, 760.0));
         let t = Instant::now();
         let window = Rc::new(event_loop.create_window(attrs).unwrap());
@@ -1939,6 +1943,34 @@ mod pruebas {
         assert_eq!(max_scroll(500.0, 760.0), 0.0);
     }
 
+    #[test]
+    fn el_titulo_hace_visible_el_modo_seguro() {
+        let normal = window_title("nota.md", None);
+        let seguro = window_title("hostil.md", Some(Degradation::DepthLimit));
+        assert!(!normal.contains("modo seguro"));
+        assert!(seguro.contains("modo seguro"));
+        assert!(seguro.contains("hostil.md"));
+    }
+
+    #[test]
+    fn las_casillas_producen_pixeles_y_estados_distintos() {
+        let mut pendiente = Pixmap::new(32, 32).unwrap();
+        pendiente.fill(Color::from_rgba8(NIGHT.bg.0, NIGHT.bg.1, NIGHT.bg.2, 255));
+        let fondo = pendiente.data().to_vec();
+        draw_checkbox(&mut pendiente, 8.0, 8.0, 16.0, false, NIGHT);
+        assert_ne!(pendiente.data(), fondo, "la casilla pendiente no se dibujo");
+
+        let mut terminada = Pixmap::new(32, 32).unwrap();
+        terminada.fill(Color::from_rgba8(NIGHT.bg.0, NIGHT.bg.1, NIGHT.bg.2, 255));
+        draw_checkbox(&mut terminada, 8.0, 8.0, 16.0, true, NIGHT);
+        assert_ne!(terminada.data(), fondo, "la casilla terminada no se dibujo");
+        assert_ne!(
+            terminada.data(),
+            pendiente.data(),
+            "los dos estados de tarea producen la misma imagen"
+        );
+    }
+
     /// Un bloque siempre ocupa algo. Un alto de cero haria que se superpongan
     /// y que la barra de scroll mienta hacia el otro lado.
     #[test]
@@ -2073,6 +2105,30 @@ mod pruebas_inline {
         assert!(enfasis_de("un `mono` aca", "mono").code);
         assert!(enfasis_de("un ~~tachado~~ aca", "tachado").strike);
         assert!(enfasis_de("un [enlace](http://x) aca", "enlace").link);
+    }
+
+    #[test]
+    fn subrayado_y_tachado_llegan_al_layout() {
+        let blocks = aplanar("un [enlace](https://example.com) y ~~tachado~~");
+        let block = &blocks[0];
+        let mut font_cx = FontContext::new();
+        register_embedded_fonts(&mut font_cx);
+        let mut layout_cx = LayoutContext::new();
+        let layout = build_layout(block, &mut font_cx, &mut layout_cx, 900.0, NIGHT);
+
+        let mut enlace_subrayado = false;
+        let mut texto_tachado = false;
+        for line in layout.lines() {
+            for item in line.items() {
+                if let PositionedLayoutItem::GlyphRun(run) = item {
+                    enlace_subrayado |= run.style().underline.is_some();
+                    texto_tachado |= run.style().strikethrough.is_some();
+                }
+            }
+        }
+
+        assert!(enlace_subrayado, "el enlace perdio el subrayado en layout");
+        assert!(texto_tachado, "el tachado no llego al layout");
     }
 
     /// El caso que justifica acumular el estilo al bajar por el arbol en vez

@@ -16,10 +16,10 @@ Estados permitidos:
 | --- | --- | --- | --- | --- |
 | CommonMark aplicable | Corpus | Parcial | Pendiente | Tests unitarios parciales |
 | Formato inline anidado | Integración | Verificado | Pendiente | `el_enfasis_anidado_se_acumula` y tests de rangos |
-| Listas y task lists | Integración y visual | Parcial | Pendiente | Parser y marcador verificados; falta evidencia visual |
+| Listas y task lists | Integración y visual | Parcial | Pendiente | Parser, layout y píxeles verificados; falta evidencia estética |
 | HTML no permitido queda inerte | Seguridad | Verificado | Pendiente | `el_html_desconocido_permanece_visible_e_inerte` |
 | Profundidad limitada | Adversarial | Verificado | Pendiente | 5.000 citas, listas e inline anidado |
-| Fallback a fuente segura | Modelo y end to end | Parcial | Pendiente | Fuente completa verificada; aviso end to end pendiente |
+| Fallback a fuente segura | Modelo y end to end | Parcial | Pendiente | Fuente completa y título de aviso verificados; falta QA visual |
 | Unicode y fallback | Corpus y manual | Pendiente | Pendiente | Fuentes latinas parciales |
 
 ## Archivos y edición
