@@ -57,7 +57,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Sin WebView ni JavaScript | Estable | Grafo de dependencias y runtime |
 | Sin red durante uso normal | Parcial | Falta prueba automatizada de sockets |
 | Límites de anidamiento | Recuperación | Tiempo, memoria y fallback |
-| VFS central | Planificado | Único acceso secundario a disco |
+| VFS central | Parcial | Archivo principal limitado; recursos secundarios todavía no se abren |
 | Política de rutas | Planificado | UNC, traversal, symlinks y junctions |
 | Allowlist HTML semántica | Recuperación | `br`, `kbd`, `mark`, `sub` y `sup` nativos sin atributos; falta corpus sistemático y QA visual |
 | Límites de imágenes | Planificado | Tipo, bytes, dimensiones y memoria |

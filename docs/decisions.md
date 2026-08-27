@@ -21,6 +21,7 @@ decisión posterior lo reemplaza y este índice lo hace visible.
 | 19 a 31 | Aceptados | Modelo, alcance, seguridad y recuperación |
 | 32 | Aceptado | Contexto progresivo y verificación proporcional |
 | 33 | Aceptado | Portapapeles de texto explícito y sin lectura |
+| 34 | Aceptado | Apertura primaria limitada desde el mismo handle |
 
 ## ADR-1: Nativo, sin motor web
 
@@ -581,3 +582,20 @@ como texto y la fuente se copia por bloques completos.
 observador del portapapeles ni reconstruir Markdown a partir de una vista. La
 separación conserva la intención del documento y mantiene acotadas las nuevas
 dependencias y permisos.
+
+## ADR-34: Apertura primaria limitada desde el mismo handle
+
+**Contexto.** El prototipo abría el archivo con `read_to_string` directamente.
+Eso no establecía una cota de memoria antes del parser y dejaba una carrera
+TOCTOU entre cualquier comprobación futura por ruta y la lectura real.
+
+**Decisión.** La entrada principal explícita se abre una única vez, se consulta
+como archivo normal desde ese handle, se lee como máximo hasta 16 MiB y debe ser
+UTF-8 válido. UNC continúa permitido como archivo principal porque la persona
+lo eligió; no concede acceso a archivos vecinos.
+
+**Por qué.** El límite supera ampliamente el corpus de 5 MiB y evita que un
+doble clic en texto hostil reserve memoria sin cota. Usar el mismo handle para
+metadatos y bytes hace que la decisión se aplique al archivo efectivamente
+leído. El valor es temporal: ampliar límites blandos requiere primero medir el
+modo seguro y sus costes, no eliminar el techo por comodidad.

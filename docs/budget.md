@@ -16,7 +16,7 @@ compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
 | **Objetivo de trabajo** | alrededor de 7 MB |
 | **Límite deseado** | < 8 MB |
 | **Medido en el Sprint 0** | **2,14 MB** |
-| **Checkpoint de recuperación actual** | **3.019.264 bytes, 2,879 MiB** |
+| **Checkpoint de recuperación actual** | **3.021.312 bytes, 2,881 MiB** |
 
 Superar 8 MB exige medición, explicación y aprobación. El límite no se usa para
 recortar seguridad, estabilidad, accesibilidad, Unicode o funciones esenciales.
@@ -138,6 +138,18 @@ decodificadores de imágenes ni una función de pegado.
 El resultado es una medida de tamaño, no de arranque. El siguiente checkpoint de
 rendimiento medirá el flujo de apertura asíncrona, porque mover el parser fuera
 del hilo de interfaz cambia más la percepción que esta dependencia.
+
+### Apertura primaria limitada
+
+Extraer la lectura a la capa de archivos añadió validación del handle, tamaño y
+UTF-8 sin dependencias nuevas.
+
+| Medida | Resultado |
+| --- | --- |
+| Binario Windows | 3.021.312 bytes, 2,881 MiB |
+| SHA-256 | `A3CD5DFDE3903876D6FDE79151845320599B427AF6BA9BCF55B68933A3FDD9C9` |
+| Variación frente al checkpoint anterior | +2.048 bytes, +0,07 % |
+| Margen frente al límite deseado | 5,119 MiB |
 
 ## Checkpoint de recuperación del 26 de agosto de 2026
 

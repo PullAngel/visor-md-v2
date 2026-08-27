@@ -12,6 +12,7 @@
 // existe y cuando exista se aisla en su propio modulo y se revisa a mano.
 #![forbid(unsafe_code)]
 
+mod files;
 mod fonts;
 mod limits;
 mod theme;
@@ -42,6 +43,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 use winit::window::{CursorIcon, Theme, Window, WindowId};
 
+use files::{DEFAULT_DOCUMENT_LIMIT_BYTES, open_explicit_primary};
 use fonts::{FONT_CODE, FONT_DOC, register_embedded_fonts};
 use limits::{Degradation, MAX_BLOCKS, MAX_INDENT_DEPTH, MAX_NEST};
 use theme::{DAY, NIGHT, Palette, Role};
@@ -2547,13 +2549,15 @@ fn main() {
         std::process::exit(2);
     };
 
-    let source = match std::fs::read_to_string(&path) {
-        Ok(s) => s,
+    let opened = match open_explicit_primary(&path, DEFAULT_DOCUMENT_LIMIT_BYTES) {
+        Ok(opened) => opened,
         Err(e) => {
             eprintln!("no se pudo leer {path}: {e}");
             std::process::exit(1);
         }
     };
+    let path = opened.path.to_string_lossy().into_owned();
+    let source = opened.source;
 
     let t = Instant::now();
     let outcome = match parse_blocks(&source) {

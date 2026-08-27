@@ -325,7 +325,7 @@ nativas reales. macOS permanece como posibilidad futura, no gate actual.
 
 | Área | Implementación actual | Objetivo |
 | --- | --- | --- |
-| Archivos | `read_to_string` directo | File policy y VFS |
+| Archivos | Apertura primaria limitada desde un mismo handle | File policy y VFS completo |
 | Parsing | Sincrónico y acoplado | Tarea cancelable con límites |
 | Modelo | `Block` y `Span` simplificados | Documento con rangos y semántica |
 | Layout | Visible con estimaciones | Geometría para render e interacción |

@@ -62,13 +62,15 @@ exacto del traspaso.
   y un barrido adversarial determinista.
 - copia explícita de selección: texto visible con `Ctrl+C` y Markdown fuente de
   bloques con `Ctrl+Shift+C`; falta QA manual con aplicaciones externas.
+- apertura primaria desde un mismo handle, limitada a 16 MiB y UTF-8 válido;
+  no habilita recursos secundarios ni navega rutas del documento.
 
 Evidencia actual en Windows:
 
 - `cargo check`: verde;
 - `cargo fmt -- --check`: verde;
 - `cargo clippy --all-targets -- -D warnings`: verde;
-- `cargo test`: 53 de 53 pruebas verdes tras integrar portapapeles;
+- `cargo test`: 56 de 56 pruebas verdes tras la apertura limitada;
 - `scripts/check.ps1`: verde el 26 de agosto de 2026 (formato, Clippy, pruebas,
   SBOM, documentación y release);
 - último release de `6176a82`: 2.996.736 bytes, 2,858 MiB;
@@ -80,6 +82,7 @@ Evidencia actual en Windows:
 - working tree con navegación vertical: 3.013.120 bytes, 2,874 MiB;
 - working tree con cursor contextual: 3.013.632 bytes, 2,874 MiB;
 - working tree con portapapeles de texto: 3.019.264 bytes, 2,879 MiB;
+- working tree con apertura primaria limitada: 3.021.312 bytes, 2,881 MiB;
 - primer pintado mediano sobre diez ejecuciones: 102,5 ms;
 - P95 de primer pintado: 612 ms;
 - scroll automatizado: 4,4 ms por cuadro.
@@ -93,7 +96,7 @@ causa porque todavía no se controlan caché, carga y planificación del sistema
 - verificación visual de task lists, decoraciones, temas y cursiva;
 - selección de ejemplos de la suite oficial CommonMark y ampliación GFM sistemática;
 - separación incompleta de `main.rs`; fuentes y tema ya tienen módulos propios;
-- acceso directo a filesystem sin VFS;
+- VFS de recursos secundarios, contención de rutas y política de bóvedas;
 - parsing en el camino de UI;
 - virtualización y alturas todavía aproximadas;
 - cobertura y fallback tipográfico todavía sin matriz completa;
