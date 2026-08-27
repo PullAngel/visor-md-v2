@@ -47,6 +47,14 @@ pub(crate) struct WorkspaceNote {
     pub(crate) wikilinks: Vec<WikiLink>,
 }
 
+/// Resultado explícito de resolver un wikilink. No se elige una coincidencia
+/// por nombre de archivo cuando la bóveda contiene más de una alternativa.
+pub(crate) enum WikiResolution<'a> {
+    Found(&'a WorkspaceNote),
+    Missing,
+    Ambiguous,
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct WorkspaceIndex {
     pub(crate) notes: Vec<WorkspaceNote>,
@@ -55,6 +63,39 @@ pub(crate) struct WorkspaceIndex {
 }
 
 impl WorkspaceIndex {
+    /// Resuelve la parte de nota de un wikilink sin tocar el filesystem. El
+    /// resultado siempre proviene del índice ya contenido por la VFS.
+    pub(crate) fn resolve_wikilink(&self, target: &str) -> WikiResolution<'_> {
+        let target_declares_path =
+            target.contains(['/', '\\']) || target.trim().to_ascii_lowercase().ends_with(".md");
+        let target = normalized_note_key(target);
+        if target.is_empty() {
+            return WikiResolution::Missing;
+        }
+        if target_declares_path {
+            if let Some(note) = self.notes.iter().find(|note| {
+                let relative = normalized_note_key(&note.relative_path.to_string_lossy());
+                relative == target
+            }) {
+                return WikiResolution::Found(note);
+            }
+        }
+
+        let mut by_stem = self.notes.iter().filter(|note| {
+            note.relative_path
+                .file_stem()
+                .and_then(|name| name.to_str())
+                .map(normalized_note_key)
+                .as_deref()
+                == Some(target.as_str())
+        });
+        match (by_stem.next(), by_stem.next()) {
+            (Some(note), None) => WikiResolution::Found(note),
+            (Some(_), Some(_)) => WikiResolution::Ambiguous,
+            (None, _) => WikiResolution::Missing,
+        }
+    }
+
     pub(crate) fn backlinks_to(&self, target: &str) -> Vec<&WorkspaceNote> {
         let target = normalized_note_key(target);
         self.notes
@@ -236,10 +277,13 @@ fn wikilinks_in(source: &str) -> Vec<WikiLink> {
 }
 
 fn normalized_note_key(note: &str) -> String {
-    note.trim()
-        .trim_end_matches(".md")
+    let normalized = note
+        .split_once('#')
+        .map_or(note, |(note, _)| note)
+        .trim()
         .replace('\\', "/")
-        .to_lowercase()
+        .to_lowercase();
+    normalized.trim_end_matches(".md").to_owned()
 }
 
 #[cfg(test)]
@@ -280,6 +324,14 @@ mod tests {
         );
         assert_eq!(index.backlinks_to("seguridad.md").len(), 1);
         assert_eq!(index.search("modelo").len(), 1);
+        assert!(matches!(
+            index.resolve_wikilink("seguridad#Modelo"),
+            WikiResolution::Found(note) if note.title == "Seguridad"
+        ));
+        assert!(matches!(
+            index.resolve_wikilink("clases/redes"),
+            WikiResolution::Found(note) if note.title == "Redes"
+        ));
     }
 
     #[test]
@@ -300,5 +352,24 @@ mod tests {
     #[test]
     fn wikilinks_defectuosos_no_crean_destinos_vacios() {
         assert_eq!(wikilinks_in("[[ ]] [[abierta"), Vec::<WikiLink>::new());
+    }
+
+    #[test]
+    fn no_elige_un_wikilink_ambiguo_por_orden_del_indice() {
+        let root = fixture_root();
+        fs::create_dir_all(root.join("archivo")).expect("se crea la carpeta");
+        fs::write(root.join("archivo").join("seguridad.md"), "# Archivo")
+            .expect("se crea la nota duplicada");
+        let vfs = WorkspaceRoot::open(&root).expect("la raíz es válida");
+        let index = index_workspace(&vfs, WorkspaceLimits::default());
+
+        assert!(matches!(
+            index.resolve_wikilink("seguridad"),
+            WikiResolution::Ambiguous
+        ));
+        assert!(matches!(
+            index.resolve_wikilink("archivo/seguridad"),
+            WikiResolution::Found(note) if note.title == "Archivo"
+        ));
     }
 }

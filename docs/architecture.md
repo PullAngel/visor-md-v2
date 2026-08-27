@@ -273,17 +273,25 @@ está disponible.
 La primera implementación usa un índice regenerable en memoria, sin SQLite ni
 sidecar de contenido. Ya existe un recorrido acotado que canoniza cada entrada,
 omite `.git` y `.obsidian`, descarta escapes y extrae títulos, encabezados y
-wikilinks de Markdown UTF-8 permitido. Todavía falta ejecutarlo de forma
-cancelable desde la UI, mostrar sus resultados y detectar cambios externos.
+wikilinks de Markdown UTF-8 permitido. La selección de carpeta y el indexado ya
+corren fuera de la UI; los enlaces relativos solo se abren tras resolverlos con
+la raíz autorizada. Los wikilinks `[[nota]]`, `[[nota|alias]]` y
+`[[nota#encabezado]]` se representan como enlaces nativos: el índice exige una
+coincidencia única y rechaza ambigüedades en vez de elegir por orden. Una ancla
+igual a un encabezado visible se aplica después de abrir la nota. Todavía faltan
+paneles de resultados, backlinks visibles, cancelación explícita y detección de
+cambios externos.
+
+Las aperturas y el parseo inicial llevan una versión de solicitud. Si una tarea
+termina tarde después de una apertura posterior, su resultado se descarta en vez
+de reemplazar el documento activo.
 
 Indexa incrementalmente una carpeta permitida:
 
 - archivos y metadatos;
 - encabezados;
 - wikilinks;
-- backlinks;
-- etiquetas y frontmatter elegidos;
-- términos de búsqueda.
+- backlinks y términos de búsqueda para uso futuro de la UI.
 
 El índice es regenerable y nunca la única copia de información del usuario. No
 se persistirá contenido de bóveda mientras no haya una necesidad medida que

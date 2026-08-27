@@ -60,7 +60,7 @@ use recovery::RecoverySession;
 use rfd::FileDialog;
 use theme::{DAY, NIGHT, Palette, Role};
 use vfs::WorkspaceRoot;
-use workspace::{WorkspaceIndex, WorkspaceLimits, index_workspace};
+use workspace::{WikiResolution, WorkspaceIndex, WorkspaceLimits, index_workspace};
 
 const MARGIN: f32 = 48.0;
 const MAX_MEASURE: f32 = 720.0;
@@ -139,6 +139,7 @@ struct ParseOutcome {
 
 enum AppEvent {
     DocumentReady {
+        request: u64,
         path: PathBuf,
         source: String,
         metadata: TextMetadata,
@@ -147,7 +148,10 @@ enum AppEvent {
         outcome: ParseOutcome,
         elapsed_ms: f64,
     },
-    DocumentFailed(String),
+    DocumentFailed {
+        request: u64,
+        error: String,
+    },
     ViewReady {
         revision: u64,
         outcome: ParseOutcome,
@@ -312,7 +316,14 @@ impl SourceIndex {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum InlineTargetKind {
     Link,
+    WikiLink,
     Image,
+}
+
+impl InlineTargetKind {
+    fn is_navigable(self) -> bool {
+        matches!(self, Self::Link | Self::WikiLink)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -338,6 +349,19 @@ fn classify_link_destination(destination: &str) -> LinkDestinationKind {
         LinkDestinationKind::Blocked
     } else {
         LinkDestinationKind::RelativeFile
+    }
+}
+
+fn target_label(kind: InlineTargetKind, destination: &str) -> &'static str {
+    match kind {
+        InlineTargetKind::WikiLink => "enlace de bóveda",
+        InlineTargetKind::Image => "imagen",
+        InlineTargetKind::Link => match classify_link_destination(destination) {
+            LinkDestinationKind::Web => "enlace web",
+            LinkDestinationKind::Mail => "correo",
+            LinkDestinationKind::RelativeFile => "archivo relativo",
+            LinkDestinationKind::Blocked => "destino bloqueado",
+        },
     }
 }
 
@@ -392,7 +416,10 @@ fn link_targets_in_document_order(blocks: &[Block]) -> Vec<(usize, usize)> {
                 .iter()
                 .enumerate()
                 .filter_map(move |(target_index, target)| {
-                    (target.kind == InlineTargetKind::Link).then_some((block_index, target_index))
+                    target
+                        .kind
+                        .is_navigable()
+                        .then_some((block_index, target_index))
                 })
         })
         .collect()
@@ -807,6 +834,65 @@ impl InlineCollector {
     }
 }
 
+/// Extrae el destino y el texto visible de un wikilink de Obsidian. Esto no
+/// abre nada ni consulta rutas: solo conserva una intención que la capa de
+/// workspace resolverá contra una raíz concedida explícitamente.
+fn wikilink_parts(raw: &str) -> Option<(String, String)> {
+    let raw = raw.trim();
+    let (target, alias) = raw.split_once('|').map_or((raw, None), |(target, alias)| {
+        (target.trim(), Some(alias.trim()))
+    });
+    if target.is_empty() || target.contains(['\r', '\n']) {
+        return None;
+    }
+    let label = alias.filter(|alias| !alias.is_empty()).unwrap_or(target);
+    Some((target.to_owned(), label.to_owned()))
+}
+
+fn heading_key(text: &str) -> String {
+    text.trim().trim_end_matches('#').trim().to_lowercase()
+}
+
+/// `comrak` trata `[[nota]]` como texto ordinario. Se reconoce únicamente en
+/// texto Markdown normal: nunca dentro de código. Un formato defectuoso queda
+/// visible de forma literal, en vez de inventar un destino o borrar contenido.
+fn output_literal_with_wikilinks(
+    output: &mut InlineCollector,
+    text: &str,
+    style: Emphasis,
+    source: SourceRange,
+) {
+    let mut remaining = text;
+    while let Some(open) = remaining.find("[[") {
+        output.literal(&remaining[..open], style, source);
+        let after_open = &remaining[open + 2..];
+        let Some(close) = after_open.find("]]") else {
+            output.literal(&remaining[open..], style, source);
+            return;
+        };
+        let raw = &after_open[..close];
+        if let Some((destination, label)) = wikilink_parts(raw) {
+            let start = output.len();
+            let mut linked = style;
+            linked.link = true;
+            output.literal(&label, linked, source);
+            let end = output.len();
+            output.current_mut().targets.push(InlineTarget {
+                kind: InlineTargetKind::WikiLink,
+                start,
+                end,
+                source,
+                destination,
+                title: String::new(),
+            });
+        } else {
+            output.literal(&remaining[open..open + 2 + close + 2], style, source);
+        }
+        remaining = &after_open[close + 2..];
+    }
+    output.literal(remaining, style, source);
+}
+
 /// Recorre los hijos inline de un nodo acumulando texto y sus tramos con
 /// enfasis. `state` baja por el arbol, asi un `**a _b_**` sale con los dos
 /// enfasis puestos sobre `b`.
@@ -831,7 +917,7 @@ fn inline_into<'a>(
         let child_source = source_index.range_of(child);
 
         match value {
-            NodeValue::Text(t) => output.literal(&t, state, child_source),
+            NodeValue::Text(t) => output_literal_with_wikilinks(output, &t, state, child_source),
             NodeValue::Code(c) => {
                 let mut s = state;
                 s.code = true;
@@ -1589,7 +1675,7 @@ fn build_layout(
     // Aplicarlo al final hace que su semántica visual gane sobre el verde
     // genérico de `span.style.link`, sin volver al documento una capacidad.
     for target in &block.targets {
-        if target.kind == InlineTargetKind::Link {
+        if target.kind.is_navigable() {
             builder.push(
                 StyleProperty::Brush(Brush::text(link_color(palette, &target.destination))),
                 target.start..target.end,
@@ -1974,6 +2060,12 @@ struct App {
     recovery: Option<RecoverySession>,
     last_recovery: Instant,
     workspace: Option<(WorkspaceRoot, WorkspaceIndex)>,
+    /// Versión de apertura solicitada. Una tarea terminada tarde no puede
+    /// reemplazar el documento que la persona pidió después.
+    document_request: u64,
+    /// Ancla solicitada por un wikilink ya resuelto dentro del workspace.
+    /// Se aplica recién después de medir el documento que se abrió.
+    pending_workspace_heading: Option<String>,
     mode: DocumentMode,
     proxy: EventLoopProxy<AppEvent>,
     blocks: Vec<Block>,
@@ -2045,6 +2137,7 @@ impl ApplicationHandler<AppEvent> for App {
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: AppEvent) {
         match event {
             AppEvent::DocumentReady {
+                request,
                 path,
                 source,
                 metadata,
@@ -2053,6 +2146,11 @@ impl ApplicationHandler<AppEvent> for App {
                 outcome,
                 elapsed_ms,
             } => {
+                if request != self.document_request {
+                    self.log
+                        .push("[apertura] se descartó un documento desactualizado".to_string());
+                    return;
+                }
                 self.path = path.to_string_lossy().into_owned();
                 self.source = source;
                 self.source_metadata = metadata;
@@ -2067,6 +2165,7 @@ impl ApplicationHandler<AppEvent> for App {
                 self.live.clear();
                 self.doc_height = 0.0;
                 self.laid_for_width = -1.0;
+                self.scroll = 0.0;
                 self.notice = None;
                 self.focused_link = None;
                 self.focus_destination = None;
@@ -2102,7 +2201,12 @@ impl ApplicationHandler<AppEvent> for App {
                     window.request_redraw();
                 }
             }
-            AppEvent::DocumentFailed(error) => {
+            AppEvent::DocumentFailed { request, error } => {
+                if request != self.document_request {
+                    self.log
+                        .push("[apertura] se descartó un error desactualizado".to_string());
+                    return;
+                }
                 self.loading = false;
                 self.log.push(format!("[error] {error}"));
                 (self.source, self.blocks) = opening_failure_blocks();
@@ -2322,12 +2426,7 @@ impl ApplicationHandler<AppEvent> for App {
                 let target = self
                     .target_at(position.x as f32, position.y as f32)
                     .map(|target| {
-                        let label = match classify_link_destination(&target.destination) {
-                            LinkDestinationKind::Web => "enlace web",
-                            LinkDestinationKind::Mail => "correo",
-                            LinkDestinationKind::RelativeFile => "archivo relativo",
-                            LinkDestinationKind::Blocked => "destino bloqueado",
-                        };
+                        let label = target_label(target.kind, &target.destination);
                         format!("{label}: {}", target.destination)
                     });
                 let text_cursor_hover = target.is_none()
@@ -3147,6 +3246,10 @@ impl App {
     }
 
     fn restore_latest_recovery(&mut self) {
+        if self.source_editor.is_dirty() {
+            self.set_notice("guarda o descarta los cambios antes de restaurar una recuperación");
+            return;
+        }
         match RecoverySession::latest_pending(DEFAULT_DOCUMENT_LIMIT_BYTES) {
             Ok(Some(source)) => {
                 self.path = "recuperación sin guardar.md".to_string();
@@ -3172,6 +3275,8 @@ impl App {
     }
 
     fn open_document_path(&mut self, path: PathBuf) {
+        self.document_request = self.document_request.wrapping_add(1);
+        let request = self.document_request;
         self.loading = true;
         self.set_notice("cargando documento");
         let proxy = self.proxy.clone();
@@ -3187,6 +3292,7 @@ impl App {
                     })
                 } {
                     Ok(outcome) => AppEvent::DocumentReady {
+                        request,
                         path,
                         source: opened.source,
                         metadata: opened.metadata,
@@ -3195,13 +3301,15 @@ impl App {
                         outcome,
                         elapsed_ms: 0.0,
                     },
-                    Err(error) => AppEvent::DocumentFailed(format!(
-                        "el documento no se pudo preparar de forma segura: {error}"
-                    )),
+                    Err(error) => AppEvent::DocumentFailed {
+                        request,
+                        error: format!("el documento no se pudo preparar de forma segura: {error}"),
+                    },
                 },
-                Err(error) => {
-                    AppEvent::DocumentFailed(format!("no se pudo abrir el documento: {error}"))
-                }
+                Err(error) => AppEvent::DocumentFailed {
+                    request,
+                    error: format!("no se pudo abrir el documento: {error}"),
+                },
             };
             let _ = proxy.send_event(event);
         });
@@ -3327,12 +3435,7 @@ impl App {
         self.focused_link = Some((block_index, target_index));
         self.focus_destination = Some(format!(
             "{}: {}",
-            match classify_link_destination(&target.destination) {
-                LinkDestinationKind::Web => "enlace web",
-                LinkDestinationKind::Mail => "correo",
-                LinkDestinationKind::RelativeFile => "archivo relativo",
-                LinkDestinationKind::Blocked => "destino bloqueado",
-            },
+            target_label(target.kind, &target.destination),
             target.destination
         ));
         self.notice = None;
@@ -3362,22 +3465,94 @@ impl App {
             .blocks
             .get(block_index)
             .and_then(|block| block.targets.get(target_index))
-            .map(|target| target.destination.clone())
+            .map(|target| (target.kind, target.destination.clone()))
         else {
             return;
         };
-        match classify_link_destination(&destination) {
+        if destination.0 == InlineTargetKind::WikiLink {
+            self.open_workspace_wikilink(&destination.1);
+            return;
+        }
+        match classify_link_destination(&destination.1) {
             LinkDestinationKind::RelativeFile => {
-                self.set_notice("los enlaces locales requieren VFS");
+                if self.source_editor.is_dirty() {
+                    self.set_notice("guarda o descarta los cambios antes de abrir otro documento");
+                    return;
+                }
+                let resolved = self
+                    .workspace
+                    .as_ref()
+                    .map(|(root, _)| root.resolve_existing(std::path::Path::new(&destination.1)));
+                match resolved {
+                    Some(Ok(path)) => {
+                        self.pending_workspace_heading = None;
+                        self.open_document_path(path);
+                    }
+                    Some(Err(error)) => {
+                        self.log.push(format!("[vfs] {error}"));
+                        self.set_notice(
+                            "el enlace local fue bloqueado por la política de archivos",
+                        );
+                    }
+                    None => self.set_notice(
+                        "abre una carpeta de trabajo para seguir enlaces locales de forma segura",
+                    ),
+                }
             }
             LinkDestinationKind::Blocked => {
                 self.set_notice("destino bloqueado por la política de seguridad");
             }
             LinkDestinationKind::Web | LinkDestinationKind::Mail => {
-                if let Err(error) = open_external_destination(&destination) {
+                if let Err(error) = open_external_destination(&destination.1) {
                     self.log.push(format!("[enlace] {error}"));
                     self.set_notice("no se pudo abrir el enlace");
                 }
+            }
+        }
+    }
+
+    /// Abre un wikilink solo después de resolverlo contra el índice de la
+    /// carpeta elegida. Un nombre duplicado pide una ruta más precisa: nunca
+    /// se abre la primera coincidencia por orden de recorrido.
+    fn open_workspace_wikilink(&mut self, destination: &str) {
+        if self.source_editor.is_dirty() {
+            self.set_notice("guarda o descarta los cambios antes de abrir otro documento");
+            return;
+        }
+        let (note_target, heading) =
+            destination
+                .split_once('#')
+                .map_or((destination, None), |(note, heading)| {
+                    (
+                        note,
+                        (!heading.trim().is_empty()).then(|| heading.trim().to_owned()),
+                    )
+                });
+        let Some((root, index)) = self.workspace.as_ref() else {
+            self.set_notice("abre una carpeta de trabajo para seguir enlaces de bóveda");
+            return;
+        };
+        let path = match index.resolve_wikilink(note_target) {
+            WikiResolution::Found(note) => root.resolve_existing(&note.relative_path),
+            WikiResolution::Missing => {
+                self.set_notice(
+                    "la nota indicada por el enlace no existe en la carpeta de trabajo",
+                );
+                return;
+            }
+            WikiResolution::Ambiguous => {
+                self.set_notice("el enlace de bóveda es ambiguo; usa una ruta más precisa");
+                return;
+            }
+        };
+        match path {
+            Ok(path) => {
+                self.pending_workspace_heading = heading;
+                self.open_document_path(path);
+            }
+            Err(error) => {
+                self.log.push(format!("[vfs] {error}"));
+                self.set_notice("el enlace de bóveda fue bloqueado por la política de archivos");
             }
         }
     }
@@ -3404,8 +3579,7 @@ impl App {
             .targets
             .iter()
             .find(|target| {
-                target.kind == InlineTargetKind::Link
-                    && (target.start..target.end).contains(&cursor.offset)
+                target.kind.is_navigable() && (target.start..target.end).contains(&cursor.offset)
             })
     }
 
@@ -3637,6 +3811,20 @@ impl App {
                 t.elapsed().as_secs_f64() * 1000.0,
                 height
             ));
+        }
+
+        if let Some(heading) = self.pending_workspace_heading.take() {
+            let requested = heading_key(&heading);
+            if let Some((block_index, _)) = self.blocks.iter().enumerate().find(|(_, block)| {
+                matches!(block.kind, Kind::Heading(_)) && heading_key(&block.text) == requested
+            }) {
+                if let Some(slot) = self.slots.get(block_index) {
+                    self.scroll = slot.y.min(max_scroll(self.doc_height, size.height as f32));
+                    self.set_notice("enlace de bóveda abierto en el encabezado solicitado");
+                }
+            } else {
+                self.set_notice("la nota se abrió, pero no contiene el encabezado solicitado");
+            }
         }
 
         // Que bloques caen en pantalla este cuadro.
@@ -4049,6 +4237,7 @@ fn main() {
     });
     let exact_measure = args.iter().any(|a| a == "--exacto");
     let opening_path = args.iter().find(|a| !a.starts_with("--")).cloned();
+    let initial_document_request = u64::from(opening_path.is_some());
 
     let t = Instant::now();
     let event_loop = match EventLoop::<AppEvent>::with_user_event().build() {
@@ -4092,6 +4281,8 @@ fn main() {
         recovery: RecoverySession::start().ok(),
         last_recovery: Instant::now(),
         workspace: None,
+        document_request: initial_document_request,
+        pending_workspace_heading: None,
         mode: if opening_path.is_some() {
             DocumentMode::Reading
         } else {
@@ -4153,6 +4344,7 @@ fn main() {
                     })
                 } {
                     Ok(outcome) => AppEvent::DocumentReady {
+                        request: initial_document_request,
                         path: PathBuf::from(&worker_path),
                         source: opened.source,
                         metadata: opened.metadata,
@@ -4161,13 +4353,15 @@ fn main() {
                         outcome,
                         elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
                     },
-                    Err(error) => AppEvent::DocumentFailed(format!(
-                        "el documento no se pudo preparar de forma segura: {error}"
-                    )),
+                    Err(error) => AppEvent::DocumentFailed {
+                        request: initial_document_request,
+                        error: format!("el documento no se pudo preparar de forma segura: {error}"),
+                    },
                 },
-                Err(error) => {
-                    AppEvent::DocumentFailed(format!("no se pudo leer {worker_path}: {error}"))
-                }
+                Err(error) => AppEvent::DocumentFailed {
+                    request: initial_document_request,
+                    error: format!("no se pudo leer {worker_path}: {error}"),
+                },
             };
             let _ = proxy.send_event(event);
         });
@@ -4997,6 +5191,31 @@ mod pruebas_inline {
             assert!(block.text.is_char_boundary(target.start));
             assert!(block.text.is_char_boundary(target.end));
         }
+    }
+
+    #[test]
+    fn wikilinks_de_obsidian_son_enlaces_nativos_sin_interpretar_codigo() {
+        let blocks =
+            aplanar("Ver [[clases/redes#Modelo|la guía]] y [[seguridad]].\n\n`[[literal]]`");
+        assert_eq!(blocks[0].text, "Ver la guía y seguridad.");
+        let targets: Vec<_> = blocks[0]
+            .targets
+            .iter()
+            .filter(|target| target.kind == InlineTargetKind::WikiLink)
+            .collect();
+        assert_eq!(targets.len(), 2);
+        assert_eq!(targets[0].destination, "clases/redes#Modelo");
+        assert_eq!(targets[1].destination, "seguridad");
+        assert!(blocks[0].spans.iter().any(|span| span.style.link));
+        assert_eq!(blocks[1].text, "[[literal]]");
+        assert!(blocks[1].targets.is_empty());
+    }
+
+    #[test]
+    fn wikilinks_defectuosos_se_conservan_como_texto() {
+        let block = &aplanar("[[ ]] y [[sin cierre")[0];
+        assert_eq!(block.text, "[[ ]] y [[sin cierre");
+        assert!(block.targets.is_empty());
     }
 
     #[test]

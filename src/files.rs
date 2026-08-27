@@ -53,6 +53,7 @@ impl FileIdentity {
         }
     }
 
+    #[cfg(test)]
     fn still_matches(&self, path: impl AsRef<Path>) -> Result<bool, std::io::Error> {
         let metadata = std::fs::metadata(path)?;
         Ok(self == &Self::from_metadata(&metadata))

@@ -180,7 +180,9 @@ relativos y formatos bloqueados. Esta clasificación no abre ni resuelve nada;
 una futura acción de clic deberá volver a aplicar la política correspondiente.
 
 Las rutas relativas locales pueden resolverse mediante VFS y límites. Seguir un
-enlace a otro archivo requiere una acción explícita.
+enlace a otro archivo requiere una acción explícita. La implementación actual
+solo sigue enlaces relativos si una carpeta de trabajo fue elegida antes: VFS
+canonicaliza y comprueba contención de nuevo justo antes de abrir el destino.
 
 ## Portapapeles
 
@@ -209,6 +211,18 @@ la plataforma y necesita tests específicos.
 
 Confiar en una bóveda permite acceder a archivos locales dentro de una raíz
 delimitada para índice, navegación y recursos relativos.
+
+Un wikilink no es una ruta capaz por sí mismo. Visor MD lo resuelve primero
+contra el índice de la raíz concedida; una coincidencia por ruta exacta o por
+nombre único puede abrirse, mientras que una nota ausente o dos nombres iguales
+se muestran como bloqueo visible. El destino final pasa igualmente por la VFS
+canonicalizada. Así un documento no puede usar el orden del índice para hacer
+que la persona abra una nota diferente de la declarada.
+
+Antes de cambiar al documento resuelto, la aplicación rechaza la navegación si
+el documento actual tiene cambios sin guardar. La recuperación local sigue
+disponible como red de seguridad, pero no se usa como excusa para reemplazar una
+edición activa.
 
 La confianza:
 

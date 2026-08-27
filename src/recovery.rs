@@ -7,7 +7,9 @@
 use atomicwrites::{AllowOverwrite, AtomicFile};
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+#[cfg(test)]
+use std::path::Path;
+use std::path::PathBuf;
 
 #[derive(Clone, Debug)]
 pub(crate) struct RecoverySession {
