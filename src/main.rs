@@ -1170,6 +1170,24 @@ fn safe_source_blocks(
     Ok(blocks)
 }
 
+/// Contenido mínimo de una sesión cuya apertura falló. No incorpora el error
+/// del sistema: puede contener una ruta, un permiso o información que no hace
+/// falta mostrar en el lienzo. El detalle queda en el registro de sesión.
+fn opening_failure_blocks() -> (String, Vec<Block>) {
+    let source = "No se pudo abrir este documento. Revisa que exista, que sea legible y que no supere el límite de apertura.".to_string();
+    let block = Block::new(
+        source.clone(),
+        Vec::new(),
+        Kind::Para,
+        SourceRange {
+            start: 0,
+            end: source.len(),
+        },
+        Vec::new(),
+    );
+    (source, vec![block])
+}
+
 fn parse_blocks(source: &str) -> Result<ParseOutcome, &'static str> {
     let arena = Arena::new();
     let options = markdown_options();
@@ -1804,6 +1822,11 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::DocumentFailed(error) => {
                 self.loading = false;
                 self.log.push(format!("[error] {error}"));
+                (self.source, self.blocks) = opening_failure_blocks();
+                self.slots.clear();
+                self.live.clear();
+                self.doc_height = 0.0;
+                self.laid_for_width = -1.0;
                 self.notice = Some("no se pudo abrir el documento".to_string());
                 self.refresh_title();
                 if let Some(window) = &self.window {
@@ -3036,6 +3059,17 @@ mod pruebas {
         let title = window_title("datos.json", Some(Degradation::TextOnly), None);
         assert!(title.contains("texto inerte"));
         assert!(!title.contains("modo seguro"));
+    }
+
+    #[test]
+    fn un_fallo_de_apertura_deja_un_mensaje_renderizable_sin_detalles() {
+        let (source, blocks) = opening_failure_blocks();
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].text, source);
+        assert!(blocks[0].source.is_valid_for(&source));
+        assert!(blocks[0].targets.is_empty());
+        assert!(!source.contains("C:\\"));
+        assert!(!source.contains("permission"));
     }
 
     #[test]
