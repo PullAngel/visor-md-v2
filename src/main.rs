@@ -2662,6 +2662,16 @@ impl App {
                     .source_editor
                     .move_right(&self.source, self.modifiers.shift_key());
             }
+            PhysicalKey::Code(KeyCode::ArrowUp) => {
+                let _ =
+                    self.source_editor
+                        .move_line(&self.source, false, self.modifiers.shift_key());
+            }
+            PhysicalKey::Code(KeyCode::ArrowDown) => {
+                let _ =
+                    self.source_editor
+                        .move_line(&self.source, true, self.modifiers.shift_key());
+            }
             PhysicalKey::Code(KeyCode::KeyZ) if self.modifiers.control_key() => {
                 self.edit_source(|editor, source| editor.undo(source));
             }

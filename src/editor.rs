@@ -191,6 +191,7 @@ pub struct SourceEditor {
     history: EditHistory,
     cursor: usize,
     anchor: usize,
+    preferred_column: Option<usize>,
 }
 
 impl SourceEditor {
@@ -224,6 +225,7 @@ impl SourceEditor {
             return Err(EditError::InvalidRange);
         }
         self.cursor = offset;
+        self.preferred_column = None;
         if !extend {
             self.anchor = offset;
         }
@@ -289,6 +291,36 @@ impl SourceEditor {
             .nth(1)
             .map_or(source.len(), |(offset, _)| self.cursor + offset);
         self.set_cursor(source, target, extend)
+    }
+
+    pub fn move_line(&mut self, source: &str, down: bool, extend: bool) -> Result<(), EditError> {
+        let line_start = source[..self.cursor]
+            .rfind('\n')
+            .map_or(0, |offset| offset + 1);
+        let column = self.preferred_column.unwrap_or(self.cursor - line_start);
+        let target_start = if down {
+            let Some(next_break) = source[self.cursor..].find('\n') else {
+                return Ok(());
+            };
+            self.cursor + next_break + 1
+        } else {
+            if line_start == 0 {
+                return Ok(());
+            }
+            source[..line_start.saturating_sub(1)]
+                .rfind('\n')
+                .map_or(0, |offset| offset + 1)
+        };
+        let target_end = source[target_start..]
+            .find('\n')
+            .map_or(source.len(), |offset| target_start + offset);
+        let mut target = (target_start + column).min(target_end);
+        while target > target_start && !source.is_char_boundary(target) {
+            target -= 1;
+        }
+        self.set_cursor(source, target, extend)?;
+        self.preferred_column = Some(column);
+        Ok(())
     }
 
     pub fn undo(&mut self, source: &mut String) -> Result<bool, EditError> {
@@ -420,5 +452,16 @@ mod tests {
         editor.set_cursor(&source, "uno".len(), false).unwrap();
         editor.insert(&mut source, "\r\n").unwrap();
         assert_eq!(source, "uno\r\n\r\ndos");
+    }
+
+    #[test]
+    fn navegacion_vertical_conserva_unicode_y_limita_lineas_cortas() {
+        let source = "áéí\n文\n🔒🔒🔒";
+        let mut editor = SourceEditor::new();
+        editor.set_cursor(source, "áé".len(), false).unwrap();
+        editor.move_line(source, true, false).unwrap();
+        assert_eq!(editor.cursor(), "áéí\n文".len());
+        editor.move_line(source, true, false).unwrap();
+        assert_eq!(editor.cursor(), "áéí\n文\n🔒".len());
     }
 }
