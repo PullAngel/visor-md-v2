@@ -64,6 +64,9 @@ Registrar antes de comenzar:
 - RePág y AvPág desplazan aproximadamente una pantalla sin perder la selección.
 - Tab y Shift+Tab recorren enlaces en ambos sentidos, hacen visible el destino
   real y dejan una señal de foco distinguible del hover.
+- Enter sobre un enlace web o de correo enfocado lo delega al navegador o
+  aplicación del sistema. Un enlace relativo avisa que requiere VFS; una ruta
+  bloqueada no se abre.
 - Ctrl+A abarca todo el documento; `Ctrl+C` pega en otra aplicación el texto
   visible sin marcadores Markdown. `Ctrl+Shift+C` pega el Markdown original de
   los bloques seleccionados, incluso si la selección visual solo tomó una parte

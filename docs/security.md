@@ -217,8 +217,10 @@ convierte en autoridad sobre el filesystem.
 
 ## Enlaces y phishing
 
-Un clic explícito sobre `http` o `https` puede delegarse al navegador del sistema
-sin una confirmación repetitiva.
+Una acción explícita sobre `http`, `https` o `mailto:` puede delegarse al
+sistema sin una confirmación repetitiva. El lector actual usa Enter sobre un
+enlace enfocado con Tab. La delegación no usa shell y solo recibe el destino ya
+clasificado; no hay prefetch ni navegación embebida.
 
 Controles:
 

@@ -290,6 +290,33 @@ fn link_color(palette: Palette, destination: &str) -> (u8, u8, u8) {
     }
 }
 
+fn external_destination(destination: &str) -> Option<&str> {
+    matches!(
+        classify_link_destination(destination),
+        LinkDestinationKind::Web | LinkDestinationKind::Mail
+    )
+    .then_some(destination)
+}
+
+/// Delegar el enlace al sistema no pasa por un shell. La URL ya fue
+/// clasificada antes de llegar aquí y esta función solo se invoca tras una
+/// acción explícita de la persona usuaria.
+fn open_external_destination(destination: &str) -> Result<(), String> {
+    let destination = external_destination(destination)
+        .ok_or_else(|| "el destino no está permitido para apertura externa".to_string())?;
+    #[cfg(target_os = "windows")]
+    let mut command = std::process::Command::new("explorer.exe");
+    #[cfg(target_os = "macos")]
+    let mut command = std::process::Command::new("open");
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut command = std::process::Command::new("xdg-open");
+    command
+        .arg(destination)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("no se pudo delegar el enlace al sistema: {error}"))
+}
+
 /// Orden estable de los enlaces que puede recorrer el teclado. Las imágenes y
 /// los destinos no interactivos permanecen fuera hasta que tengan una acción
 /// segura y una UX propia.
@@ -2077,10 +2104,10 @@ impl ApplicationHandler<AppEvent> for App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.pointer = Some((position.x as f32, position.y as f32));
-                if self.context_menu.is_some() {
-                    if let Some(w) = &self.window {
-                        w.request_redraw();
-                    }
+                if self.context_menu.is_some()
+                    && let Some(w) = &self.window
+                {
+                    w.request_redraw();
                 }
                 let target = self
                     .target_at(position.x as f32, position.y as f32)
@@ -2368,6 +2395,18 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::Enter),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } => {
+                self.open_focused_link();
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
                         physical_key: PhysicalKey::Code(KeyCode::Tab),
                         state: ElementState::Pressed,
                         repeat: false,
@@ -2545,6 +2584,35 @@ impl App {
             window.request_redraw();
         }
         self.refresh_title();
+    }
+
+    fn open_focused_link(&mut self) {
+        let Some((block_index, target_index)) = self.focused_link else {
+            self.set_notice("enfoca un enlace con Tab antes de abrirlo");
+            return;
+        };
+        let Some(destination) = self
+            .blocks
+            .get(block_index)
+            .and_then(|block| block.targets.get(target_index))
+            .map(|target| target.destination.clone())
+        else {
+            return;
+        };
+        match classify_link_destination(&destination) {
+            LinkDestinationKind::RelativeFile => {
+                self.set_notice("los enlaces locales requieren VFS");
+            }
+            LinkDestinationKind::Blocked => {
+                self.set_notice("destino bloqueado por la política de seguridad");
+            }
+            LinkDestinationKind::Web | LinkDestinationKind::Mail => {
+                if let Err(error) = open_external_destination(&destination) {
+                    self.log.push(format!("[enlace] {error}"));
+                    self.set_notice("no se pudo abrir el enlace");
+                }
+            }
+        }
     }
 
     fn cursor_at(&self, x: f32, y: f32) -> Option<BlockCursor> {
@@ -3520,6 +3588,21 @@ mod pruebas {
         );
         assert_eq!(link_color(DAY, "notas/tema.md"), DAY.accent);
         assert_eq!(link_color(DAY, "../secreto.md"), DAY.dim);
+    }
+
+    #[test]
+    fn solo_web_y_correo_pueden_delegarse_al_sistema() {
+        assert_eq!(
+            external_destination("https://example.test"),
+            Some("https://example.test")
+        );
+        assert_eq!(
+            external_destination("mailto:alguien@example.test"),
+            Some("mailto:alguien@example.test")
+        );
+        assert_eq!(external_destination("notas/tema.md"), None);
+        assert_eq!(external_destination("file:///C:/secreto"), None);
+        assert_eq!(external_destination("\\\\servidor\\share"), None);
     }
 
     #[test]
