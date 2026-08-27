@@ -40,11 +40,12 @@ use swash::scale::{Render, ScaleContext, Source, StrikeWith};
 use swash::zeno::{Format, Vector};
 use tiny_skia::{Color, Paint, Pixmap, PremultipliedColorU8, Rect, Transform};
 use winit::application::ApplicationHandler;
-use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event::{ElementState, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 use winit::window::{CursorIcon, Theme, Window, WindowId};
 
+use editor::SourceEditor;
 use files::{
     DEFAULT_DOCUMENT_LIMIT_BYTES, FileIdentity, TextMetadata, is_markdown_path,
     open_explicit_primary,
@@ -122,6 +123,12 @@ enum AppEvent {
         elapsed_ms: f64,
     },
     DocumentFailed(String),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DocumentMode {
+    Reading,
+    SourceEditing,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
@@ -1912,6 +1919,8 @@ struct App {
     /// Huella de la versión que llegó por la apertura primaria. La capa de
     /// guardado la comparará antes de reemplazar el destino.
     source_identity: Option<FileIdentity>,
+    source_editor: SourceEditor,
+    mode: DocumentMode,
     blocks: Vec<Block>,
     window: Option<Rc<Window>>,
     surface: Option<softbuffer::Surface<Rc<Window>, Rc<Window>>>,
@@ -2274,6 +2283,26 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
             WindowEvent::ModifiersChanged(modifiers) => self.modifiers = modifiers.state(),
+            WindowEvent::Ime(Ime::Commit(text)) if self.mode == DocumentMode::SourceEditing => {
+                self.edit_source(|editor, source| editor.insert(source, text.as_str()));
+            }
+            WindowEvent::KeyboardInput { event, .. }
+                if self.mode == DocumentMode::SourceEditing =>
+            {
+                self.handle_source_key(&event);
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::F2),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } => {
+                self.enter_source_mode();
+            }
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
@@ -2533,6 +2562,103 @@ impl ApplicationHandler<AppEvent> for App {
 }
 
 impl App {
+    fn enter_source_mode(&mut self) {
+        let index = SourceIndex::new(&self.source);
+        match safe_source_blocks(&self.source, &index) {
+            Ok(blocks) => {
+                self.mode = DocumentMode::SourceEditing;
+                self.blocks = blocks;
+                self.source_editor = SourceEditor::new();
+                self.slots.clear();
+                self.live.clear();
+                self.laid_for_width = -1.0;
+                self.selection = None;
+                self.set_notice("edición de fuente · F2 para volver a lectura");
+                if let Some(window) = &self.window {
+                    window.set_cursor(CursorIcon::Text);
+                    window.request_redraw();
+                }
+            }
+            Err(error) => self.set_notice(&format!("no se pudo preparar la fuente: {error}")),
+        }
+    }
+
+    fn refresh_source_blocks(&mut self) -> Result<(), &'static str> {
+        let index = SourceIndex::new(&self.source);
+        self.blocks = safe_source_blocks(&self.source, &index)?;
+        self.slots.clear();
+        self.live.clear();
+        self.laid_for_width = -1.0;
+        Ok(())
+    }
+
+    fn edit_source(
+        &mut self,
+        operation: impl FnOnce(&mut SourceEditor, &mut String) -> Result<bool, editor::EditError>,
+    ) {
+        match operation(&mut self.source_editor, &mut self.source) {
+            Ok(true) => match self.refresh_source_blocks() {
+                Ok(()) => {
+                    self.notice = None;
+                    if let Some(window) = &self.window {
+                        window.request_redraw();
+                    }
+                }
+                Err(error) => self.set_notice(&format!("no se pudo actualizar la fuente: {error}")),
+            },
+            Ok(false) => {}
+            Err(error) => self.set_notice(&format!("edición rechazada: {error:?}")),
+        }
+    }
+
+    fn handle_source_key(&mut self, event: &KeyEvent) {
+        if event.state != ElementState::Pressed || event.repeat {
+            return;
+        }
+        match event.physical_key {
+            PhysicalKey::Code(KeyCode::F2) => {
+                self.mode = DocumentMode::Reading;
+                match parse_blocks(&self.source) {
+                    Ok(outcome) => {
+                        self.blocks = outcome.blocks;
+                        self.safe_mode = outcome.degradation;
+                        self.slots.clear();
+                        self.live.clear();
+                        self.laid_for_width = -1.0;
+                        self.selection = None;
+                        self.set_notice("vista de lectura actualizada");
+                    }
+                    Err(error) => {
+                        self.set_notice(&format!("no se pudo actualizar la vista: {error}"))
+                    }
+                }
+            }
+            PhysicalKey::Code(KeyCode::Backspace) => {
+                self.edit_source(|editor, source| editor.backspace(source));
+            }
+            PhysicalKey::Code(KeyCode::Delete) => {
+                self.edit_source(|editor, source| editor.delete(source));
+            }
+            PhysicalKey::Code(KeyCode::ArrowLeft) => {
+                let _ = self
+                    .source_editor
+                    .move_left(&self.source, self.modifiers.shift_key());
+            }
+            PhysicalKey::Code(KeyCode::ArrowRight) => {
+                let _ = self
+                    .source_editor
+                    .move_right(&self.source, self.modifiers.shift_key());
+            }
+            PhysicalKey::Code(KeyCode::KeyZ) if self.modifiers.control_key() => {
+                self.edit_source(|editor, source| editor.undo(source));
+            }
+            PhysicalKey::Code(KeyCode::KeyY) if self.modifiers.control_key() => {
+                self.edit_source(|editor, source| editor.redo(source));
+            }
+            _ => {}
+        }
+    }
+
     fn copy_selection(&mut self, source_markdown: bool) {
         let text = self.selection.and_then(|selection| {
             if source_markdown {
@@ -3362,6 +3488,8 @@ fn main() {
         source: String::new(),
         source_metadata: TextMetadata::default(),
         source_identity: None,
+        source_editor: SourceEditor::new(),
+        mode: DocumentMode::Reading,
         blocks: Vec::new(),
         window: None,
         surface: None,

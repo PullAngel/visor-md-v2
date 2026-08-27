@@ -255,8 +255,49 @@ impl SourceEditor {
         Ok(changed)
     }
 
+    pub fn delete(&mut self, source: &mut String) -> Result<bool, EditError> {
+        let selection = self.selection();
+        let range = if selection.is_empty() {
+            let next = source[self.cursor..]
+                .char_indices()
+                .nth(1)
+                .map_or(source.len(), |(offset, _)| self.cursor + offset);
+            self.cursor..next
+        } else {
+            selection
+        };
+        let changed = self.history.apply(source, range, "")?;
+        self.anchor = self.cursor;
+        Ok(changed)
+    }
+
+    pub fn move_left(&mut self, source: &str, extend: bool) -> Result<(), EditError> {
+        let target = source[..self.cursor]
+            .char_indices()
+            .next_back()
+            .map_or(0, |(offset, _)| offset);
+        self.set_cursor(source, target, extend)
+    }
+
+    pub fn move_right(&mut self, source: &str, extend: bool) -> Result<(), EditError> {
+        let target = source[self.cursor..]
+            .char_indices()
+            .nth(1)
+            .map_or(source.len(), |(offset, _)| self.cursor + offset);
+        self.set_cursor(source, target, extend)
+    }
+
     pub fn undo(&mut self, source: &mut String) -> Result<bool, EditError> {
         let changed = self.history.undo(source)?;
+        if changed {
+            self.cursor = self.cursor.min(source.len());
+            self.anchor = self.cursor;
+        }
+        Ok(changed)
+    }
+
+    pub fn redo(&mut self, source: &mut String) -> Result<bool, EditError> {
+        let changed = self.history.redo(source)?;
         if changed {
             self.cursor = self.cursor.min(source.len());
             self.anchor = self.cursor;

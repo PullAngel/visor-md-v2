@@ -83,6 +83,14 @@ Registrar antes de comenzar:
 - Si se inicia una selección y el cursor o foco salen de la ventana, el
   arrastre se detiene sin borrar la selección ya conseguida.
 
+## Edición de fuente inicial
+
+- Pulsar `F2` muestra la fuente Markdown como texto inerte; escribir texto con
+  teclado o IME, Backspace, Delete, Ctrl+Z y Ctrl+Y no debe cerrar la ventana.
+- Pulsar `F2` otra vez vuelve a lectura y muestra el contenido modificado.
+- Esta comprobación no autoriza guardar: cursor visible, selección por mouse,
+  navegación vertical y guardado siguen fuera de esta etapa.
+
 ## Registro
 
 Para cada defecto anotar:
