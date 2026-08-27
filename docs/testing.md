@@ -192,6 +192,13 @@ de Visor MD, no contra HTML: la aplicación no es un navegador. La selección se
 ampliará de acuerdo con las capacidades que lleguen al renderer; no se declarará
 conformidad completa hasta ejecutar una suite oficial compatible.
 
+Además de la fixture, `casos_commonmark_gfm_anunciados_llegan_a_layout` cubre
+casos pequeños de salto forzado, autolink escapado, énfasis anidado, listas,
+tareas, tablas, código, HTML semántico permitido y HTML inerte. Para cada caso
+comprueba parser, rangos del modelo y geometría finita con las fuentes reales.
+Es deliberadamente un catálogo de capacidades propias, no una afirmación de
+compatibilidad total con CommonMark.
+
 La fixture no cuenta como prueba aprobada hasta registrar una inspección visual.
 Sirve para repetir siempre el mismo documento con temas, énfasis, listas, tareas,
 citas, tabla, código, HTML inerte, emoji y fallback Unicode.

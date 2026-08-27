@@ -4042,6 +4042,58 @@ con dos lineas
             .join("\n");
         assert!(visible.contains("concepto clave"));
         assert!(visible.contains("<script"));
+
+        // El contrato del lector termina en el layout, no en el AST ni en el
+        // modelo intermedio. Cada bloque anunciado debe producir geometría
+        // finita con las fuentes reales que usará la aplicación.
+        let mut font_cx = FontContext::new();
+        register_embedded_fonts(&mut font_cx);
+        let mut layout_cx = LayoutContext::new();
+        for block in &outcome.blocks {
+            let layout = build_layout(block, &mut font_cx, &mut layout_cx, 680.0, 1.0, NIGHT);
+            assert!(layout.height().is_finite() && layout.height() >= 0.0);
+        }
+    }
+
+    /// Casos pequeños y trazables que complementan la fixture de lectura. No
+    /// prometen conformidad CommonMark total: fijan construcciones que la UI
+    /// ya anuncia y que deben conservar rangos válidos hasta el layout.
+    #[test]
+    fn casos_commonmark_gfm_anunciados_llegan_a_layout() {
+        let cases = [
+            ("salto_forzado", "primera línea\\\nsegunda línea"),
+            ("autolink_escapado", "<https://example.com?find=\\*>"),
+            ("enfasis_anidado", "**fuerte y _énfasis_**"),
+            ("lista_anidada", "1. uno\n   1. dos\n      - tres"),
+            ("tarea", "- [ ] pendiente\n- [x] hecha"),
+            ("tabla", "| a | b |\n| :- | -: |\n| uno | dos |"),
+            ("codigo", "```text\n<fuente inerte>\n```"),
+            (
+                "html_semantico",
+                "<kbd>Ctrl</kbd> <mark>marca</mark> H<sub>2</sub>O",
+            ),
+            ("html_inerte", "<script>alert(1)</script>"),
+        ];
+        let mut font_cx = FontContext::new();
+        register_embedded_fonts(&mut font_cx);
+        let mut layout_cx = LayoutContext::new();
+
+        for (name, source) in cases {
+            let outcome = parse_blocks(source).unwrap_or_else(|error| {
+                panic!("{name}: el parser rechazó una construcción anunciada: {error}")
+            });
+            assert_eq!(outcome.degradation, None, "{name}: no debe degradarse");
+            validate_model(source, &outcome.blocks)
+                .unwrap_or_else(|error| panic!("{name}: modelo inválido: {error}"));
+            assert!(!outcome.blocks.is_empty(), "{name}: no produjo bloques");
+            for block in &outcome.blocks {
+                let layout = build_layout(block, &mut font_cx, &mut layout_cx, 360.0, 1.0, NIGHT);
+                assert!(
+                    layout.height().is_finite() && layout.height() >= 0.0,
+                    "{name}: layout inválido"
+                );
+            }
+        }
     }
 
     #[test]
