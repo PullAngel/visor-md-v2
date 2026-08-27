@@ -235,6 +235,7 @@ fn classify_link_destination(destination: &str) -> LinkDestinationKind {
         || lowered.starts_with("\\\\")
         || lowered.starts_with('/')
         || lowered.contains(':')
+        || lowered.split(['/', '\\']).any(|part| part == "..")
     {
         LinkDestinationKind::Blocked
     } else {
@@ -3029,7 +3030,12 @@ mod pruebas {
             classify_link_destination("notas/tema.md"),
             LinkDestinationKind::RelativeFile
         );
-        for path in ["file:///C:/secreto", "\\\\servidor\\share", "C:/secreto"] {
+        for path in [
+            "file:///C:/secreto",
+            "\\\\servidor\\share",
+            "C:/secreto",
+            "../secreto.md",
+        ] {
             assert_eq!(
                 classify_link_destination(path),
                 LinkDestinationKind::Blocked
