@@ -16,8 +16,11 @@ como entrada potencialmente hostil.
 
 El proyecto está en recuperación y estabilización del Sprint 1.
 
-- `main` conserva el último estado estable del prototipo nativo.
-- El desarrollo activo ocurre en `codex/sprint-1-recovery`.
+- `main` contiene el estado principal actual, incluido el trabajo validado de
+  recuperación de Codex.
+- `archive/claude-pre-codex` conserva el estado histórico anterior a Codex y no
+  se usa para desarrollo.
+- `codex/sprint-1-recovery` queda conservada como rama de trabajo histórica.
 - El trabajo heredado ya fue preservado, reconstruido y vuelve a compilar con
   sus pruebas verdes. Sigue siendo una recuperación en revisión, no una versión
   terminada.

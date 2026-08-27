@@ -5,8 +5,8 @@
 ## Resumen
 
 Visor MD v2 tiene un prototipo nativo medido y una recuperación funcional de
-Sprint 1 versionada en `codex/sprint-1-recovery`. El último commit estable de
-producto en `main` sigue siendo `090e9de`.
+Sprint 1 integrada en `main`. La referencia histórica anterior a Codex se
+conserva intacta en `archive/claude-pre-codex`.
 
 El source heredado volvió a compilar y está verde. La recuperación conectó
 el trabajo interrumpido, reforzó el modelo documental y convirtió los límites
@@ -16,13 +16,17 @@ considerar estabilizada la recuperación.
 
 ## Git
 
-- Rama activa de recuperación: `codex/sprint-1-recovery`.
-- `main` y `origin/main`: `090e9de`, verificado el 26 de agosto de 2026.
+- Rama principal: `main` y `origin/main`, con el estado validado de Codex.
+- Rama de trabajo conservada: `codex/sprint-1-recovery`; no es la referencia
+  principal ni debe usarse como descripción del estado publicado.
+- Referencia histórica inmutable: `archive/claude-pre-codex` y
+  `origin/archive/claude-pre-codex`, ambos en el antiguo `main` (`090e9de`).
 - Documentación base: `738faff`.
 - Fuentes y reproducción: `d566518`.
 - Renderer y modo seguro: `a54c9d6`.
 - Los snapshots de preservación no son parte del producto.
-- Ningún commit de recuperación se aplicó sobre `main`.
+- La recuperación se aplicó a `main` por avance rápido, sin reescritura de
+  historia; los commits anteriores siguen accesibles por ambas referencias.
 
 Consultar [`workspace-handoff.md`](workspace-handoff.md) para el inventario
 exacto del traspaso.

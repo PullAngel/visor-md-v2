@@ -744,5 +744,7 @@ separada y autorizó editar o crear lo necesario dentro de los principios
 acordados.
 
 La primera instrucción fue actualizar y publicar la documentación antes de
-continuar el código. `main` permanece intacta hasta que el producto haya avanzado,
-se confirme la dirección y exista permiso explícito para integrar.
+continuar el código. Esta nota describe ese estado histórico. Tras la validación
+y autorización posterior del propietario, el antiguo `main` se preservó en
+`archive/claude-pre-codex` y la historia lineal validada se avanzó a `main` sin
+reescritura. Consultar `status.md` para la rama principal actual.
