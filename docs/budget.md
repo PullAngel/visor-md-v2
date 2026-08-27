@@ -16,7 +16,7 @@ compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
 | **Objetivo de trabajo** | alrededor de 7 MB |
 | **Límite deseado** | < 8 MB |
 | **Medido en el Sprint 0** | **2,14 MB** |
-| **Checkpoint de recuperación actual** | **3.021.312 bytes, 2,881 MiB** |
+| **Checkpoint de recuperación actual** | **3.031.040 bytes, 2,891 MiB** |
 
 Superar 8 MB exige medición, explicación y aprobación. El límite no se usa para
 recortar seguridad, estabilidad, accesibilidad, Unicode o funciones esenciales.
@@ -150,6 +150,17 @@ UTF-8 sin dependencias nuevas.
 | SHA-256 | `A3CD5DFDE3903876D6FDE79151845320599B427AF6BA9BCF55B68933A3FDD9C9` |
 | Variación frente al checkpoint anterior | +2.048 bytes, +0,07 % |
 | Margen frente al límite deseado | 5,119 MiB |
+
+### Gate de lector y archivos del 27 de agosto de 2026
+
+El gate completo verificó formato, Clippy, 58 pruebas, SBOM, documentación y
+release tras copia, texto inerte, apertura limitada y preparación asíncrona.
+
+| Medida | Resultado |
+| --- | --- |
+| Binario Windows | 3.031.040 bytes, 2,891 MiB |
+| SHA-256 | `69119E4E3D5D93543BC35B0494140775E0917C3E6540DA930E2BC44CB91DE469` |
+| Margen frente al límite deseado | 5,109 MiB |
 
 ## Checkpoint de recuperación del 26 de agosto de 2026
 
