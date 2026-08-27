@@ -1969,6 +1969,44 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::Home),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } => {
+                self.move_selection_boundary(
+                    false,
+                    self.modifiers.control_key(),
+                    self.modifiers.shift_key(),
+                );
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::End),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } => {
+                self.move_selection_boundary(
+                    true,
+                    self.modifiers.control_key(),
+                    self.modifiers.shift_key(),
+                );
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
                         physical_key: PhysicalKey::Code(KeyCode::KeyA),
                         state: ElementState::Pressed,
                         repeat: false,
@@ -2137,6 +2175,36 @@ impl App {
         self.selection = Some(DocumentSelection {
             anchor: selection.anchor,
             focus,
+        });
+    }
+
+    fn move_selection_boundary(&mut self, end: bool, document: bool, extend: bool) {
+        let Some(selection) = self.selection else {
+            return;
+        };
+        let block = if document {
+            if end {
+                self.blocks.len().saturating_sub(1)
+            } else {
+                0
+            }
+        } else {
+            selection.focus.block
+        };
+        let Some(block_text) = self.blocks.get(block).map(|block| &block.text) else {
+            return;
+        };
+        let cursor = BlockCursor {
+            block,
+            offset: if end { block_text.len() } else { 0 },
+        };
+        self.selection = Some(if extend {
+            DocumentSelection {
+                anchor: selection.anchor,
+                focus: cursor,
+            }
+        } else {
+            DocumentSelection::collapsed(cursor)
         });
     }
 

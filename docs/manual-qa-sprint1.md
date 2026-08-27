@@ -57,6 +57,8 @@ Registrar antes de comenzar:
 - Un clic muestra un cursor fino; las flechas lo desplazan dentro del bloque,
   incluidas las líneas envueltas. Shift+flechas extiende la selección y Escape
   elimina el cursor o selección.
+- Inicio y Fin llevan el cursor al borde del bloque; Ctrl+Inicio y Ctrl+Fin al
+  comienzo y final del documento. Shift conserva el ancla para seleccionar.
 - Ctrl+A abarca todo el documento; `Ctrl+C` pega en otra aplicación el texto
   visible sin marcadores Markdown. `Ctrl+Shift+C` pega el Markdown original de
   los bloques seleccionados, incluso si la selección visual solo tomó una parte
