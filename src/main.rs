@@ -243,6 +243,16 @@ fn classify_link_destination(destination: &str) -> LinkDestinationKind {
     }
 }
 
+/// El destino cambia la señal visual, pero no concede ninguna capacidad. El
+/// subrayado sigue presente para que la distinción no dependa solo del color.
+fn link_color(palette: Palette, destination: &str) -> (u8, u8, u8) {
+    match classify_link_destination(destination) {
+        LinkDestinationKind::Web | LinkDestinationKind::Mail => palette.external_link,
+        LinkDestinationKind::RelativeFile => palette.accent,
+        LinkDestinationKind::Blocked => palette.dim,
+    }
+}
+
 /// Semantica interactiva que no puede perderse al producir texto visible.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct InlineTarget {
@@ -1345,6 +1355,18 @@ fn build_layout(
             builder.push(
                 StyleProperty::Brush(Brush::semantic(foreground, background, shift)),
                 range,
+            );
+        }
+    }
+
+    // El parser retiene el destino de cada enlace separado de sus estilos.
+    // Aplicarlo al final hace que su semántica visual gane sobre el verde
+    // genérico de `span.style.link`, sin volver al documento una capacidad.
+    for target in &block.targets {
+        if target.kind == InlineTargetKind::Link {
+            builder.push(
+                StyleProperty::Brush(Brush::text(link_color(palette, &target.destination))),
+                target.start..target.end,
             );
         }
     }
@@ -3041,6 +3063,17 @@ mod pruebas {
                 LinkDestinationKind::Blocked
             );
         }
+    }
+
+    #[test]
+    fn los_enlaces_externos_e_internos_tienen_senales_distintas() {
+        assert_eq!(link_color(DAY, "https://example.test"), DAY.external_link);
+        assert_eq!(
+            link_color(DAY, "mailto:alguien@example.test"),
+            DAY.external_link
+        );
+        assert_eq!(link_color(DAY, "notas/tema.md"), DAY.accent);
+        assert_eq!(link_color(DAY, "../secreto.md"), DAY.dim);
     }
 
     #[test]

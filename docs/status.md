@@ -68,6 +68,8 @@ exacto del traspaso.
   modelo se prepara y no recibe un estado parcial.
 - enlaces visibles con cursor y destino declarado al hover, sin resolver rutas
   ni abrir navegador o filesystem.
+- enlaces web y correo en azul subrayado; destinos relativos en verde y
+  destinos bloqueados en tono tenue, sin concederles capacidad alguna.
 - un fallo de apertura asíncrona conserva la ventana y muestra un aviso simple;
   el detalle técnico queda solo en el registro local de la sesión.
 - solo extensiones Markdown pasan al parser; otros textos UTF-8 se muestran de

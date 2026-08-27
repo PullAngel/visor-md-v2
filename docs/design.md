@@ -157,8 +157,8 @@ bucle salvo progreso real.
 
 ## Enlaces y estados de seguridad
 
-- Enlace web externo: azul convencional, subrayado o señal equivalente y destino
-  real visible antes de abrir.
+- Enlace web externo o correo: azul convencional, subrayado y destino real
+  visible antes de abrir.
 - Enlace interno o wikilink: verde de acento, diferenciado del externo.
 - Recurso bloqueado: placeholder discreto y acceso a detalles.
 - Archivo o destino inexistente: tono tenue, sin fingir que la acción funcionará.
