@@ -1,3 +1,5 @@
 /target
 # Fuentes variables completas, sin recortar. Regenerables, ver assets/fonts/README.md.
 /assets/fonts/raw
+# Investigación local y descartable: no es documentación normativa ni producto.
+/.local/
