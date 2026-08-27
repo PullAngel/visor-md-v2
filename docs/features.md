@@ -69,9 +69,9 @@ La evidencia detallada vive en [`status.md`](status.md) y
 
 | Función | Estado | Criterio mínimo |
 | --- | --- | --- |
-| Selección con mouse | Parcial | Selección visible con autoscroll; falta cruzar cualquier límite y copiar |
+| Selección con mouse | Parcial | Selección visible con autoscroll y copia; falta QA visual completo |
 | Selección con teclado | Parcial | Flechas, Shift+flechas, Ctrl+A y Escape; falta foco y atajos de línea completos |
-| Copiar bloque o documento | Planificado | Texto visible y fuente distinguibles |
+| Copiar bloque o documento | Parcial | `Ctrl+C` copia texto visible; `Ctrl+Shift+C` copia Markdown de bloques completos |
 | Alto contraste | Planificado | Matriz Windows y Linux |
 | Reduce motion | Planificado | Todas las transiciones respetan preferencia |
 | IME | Planificado | Escritura de idiomas compatibles |
@@ -82,7 +82,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 
 | Función | Estado | Criterio mínimo |
 | --- | --- | --- |
-| Copiar Markdown de un bloque | Planificado | Conserva estructura útil |
+| Copiar Markdown de un bloque | Parcial | `Ctrl+Shift+C` conserva la fuente de bloques completos |
 | Fragmentar documento largo | Planificado | No corta estructuras de forma destructiva |
 | Comparar versiones | Planificado | Diferencias legibles y no destructivas |
 | Archivo listo para adjuntar | Planificado | Markdown portable |

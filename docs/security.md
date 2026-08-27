@@ -149,6 +149,19 @@ El contenido no puede cargar automáticamente:
 Las rutas relativas locales pueden resolverse mediante VFS y límites. Seguir un
 enlace a otro archivo requiere una acción explícita.
 
+## Portapapeles
+
+El portapapeles es una frontera entre Visor MD y otras aplicaciones. La primera
+integración solo escribe texto después de una acción inequívoca: `Ctrl+C` copia
+la selección visible y `Ctrl+Shift+C` copia la fuente Markdown de los bloques
+seleccionados. No existe pegado, lectura en segundo plano, historial, acceso a
+imágenes ni envío de su contenido.
+
+La copia de fuente se limita a bloques completos porque una selección visual no
+equivale necesariamente a los bytes de Markdown que la produjeron. Esto evita
+fabricar sintaxis incorrecta. Un error de portapapeles se comunica sin mostrar
+ni registrar contenido del documento.
+
 ### TOCTOU
 
 TOCTOU significa comprobar algo y usarlo después, cuando pudo cambiar. Un atacante

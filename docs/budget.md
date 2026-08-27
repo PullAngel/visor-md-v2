@@ -16,7 +16,7 @@ compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
 | **Objetivo de trabajo** | alrededor de 7 MB |
 | **Límite deseado** | < 8 MB |
 | **Medido en el Sprint 0** | **2,14 MB** |
-| **Checkpoint de recuperación actual** | **3.013.632 bytes, 2,874 MiB** |
+| **Checkpoint de recuperación actual** | **3.019.264 bytes, 2,879 MiB** |
 
 Superar 8 MB exige medición, explicación y aprobación. El límite no se usa para
 recortar seguridad, estabilidad, accesibilidad, Unicode o funciones esenciales.
@@ -121,6 +121,23 @@ la vista. Eso agrega como máximo el tamaño del texto decodificado al consumo d
 un documento. Es un coste deliberado de integridad de datos; la medición de
 memoria debe repetirse antes de cerrar el Sprint 1 porque las cifras históricas
 son anteriores a esa retención.
+
+### Portapapeles de texto sin funciones de imagen
+
+La integración de `arboard 3.6.1` se compiló con `default-features = false`.
+La medición refleja el uso de texto para copia explícita; no incluye
+decodificadores de imágenes ni una función de pegado.
+
+| Medida | Resultado |
+| --- | --- |
+| Binario Windows | 3.019.264 bytes, 2,879 MiB |
+| SHA-256 | `4C2641EA2A8DC62D127B47719B517CA544DCA15F4F9506D6BCDDF707A9B98139` |
+| Variación frente al checkpoint anterior | +5.632 bytes, +0,19 % |
+| Margen frente al límite deseado | 5,121 MiB |
+
+El resultado es una medida de tamaño, no de arranque. El siguiente checkpoint de
+rendimiento medirá el flujo de apertura asíncrona, porque mover el parser fuera
+del hilo de interfaz cambia más la percepción que esta dependencia.
 
 ## Checkpoint de recuperación del 26 de agosto de 2026
 

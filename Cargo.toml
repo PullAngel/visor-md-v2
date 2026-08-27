@@ -14,6 +14,7 @@ panic = "abort"
 strip = true
 
 [dependencies]
+arboard = { version = "3.6.1", default-features = false }
 # Sin funciones por defecto a proposito. Las de comrak arrastran su CLI (clap,
 # xdg, shell-words) y, peor, `syntect-onig`: resaltado de sintaxis apoyado en
 # Oniguruma, una libreria de expresiones regulares escrita en C. Meter C al

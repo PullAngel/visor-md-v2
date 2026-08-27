@@ -20,6 +20,7 @@ decisión posterior lo reemplaza y este índice lo hace visible.
 | 18 | Reemplazado por ADR-26 | `STAT`, itálica y reproducción revisadas |
 | 19 a 31 | Aceptados | Modelo, alcance, seguridad y recuperación |
 | 32 | Aceptado | Contexto progresivo y verificación proporcional |
+| 33 | Aceptado | Portapapeles de texto explícito y sin lectura |
 
 ## ADR-1: Nativo, sin motor web
 
@@ -564,3 +565,19 @@ afectado: normal, sensible o auditoría.
 garantías. Un cambio documental no necesita recompilar release; parser, VFS,
 guardado, red o dependencias siguen exigiendo evidencia más profunda. La tabla
 de enrutamiento evita que la simplificación se convierta en omisión.
+
+## ADR-33: Portapapeles de texto explícito y sin lectura
+
+**Contexto.** Copiar fragmentos limpios y Markdown original es un caso de uso
+central para estudio, IA y bóvedas, pero el portapapeles cruza el límite hacia
+otras aplicaciones y puede introducir dependencias de plataforma.
+
+**Decisión.** Usar `arboard` sin sus funciones por defecto. Crear y conservar el
+portapapeles solo después de `Ctrl+C` o `Ctrl+Shift+C`; nunca leer, pegar,
+mantener historial, copiar imágenes ni transmitir contenido. La vista se copia
+como texto y la fuente se copia por bloques completos.
+
+**Por qué.** Entrega una interacción habitual sin convertir el lector en un
+observador del portapapeles ni reconstruir Markdown a partir de una vista. La
+separación conserva la intención del documento y mantiene acotadas las nuevas
+dependencias y permisos.

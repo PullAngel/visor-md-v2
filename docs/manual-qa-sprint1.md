@@ -57,7 +57,10 @@ Registrar antes de comenzar:
 - Un clic muestra un cursor fino; las flechas lo desplazan dentro del bloque,
   incluidas las líneas envueltas. Shift+flechas extiende la selección y Escape
   elimina el cursor o selección.
-- Ctrl+A abarca todo el documento. Aún no se espera copia.
+- Ctrl+A abarca todo el documento; `Ctrl+C` pega en otra aplicación el texto
+  visible sin marcadores Markdown. `Ctrl+Shift+C` pega el Markdown original de
+  los bloques seleccionados, incluso si la selección visual solo tomó una parte
+  de ellos.
 - Si se inicia una selección y el cursor o foco salen de la ventana, el
   arrastre se detiene sin borrar la selección ya conseguida.
 

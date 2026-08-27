@@ -21,6 +21,7 @@ use std::num::NonZeroU32;
 use std::rc::Rc;
 use std::time::Instant;
 
+use arboard::Clipboard;
 use comrak::nodes::{AstNode, NodeValue};
 use comrak::{Arena, Options, parse_document};
 use parley::layout::{
@@ -327,6 +328,34 @@ impl DocumentSelection {
             text_len
         };
         Some((start, end))
+    }
+
+    /// Copia la representación legible de la selección. Cada bloque conserva
+    /// su texto visible y los bloques distintos se separan con un salto de
+    /// línea; no se intenta reconstruir sintaxis Markdown desde esa vista.
+    fn rendered_text(self, blocks: &[Block]) -> Option<String> {
+        let first = self.anchor.min(self.focus);
+        let last = self.anchor.max(self.focus);
+        let mut pieces = Vec::new();
+        for index in first.block..=last.block {
+            let block = blocks.get(index)?;
+            let (start, end) = self.range_for(index, block.text.len())?;
+            pieces.push(block.text.get(start..end)?);
+        }
+        let text = pieces.join("\n");
+        (!text.is_empty()).then_some(text)
+    }
+
+    /// Copia el tramo original que cubre los bloques seleccionados. Esta
+    /// operación es deliberadamente por bloque completo: los offsets de la
+    /// vista renderizada no equivalen siempre a offsets del Markdown fuente.
+    fn source_blocks(self, source: &str, blocks: &[Block]) -> Option<String> {
+        let first = self.anchor.min(self.focus).block;
+        let last = self.anchor.max(self.focus).block;
+        let start = blocks.get(first)?.source.start;
+        let end = blocks.get(last)?.source.end;
+        let text = source.get(start..end)?;
+        (!text.is_empty()).then_some(text.to_owned())
     }
 }
 
@@ -1158,13 +1187,16 @@ fn selection_scroll_delta(pointer_y: f32, viewport_height: f32) -> f32 {
     0.0
 }
 
-fn window_title(path: &str, safe_mode: Option<Degradation>) -> String {
+fn window_title(path: &str, safe_mode: Option<Degradation>, notice: Option<&str>) -> String {
     let mode = if safe_mode.is_some() {
         " · modo seguro"
     } else {
         ""
     };
-    format!("Visor MD v2 · {path}{mode}")
+    let notice = notice
+        .map(|notice| format!(" · {notice}"))
+        .unwrap_or_default();
+    format!("Visor MD v2 · {path}{mode}{notice}")
 }
 
 fn build_layout(
@@ -1660,6 +1692,13 @@ struct App {
     selection: Option<DocumentSelection>,
     modifiers: ModifiersState,
     text_cursor_hover: bool,
+    /// Se crea solamente ante una copia explícita. Mantenerlo vivo respeta el
+    /// modelo de propiedad de X11/Wayland, donde el proceso sirve el texto
+    /// hasta que otra aplicación lo solicita.
+    clipboard: Option<Clipboard>,
+    /// Confirmación discreta en el título de ventana; no contiene texto del
+    /// documento ni rutas adicionales.
+    notice: Option<String>,
     /// Conserva el resultado fatal para devolver un codigo de salida distinto
     /// de cero despues de cerrar ordenadamente el event loop.
     fatal_error: bool,
@@ -1676,7 +1715,11 @@ impl ApplicationHandler for App {
         ));
 
         let attrs = Window::default_attributes()
-            .with_title(window_title(&self.path, self.safe_mode))
+            .with_title(window_title(
+                &self.path,
+                self.safe_mode,
+                self.notice.as_deref(),
+            ))
             .with_inner_size(winit::dpi::LogicalSize::new(900.0, 760.0));
         let t = Instant::now();
         let window = match event_loop.create_window(attrs) {
@@ -1892,6 +1935,18 @@ impl ApplicationHandler for App {
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::KeyC),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } if self.modifiers.control_key() => {
+                self.copy_selection(self.modifiers.shift_key());
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
                         physical_key: PhysicalKey::Code(KeyCode::KeyT),
                         state: ElementState::Pressed,
                         repeat: false,
@@ -1955,6 +2010,57 @@ impl ApplicationHandler for App {
 }
 
 impl App {
+    fn copy_selection(&mut self, source_markdown: bool) {
+        let text = self.selection.and_then(|selection| {
+            if source_markdown {
+                selection.source_blocks(&self.source, &self.blocks)
+            } else {
+                selection.rendered_text(&self.blocks)
+            }
+        });
+        let Some(text) = text else {
+            self.set_notice("sin texto seleccionado");
+            return;
+        };
+
+        let clipboard = match self.clipboard.as_mut() {
+            Some(clipboard) => clipboard,
+            None => match Clipboard::new() {
+                Ok(clipboard) => self.clipboard.insert(clipboard),
+                Err(error) => {
+                    self.log
+                        .push(format!("[portapapeles] no se pudo iniciar: {error}"));
+                    self.set_notice("no se pudo acceder al portapapeles");
+                    return;
+                }
+            },
+        };
+        if let Err(error) = clipboard.set_text(text) {
+            self.log
+                .push(format!("[portapapeles] no se pudo copiar: {error}"));
+            self.set_notice("no se pudo copiar");
+            return;
+        }
+        let kind = if source_markdown {
+            "Markdown original copiado"
+        } else {
+            "texto copiado"
+        };
+        self.log.push(format!("[portapapeles] {kind}"));
+        self.set_notice(kind);
+    }
+
+    fn set_notice(&mut self, notice: &str) {
+        self.notice = Some(notice.to_owned());
+        if let Some(window) = &self.window {
+            window.set_title(&window_title(
+                &self.path,
+                self.safe_mode,
+                self.notice.as_deref(),
+            ));
+        }
+    }
+
     fn cursor_at(&self, x: f32, y: f32) -> Option<BlockCursor> {
         self.slots.iter().enumerate().find_map(|(block, slot)| {
             let top = slot.y - self.scroll;
@@ -2530,6 +2636,8 @@ fn main() {
         selection: None,
         modifiers: ModifiersState::empty(),
         text_cursor_hover: false,
+        clipboard: None,
+        notice: None,
         fatal_error: false,
     };
 
@@ -2665,8 +2773,8 @@ mod pruebas {
 
     #[test]
     fn el_titulo_hace_visible_el_modo_seguro() {
-        let normal = window_title("nota.md", None);
-        let seguro = window_title("hostil.md", Some(Degradation::DepthLimit));
+        let normal = window_title("nota.md", None, None);
+        let seguro = window_title("hostil.md", Some(Degradation::DepthLimit), None);
         assert!(!normal.contains("modo seguro"));
         assert!(seguro.contains("modo seguro"));
         assert!(seguro.contains("hostil.md"));
@@ -2829,6 +2937,59 @@ con dos lineas
         };
         assert_eq!(selection.range_for(0, blocks[0].text.len()), Some((0, 13)));
         assert_eq!(selection.range_for(1, blocks[1].text.len()), Some((0, 14)));
+    }
+
+    #[test]
+    fn copiar_vista_conserva_el_texto_de_una_seleccion_entre_bloques() {
+        let blocks = aplanar("primero\n\nsegundo\n\ntercero");
+        let selection = DocumentSelection {
+            anchor: BlockCursor {
+                block: 0,
+                offset: 3,
+            },
+            focus: BlockCursor {
+                block: 2,
+                offset: 4,
+            },
+        };
+        assert_eq!(
+            selection.rendered_text(&blocks).as_deref(),
+            Some("mero\nsegundo\nterc")
+        );
+    }
+
+    #[test]
+    fn copiar_markdown_toma_bloques_fuente_completos() {
+        let source = "# titulo\n\n**primero**\n\nsegundo\n";
+        let blocks = aplanar(source);
+        let selection = DocumentSelection {
+            anchor: BlockCursor {
+                block: 1,
+                offset: 3,
+            },
+            focus: BlockCursor {
+                block: 2,
+                offset: 2,
+            },
+        };
+        assert_eq!(
+            selection.source_blocks(source, &blocks).as_deref(),
+            Some("**primero**\n\nsegundo")
+        );
+    }
+
+    #[test]
+    fn una_seleccion_vacia_no_sobrescribe_el_portapapeles() {
+        let blocks = aplanar("texto");
+        let selection = DocumentSelection::collapsed(BlockCursor {
+            block: 0,
+            offset: 2,
+        });
+        assert_eq!(selection.rendered_text(&blocks), None);
+        assert_eq!(
+            selection.source_blocks("texto", &blocks).as_deref(),
+            Some("texto")
+        );
     }
 
     #[test]

@@ -3,6 +3,26 @@
 Este documento registra checkpoints verificables del grafo de dependencias. No
 reemplaza una SBOM ni convierte una auditoría puntual en garantía permanente.
 
+## Cambio pendiente de validar: portapapeles de texto
+
+La rama de recuperación incorpora `arboard 3.6.1` con
+`default-features = false`. Es una dependencia directa, publicada bajo
+`MIT OR Apache-2.0`; su API usada por Visor MD es solamente `Clipboard::new` y
+`set_text` tras un atajo explícito de la persona.
+
+Las funciones por defecto de `arboard` incluirían imágenes y sus decodificadores.
+Se mantienen desactivadas: Visor MD no lee ni escribe imágenes al portapapeles.
+El lockfile agrega ocho paquetes para atender los portapapeles de las plataformas
+soportadas, incluidos `clipboard-win` en Windows y bibliotecas Objective-C para
+macOS futuro. El `cargo audit` posterior inspeccionó 279 paquetes: no encontró
+vulnerabilidades y mantuvo solo la advertencia previa de `ttf-parser` no
+mantenido. `sbom.cdx.json` fue regenerado con el nuevo grafo. Falta revisión de
+licencias y QA por target antes de elevar la cadena completa a estado verificado.
+
+En X11 y Wayland la aplicación puede ser propietaria del texto copiado mientras
+vive. Por ello la instancia de portapapeles se mantiene en el estado de la app
+después de una copia, pero no se consulta ni se transmite su contenido.
+
 ## Checkpoint del 26 de agosto de 2026
 
 Entorno:

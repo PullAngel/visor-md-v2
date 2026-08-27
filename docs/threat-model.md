@@ -110,6 +110,7 @@ Cada flecha es un lugar donde validar datos, limitar capacidades y crear tests.
 | Path traversal | `../../secreto` | VFS, canonicalización y contención | Matriz de rutas | TOCTOU o diferencias de plataforma |
 | Escape por symlink | Recurso relativo que cambia destino | Identidad y validación sobre handle | Tests de carrera | Limitaciones de API |
 | Acceso UNC | Markdown apunta a un share | Solo archivo principal manual | Tests UNC | Intención ambigua en asociación externa |
+| Portapapeles | Documento intenta inducir copia o contenido queda expuesto | Solo escritura tras atajo; sin lectura, historial ni red | Tests de selección y QA de atajos | La persona puede pegar voluntariamente en otra app |
 | Filtración por imagen | Pixel remoto registra IP | Bloqueo y consentimiento aislado | Monitor de sockets | IP revelada tras consentimiento |
 | SSRF | Imagen apunta al router local | Bloqueo de red privada y redirects | Servidor de prueba local | Variantes de resolución DNS |
 | Phishing | Texto dice un dominio y URL abre otro | Destino real visible y esquema permitido | QA visual y casos Unicode | Usuario acepta destino malicioso |

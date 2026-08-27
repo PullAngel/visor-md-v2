@@ -54,7 +54,8 @@ Estados permitidos:
 | Tema claro y oscuro | Visual | Parcial | Pendiente | Commit `090e9de` |
 | Resize sin layout corrupto | Integración | Parcial | Pendiente | Prototipo |
 | DPI y zoom | Manual y visual | Pendiente | Pendiente | Sin evidencia |
-| Selección con mouse | Integración y visual | Parcial | Pendiente | Hit testing y geometría de Parley comparten el layout; autoscroll probado, pero falta QA manual, selección general y copia |
+| Selección con mouse | Integración y visual | Parcial | Pendiente | Hit testing y geometría de Parley comparten el layout; autoscroll y copia unitaria probados, falta QA manual |
+| Copia al portapapeles | Integración y seguridad | Parcial | Pendiente | `Ctrl+C` y `Ctrl+Shift+C` distinguen vista y fuente en pruebas de selección; falta QA con otras aplicaciones y plataformas |
 | Cursor de texto sobre contenido | Manual | Parcial | Pendiente | Cambia con el mismo hit testing de selección; requiere QA visual |
 | Pérdida de foco durante selección | Manual | Parcial | Pendiente | Cancela arrastre y modificadores, conserva selección; requiere QA manual |
 | Selección con teclado | Accesibilidad | Parcial | Pendiente | Flechas verticales y horizontales, Shift+flechas, Ctrl+A y Escape funcionan; falta foco y atajos de línea completos |

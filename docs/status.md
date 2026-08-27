@@ -58,15 +58,17 @@ exacto del traspaso.
 - búsqueda binaria del tramo visible;
 - scroll limitado por el viewport real;
 - fallos de inicialización y presentación gráfica reportados sin `panic`;
-- 50 pruebas unitarias y adversariales, incluido un corpus integrado de lector
+- 53 pruebas unitarias y adversariales, incluido un corpus integrado de lector
   y un barrido adversarial determinista.
+- copia explícita de selección: texto visible con `Ctrl+C` y Markdown fuente de
+  bloques con `Ctrl+Shift+C`; falta QA manual con aplicaciones externas.
 
 Evidencia actual en Windows:
 
 - `cargo check`: verde;
 - `cargo fmt -- --check`: verde;
 - `cargo clippy --all-targets -- -D warnings`: verde;
-- `cargo test`: 50 de 50 pruebas verdes;
+- `cargo test`: 53 de 53 pruebas verdes tras integrar portapapeles;
 - `scripts/check.ps1`: verde el 26 de agosto de 2026 (formato, Clippy, pruebas,
   SBOM, documentación y release);
 - último release de `6176a82`: 2.996.736 bytes, 2,858 MiB;
@@ -77,6 +79,7 @@ Evidencia actual en Windows:
 - working tree con Ctrl+A: 3.012.096 bytes, 2,873 MiB;
 - working tree con navegación vertical: 3.013.120 bytes, 2,874 MiB;
 - working tree con cursor contextual: 3.013.632 bytes, 2,874 MiB;
+- working tree con portapapeles de texto: 3.019.264 bytes, 2,879 MiB;
 - primer pintado mediano sobre diez ejecuciones: 102,5 ms;
 - P95 de primer pintado: 612 ms;
 - scroll automatizado: 4,4 ms por cuadro.
@@ -97,8 +100,9 @@ causa porque todavía no se controlan caché, carga y planificación del sistema
 - medición de memoria pendiente de repetir tras retener la fuente de sesión;
 - ausencia de CI, fuzzing, validación independiente del SBOM y gates
   multiplataforma.
+- QA manual de copia, incluidos atajos, aplicaciones destino y plataforma;
 - selección parcial con mouse y autoscroll, flechas y Shift+flechas en ambas
-  direcciones, Ctrl+A y Escape; falta copia y QA manual.
+  direcciones, Ctrl+A y Escape; la copia ya tiene pruebas unitarias.
 
 ## Evidencia disponible
 
