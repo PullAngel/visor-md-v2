@@ -202,6 +202,10 @@ impl SourceEditor {
         self.cursor
     }
 
+    pub fn anchor(&self) -> usize {
+        self.anchor
+    }
+
     pub fn selection(&self) -> Range<usize> {
         self.cursor.min(self.anchor)..self.cursor.max(self.anchor)
     }

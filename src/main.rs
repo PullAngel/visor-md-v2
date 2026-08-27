@@ -2663,6 +2663,34 @@ impl App {
             }
             _ => {}
         }
+        if self.mode == DocumentMode::SourceEditing {
+            self.sync_source_selection();
+            if let Some(window) = &self.window {
+                window.request_redraw();
+            }
+        }
+    }
+
+    fn source_block_cursor(&self, source_offset: usize) -> Option<BlockCursor> {
+        self.blocks.iter().enumerate().find_map(|(block, item)| {
+            let text_end = item.source.start + item.text.len();
+            (item.source.start <= source_offset && source_offset <= text_end).then_some(
+                BlockCursor {
+                    block,
+                    offset: source_offset - item.source.start,
+                },
+            )
+        })
+    }
+
+    fn sync_source_selection(&mut self) {
+        let Some(anchor) = self.source_block_cursor(self.source_editor.anchor()) else {
+            return;
+        };
+        let Some(focus) = self.source_block_cursor(self.source_editor.cursor()) else {
+            return;
+        };
+        self.selection = Some(DocumentSelection { anchor, focus });
     }
 
     fn set_source_cursor_from_block(&mut self, cursor: BlockCursor, extend: bool) {
