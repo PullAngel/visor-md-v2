@@ -14,7 +14,7 @@ Estados permitidos:
 
 | Propiedad | Nivel | Windows | Linux | Evidencia actual |
 | --- | --- | --- | --- | --- |
-| CommonMark aplicable | Corpus | Parcial | Pendiente | Corpus versionado del lector cubre encabezados, inline, saltos, escapes, entidades, links, citas, listas, código, tablas e imágenes anunciadas; falta suite oficial seleccionada |
+| CommonMark aplicable | Corpus | Parcial | Pendiente | Corpus versionado del lector cubre encabezados, inline, saltos, escapes, entidades, links, citas, listas, código, tablas e imágenes anunciadas; incluye ejemplos seleccionados 16 y 20 de CommonMark 0.31.2; falta suite oficial compatible |
 | Formato inline anidado | Integración | Verificado | Pendiente | `el_enfasis_anidado_se_acumula` y tests de rangos |
 | Listas y task lists | Integración y visual | Parcial | Pendiente | Parser, layout y píxeles verificados; falta evidencia estética |
 | Allowlist HTML y HTML no permitido | Seguridad e integración | Verificado | Pendiente | `br`, `kbd`, `mark`, `sub` y `sup` sin atributos llegan a layout; HTML hostil, atributos y cierres defectuosos quedan visibles e inertes |

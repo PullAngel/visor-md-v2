@@ -3616,6 +3616,10 @@ con dos lineas
             target.kind == InlineTargetKind::Image
                 && target.destination == "https://example.com/diagram.png"
         }));
+        assert!(targets.iter().any(|target| {
+            target.kind == InlineTargetKind::Link
+                && target.destination.starts_with("https://example.com?find=")
+        }));
 
         let visible = outcome
             .blocks

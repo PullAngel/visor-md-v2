@@ -40,3 +40,14 @@ Atajo <kbd>Ctrl</kbd> + <kbd>S</kbd>, <mark>concepto clave</mark>,
 H<sub>2</sub>O y x<sup>2</sup>.
 
 <script src="https://invalido.example/x.js">no se ejecuta</script>
+
+## Casos trazables a CommonMark 0.31.2
+
+Los fragmentos de esta sección se seleccionaron de los ejemplos 16 y 20 de
+la especificación. Son entradas, no una copia del renderer HTML oficial: Visor
+MD verifica el modelo nativo que realmente dibuja.
+
+salto forzado\
+otra línea
+
+<https://example.com?find=\*>

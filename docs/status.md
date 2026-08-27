@@ -74,6 +74,9 @@ exacto del traspaso.
   el destino antes de cualquier acción futura.
 - resize y cambio de escala del sistema invalidan los layouts visibles antes de
   redibujar; la escala tipográfica integral sigue pendiente de QA de DPI.
+- los rangos que Comrak informa para enlaces cubren hoy el destino y no toda su
+  sintaxis; es suficiente para el lector inerte actual, pero debe resolverse
+  antes de edición, round-trip fino o activación de enlaces.
 - un fallo de apertura asíncrona conserva la ventana y muestra un mensaje
   inerte simple dentro del lienzo; el detalle técnico queda solo en el registro
   local de la sesión.

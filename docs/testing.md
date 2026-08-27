@@ -186,6 +186,12 @@ acompaña la sintaxis que el lector representa hoy. No sustituye la suite oficia
 CommonMark: evita que una ampliación futura declare soporte de una construcción
 que no conserva modelo, rangos y representación.
 
+El corpus incorpora una selección trazable a CommonMark 0.31.2: ejemplos 16
+(salto forzado) y 20 (autolink con escape). Se verifican contra el modelo nativo
+de Visor MD, no contra HTML: la aplicación no es un navegador. La selección se
+ampliará de acuerdo con las capacidades que lleguen al renderer; no se declarará
+conformidad completa hasta ejecutar una suite oficial compatible.
+
 La fixture no cuenta como prueba aprobada hasta registrar una inspección visual.
 Sirve para repetir siempre el mismo documento con temas, énfasis, listas, tareas,
 citas, tabla, código, HTML inerte, emoji y fallback Unicode.
