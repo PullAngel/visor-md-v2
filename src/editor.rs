@@ -215,6 +215,12 @@ impl SourceEditor {
         self.history.is_dirty()
     }
 
+    pub fn select_all(&mut self, source: &str) {
+        self.anchor = 0;
+        self.cursor = source.len();
+        self.preferred_column = None;
+    }
+
     pub fn set_cursor(
         &mut self,
         source: &str,
@@ -492,5 +498,13 @@ mod tests {
         assert_eq!(editor.cursor(), "uno\r\n".len());
         editor.move_line_boundary(source, true, true).unwrap();
         assert_eq!(editor.selection(), "uno\r\n".len().."uno\r\ndos\r".len());
+    }
+
+    #[test]
+    fn seleccionar_todo_abarca_la_fuente_utf8_completa() {
+        let source = "á\n🔒";
+        let mut editor = SourceEditor::new();
+        editor.select_all(source);
+        assert_eq!(editor.selection(), 0..source.len());
     }
 }

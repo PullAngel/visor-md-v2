@@ -2720,6 +2720,9 @@ impl App {
                     self.modifiers.shift_key(),
                 );
             }
+            PhysicalKey::Code(KeyCode::KeyA) if self.modifiers.control_key() => {
+                self.source_editor.select_all(&self.source);
+            }
             PhysicalKey::Code(KeyCode::KeyZ) if self.modifiers.control_key() => {
                 self.edit_source(|editor, source| editor.undo(source));
             }
