@@ -1721,7 +1721,7 @@ struct App {
 }
 
 impl ApplicationHandler<AppEvent> for App {
-    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: AppEvent) {
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: AppEvent) {
         match event {
             AppEvent::DocumentReady {
                 source,
@@ -1753,7 +1753,15 @@ impl ApplicationHandler<AppEvent> for App {
                     window.request_redraw();
                 }
             }
-            AppEvent::DocumentFailed(error) => self.fail_and_exit(event_loop, error),
+            AppEvent::DocumentFailed(error) => {
+                self.loading = false;
+                self.log.push(format!("[error] {error}"));
+                self.notice = Some("no se pudo abrir el documento".to_string());
+                self.refresh_title();
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+            }
         }
     }
 
