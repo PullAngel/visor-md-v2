@@ -326,7 +326,7 @@ nativas reales. macOS permanece como posibilidad futura, no gate actual.
 | Área | Implementación actual | Objetivo |
 | --- | --- | --- |
 | Archivos | Apertura primaria limitada desde un mismo handle | File policy y VFS completo |
-| Parsing | Sincrónico y acoplado | Tarea cancelable con límites |
+| Parsing | Hilo de trabajo y evento interno; sin cancelación | Tarea cancelable con límites |
 | Modelo | `Block` y `Span` simplificados | Documento con rangos y semántica |
 | Layout | Visible con estimaciones | Geometría para render e interacción |
 | Rendering | Software nativo funcional | Display list validada y accesible |

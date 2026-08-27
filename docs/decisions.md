@@ -22,6 +22,7 @@ decisión posterior lo reemplaza y este índice lo hace visible.
 | 32 | Aceptado | Contexto progresivo y verificación proporcional |
 | 33 | Aceptado | Portapapeles de texto explícito y sin lectura |
 | 34 | Aceptado | Apertura primaria limitada desde el mismo handle |
+| 35 | Aceptado | Preparación de documento fuera del hilo de interfaz |
 
 ## ADR-1: Nativo, sin motor web
 
@@ -599,3 +600,18 @@ doble clic en texto hostil reserve memoria sin cota. Usar el mismo handle para
 metadatos y bytes hace que la decisión se aplique al archivo efectivamente
 leído. El valor es temporal: ampliar límites blandos requiere primero medir el
 modo seguro y sus costes, no eliminar el techo por comodidad.
+
+## ADR-35: Preparación de documento fuera del hilo de interfaz
+
+**Contexto.** El parseo de 5 MiB podía tardar más de medio segundo antes de crear
+la ventana. Esa espera se percibe como que la aplicación no respondió, aunque el
+render posterior sea rápido.
+
+**Decisión.** Crear el event loop y la ventana primero. Apertura limitada y
+parseo ocurren en un hilo de trabajo que devuelve un único resultado tipado al
+hilo de interfaz mediante `winit`. El worker no recibe objetos gráficos ni toca
+la ventana.
+
+**Por qué.** Separa trabajo pesado de la respuesta visual sin añadir runtime ni
+dependencia. Aún no hay cancelación: se incorpora cuando abrir o editar varios
+documentos aporte una identidad de operación que pueda cancelarse correctamente.

@@ -64,6 +64,8 @@ exacto del traspaso.
   bloques con `Ctrl+Shift+C`; falta QA manual con aplicaciones externas.
 - apertura primaria desde un mismo handle, limitada a 16 MiB y UTF-8 válido;
   no habilita recursos secundarios ni navega rutas del documento.
+- apertura y parsing fuera del hilo de interfaz; la ventana se crea mientras el
+  modelo se prepara y no recibe un estado parcial.
 
 Evidencia actual en Windows:
 
@@ -97,7 +99,7 @@ causa porque todavía no se controlan caché, carga y planificación del sistema
 - selección de ejemplos de la suite oficial CommonMark y ampliación GFM sistemática;
 - separación incompleta de `main.rs`; fuentes y tema ya tienen módulos propios;
 - VFS de recursos secundarios, contención de rutas y política de bóvedas;
-- parsing en el camino de UI;
+- cancelación de parsing y política de reemplazo si cambia el documento;
 - virtualización y alturas todavía aproximadas;
 - cobertura y fallback tipográfico todavía sin matriz completa;
 - medición de memoria pendiente de repetir tras retener la fuente de sesión;

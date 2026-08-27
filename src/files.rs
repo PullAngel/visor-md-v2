@@ -7,7 +7,7 @@
 use std::fmt;
 use std::fs::File;
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// Límite normal mientras no exista una preferencia avanzada persistente.
 /// Supera holgadamente el corpus de 5 MiB medido, pero evita reservar memoria
@@ -16,7 +16,6 @@ pub(crate) const DEFAULT_DOCUMENT_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
 
 #[derive(Debug)]
 pub(crate) struct OpenedText {
-    pub(crate) path: PathBuf,
     pub(crate) source: String,
 }
 
@@ -97,13 +96,14 @@ pub(crate) fn open_explicit_primary(
         });
     }
     let source = String::from_utf8(bytes).map_err(|_| FileOpenError::InvalidUtf8)?;
-    Ok(OpenedText { path, source })
+    Ok(OpenedText { source })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
+    use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temporary_file(name: &str, bytes: &[u8]) -> PathBuf {
@@ -120,7 +120,6 @@ mod tests {
     fn el_archivo_principal_se_lee_desde_un_handle_limitado() {
         let path = temporary_file("utf8", b"# nota\n");
         let opened = open_explicit_primary(&path, 64).expect("la fixture es válida");
-        assert_eq!(opened.path, path);
         assert_eq!(opened.source, "# nota\n");
         assert_eq!(opened.source.len(), 7);
     }

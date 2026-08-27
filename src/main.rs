@@ -20,6 +20,7 @@ mod theme;
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 use std::rc::Rc;
+use std::thread;
 use std::time::Instant;
 
 use arboard::Clipboard;
@@ -69,6 +70,15 @@ impl TraversalState {
 struct ParseOutcome {
     blocks: Vec<Block>,
     degradation: Option<Degradation>,
+}
+
+enum AppEvent {
+    DocumentReady {
+        source: String,
+        outcome: ParseOutcome,
+        elapsed_ms: f64,
+    },
+    DocumentFailed(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
@@ -1687,6 +1697,7 @@ struct App {
     /// Indica que el render enriquecido excedio un limite defensivo. En ese
     /// caso `blocks` contiene la fuente inerte, no un arbol truncado.
     safe_mode: Option<Degradation>,
+    loading: bool,
     /// Punto actual del cursor dentro de la ventana, en pixeles físicos.
     pointer: Option<(f32, f32)>,
     /// Mientras está activo, mover el mouse extiende la selección del bloque.
@@ -1706,7 +1717,43 @@ struct App {
     fatal_error: bool,
 }
 
-impl ApplicationHandler for App {
+impl ApplicationHandler<AppEvent> for App {
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: AppEvent) {
+        match event {
+            AppEvent::DocumentReady {
+                source,
+                outcome,
+                elapsed_ms,
+            } => {
+                self.source = source;
+                self.blocks = outcome.blocks;
+                self.safe_mode = outcome.degradation;
+                self.loading = false;
+                self.slots.clear();
+                self.live.clear();
+                self.doc_height = 0.0;
+                self.laid_for_width = -1.0;
+                self.notice = None;
+                self.log.push(format!(
+                    "[medicion] preparar documento de {:.1} KB fuera de UI: {elapsed_ms:.0} ms  ({} bloques)",
+                    self.source.len() as f64 / 1024.0,
+                    self.blocks.len()
+                ));
+                if let Some(reason) = self.safe_mode {
+                    self.log.push(format!(
+                        "[seguridad] {}; se muestra la fuente inerte",
+                        reason.explanation()
+                    ));
+                }
+                if let Some(window) = &self.window {
+                    window.set_title(&window_title(&self.path, self.safe_mode, None));
+                    window.request_redraw();
+                }
+            }
+            AppEvent::DocumentFailed(error) => self.fail_and_exit(event_loop, error),
+        }
+    }
+
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_some() {
             return;
@@ -1985,7 +2032,9 @@ impl ApplicationHandler for App {
                     return;
                 }
 
-                if let Some(total) = self.bench {
+                if !self.loading
+                    && let Some(total) = self.bench
+                {
                     if self.frames >= total {
                         self.report();
                         event_loop.exit();
@@ -2549,41 +2598,8 @@ fn main() {
         std::process::exit(2);
     };
 
-    let opened = match open_explicit_primary(&path, DEFAULT_DOCUMENT_LIMIT_BYTES) {
-        Ok(opened) => opened,
-        Err(e) => {
-            eprintln!("no se pudo leer {path}: {e}");
-            std::process::exit(1);
-        }
-    };
-    let path = opened.path.to_string_lossy().into_owned();
-    let source = opened.source;
-
     let t = Instant::now();
-    let outcome = match parse_blocks(&source) {
-        Ok(outcome) => outcome,
-        Err(error) => {
-            eprintln!("el documento no se pudo preparar de forma segura: {error}");
-            std::process::exit(1);
-        }
-    };
-    let blocks = outcome.blocks;
-    let degradation = outcome.degradation;
-    let mut log = vec![format!(
-        "[medicion] parseo de {:.1} KB: {:.0} ms  ({} bloques)",
-        source.len() as f64 / 1024.0,
-        t.elapsed().as_secs_f64() * 1000.0,
-        blocks.len()
-    )];
-    if let Some(reason) = degradation {
-        log.push(format!(
-            "[seguridad] {}; se muestra la fuente inerte",
-            reason.explanation()
-        ));
-    }
-
-    let t = Instant::now();
-    let event_loop = match EventLoop::new() {
+    let event_loop = match EventLoop::<AppEvent>::with_user_event().build() {
         Ok(event_loop) => event_loop,
         Err(error) => {
             eprintln!("no se pudo iniciar la interfaz: {error}");
@@ -2591,10 +2607,10 @@ fn main() {
         }
     };
     event_loop.set_control_flow(ControlFlow::Wait);
-    log.push(format!(
+    let mut log = vec![format!(
         "[medicion]   EventLoop::new: {:.0} ms",
         t.elapsed().as_secs_f64() * 1000.0
-    ));
+    )];
 
     let t = Instant::now();
     let mut font_cx = FontContext::new();
@@ -2613,8 +2629,8 @@ fn main() {
     let mut app = App {
         started,
         path,
-        source,
-        blocks,
+        source: String::new(),
+        blocks: Vec::new(),
         window: None,
         surface: None,
         font_cx,
@@ -2634,16 +2650,39 @@ fn main() {
         exact_measure,
         log,
         palette: NIGHT,
-        safe_mode: degradation,
+        safe_mode: None,
+        loading: true,
         pointer: None,
         selecting: false,
         selection: None,
         modifiers: ModifiersState::empty(),
         text_cursor_hover: false,
         clipboard: None,
-        notice: None,
+        notice: Some("cargando documento".to_string()),
         fatal_error: false,
     };
+
+    let proxy = event_loop.create_proxy();
+    let worker_path = app.path.clone();
+    thread::spawn(move || {
+        let started = Instant::now();
+        let event = match open_explicit_primary(&worker_path, DEFAULT_DOCUMENT_LIMIT_BYTES) {
+            Ok(opened) => match parse_blocks(&opened.source) {
+                Ok(outcome) => AppEvent::DocumentReady {
+                    source: opened.source,
+                    outcome,
+                    elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
+                },
+                Err(error) => AppEvent::DocumentFailed(format!(
+                    "el documento no se pudo preparar de forma segura: {error}"
+                )),
+            },
+            Err(error) => {
+                AppEvent::DocumentFailed(format!("no se pudo leer {worker_path}: {error}"))
+            }
+        };
+        let _ = proxy.send_event(event);
+    });
 
     if let Err(error) = event_loop.run_app(&mut app) {
         eprintln!("la interfaz termino con un error: {error}");

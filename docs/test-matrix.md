@@ -28,6 +28,7 @@ Estados permitidos:
 | Propiedad | Nivel | Windows | Linux | Evidencia actual |
 | --- | --- | --- | --- | --- |
 | Apertura explícita local | Integración | Parcial | Pendiente | Un mismo handle limita 16 MiB y exige UTF-8; falta QA visual y política configurable |
+| Parser fuera de UI | Integración y rendimiento | Parcial | Pendiente | Hilo de trabajo entrega un único evento al hilo de ventana; falta benchmark y cancelación |
 | Apertura manual UNC | Integración | Pendiente | No aplica | Política definida |
 | Traversal y escape bloqueados | Seguridad | Bloqueado | Bloqueado | No hay apertura secundaria todavía; deberá pasar por VFS al existir enlaces o recursos |
 | Symlinks y junctions | Seguridad | Pendiente | Pendiente | VFS no implementado |
