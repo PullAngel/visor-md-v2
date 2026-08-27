@@ -3515,10 +3515,6 @@ impl App {
     /// carpeta elegida. Un nombre duplicado pide una ruta más precisa: nunca
     /// se abre la primera coincidencia por orden de recorrido.
     fn open_workspace_wikilink(&mut self, destination: &str) {
-        if self.source_editor.is_dirty() {
-            self.set_notice("guarda o descarta los cambios antes de abrir otro documento");
-            return;
-        }
         let (note_target, heading) =
             destination
                 .split_once('#')
@@ -3528,6 +3524,18 @@ impl App {
                         (!heading.trim().is_empty()).then(|| heading.trim().to_owned()),
                     )
                 });
+        if note_target.trim().is_empty() {
+            if let Some(heading) = heading {
+                self.scroll_to_heading(&heading);
+            } else {
+                self.set_notice("el enlace de bóveda no declara una nota ni un encabezado");
+            }
+            return;
+        }
+        if self.source_editor.is_dirty() {
+            self.set_notice("guarda o descarta los cambios antes de abrir otro documento");
+            return;
+        }
         let Some((root, index)) = self.workspace.as_ref() else {
             self.set_notice("abre una carpeta de trabajo para seguir enlaces de bóveda");
             return;
@@ -3555,6 +3563,31 @@ impl App {
                 self.set_notice("el enlace de bóveda fue bloqueado por la política de archivos");
             }
         }
+    }
+
+    fn scroll_to_heading(&mut self, heading: &str) {
+        let requested = heading_key(heading);
+        let Some((block_index, _)) = self.blocks.iter().enumerate().find(|(_, block)| {
+            matches!(block.kind, Kind::Heading(_)) && heading_key(&block.text) == requested
+        }) else {
+            self.set_notice("el documento no contiene el encabezado solicitado");
+            return;
+        };
+        let Some(slot) = self.slots.get(block_index) else {
+            self.set_notice("el encabezado se enfocará al terminar el layout");
+            self.pending_workspace_heading = Some(heading.to_owned());
+            return;
+        };
+        let viewport = self
+            .window
+            .as_ref()
+            .map_or(0.0, |window| window.inner_size().height as f32);
+        self.scroll = slot.y.min(max_scroll(self.doc_height, viewport));
+        self.selection = Some(DocumentSelection::collapsed(BlockCursor {
+            block: block_index,
+            offset: 0,
+        }));
+        self.set_notice("encabezado enfocado");
     }
 
     fn cursor_at(&self, x: f32, y: f32) -> Option<BlockCursor> {
@@ -3814,17 +3847,7 @@ impl App {
         }
 
         if let Some(heading) = self.pending_workspace_heading.take() {
-            let requested = heading_key(&heading);
-            if let Some((block_index, _)) = self.blocks.iter().enumerate().find(|(_, block)| {
-                matches!(block.kind, Kind::Heading(_)) && heading_key(&block.text) == requested
-            }) {
-                if let Some(slot) = self.slots.get(block_index) {
-                    self.scroll = slot.y.min(max_scroll(self.doc_height, size.height as f32));
-                    self.set_notice("enlace de bóveda abierto en el encabezado solicitado");
-                }
-            } else {
-                self.set_notice("la nota se abrió, pero no contiene el encabezado solicitado");
-            }
+            self.scroll_to_heading(&heading);
         }
 
         // Que bloques caen en pantalla este cuadro.
@@ -5195,17 +5218,19 @@ mod pruebas_inline {
 
     #[test]
     fn wikilinks_de_obsidian_son_enlaces_nativos_sin_interpretar_codigo() {
-        let blocks =
-            aplanar("Ver [[clases/redes#Modelo|la guía]] y [[seguridad]].\n\n`[[literal]]`");
-        assert_eq!(blocks[0].text, "Ver la guía y seguridad.");
+        let blocks = aplanar(
+            "Ver [[clases/redes#Modelo|la guía]], [[seguridad]] y [[#Inicio]].\n\n`[[literal]]`",
+        );
+        assert_eq!(blocks[0].text, "Ver la guía, seguridad y #Inicio.");
         let targets: Vec<_> = blocks[0]
             .targets
             .iter()
             .filter(|target| target.kind == InlineTargetKind::WikiLink)
             .collect();
-        assert_eq!(targets.len(), 2);
+        assert_eq!(targets.len(), 3);
         assert_eq!(targets[0].destination, "clases/redes#Modelo");
         assert_eq!(targets[1].destination, "seguridad");
+        assert_eq!(targets[2].destination, "#Inicio");
         assert!(blocks[0].spans.iter().any(|span| span.style.link));
         assert_eq!(blocks[1].text, "[[literal]]");
         assert!(blocks[1].targets.is_empty());

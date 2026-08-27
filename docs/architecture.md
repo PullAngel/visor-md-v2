@@ -275,8 +275,9 @@ sidecar de contenido. Ya existe un recorrido acotado que canoniza cada entrada,
 omite `.git` y `.obsidian`, descarta escapes y extrae títulos, encabezados y
 wikilinks de Markdown UTF-8 permitido. La selección de carpeta y el indexado ya
 corren fuera de la UI; los enlaces relativos solo se abren tras resolverlos con
-la raíz autorizada. Los wikilinks `[[nota]]`, `[[nota|alias]]` y
-`[[nota#encabezado]]` se representan como enlaces nativos: el índice exige una
+la raíz autorizada. Los wikilinks `[[nota]]`, `[[nota|alias]]`,
+`[[nota#encabezado]]` y `[[#encabezado]]` se representan como enlaces nativos:
+el índice exige una
 coincidencia única y rechaza ambigüedades en vez de elegir por orden. Una ancla
 igual a un encabezado visible se aplica después de abrir la nota. Todavía faltan
 paneles de resultados, backlinks visibles, cancelación explícita y detección de
