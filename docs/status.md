@@ -82,6 +82,8 @@ exacto del traspaso.
   antes de edición, round-trip fino o activación de enlaces.
 - menú contextual propio inicial: solo ofrece copia de una selección y reutiliza
   el portapapeles explícito; no abre rutas, navegador ni acciones de documento.
+- los límites de render muestran una banda superior de modo seguro dentro de la
+  ventana y mantienen la fuente inerte disponible para lectura y copia.
 - un fallo de apertura asíncrona conserva la ventana y muestra un mensaje
   inerte simple dentro del lienzo; el detalle técnico queda solo en el registro
   local de la sesión.

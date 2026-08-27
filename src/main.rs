@@ -1403,6 +1403,13 @@ fn window_title(path: &str, safe_mode: Option<Degradation>, notice: Option<&str>
     format!("Visor MD v2 · {path}{mode}{notice}")
 }
 
+fn safe_mode_label(reason: Degradation) -> String {
+    format!(
+        "Modo seguro: {}. Se muestra la fuente inerte.",
+        reason.explanation()
+    )
+}
+
 fn build_layout(
     block: &Block,
     font_cx: &mut FontContext,
@@ -2903,6 +2910,14 @@ impl App {
 
         let menu = self.context_menu;
         let menu_pointer = self.pointer;
+        let safe_banner = self.safe_mode.map(|reason| {
+            build_menu_layout(
+                &safe_mode_label(reason),
+                &mut self.font_cx,
+                &mut self.layout_cx,
+                self.palette,
+            )
+        });
         let menu_layouts = menu.map(|_| {
             [
                 build_menu_layout(
@@ -3119,6 +3134,24 @@ impl App {
                         draw_run_background(pixmap, &run, slot.x, top);
                         draw_decorations(pixmap, &run, slot.x, top);
                         draw_glyph_run(pixmap, scale_cx, glyphs, &run, slot.x, top);
+                    }
+                }
+            }
+        }
+
+        if let Some(layout) = safe_banner {
+            let banner_width = (layout.width() + 24.0).min(w.get() as f32 - MARGIN * 2.0);
+            if let Some(rect) = Rect::from_xywh(MARGIN, 10.0, banner_width, 28.0) {
+                pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+            }
+            if let Some(rect) = Rect::from_xywh(MARGIN, 10.0, 3.0, 28.0) {
+                pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
+            }
+            for line in layout.lines() {
+                for entry in line.items() {
+                    if let PositionedLayoutItem::GlyphRun(run) = entry {
+                        draw_run_background(pixmap, &run, MARGIN + 10.0, 15.0);
+                        draw_glyph_run(pixmap, scale_cx, glyphs, &run, MARGIN + 10.0, 15.0);
                     }
                 }
             }
@@ -3533,6 +3566,14 @@ mod pruebas {
         assert!(!normal.contains("modo seguro"));
         assert!(seguro.contains("modo seguro"));
         assert!(seguro.contains("hostil.md"));
+    }
+
+    #[test]
+    fn el_aviso_de_modo_seguro_explica_la_degradacion_sin_ocultar_la_fuente() {
+        let label = safe_mode_label(Degradation::LineLimit);
+        assert!(label.contains("Modo seguro"));
+        assert!(label.contains("longitud de línea"));
+        assert!(label.contains("fuente inerte"));
     }
 
     #[test]

@@ -44,6 +44,9 @@ Registrar antes de comenzar:
 ## Ventana e interacción
 
 - La primera apertura comienza en modo lectura.
+- Un documento que excede un límite muestra una banda superior discreta de
+  "Modo seguro" y conserva su fuente visible e inerte; la banda no tapa la
+  primera línea del documento.
 - La tecla `T` alterna tema sin parpadeo ni pérdida de posición.
 - Redimensionar angosto, mediano y maximizado no rompe layout ni scroll. Repetir
   al mover la ventana entre escalas de pantalla distintas si hay más de un
