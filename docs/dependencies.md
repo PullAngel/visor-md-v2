@@ -23,6 +23,15 @@ este lockfile, `cargo audit`, SBOM, build Windows/Linux y delta de tamaño. Si
 una dependencia no supera esos gates, no se sustituye silenciosamente por una
 escritura no atómica ni por una UI que exponga rutas arbitrarias.
 
+### Medición inicial del 27 de agosto de 2026
+
+Con `atomicwrites`, `rfd` y `ropey` resueltos en el lockfile, el build release
+Windows produjo `visor-md.exe` de 3.144.704 bytes (3,00 MiB). `cargo audit`
+revisó 286 paquetes: cero vulnerabilidades conocidas y la misma advertencia
+permitida `RUSTSEC-2026-0192` de `ttf-parser` transitivo ya explicada abajo.
+Faltan SBOM regenerado, licencias por target y evidencia Linux antes de cerrar
+la validación de estas dependencias.
+
 ## Cambio pendiente de validar: portapapeles de texto
 
 La rama de recuperación incorpora `arboard 3.6.1` con
