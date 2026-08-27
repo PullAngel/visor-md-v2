@@ -18,9 +18,11 @@ La separación empezó de forma incremental y con la suite verde:
 - `src/limits.rs`: límites defensivos y causas de degradación;
 - `src/theme.rs`: paletas Papel y tinta y roles de color.
 
-El prototipo retiene durante la sesión el texto UTF-8 que abrió y sus rangos de
-modelo. Aún no retiene bytes originales ni metadatos de codificación, BOM o EOL:
-esa capa debe cerrarse antes del editor y del guardado fiel.
+El prototipo retiene durante la sesión el texto UTF-8 que abrió, sus rangos de
+modelo y metadatos de entrada: presencia de BOM UTF-8 y estilo observado de EOL
+(`LF`, `CRLF` o mixto). El BOM no se presenta como contenido y los saltos no se
+normalizan. Aún falta la identidad del archivo, la codificación fuera de UTF-8,
+los parches y el guardado atómico antes de declarar edición fiel.
 
 Parser, modelo, layout y aplicación todavía comparten `main.rs`. Se extraerán en
 commits separados; esta lista describe el estado real y no la arquitectura final.
@@ -126,9 +128,14 @@ El parser, renderer, índice y exportadores no abren rutas por su cuenta.
 
 ### Decodificación
 
-Conserva bytes originales y metadatos necesarios para edición fiel. Define UTF-8,
-BOM, EOL y comportamiento ante secuencias inválidas. La política exacta debe
-cerrarse antes del editor.
+La apertura actual admite UTF-8 válido, detecta y retira solamente el BOM UTF-8
+para que no aparezca en pantalla, y conserva su presencia junto con el patrón
+de EOL. La reconstrucción de prueba devuelve los mismos bytes si no hubo
+edición. Secuencias UTF-8 inválidas se rechazan antes del parser.
+
+La capa posterior conserva identidad, aplica parches de fuente y define otros
+encodings solo si puede preservarlos sin sustitución silenciosa. No se añade una
+conversión de codificación por comodidad del renderer.
 
 ### Parser
 

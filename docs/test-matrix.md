@@ -37,7 +37,7 @@ Estados permitidos:
 | Rangos de fuente preservados | Integración | Parcial | Pendiente | Bloques, tramos y destinos verificados |
 | Sintaxis desconocida preservada | Property | Parcial | Pendiente | HTML inerte y documento defectuoso histórico; falta round-trip |
 | Cambios externos detectados | End to end | Bloqueado | Bloqueado | Editor pendiente |
-| EOL, BOM y UTF-8 | Corpus | Bloqueado | Bloqueado | Política pendiente de implementar |
+| EOL, BOM y UTF-8 | Corpus | Parcial | Pendiente | Apertura limitada exige UTF-8, separa BOM UTF-8 sin volverlo contenido, conserva CRLF/LF/mixto y reconstruye bytes sin edición en pruebas; faltan parches, guardado y política de otros encodings |
 
 ## Red y recursos
 

@@ -26,9 +26,77 @@ pub(crate) fn is_markdown_path(path: &Path) -> bool {
     )
 }
 
+/// Metadatos de codificación que no pertenecen al contenido editable. El
+/// editor los conserva para no cambiar un archivo solo por haberlo abierto.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct TextMetadata {
+    pub(crate) has_utf8_bom: bool,
+    pub(crate) line_endings: LineEndings,
+}
+
+/// Forma observada de los saltos de línea de la fuente. `Mixed` no es un error:
+/// se informa para que una edición futura no normalice el documento en silencio.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum LineEndings {
+    #[default]
+    None,
+    Lf,
+    CrLf,
+    Mixed,
+}
+
+impl TextMetadata {
+    fn from_source(source: &str, has_utf8_bom: bool) -> Self {
+        let mut saw_lf = false;
+        let mut saw_crlf = false;
+        let bytes = source.as_bytes();
+        let mut index = 0;
+        while index < bytes.len() {
+            match bytes[index] {
+                b'\r' if bytes.get(index + 1) == Some(&b'\n') => {
+                    saw_crlf = true;
+                    index += 2;
+                }
+                b'\n' => {
+                    saw_lf = true;
+                    index += 1;
+                }
+                _ => index += 1,
+            }
+        }
+        let line_endings = match (saw_lf, saw_crlf) {
+            (false, false) => LineEndings::None,
+            (true, false) => LineEndings::Lf,
+            (false, true) => LineEndings::CrLf,
+            (true, true) => LineEndings::Mixed,
+        };
+        Self {
+            has_utf8_bom,
+            line_endings,
+        }
+    }
+
+    /// La futura capa de guardado reconstruirá estos bytes después de aplicar
+    /// parches. Por ahora se mantiene en pruebas para fijar el contrato sin
+    /// introducir todavía una API de escritura a producción.
+    #[cfg(test)]
+    fn encode(self, source: &str) -> Vec<u8> {
+        let prefix: &[u8] = if self.has_utf8_bom {
+            &[0xef, 0xbb, 0xbf]
+        } else {
+            &[]
+        };
+        let mut bytes = Vec::with_capacity(prefix.len() + source.len());
+        bytes.extend_from_slice(prefix);
+        bytes.extend_from_slice(source.as_bytes());
+        bytes
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct OpenedText {
     pub(crate) source: String,
+    pub(crate) metadata: TextMetadata,
 }
 
 #[derive(Debug)]
@@ -107,8 +175,12 @@ pub(crate) fn open_explicit_primary(
             limit,
         });
     }
-    let source = String::from_utf8(bytes).map_err(|_| FileOpenError::InvalidUtf8)?;
-    Ok(OpenedText { source })
+    let has_utf8_bom = bytes.starts_with(&[0xef, 0xbb, 0xbf]);
+    let source_bytes = if has_utf8_bom { &bytes[3..] } else { &bytes };
+    let source =
+        String::from_utf8(source_bytes.to_vec()).map_err(|_| FileOpenError::InvalidUtf8)?;
+    let metadata = TextMetadata::from_source(&source, has_utf8_bom);
+    Ok(OpenedText { source, metadata })
 }
 
 #[cfg(test)]
@@ -134,6 +206,8 @@ mod tests {
         let opened = open_explicit_primary(&path, 64).expect("la fixture es válida");
         assert_eq!(opened.source, "# nota\n");
         assert_eq!(opened.source.len(), 7);
+        assert_eq!(opened.metadata.line_endings, LineEndings::Lf);
+        assert!(!opened.metadata.has_utf8_bom);
     }
 
     #[test]
@@ -161,5 +235,27 @@ mod tests {
         for path in ["datos.json", "config.toml", "script.rs", "sin-extension"] {
             assert!(!is_markdown_path(Path::new(path)), "{path} debe ser inerte");
         }
+    }
+
+    #[test]
+    fn bom_utf8_y_crlf_se_conservan_sin_aparecer_como_contenido() {
+        let original = b"\xef\xbb\xbf# nota\r\nsegunda linea\r\n";
+        let path = temporary_file("bom-crlf", original);
+        let opened = open_explicit_primary(&path, 128).expect("la fixture es válida");
+
+        assert_eq!(opened.source, "# nota\r\nsegunda linea\r\n");
+        assert_eq!(opened.metadata.line_endings, LineEndings::CrLf);
+        assert!(opened.metadata.has_utf8_bom);
+        assert_eq!(opened.metadata.encode(&opened.source), original);
+    }
+
+    #[test]
+    fn eol_mixtos_se_informan_y_sus_bytes_no_se_normalizan() {
+        let original = b"uno\ndos\r\ntres\n";
+        let path = temporary_file("mixed-eol", original);
+        let opened = open_explicit_primary(&path, 128).expect("la fixture es válida");
+
+        assert_eq!(opened.metadata.line_endings, LineEndings::Mixed);
+        assert_eq!(opened.metadata.encode(&opened.source), original);
     }
 }

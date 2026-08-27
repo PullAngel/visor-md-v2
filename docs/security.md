@@ -141,10 +141,12 @@ trata como entrada, no como autorización para explorar su entorno.
 
 La implementación actual abre el archivo principal una vez, consulta sus
 metadatos desde ese mismo handle y limita su lectura a 16 MiB de UTF-8 válido.
-Es un límite operativo temporal, no una afirmación de que 16 MiB sea el techo
-final del producto: una preferencia avanzada podrá elevar el límite blando solo
-cuando el modo seguro y sus presupuestos de memoria estén medidos. Un archivo
-que lo supera hoy se rechaza con una explicación, no se parsea parcialmente.
+Detecta BOM UTF-8 y el patrón de EOL (`LF`, `CRLF` o mixto) sin normalizar el
+texto. Es un límite operativo temporal, no una afirmación de que 16 MiB sea el
+techo final del producto: una preferencia avanzada podrá elevar el límite blando
+solo cuando el modo seguro y sus presupuestos de memoria estén medidos. Un
+archivo que lo supera hoy se rechaza con una explicación, no se parsea
+parcialmente.
 
 Esto reduce una carrera TOCTOU común: comprobar por ruta y luego leer esa ruta
 podría validar un archivo y abrir otro si un proceso local lo reemplaza entre

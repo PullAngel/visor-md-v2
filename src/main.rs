@@ -44,7 +44,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 use winit::window::{CursorIcon, Theme, Window, WindowId};
 
-use files::{DEFAULT_DOCUMENT_LIMIT_BYTES, is_markdown_path, open_explicit_primary};
+use files::{DEFAULT_DOCUMENT_LIMIT_BYTES, TextMetadata, is_markdown_path, open_explicit_primary};
 use fonts::{FONT_CODE, FONT_DOC, FONT_UI, register_embedded_fonts};
 use limits::{Degradation, MAX_BLOCKS, MAX_INDENT_DEPTH, MAX_NEST, MAX_SAFE_LINE_BYTES};
 use theme::{DAY, NIGHT, Palette, Role};
@@ -112,6 +112,7 @@ struct ParseOutcome {
 enum AppEvent {
     DocumentReady {
         source: String,
+        metadata: TextMetadata,
         outcome: ParseOutcome,
         elapsed_ms: f64,
     },
@@ -1900,6 +1901,9 @@ struct App {
     /// para que futuras copias y ediciones no intenten reconstruir Markdown
     /// desde la vista renderizada.
     source: String,
+    /// BOM y estilo de EOL que llegaron con la entrada. Aún no hay guardado;
+    /// retenerlos ahora evita que el futuro editor tenga que adivinarlos.
+    source_metadata: TextMetadata,
     blocks: Vec<Block>,
     window: Option<Rc<Window>>,
     surface: Option<softbuffer::Surface<Rc<Window>, Rc<Window>>>,
@@ -1970,10 +1974,12 @@ impl ApplicationHandler<AppEvent> for App {
         match event {
             AppEvent::DocumentReady {
                 source,
+                metadata,
                 outcome,
                 elapsed_ms,
             } => {
                 self.source = source;
+                self.source_metadata = metadata;
                 self.blocks = outcome.blocks;
                 self.safe_mode = outcome.degradation;
                 self.loading = false;
@@ -1989,6 +1995,15 @@ impl ApplicationHandler<AppEvent> for App {
                     "[medicion] preparar documento de {:.1} KB fuera de UI: {elapsed_ms:.0} ms  ({} bloques)",
                     self.source.len() as f64 / 1024.0,
                     self.blocks.len()
+                ));
+                self.log.push(format!(
+                    "[fidelidad] UTF-8{}; EOL {:?}",
+                    if self.source_metadata.has_utf8_bom {
+                        " con BOM"
+                    } else {
+                        " sin BOM"
+                    },
+                    self.source_metadata.line_endings
                 ));
                 if let Some(reason) = self.safe_mode {
                     self.log.push(format!(
@@ -3329,6 +3344,7 @@ fn main() {
         started,
         path,
         source: String::new(),
+        source_metadata: TextMetadata::default(),
         blocks: Vec::new(),
         window: None,
         surface: None,
@@ -3382,6 +3398,7 @@ fn main() {
             } {
                 Ok(outcome) => AppEvent::DocumentReady {
                     source: opened.source,
+                    metadata: opened.metadata,
                     outcome,
                     elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
                 },
