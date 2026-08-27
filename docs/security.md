@@ -146,6 +146,11 @@ podría validar un archivo y abrir otro si un proceso local lo reemplaza entre
 ambas operaciones. La contención de recursos secundarios, symlinks y junctions
 todavía no existe porque Visor MD aún no abre recursos secundarios.
 
+Solo las extensiones Markdown (`.md`, `.markdown`, `.mdown`, `.mkdn`) pasan al
+parser. `.txt`, JSON, YAML, TOML, CSV y código se conservan como texto inerte:
+la aplicación no intenta ejecutar, compilar ni tratar su sintaxis como una
+capacidad.
+
 ### Recursos secundarios
 
 El contenido no puede cargar automáticamente:

@@ -14,6 +14,18 @@ use std::path::Path;
 /// sin cota al abrir por doble clic un archivo hostil.
 pub(crate) const DEFAULT_DOCUMENT_LIMIT_BYTES: u64 = 16 * 1024 * 1024;
 
+/// Markdown se interpreta solo cuando su extensión lo declara. El resto de
+/// archivos de texto se mantiene visible pero inerte, incluso si parece código.
+pub(crate) fn is_markdown_path(path: &Path) -> bool {
+    matches!(
+        path.extension()
+            .and_then(|extension| extension.to_str())
+            .map(str::to_ascii_lowercase)
+            .as_deref(),
+        Some("md" | "markdown" | "mdown" | "mkdn")
+    )
+}
+
 #[derive(Debug)]
 pub(crate) struct OpenedText {
     pub(crate) source: String,
@@ -140,5 +152,14 @@ mod tests {
             open_explicit_primary(path, 64),
             Err(FileOpenError::InvalidUtf8)
         ));
+    }
+
+    #[test]
+    fn solo_las_extensiones_markdown_habilitan_el_parser() {
+        assert!(is_markdown_path(Path::new("nota.MD")));
+        assert!(is_markdown_path(Path::new("nota.markdown")));
+        for path in ["datos.json", "config.toml", "script.rs", "sin-extension"] {
+            assert!(!is_markdown_path(Path::new(path)), "{path} debe ser inerte");
+        }
     }
 }

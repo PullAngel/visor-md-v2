@@ -12,6 +12,7 @@ pub(crate) const MAX_INDENT_DEPTH: u8 = 8;
 pub(crate) enum Degradation {
     DepthLimit,
     BlockLimit,
+    TextOnly,
 }
 
 impl Degradation {
@@ -19,6 +20,7 @@ impl Degradation {
         match self {
             Self::DepthLimit => "se excedio el limite de anidamiento",
             Self::BlockLimit => "se excedio el limite de bloques",
+            Self::TextOnly => "el tipo de archivo se muestra como texto inerte",
         }
     }
 }

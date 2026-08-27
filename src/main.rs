@@ -44,7 +44,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 use winit::window::{CursorIcon, Theme, Window, WindowId};
 
-use files::{DEFAULT_DOCUMENT_LIMIT_BYTES, open_explicit_primary};
+use files::{DEFAULT_DOCUMENT_LIMIT_BYTES, is_markdown_path, open_explicit_primary};
 use fonts::{FONT_CODE, FONT_DOC, register_embedded_fonts};
 use limits::{Degradation, MAX_BLOCKS, MAX_INDENT_DEPTH, MAX_NEST};
 use theme::{DAY, NIGHT, Palette, Role};
@@ -2811,7 +2811,15 @@ fn main() {
     thread::spawn(move || {
         let started = Instant::now();
         let event = match open_explicit_primary(&worker_path, DEFAULT_DOCUMENT_LIMIT_BYTES) {
-            Ok(opened) => match parse_blocks(&opened.source) {
+            Ok(opened) => match if is_markdown_path(std::path::Path::new(&worker_path)) {
+                parse_blocks(&opened.source)
+            } else {
+                let source_index = SourceIndex::new(&opened.source);
+                safe_source_blocks(&opened.source, &source_index).map(|blocks| ParseOutcome {
+                    blocks,
+                    degradation: Some(Degradation::TextOnly),
+                })
+            } {
                 Ok(outcome) => AppEvent::DocumentReady {
                     source: opened.source,
                     outcome,

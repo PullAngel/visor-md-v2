@@ -70,6 +70,8 @@ exacto del traspaso.
   ni abrir navegador o filesystem.
 - un fallo de apertura asíncrona conserva la ventana y muestra un aviso simple;
   el detalle técnico queda solo en el registro local de la sesión.
+- solo extensiones Markdown pasan al parser; otros textos UTF-8 se muestran de
+  forma inerte, sin comportamiento de IDE ni ejecución.
 
 Evidencia actual en Windows:
 

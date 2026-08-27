@@ -47,7 +47,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Varios documentos y pestañas | Planificado | Estados sucio, fijado y cierre seguro |
 | Menú contextual | Planificado | Acciones según selección y contexto |
 | Paleta de comandos | Planificado | Descubrible y operable por teclado |
-| `.txt` y otros textos inertes | Planificado | Visualización sin ejecución ni IDE |
+| `.txt` y otros textos inertes | Parcial | Extensiones no Markdown se muestran como texto inerte; falta QA y reconocimiento UX |
 | Edición en vivo | Futuro | Solo tras editor y modelo estables |
 
 ## Seguridad
