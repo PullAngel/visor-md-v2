@@ -95,8 +95,9 @@ exacto del traspaso.
 - `F2` entra en una primera edición de fuente: el Markdown se muestra como
   texto inerte, IME inserta texto y Backspace, Delete, Ctrl+Z y Ctrl+Y aplican
   parches reversibles. Clic y arrastre actualizan cursor y selección de fuente
-  con el layout visible. `F2` vuelve a derivar la vista Markdown. Quedan
-  navegación vertical, parsing asíncrono y guardado.
+  con el layout visible. `F2` vuelve a derivar la vista Markdown en un hilo de
+  trabajo; un fallo conserva la fuente editada. Queda guardado y QA manual de
+  la interacción completa.
 
 Evidencia actual en Windows:
 

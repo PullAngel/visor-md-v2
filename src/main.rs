@@ -41,7 +41,7 @@ use swash::zeno::{Format, Vector};
 use tiny_skia::{Color, Paint, Pixmap, PremultipliedColorU8, Rect, Transform};
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 use winit::window::{CursorIcon, Theme, Window, WindowId};
 
@@ -123,6 +123,11 @@ enum AppEvent {
         elapsed_ms: f64,
     },
     DocumentFailed(String),
+    ViewReady {
+        outcome: ParseOutcome,
+        elapsed_ms: f64,
+    },
+    ViewFailed(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1921,6 +1926,7 @@ struct App {
     source_identity: Option<FileIdentity>,
     source_editor: SourceEditor,
     mode: DocumentMode,
+    proxy: EventLoopProxy<AppEvent>,
     blocks: Vec<Block>,
     window: Option<Rc<Window>>,
     surface: Option<softbuffer::Surface<Rc<Window>, Rc<Window>>>,
@@ -2057,6 +2063,31 @@ impl ApplicationHandler<AppEvent> for App {
                 if let Some(window) = &self.window {
                     window.request_redraw();
                 }
+            }
+            AppEvent::ViewReady {
+                outcome,
+                elapsed_ms,
+            } => {
+                self.blocks = outcome.blocks;
+                self.safe_mode = outcome.degradation;
+                self.loading = false;
+                self.slots.clear();
+                self.live.clear();
+                self.laid_for_width = -1.0;
+                self.selection = None;
+                self.notice = Some("vista de lectura actualizada".to_string());
+                self.log.push(format!(
+                    "[medicion] actualizar vista fuera de UI: {elapsed_ms:.0} ms"
+                ));
+                self.refresh_title();
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+            }
+            AppEvent::ViewFailed(error) => {
+                self.loading = false;
+                self.log.push(format!("[error] {error}"));
+                self.set_notice("no se pudo actualizar la vista; la fuente sigue intacta");
             }
         }
     }
@@ -2624,20 +2655,23 @@ impl App {
         match event.physical_key {
             PhysicalKey::Code(KeyCode::F2) => {
                 self.mode = DocumentMode::Reading;
-                match parse_blocks(&self.source) {
-                    Ok(outcome) => {
-                        self.blocks = outcome.blocks;
-                        self.safe_mode = outcome.degradation;
-                        self.slots.clear();
-                        self.live.clear();
-                        self.laid_for_width = -1.0;
-                        self.selection = None;
-                        self.set_notice("vista de lectura actualizada");
-                    }
-                    Err(error) => {
-                        self.set_notice(&format!("no se pudo actualizar la vista: {error}"))
-                    }
-                }
+                self.loading = true;
+                self.set_notice("actualizando vista de lectura");
+                let source = self.source.clone();
+                let proxy = self.proxy.clone();
+                thread::spawn(move || {
+                    let started = Instant::now();
+                    let event = match parse_blocks(&source) {
+                        Ok(outcome) => AppEvent::ViewReady {
+                            outcome,
+                            elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
+                        },
+                        Err(error) => {
+                            AppEvent::ViewFailed(format!("no se pudo actualizar la vista: {error}"))
+                        }
+                    };
+                    let _ = proxy.send_event(event);
+                });
             }
             PhysicalKey::Code(KeyCode::Backspace) => {
                 self.edit_source(|editor, source| editor.backspace(source));
@@ -3542,6 +3576,7 @@ fn main() {
         }
     };
     event_loop.set_control_flow(ControlFlow::Wait);
+    let proxy = event_loop.create_proxy();
     let mut log = vec![format!(
         "[medicion]   EventLoop::new: {:.0} ms",
         t.elapsed().as_secs_f64() * 1000.0
@@ -3569,6 +3604,7 @@ fn main() {
         source_identity: None,
         source_editor: SourceEditor::new(),
         mode: DocumentMode::Reading,
+        proxy: proxy.clone(),
         blocks: Vec::new(),
         window: None,
         surface: None,
@@ -3606,7 +3642,6 @@ fn main() {
         fatal_error: false,
     };
 
-    let proxy = event_loop.create_proxy();
     let worker_path = app.path.clone();
     thread::spawn(move || {
         let started = Instant::now();
