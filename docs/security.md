@@ -127,6 +127,11 @@ Al superar un límite de render enriquecido:
 Rechazar completamente solo si ni la vista inerte puede construirse dentro del
 presupuesto.
 
+El lector actual aplica un tope de 16 KiB por línea al render enriquecido. Una
+línea mayor no llega al parser ni al layout como un bloque único: se muestra como
+texto inerte, dividido en tramos UTF-8 válidos que conservan los rangos de la
+fuente. Es una defensa de disponibilidad, no una reescritura del archivo.
+
 ## Filesystem y VFS
 
 ### Archivo principal

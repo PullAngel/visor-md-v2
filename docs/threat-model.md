@@ -106,7 +106,7 @@ Cada flecha es un lugar donde validar datos, limitar capacidades y crear tests.
 | --- | --- | --- | --- | --- |
 | Ejecución | `<script>` o handler HTML | Sin DOM, allowlist y texto inerte | Corpus HTML y revisión de display list | Bug en parser o dependencia |
 | Stack overflow | Miles de citas anidadas | Profundidad, recorrido iterativo y cancelación | Test adversarial y medición | Nuevas rutas recursivas |
-| Agotamiento de memoria | Tabla, línea o imagen enorme | Presupuestos y fallback | Benchmark y límites simulados | Coste previo a detectar formato |
+| Agotamiento de memoria | Tabla, línea o imagen enorme | Presupuestos, tope de 16 KiB por línea y fallback | Benchmark y límites simulados | Coste previo a detectar formato |
 | Path traversal | `../../secreto` | VFS, canonicalización y contención | Matriz de rutas | TOCTOU o diferencias de plataforma |
 | Escape por symlink | Recurso relativo que cambia destino | Identidad y validación sobre handle | Tests de carrera | Limitaciones de API |
 | Acceso UNC | Markdown apunta a un share | Solo archivo principal manual | Tests UNC | Intención ambigua en asociación externa |

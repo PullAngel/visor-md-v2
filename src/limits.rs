@@ -5,6 +5,11 @@ pub(crate) const MAX_NEST: u16 = 64;
 /// Máximo de bloques producidos por el modelo enriquecido o la vista segura.
 pub(crate) const MAX_BLOCKS: usize = 100_000;
 
+/// Ningún bloque seguro conserva una línea arbitrariamente larga. Limitarla
+/// evita que un único párrafo de varios MiB llegue entero a layout y al cache
+/// de glifos. Los tramos siguen apuntando a la fuente original.
+pub(crate) const MAX_SAFE_LINE_BYTES: usize = 16 * 1024;
+
 /// La sangría visual deja de crecer antes de consumir todo el ancho útil.
 pub(crate) const MAX_INDENT_DEPTH: u8 = 8;
 
@@ -12,6 +17,7 @@ pub(crate) const MAX_INDENT_DEPTH: u8 = 8;
 pub(crate) enum Degradation {
     DepthLimit,
     BlockLimit,
+    LineLimit,
     TextOnly,
 }
 
@@ -20,6 +26,7 @@ impl Degradation {
         match self {
             Self::DepthLimit => "se excedio el limite de anidamiento",
             Self::BlockLimit => "se excedio el limite de bloques",
+            Self::LineLimit => "se excedio el limite de longitud de línea",
             Self::TextOnly => "el tipo de archivo se muestra como texto inerte",
         }
     }

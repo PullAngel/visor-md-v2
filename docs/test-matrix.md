@@ -19,6 +19,7 @@ Estados permitidos:
 | Listas y task lists | Integración y visual | Parcial | Pendiente | Parser, layout y píxeles verificados; falta evidencia estética |
 | Allowlist HTML y HTML no permitido | Seguridad e integración | Verificado | Pendiente | `br`, `kbd`, `mark`, `sub` y `sup` sin atributos llegan a layout; HTML hostil, atributos y cierres defectuosos quedan visibles e inertes |
 | Profundidad limitada | Adversarial | Verificado | Pendiente | 5.000 citas, listas e inline anidado |
+| Línea extensa | Adversarial | Verificado | Pendiente | Más de 16 KiB degrada a tramos UTF-8 inertes y reconstruibles |
 | Barrido adversarial reproducible | Property y adversarial | Verificado | Pendiente | 128 combinaciones deterministas sin `panic`; no sustituye fuzzing formal |
 | Fallback a fuente segura | Modelo y end to end | Parcial | Pendiente | Fuente completa y título de aviso verificados; falta QA visual |
 | Unicode y fallback | Corpus y manual | Pendiente | Pendiente | Fuentes latinas parciales |

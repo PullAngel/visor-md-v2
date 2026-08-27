@@ -46,7 +46,7 @@ use winit::window::{CursorIcon, Theme, Window, WindowId};
 
 use files::{DEFAULT_DOCUMENT_LIMIT_BYTES, is_markdown_path, open_explicit_primary};
 use fonts::{FONT_CODE, FONT_DOC, FONT_UI, register_embedded_fonts};
-use limits::{Degradation, MAX_BLOCKS, MAX_INDENT_DEPTH, MAX_NEST};
+use limits::{Degradation, MAX_BLOCKS, MAX_INDENT_DEPTH, MAX_NEST, MAX_SAFE_LINE_BYTES};
 use theme::{DAY, NIGHT, Palette, Role};
 
 const MARGIN: f32 = 48.0;
@@ -1220,18 +1220,44 @@ fn safe_source_blocks(
     let mut blocks = Vec::new();
     let mut start = 0;
     for raw in source.split_inclusive('\n') {
-        if blocks.len() >= MAX_BLOCKS {
-            return Err("demasiadas lineas para la vista segura");
-        }
         let end = start + raw.len();
         let without_lf = raw.strip_suffix('\n').unwrap_or(raw);
-        let text = without_lf
-            .strip_suffix('\r')
-            .unwrap_or(without_lf)
-            .to_string();
-        let range = SourceRange { start, end };
-        debug_assert!(range.is_valid_for(source));
-        blocks.push(Block::new(text, Vec::new(), Kind::Code, range, Vec::new()));
+        let text = without_lf.strip_suffix('\r').unwrap_or(without_lf);
+        let mut chunk_start = 0;
+        while chunk_start < text.len() || (text.is_empty() && chunk_start == 0) {
+            if blocks.len() >= MAX_BLOCKS {
+                return Err("demasiadas lineas para la vista segura");
+            }
+            let mut chunk_end = (chunk_start + MAX_SAFE_LINE_BYTES).min(text.len());
+            while chunk_end > chunk_start && !text.is_char_boundary(chunk_end) {
+                chunk_end -= 1;
+            }
+            // Un carácter Unicode siempre cabe dentro de este límite; esta rama
+            // solo protege la invariante si el valor se modifica en el futuro.
+            if chunk_end == chunk_start && chunk_start < text.len() {
+                chunk_end = text[chunk_start..]
+                    .char_indices()
+                    .nth(1)
+                    .map_or(text.len(), |(offset, _)| chunk_start + offset);
+            }
+            let is_last = chunk_end == text.len();
+            let range = SourceRange {
+                start: start + chunk_start,
+                end: if is_last { end } else { start + chunk_end },
+            };
+            debug_assert!(range.is_valid_for(source));
+            blocks.push(Block::new(
+                text[chunk_start..chunk_end].to_string(),
+                Vec::new(),
+                Kind::Code,
+                range,
+                Vec::new(),
+            ));
+            if is_last {
+                break;
+            }
+            chunk_start = chunk_end;
+        }
         start = end;
     }
 
@@ -1260,10 +1286,19 @@ fn opening_failure_blocks() -> (String, Vec<Block>) {
 }
 
 fn parse_blocks(source: &str) -> Result<ParseOutcome, &'static str> {
+    let source_index = SourceIndex::new(source);
+    if source
+        .split_inclusive('\n')
+        .any(|line| line.len() > MAX_SAFE_LINE_BYTES)
+    {
+        return Ok(ParseOutcome {
+            blocks: safe_source_blocks(source, &source_index)?,
+            degradation: Some(Degradation::LineLimit),
+        });
+    }
     let arena = Arena::new();
     let options = markdown_options();
     let root = parse_document(&arena, source, &options);
-    let source_index = SourceIndex::new(source);
     let mut traversal = TraversalState::default();
     let mut blocks = Vec::new();
     flatten(root, 0, 0, &source_index, &mut traversal, &mut blocks);
@@ -3349,6 +3384,32 @@ mod pruebas {
                 .all(|block| matches!(block.kind, Kind::Code)),
             "la vista segura intento interpretar la fuente"
         );
+    }
+
+    #[test]
+    fn una_linea_extensa_pasa_a_fuente_inerte_sin_romper_utf8() {
+        let source = "á".repeat(MAX_SAFE_LINE_BYTES / 2 + 1);
+        let outcome = parse_blocks(&source).expect("la línea extensa debe degradar");
+        assert_eq!(outcome.degradation, Some(Degradation::LineLimit));
+        assert!(outcome.blocks.len() > 1);
+        assert!(
+            outcome
+                .blocks
+                .iter()
+                .all(|block| block.text.len() <= MAX_SAFE_LINE_BYTES)
+        );
+        assert!(
+            outcome
+                .blocks
+                .iter()
+                .all(|block| block.text.is_char_boundary(block.text.len()))
+        );
+        let reconstructed: String = outcome
+            .blocks
+            .iter()
+            .map(|block| &source[block.source.start..block.source.end])
+            .collect();
+        assert_eq!(reconstructed, source);
     }
 
     #[test]
