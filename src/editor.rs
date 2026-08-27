@@ -507,4 +507,13 @@ mod tests {
         editor.select_all(source);
         assert_eq!(editor.selection(), 0..source.len());
     }
+
+    #[test]
+    fn fijar_cursor_sin_extender_cancela_la_seleccion() {
+        let source = "ábc";
+        let mut editor = SourceEditor::new();
+        editor.select_all(source);
+        editor.set_cursor(source, "á".len(), false).unwrap();
+        assert_eq!(editor.selection(), "á".len().."á".len());
+    }
 }

@@ -2723,11 +2723,18 @@ impl App {
             PhysicalKey::Code(KeyCode::KeyA) if self.modifiers.control_key() => {
                 self.source_editor.select_all(&self.source);
             }
+            PhysicalKey::Code(KeyCode::KeyC) if self.modifiers.control_key() => {
+                self.copy_selection(false);
+            }
             PhysicalKey::Code(KeyCode::KeyZ) if self.modifiers.control_key() => {
                 self.edit_source(|editor, source| editor.undo(source));
             }
             PhysicalKey::Code(KeyCode::KeyY) if self.modifiers.control_key() => {
                 self.edit_source(|editor, source| editor.redo(source));
+            }
+            PhysicalKey::Code(KeyCode::Escape) => {
+                let cursor = self.source_editor.cursor();
+                let _ = self.source_editor.set_cursor(&self.source, cursor, false);
             }
             _ => {}
         }
