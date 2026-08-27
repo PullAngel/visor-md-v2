@@ -51,7 +51,9 @@ Registrar antes de comenzar:
 - La tecla `T` alterna tema sin parpadeo ni pérdida de posición.
 - Redimensionar angosto, mediano y maximizado no rompe layout ni scroll. Repetir
   al mover la ventana entre escalas de pantalla distintas si hay más de un
-  monitor; registrar aparte si el tamaño tipográfico percibido cambia.
+  monitor; el cuerpo, los márgenes, las sangrías y las casillas deben conservar
+  el mismo tamaño lógico percibido. Registrar aparte si un control flotante
+  (banda de modo seguro o menú contextual) se percibe desproporcionado.
 - La rueda llega al principio y al final sin zonas inaccesibles.
 - Texto, enlaces, decoración y casillas conservan contraste suficiente.
 - La sensación de scroll es estable, sin saltos perceptibles.

@@ -76,7 +76,10 @@ exacto del traspaso.
   sistema, sin shell ni prefetch; destinos locales esperan VFS y los bloqueados
   permanecen inactivos.
 - resize y cambio de escala del sistema invalidan los layouts visibles antes de
-  redibujar; la escala tipográfica integral sigue pendiente de QA de DPI.
+  redibujar. El cuerpo, los márgenes, las sangrías, los marcadores y la
+  tipografía se reconstruyen en píxeles físicos conservando el ancho lógico de
+  línea; queda QA manual de DPI para la percepción de controles flotantes y
+  para monitores con escalas distintas.
 - los rangos que Comrak informa para enlaces cubren hoy el destino y no toda su
   sintaxis; es suficiente para el lector inerte actual, pero debe resolverse
   antes de edición, round-trip fino o activación de enlaces.
@@ -95,7 +98,7 @@ Evidencia actual en Windows:
 - `cargo check`: verde;
 - `cargo fmt -- --check`: verde;
 - `cargo clippy --all-targets -- -D warnings`: verde;
-- `cargo test`: 67 de 67 pruebas verdes tras lector, archivos y texto inerte;
+- `cargo test`: 68 de 68 pruebas verdes tras lector, archivos y texto inerte;
 - `scripts/check.ps1`: verde el 27 de agosto de 2026 tras el cierre parcial de
   Sprint A (formato, Clippy, 67 pruebas, SBOM, documentación y release);
 - `scripts/check.ps1`: verde el 27 de agosto de 2026;

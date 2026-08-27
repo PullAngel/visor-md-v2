@@ -55,7 +55,7 @@ Estados permitidos:
 | --- | --- | --- | --- | --- |
 | Tema claro y oscuro | Visual | Parcial | Pendiente | Commit `090e9de` |
 | Resize sin layout corrupto | Integración | Parcial | Pendiente | Prototipo |
-| DPI y zoom | Manual y visual | Pendiente | Pendiente | Sin evidencia |
+| DPI y zoom | Unitario, manual y visual | Parcial | Pendiente | El layout escala cuerpo, márgenes, sangrías y marcadores a partir de `Window::scale_factor`; `la_escala_dpi_aumenta_la_tipografia_sin_cambiar_el_ancho_logico` verifica la propiedad geométrica. Falta QA en monitores con distintas escalas y el futuro zoom explícito. |
 | Selección con mouse | Integración y visual | Parcial | Pendiente | Hit testing y geometría de Parley comparten el layout; autoscroll y copia unitaria probados, falta QA manual |
 | Copia al portapapeles | Integración y seguridad | Parcial | Pendiente | `Ctrl+C` y `Ctrl+Shift+C` distinguen vista y fuente en pruebas de selección; falta QA con otras aplicaciones y plataformas |
 | Cursor de texto sobre contenido | Manual | Parcial | Pendiente | Cambia con el mismo hit testing de selección; requiere QA visual |

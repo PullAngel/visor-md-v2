@@ -1415,11 +1415,13 @@ fn build_layout(
     font_cx: &mut FontContext,
     layout_cx: &mut LayoutContext<Brush>,
     width: f32,
+    scale: f32,
     palette: Palette,
 ) -> Layout<Brush> {
     let (size, weight, role, mono) = block.kind.style();
     let color = palette.resolve(role);
-    let advance = (width - MARGIN * 2.0 - block.kind.indent()).clamp(80.0, MAX_MEASURE);
+    let advance = (width - MARGIN * scale * 2.0 - block.kind.indent() * scale)
+        .clamp(80.0 * scale, MAX_MEASURE * scale);
 
     // Nombre embebido primero, generico del sistema como red de seguridad si
     // el registro fallara. Ver docs/design.md, "Contraste editorial".
@@ -1440,7 +1442,7 @@ fn build_layout(
     builder.push_default(StyleProperty::FontFamily(FontFamily::List(
         std::borrow::Cow::Borrowed(stack),
     )));
-    builder.push_default(StyleProperty::FontSize(size));
+    builder.push_default(StyleProperty::FontSize(size * scale));
     builder.push_default(StyleProperty::FontWeight(FontWeight::new(weight)));
     builder.push_default(StyleProperty::LineHeight(LineHeight::FontSizeRelative(
         block.kind.line_height(),
@@ -1473,7 +1475,7 @@ fn build_layout(
                 range.clone(),
             );
             // El monoespaciado se ve mas grande al mismo cuerpo: se compensa.
-            builder.push(StyleProperty::FontSize(size * 0.92), range.clone());
+            builder.push(StyleProperty::FontSize(size * 0.92 * scale), range.clone());
             let c = palette.accent;
             builder.push(StyleProperty::Brush(Brush::text(c)), range.clone());
         }
@@ -1490,10 +1492,10 @@ fn build_layout(
                 StyleProperty::FontFamily(FontFamily::List(std::borrow::Cow::Borrowed(mono_stack))),
                 range.clone(),
             );
-            builder.push(StyleProperty::FontSize(size * 0.86), range.clone());
+            builder.push(StyleProperty::FontSize(size * 0.86 * scale), range.clone());
         }
         if span.style.sub || span.style.sup {
-            builder.push(StyleProperty::FontSize(size * 0.72), range.clone());
+            builder.push(StyleProperty::FontSize(size * 0.72 * scale), range.clone());
         }
         if span.style.kbd || span.style.mark || span.style.sub || span.style.sup {
             let foreground = if span.style.code || span.style.link {
@@ -1549,6 +1551,7 @@ fn build_marker_layout(
     kind: Kind,
     font_cx: &mut FontContext,
     layout_cx: &mut LayoutContext<Brush>,
+    scale: f32,
     palette: Palette,
 ) -> Layout<Brush> {
     let (size, _, _, _) = kind.style();
@@ -1563,7 +1566,7 @@ fn build_marker_layout(
     builder.push_default(StyleProperty::FontFamily(FontFamily::List(
         std::borrow::Cow::Borrowed(stack),
     )));
-    builder.push_default(StyleProperty::FontSize(size));
+    builder.push_default(StyleProperty::FontSize(size * scale));
     builder.push_default(StyleProperty::LineHeight(LineHeight::FontSizeRelative(
         kind.line_height(),
     )));
@@ -1605,21 +1608,22 @@ enum CachedMarker {
 /// Alto aproximado de un bloque **sin maquetarlo**: cuenta caracteres y
 /// estima cuantos entran por linea. No sirve para dibujar, solo para saber
 /// donde cae cada bloque en la barra de scroll.
-fn estimate_height(block: &Block, width: f32) -> f32 {
+fn estimate_height(block: &Block, width: f32, scale: f32) -> f32 {
     // La linea horizontal no tiene texto: su alto es el del filete.
     if matches!(block.kind, Kind::Rule) {
-        return 1.0;
+        return scale;
     }
     let (size, _, _, mono) = block.kind.style();
-    let advance = (width - MARGIN * 2.0 - block.kind.indent()).clamp(80.0, MAX_MEASURE);
+    let advance = (width - MARGIN * scale * 2.0 - block.kind.indent() * scale)
+        .clamp(80.0 * scale, MAX_MEASURE * scale);
     // Ancho medio de caracter como fraccion del tamano de fuente. Aproximado
     // a proposito: el error se corrige al maquetar de verdad el bloque.
-    let char_w = size * if mono { 0.60 } else { 0.50 };
+    let char_w = size * scale * if mono { 0.60 } else { 0.50 };
     let per_line = (advance / char_w).max(1.0);
     let lines = (block.text.chars().count() as f32 / per_line)
         .ceil()
         .max(1.0);
-    lines * size * block.kind.line_height()
+    lines * size * scale * block.kind.line_height()
 }
 
 /// Pasada de posicionamiento. Con `exact`, maqueta cada bloque para sacarle el
@@ -1630,31 +1634,32 @@ fn measure_all(
     font_cx: &mut FontContext,
     layout_cx: &mut LayoutContext<Brush>,
     width: f32,
+    scale: f32,
     exact: bool,
 ) -> (Vec<Slot>, f32) {
     let mut slots = Vec::with_capacity(blocks.len());
-    let mut y = MARGIN;
+    let mut y = MARGIN * scale;
 
     for block in blocks {
         let height = if matches!(block.kind, Kind::Rule) {
-            1.0
+            scale
         } else if exact {
             // El color no afecta el alto: la paleta es irrelevante aca.
-            build_layout(block, font_cx, layout_cx, width, NIGHT).height()
+            build_layout(block, font_cx, layout_cx, width, scale, NIGHT).height()
         } else {
-            estimate_height(block, width)
+            estimate_height(block, width, scale)
         };
-        y += block.kind.space_before();
+        y += block.kind.space_before() * scale;
         slots.push(Slot {
             y,
             height,
-            x: MARGIN + block.kind.indent(),
+            x: MARGIN * scale + block.kind.indent() * scale,
             kind: block.kind,
         });
         y += height;
     }
 
-    (slots, y + MARGIN)
+    (slots, y + MARGIN * scale)
 }
 
 // ---------------------------------------------------------------- dibujo
@@ -1908,6 +1913,7 @@ struct App {
     live: HashMap<usize, (Layout<Brush>, Option<CachedMarker>)>,
     doc_height: f32,
     laid_for_width: f32,
+    scale_factor: f32,
     scroll: f32,
     first_paint_done: bool,
     frames: u32,
@@ -2079,6 +2085,7 @@ impl ApplicationHandler<AppEvent> for App {
             Some(Theme::Light) => DAY,
             _ => NIGHT,
         };
+        self.scale_factor = window.scale_factor() as f32;
         window.request_redraw();
         self.window = Some(window);
     }
@@ -2104,6 +2111,9 @@ impl ApplicationHandler<AppEvent> for App {
             // viewport o el factor de escala, ningún layout anterior puede
             // reutilizarse con seguridad; se recalcula al próximo cuadro.
             WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
+                if let Some(window) = &self.window {
+                    self.scale_factor = window.scale_factor() as f32;
+                }
                 self.live.clear();
                 self.laid_for_width = -1.0;
                 if let Some(w) = &self.window {
@@ -2851,6 +2861,7 @@ impl App {
                 &mut self.font_cx,
                 &mut self.layout_cx,
                 size.width as f32,
+                self.scale_factor,
                 self.exact_measure,
             );
             self.slots = slots;
@@ -2888,6 +2899,7 @@ impl App {
                     &mut self.font_cx,
                     &mut self.layout_cx,
                     size.width as f32,
+                    self.scale_factor,
                     self.palette,
                 );
                 let marker = block.marker.as_ref().map(|m| match m {
@@ -2896,6 +2908,7 @@ impl App {
                         block.kind,
                         &mut self.font_cx,
                         &mut self.layout_cx,
+                        self.scale_factor,
                         self.palette,
                     ))),
                     Marker::Task { done } => CachedMarker::Task { done: *done },
@@ -2960,6 +2973,7 @@ impl App {
             palette,
             selection,
             focused_link,
+            scale_factor,
             blocks,
             ..
         } = self;
@@ -2986,7 +3000,8 @@ impl App {
         let dc = palette.dim;
         dim_paint.set_color(Color::from_rgba8(dc.0, dc.1, dc.2, 160));
 
-        let ancho_texto = (w.get() as f32 - MARGIN * 2.0).min(MAX_MEASURE);
+        let ancho_texto =
+            (w.get() as f32 - MARGIN * *scale_factor * 2.0).min(MAX_MEASURE * *scale_factor);
 
         for i in visible {
             let slot = &slots[i];
@@ -3052,8 +3067,8 @@ impl App {
                     }
                     CachedMarker::Task { done } => {
                         let (font_size, _, _, _) = slot.kind.style();
-                        let size = (font_size * 0.82).max(12.0);
-                        let line_box = font_size * slot.kind.line_height();
+                        let size = (font_size * *scale_factor * 0.82).max(12.0 * *scale_factor);
+                        let line_box = font_size * *scale_factor * slot.kind.line_height();
                         draw_checkbox(
                             pixmap,
                             slot.x - size - 8.0,
@@ -3326,6 +3341,7 @@ fn main() {
         live: HashMap::new(),
         doc_height: 0.0,
         laid_for_width: -1.0,
+        scale_factor: 1.0,
         scroll: 0.0,
         first_paint_done: false,
         frames: 0,
@@ -3691,7 +3707,7 @@ mod pruebas {
         for md in ["# t", "texto", "- a", "```\nx\n```", "|a|\n|-|\n|b|"] {
             for block in aplanar(md) {
                 for ancho in [200.0, 900.0, 4000.0] {
-                    let h = estimate_height(&block, ancho);
+                    let h = estimate_height(&block, ancho, 1.0);
                     assert!(h > 0.0 && h.is_finite(), "alto invalido {h} en {md:?}");
                 }
             }
@@ -3728,9 +3744,9 @@ con dos lineas
 
         let real: f32 = blocks
             .iter()
-            .map(|b| build_layout(b, &mut font_cx, &mut layout_cx, ancho, NIGHT).height())
+            .map(|b| build_layout(b, &mut font_cx, &mut layout_cx, ancho, 1.0, NIGHT).height())
             .sum();
-        let estimado: f32 = blocks.iter().map(|b| estimate_height(b, ancho)).sum();
+        let estimado: f32 = blocks.iter().map(|b| estimate_height(b, ancho, 1.0)).sum();
 
         let error = (estimado - real).abs() / real;
         assert!(
@@ -3741,6 +3757,18 @@ con dos lineas
     }
 
     #[test]
+    fn la_escala_dpi_aumenta_la_tipografia_sin_cambiar_el_ancho_logico() {
+        let block = &aplanar("Una línea de prueba para escala DPI.")[0];
+        let mut font_cx = FontContext::new();
+        register_embedded_fonts(&mut font_cx);
+        let mut layout_cx = LayoutContext::new();
+        let normal = build_layout(block, &mut font_cx, &mut layout_cx, 900.0, 1.0, NIGHT);
+        let dpi_alto = build_layout(block, &mut font_cx, &mut layout_cx, 1800.0, 2.0, NIGHT);
+        assert!(dpi_alto.height() > normal.height() * 1.9);
+        assert_eq!(normal.lines().count(), dpi_alto.lines().count());
+    }
+
+    #[test]
     fn la_seleccion_tiene_geometria_dibujable() {
         let block = &aplanar("Selecciona estas palabras con el mouse.")[0];
         let start = block.text.find("estas").expect("texto de prueba");
@@ -3748,7 +3776,7 @@ con dos lineas
         let mut font_cx = FontContext::new();
         register_embedded_fonts(&mut font_cx);
         let mut layout_cx = LayoutContext::new();
-        let layout = build_layout(block, &mut font_cx, &mut layout_cx, 900.0, NIGHT);
+        let layout = build_layout(block, &mut font_cx, &mut layout_cx, 900.0, 1.0, NIGHT);
         let selection = Selection::new(
             Cursor::from_byte_index(&layout, start, Affinity::Downstream),
             Cursor::from_byte_index(&layout, end, Affinity::Downstream),
@@ -3883,7 +3911,7 @@ con dos lineas
         let mut font_cx = FontContext::new();
         register_embedded_fonts(&mut font_cx);
         let mut layout_cx = LayoutContext::new();
-        let layout = build_layout(block, &mut font_cx, &mut layout_cx, 180.0, NIGHT);
+        let layout = build_layout(block, &mut font_cx, &mut layout_cx, 180.0, 1.0, NIGHT);
         assert!(layout.lines().count() > 1, "la fixture debe envolver");
         let cursor = Cursor::from_byte_index(&layout, 2, Affinity::Downstream);
         let next = Selection::new(cursor, cursor).next_line(&layout, false);
@@ -4029,6 +4057,7 @@ con dos lineas
             &mut font_cx,
             &mut layout_cx,
             480.0,
+            1.0,
             NIGHT,
         );
         let glyph_runs = layout
@@ -4141,7 +4170,7 @@ mod pruebas_inline {
         let mut font_cx = FontContext::new();
         register_embedded_fonts(&mut font_cx);
         let mut layout_cx = LayoutContext::new();
-        let layout = build_layout(block, &mut font_cx, &mut layout_cx, 900.0, NIGHT);
+        let layout = build_layout(block, &mut font_cx, &mut layout_cx, 900.0, 1.0, NIGHT);
 
         let mut enlace_subrayado = false;
         let mut texto_tachado = false;
@@ -4455,7 +4484,7 @@ Pagina 14 de 14"#;
         let mut font_cx = FontContext::new();
         register_embedded_fonts(&mut font_cx);
         let mut layout_cx = LayoutContext::new();
-        let layout = build_layout(block, &mut font_cx, &mut layout_cx, 900.0, NIGHT);
+        let layout = build_layout(block, &mut font_cx, &mut layout_cx, 900.0, 1.0, NIGHT);
         let mut kbd = false;
         let mut mark = false;
         let mut sub = false;
