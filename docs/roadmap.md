@@ -8,8 +8,12 @@ final de cada hito.
 
 ## Reglas
 
-- `main` conserva estados estables.
-- El trabajo ocurre en ramas separadas.
+- `main` representa el desarrollo principal actual y debe mantenerse compilable,
+  entendible y recuperable.
+- Las ramas adicionales se usan cuando aportan aislamiento real; no son un
+  requisito para cada bloque de trabajo.
+- La rama histórica de respaldo del estado anterior se conserva intacta como
+  referencia y no se utiliza para desarrollo.
 - No se inicia una etapa sobre una base rota.
 - Seguridad, accesibilidad y documentación acompañan cada etapa.
 - Una función reconocida por el parser no está terminada hasta llegar a UX y

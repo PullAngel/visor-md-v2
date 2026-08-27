@@ -67,6 +67,28 @@ declarar terminado el sprint o milestone correspondiente, pero nunca convierte
 por sí solo el turno en una espera ni impide tareas automatizables,
 independientes y aprobadas.
 
+### Bloqueos y aparcamiento
+
+No insistir indefinidamente sobre un mismo bloqueo.
+
+Si después de aproximadamente tres intentos sustancialmente diferentes no existe
+progreso claro sobre el mismo problema:
+
+1. conservar o recuperar de forma segura el último estado funcional conocido,
+   sin usar operaciones destructivas sobre trabajo ajeno;
+2. registrar brevemente el problema, la evidencia, los intentos realizados y la
+   condición necesaria para retomarlo;
+3. marcar ese frente como pendiente o bloqueado;
+4. continuar inmediatamente con el siguiente trabajo independiente, seguro y
+   aprobado.
+
+Tres errores diferentes durante una depuración que está convergiendo no cuentan
+como tres intentos fallidos.
+
+Un bloqueo individual no termina el turno. Solo detenerse cuando todo el trabajo
+restante dependa realmente de ese bloqueo, de una decisión humana o de una
+condición externa que impida continuar.
+
 ## Comunicación y estilo
 
 En código, comentarios, tests y commits usar lenguaje humano, concreto y
@@ -118,6 +140,10 @@ Eliminar o simplificar código es preferible a agregar infraestructura cuando
 ambas opciones cumplen. La simplicidad nunca justifica pérdida de datos, menor
 seguridad, errores ocultos, menor accesibilidad o comportamiento implícito.
 
+Preferir ediciones localizadas. No reescribir archivos completos cuando una
+modificación precisa sea suficiente, y preservar contenido no relacionado con el
+objetivo actual.
+
 ## Fuentes de autoridad y contexto progresivo
 
 Antes de modificar:
@@ -128,6 +154,10 @@ Antes de modificar:
 4. leer solo la documentación y ADR del dominio afectado;
 5. inspeccionar implementación y pruebas relacionadas;
 6. informar contradicciones relevantes antes de decidir.
+
+No inspeccionar, indexar ni buscar dentro de `target/` durante el trabajo normal.
+Consultar artefactos generados solo cuando sean necesarios para diagnosticar un
+problema específico de build, linking, packaging o runtime.
 
 La documentación puede estar desactualizada y el código puede estar incompleto.
 No asumir que uno de los dos representa la verdad sin comprobarlo. Las decisiones
@@ -195,6 +225,21 @@ hallazgo de seguridad.
 bloques sensibles o milestones; no reemplaza el juicio de riesgo ni obliga a
 recompilar release para una corrección puramente documental.
 
+### Feedback de compilación
+
+Durante la iteración local, preferir la comprobación más barata que aporte
+evidencia suficiente:
+
+1. usar `cargo check` para feedback rápido de compilación, tipos y borrow checker;
+2. ejecutar los tests directamente relacionados cuando exista comportamiento
+   automatizable que verificar;
+3. usar suites más amplias, `cargo build`, `cargo run` o builds release cuando el
+   cambio requiera evidencia de integración, linking, runtime, rendimiento,
+   distribución o cierre de un bloque relevante.
+
+No repetir validaciones caras si ningún cambio posterior pudo invalidar su
+resultado.
+
 ## Arquitectura y dependencias
 
 La dirección actual usa Rust, `winit`, `softbuffer`, `tiny-skia`, `parley`,
@@ -209,8 +254,15 @@ estructural requieren ADR práctico. No crear ADR para detalles locales.
 
 ## Git y preservación
 
-`main` representa el último estado estable. Trabajar en ramas `codex/...` o la
-rama acordada.
+`main` es la rama principal y activa del desarrollo actual. Trabajar directamente
+en `main` cuando ese sea el workspace aprobado.
+
+Crear ramas adicionales solo cuando aporten aislamiento real, por ejemplo para
+un experimento riesgoso, trabajo paralelo, un cambio estructural grande o una
+solicitud explícita del propietario.
+
+La rama histórica de respaldo del estado anterior al desarrollo actual se
+conserva como referencia y no debe modificarse ni utilizarse como rama de trabajo.
 
 Antes de tocar archivos, distinguir cambios heredados de cambios propios y
 preservar trabajo ajeno. No restaurar, resetear, borrar, mover ni sobrescribir
