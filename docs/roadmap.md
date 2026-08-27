@@ -16,12 +16,17 @@ final de cada hito.
   tests.
 - Todo cambio de dependencia mide tamaño y superficie.
 - El alcance de v2.0 puede entregarse mediante previews sin llamarlas estables.
-- Un commit, checkpoint, suite verde o actualización documental no cierra la
-  solicitud global. Mientras queden tareas automatizables y aprobadas, se
-  continúa con el siguiente bloque coherente.
+- Un commit, checkpoint, suite verde, bloque técnico, mini-sprint o actualización
+  documental no cierra la solicitud global ni inicia una espera. Mientras queden
+  tareas automatizables, seguras y aprobadas, se continúa inmediatamente con el
+  siguiente bloque coherente; pueden acumularse varios antes de un cierre.
 - Un gate manual o QA visual pendiente se registra y debe cerrarse antes de
   declarar terminado su sprint o milestone, pero solo bloquea trabajo que
-  realmente dependa de esa evidencia.
+  realmente dependa de esa evidencia; no bloquea trabajo independiente.
+- Un turno solo termina cuando el objetivo global está terminado, todo lo
+  restante depende de una persona, continuar requiere un cambio no aprobado de
+  alcance/arquitectura/seguridad/producto, o existe riesgo de pérdida de datos
+  o un bloqueo técnico externo.
 
 ## Estado
 
@@ -67,8 +72,9 @@ e independiente.
 
 Estos sprints agrupan las unidades anteriores para que cada período de trabajo
 termine en un producto más útil, no solo en una lista de refactors. Sus gates
-no se saltan: si uno falla, se corrige dentro del mismo sprint en lugar de
-arrastrar una base dudosa al siguiente.
+técnicos no se saltan: si uno falla, se corrige antes de depender de esa
+propiedad. Los gates humanos pendientes quedan registrados y no paralizan otros
+bloques independientes.
 
 | Sprint largo | Alcance agrupado | Resultado para usar | Gate de salida |
 | --- | --- | --- | --- |

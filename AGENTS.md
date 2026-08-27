@@ -46,21 +46,26 @@ Detenerse ante decisiones difíciles de revertir que afecten producto, datos,
 seguridad, compatibilidad, arquitectura, dependencias o UX fundamental.
 
 Dar actualizaciones breves y periódicas durante el trabajo, agrupadas por
-resultado útil. Un commit, una prueba verde o una herramienta completada no son
-por sí mismos un motivo para detener la ejecución ni pedir respuesta. Pedir QA
-manual solo cuando la percepción humana aporte evidencia que no puede obtenerse
-automáticamente.
+resultado útil. Un commit, prueba verde, checkpoint, bloque técnico, mini-sprint
+o actualización documental no terminan el turno ni son motivo para esperar una
+respuesta. Se pueden acumular varios bloques, commits y verificaciones antes de
+un cierre. Pedir QA manual solo cuando la percepción humana aporte evidencia que
+no puede obtenerse automáticamente.
 
-Mientras exista trabajo seguro, aprobado y útil dentro del sprint activo,
-continuar de forma autónoma. Detener la ejecución solo ante un bloqueante real:
-decisión del propietario, cambio difícil de revertir de producto, seguridad o
-UX, dependencia relevante, riesgo de pérdida de datos, permiso externo o QA que
-solo una persona pueda realizar.
+Mientras exista trabajo automatizable, seguro, aprobado y útil dentro del
+objetivo o sprint activo, continuar inmediatamente con el siguiente paso
+coherente. Detener el turno solo cuando se cumpla una de estas condiciones:
+
+1. el objetivo global aprobado está realmente terminado;
+2. todo trabajo restante depende de una decisión o acción humana;
+3. continuar cambia alcance, arquitectura, seguridad o producto no aprobados;
+4. existe riesgo real de pérdida de datos o un bloqueo técnico externo.
 
 Un gate manual, visual o de plataforma pendiente bloquea únicamente la decisión
 o el hito que necesita esa evidencia. Debe registrarse y cerrarse antes de
-declarar terminado el sprint o milestone correspondiente, pero no impide tareas
-automatizables e independientes del objetivo aprobado.
+declarar terminado el sprint o milestone correspondiente, pero nunca convierte
+por sí solo el turno en una espera ni impide tareas automatizables,
+independientes y aprobadas.
 
 ## Comunicación y estilo
 
