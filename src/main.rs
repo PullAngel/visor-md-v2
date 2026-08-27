@@ -253,6 +253,40 @@ fn link_color(palette: Palette, destination: &str) -> (u8, u8, u8) {
     }
 }
 
+/// Orden estable de los enlaces que puede recorrer el teclado. Las imágenes y
+/// los destinos no interactivos permanecen fuera hasta que tengan una acción
+/// segura y una UX propia.
+fn link_targets_in_document_order(blocks: &[Block]) -> Vec<(usize, usize)> {
+    blocks
+        .iter()
+        .enumerate()
+        .flat_map(|(block_index, block)| {
+            block
+                .targets
+                .iter()
+                .enumerate()
+                .filter_map(move |(target_index, target)| {
+                    (target.kind == InlineTargetKind::Link).then_some((block_index, target_index))
+                })
+        })
+        .collect()
+}
+
+fn next_link_target(
+    links: &[(usize, usize)],
+    current: Option<(usize, usize)>,
+    backwards: bool,
+) -> Option<(usize, usize)> {
+    let current_index = current.and_then(|target| links.iter().position(|link| *link == target));
+    match (current_index, backwards) {
+        (Some(index), false) => links.get((index + 1) % links.len()).copied(),
+        (Some(0), true) => links.last().copied(),
+        (Some(index), true) => links.get(index - 1).copied(),
+        (None, false) => links.first().copied(),
+        (None, true) => links.last().copied(),
+    }
+}
+
 /// Semantica interactiva que no puede perderse al producir texto visible.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct InlineTarget {
@@ -1774,6 +1808,10 @@ struct App {
     /// Destino mostrado al pasar por encima de un enlace. No abre ni resuelve
     /// la ruta: solo hace visible lo que el documento ya declaró.
     hover_destination: Option<String>,
+    /// Enlace recorrido con Tab. Se separa del hover para que el teclado no
+    /// dependa de que el mouse permanezca inmóvil sobre el documento.
+    focused_link: Option<(usize, usize)>,
+    focus_destination: Option<String>,
     /// Se crea solamente ante una copia explícita. Mantenerlo vivo respeta el
     /// modelo de propiedad de X11/Wayland, donde el proceso sirve el texto
     /// hasta que otra aplicación lo solicita.
@@ -1803,6 +1841,8 @@ impl ApplicationHandler<AppEvent> for App {
                 self.doc_height = 0.0;
                 self.laid_for_width = -1.0;
                 self.notice = None;
+                self.focused_link = None;
+                self.focus_destination = None;
                 self.log.push(format!(
                     "[medicion] preparar documento de {:.1} KB fuera de UI: {elapsed_ms:.0} ms  ({} bloques)",
                     self.source.len() as f64 / 1024.0,
@@ -1827,6 +1867,8 @@ impl ApplicationHandler<AppEvent> for App {
                 self.live.clear();
                 self.doc_height = 0.0;
                 self.laid_for_width = -1.0;
+                self.focused_link = None;
+                self.focus_destination = None;
                 self.notice = Some("no se pudo abrir el documento".to_string());
                 self.refresh_title();
                 if let Some(window) = &self.window {
@@ -1982,6 +2024,9 @@ impl ApplicationHandler<AppEvent> for App {
                 ..
             } => match state {
                 ElementState::Pressed => {
+                    self.focused_link = None;
+                    self.focus_destination = None;
+                    self.refresh_title();
                     self.selection = self
                         .pointer
                         .and_then(|(x, y)| self.cursor_at(x, y))
@@ -2005,6 +2050,9 @@ impl ApplicationHandler<AppEvent> for App {
                 ..
             } => {
                 self.selection = None;
+                self.focused_link = None;
+                self.focus_destination = None;
+                self.refresh_title();
                 if let Some(w) = &self.window {
                     w.request_redraw();
                 }
@@ -2161,6 +2209,18 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::Tab),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } => {
+                self.move_link_focus(self.modifiers.shift_key());
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
                         physical_key: PhysicalKey::Code(KeyCode::KeyT),
                         state: ElementState::Pressed,
                         repeat: false,
@@ -2276,9 +2336,56 @@ impl App {
             window.set_title(&window_title(
                 &self.path,
                 self.safe_mode,
-                self.hover_destination.as_deref().or(self.notice.as_deref()),
+                self.hover_destination
+                    .as_deref()
+                    .or(self.focus_destination.as_deref())
+                    .or(self.notice.as_deref()),
             ));
         }
+    }
+
+    fn move_link_focus(&mut self, backwards: bool) {
+        let links = link_targets_in_document_order(&self.blocks);
+        let Some((block_index, target_index)) =
+            next_link_target(&links, self.focused_link, backwards)
+        else {
+            self.set_notice("este documento no tiene enlaces");
+            return;
+        };
+        let Some(target) = self
+            .blocks
+            .get(block_index)
+            .and_then(|block| block.targets.get(target_index))
+        else {
+            return;
+        };
+        self.focused_link = Some((block_index, target_index));
+        self.focus_destination = Some(format!(
+            "{}: {}",
+            match classify_link_destination(&target.destination) {
+                LinkDestinationKind::Web => "enlace web",
+                LinkDestinationKind::Mail => "correo",
+                LinkDestinationKind::RelativeFile => "archivo relativo",
+                LinkDestinationKind::Blocked => "destino bloqueado",
+            },
+            target.destination
+        ));
+        self.notice = None;
+        self.selection = Some(DocumentSelection::collapsed(BlockCursor {
+            block: block_index,
+            offset: target.start,
+        }));
+        if let (Some(slot), Some(window)) = (self.slots.get(block_index), &self.window) {
+            let viewport = window.inner_size().height as f32;
+            if slot.y < self.scroll {
+                self.scroll = slot.y;
+            } else if slot.y + slot.height > self.scroll + viewport {
+                self.scroll = (slot.y + slot.height - viewport).max(0.0);
+            }
+            self.scroll = self.scroll.min(max_scroll(self.doc_height, viewport));
+            window.request_redraw();
+        }
+        self.refresh_title();
     }
 
     fn cursor_at(&self, x: f32, y: f32) -> Option<BlockCursor> {
@@ -2590,6 +2697,7 @@ impl App {
             surface,
             palette,
             selection,
+            focused_link,
             blocks,
             ..
         } = self;
@@ -2730,6 +2838,31 @@ impl App {
                         continue;
                     };
                     pixmap.fill_rect(rect, &selection_paint, Transform::identity(), None);
+                }
+            }
+
+            if let Some((focus_block, focus_target)) = *focused_link
+                && focus_block == i
+                && let Some(target) = blocks[i].targets.get(focus_target)
+            {
+                let ac = palette.accent;
+                let mut focus_paint = Paint::default();
+                focus_paint.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 48));
+                for (rect, _) in Selection::new(
+                    Cursor::from_byte_index(layout, target.start, Affinity::Downstream),
+                    Cursor::from_byte_index(layout, target.end, Affinity::Downstream),
+                )
+                .geometry(layout)
+                {
+                    let Some(rect) = Rect::from_xywh(
+                        slot.x + rect.x0 as f32,
+                        top + rect.y0 as f32,
+                        rect.width() as f32,
+                        rect.height() as f32,
+                    ) else {
+                        continue;
+                    };
+                    pixmap.fill_rect(rect, &focus_paint, Transform::identity(), None);
                 }
             }
 
@@ -2880,6 +3013,8 @@ fn main() {
         modifiers: ModifiersState::empty(),
         text_cursor_hover: false,
         hover_destination: None,
+        focused_link: None,
+        focus_destination: None,
         clipboard: None,
         notice: Some("cargando documento".to_string()),
         fatal_error: false,
@@ -3108,6 +3243,20 @@ mod pruebas {
         );
         assert_eq!(link_color(DAY, "notas/tema.md"), DAY.accent);
         assert_eq!(link_color(DAY, "../secreto.md"), DAY.dim);
+    }
+
+    #[test]
+    fn tab_recorrre_solo_los_enlaces_en_orden_del_documento() {
+        let outcome = parse_blocks(
+            "[primero](https://example.test)\n\n![imagen](img.png)\n\n[segundo](notas/dos.md)",
+        )
+        .unwrap();
+        let links = link_targets_in_document_order(&outcome.blocks);
+        assert_eq!(links, vec![(0, 0), (2, 0)]);
+        assert_eq!(next_link_target(&links, None, false), Some((0, 0)));
+        assert_eq!(next_link_target(&links, Some((0, 0)), false), Some((2, 0)));
+        assert_eq!(next_link_target(&links, Some((0, 0)), true), Some((2, 0)));
+        assert_eq!(next_link_target(&[], None, false), None);
     }
 
     #[test]

@@ -70,6 +70,8 @@ exacto del traspaso.
   ni abrir navegador o filesystem.
 - enlaces web y correo en azul subrayado; destinos relativos en verde y
   destinos bloqueados en tono tenue, sin concederles capacidad alguna.
+- Tab y Shift+Tab recorren enlaces sin abrirlos; el foco tiene resalte y muestra
+  el destino antes de cualquier acción futura.
 - un fallo de apertura asíncrona conserva la ventana y muestra un mensaje
   inerte simple dentro del lienzo; el detalle técnico queda solo en el registro
   local de la sesión.
