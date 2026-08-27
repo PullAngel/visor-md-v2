@@ -156,7 +156,8 @@ correctas.
 - modo seguro sin validación visual end to end;
 - red no verificada mediante monitor;
 - renderer sin accesibilidad demostrada;
-- parsing todavía síncrono en el camino de apertura;
+- cancelación y reemplazo de parsing asíncrono todavía pendientes si el
+  documento cambia durante la preparación;
 - dependencia transitiva no mantenida;
 - Linux sin evidencia equivalente a Windows.
 
