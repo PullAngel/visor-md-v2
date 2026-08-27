@@ -47,7 +47,7 @@ use winit::window::{CursorIcon, Theme, Window, WindowId};
 
 use editor::SourceEditor;
 use files::{
-    DEFAULT_DOCUMENT_LIMIT_BYTES, FileIdentity, TextMetadata, is_markdown_path,
+    DEFAULT_DOCUMENT_LIMIT_BYTES, FileIdentity, LineEndings, TextMetadata, is_markdown_path,
     open_explicit_primary,
 };
 use fonts::{FONT_CODE, FONT_DOC, FONT_UI, register_embedded_fonts};
@@ -2644,6 +2644,13 @@ impl App {
             }
             PhysicalKey::Code(KeyCode::Delete) => {
                 self.edit_source(|editor, source| editor.delete(source));
+            }
+            PhysicalKey::Code(KeyCode::Enter) => {
+                let eol = match self.source_metadata.line_endings {
+                    LineEndings::CrLf => "\r\n",
+                    LineEndings::None | LineEndings::Lf | LineEndings::Mixed => "\n",
+                };
+                self.edit_source(|editor, source| editor.insert(source, eol));
             }
             PhysicalKey::Code(KeyCode::ArrowLeft) => {
                 let _ = self

@@ -412,4 +412,13 @@ mod tests {
         editor.undo(&mut source).unwrap();
         assert_eq!(source, "á🔒");
     }
+
+    #[test]
+    fn insertar_crlf_no_normaliza_las_lineas_existentes() {
+        let mut source = "uno\r\ndos".to_owned();
+        let mut editor = SourceEditor::new();
+        editor.set_cursor(&source, "uno".len(), false).unwrap();
+        editor.insert(&mut source, "\r\n").unwrap();
+        assert_eq!(source, "uno\r\n\r\ndos");
+    }
 }
