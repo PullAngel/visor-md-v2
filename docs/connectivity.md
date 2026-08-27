@@ -35,6 +35,11 @@ Antes del clic debe ser posible conocer el destino real. El hipervínculo se
 distingue en azul, tiene estados de foco y no usa texto de seguridad controlado
 por el documento.
 
+El lector actual muestra el destino declarado en el título de ventana al pasar
+por encima del enlace y cambia el cursor. Esto no resuelve, abre ni consulta el
+destino: permite detectar un enlace engañoso antes de que exista una acción de
+apertura.
+
 ## Imágenes remotas
 
 Bloqueadas por defecto. El usuario puede autorizar una imagen o un alcance

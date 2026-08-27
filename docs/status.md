@@ -66,6 +66,8 @@ exacto del traspaso.
   no habilita recursos secundarios ni navega rutas del documento.
 - apertura y parsing fuera del hilo de interfaz; la ventana se crea mientras el
   modelo se prepara y no recibe un estado parcial.
+- enlaces visibles con cursor y destino declarado al hover, sin resolver rutas
+  ni abrir navegador o filesystem.
 
 Evidencia actual en Windows:
 

@@ -46,7 +46,7 @@ Estados permitidos:
 | Imagen remota bloqueada | Integración | Bloqueado | Bloqueado | Imágenes pendientes |
 | Consentimiento remoto delimitado | End to end | Bloqueado | Bloqueado | Componente pendiente |
 | Imagen local contenida y limitada | Seguridad | Bloqueado | Bloqueado | VFS e imágenes pendientes |
-| Hipervínculo revela destino real | UX y phishing | Bloqueado | Bloqueado | Enlaces pendientes |
+| Hipervínculo revela destino real | UX y phishing | Parcial | Pendiente | El hover muestra el destino declarado sin abrirlo; falta QA visual y política de clic |
 
 ## Rendering y UX
 

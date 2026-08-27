@@ -1705,6 +1705,9 @@ struct App {
     selection: Option<DocumentSelection>,
     modifiers: ModifiersState,
     text_cursor_hover: bool,
+    /// Destino mostrado al pasar por encima de un enlace. No abre ni resuelve
+    /// la ruta: solo hace visible lo que el documento ya declaró.
+    hover_destination: Option<String>,
     /// Se crea solamente ante una copia explícita. Mantenerlo vivo respeta el
     /// modelo de propiedad de X11/Wayland, donde el proceso sirve el texto
     /// hasta que otra aplicación lo solicita.
@@ -1841,13 +1844,24 @@ impl ApplicationHandler<AppEvent> for App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.pointer = Some((position.x as f32, position.y as f32));
-                let text_cursor_hover = self
-                    .cursor_at(position.x as f32, position.y as f32)
-                    .is_some();
-                if text_cursor_hover != self.text_cursor_hover {
+                let target = self
+                    .target_at(position.x as f32, position.y as f32)
+                    .map(|target| target.destination.clone());
+                let text_cursor_hover = target.is_none()
+                    && self
+                        .cursor_at(position.x as f32, position.y as f32)
+                        .is_some();
+                let target_changed = target != self.hover_destination;
+                if target_changed {
+                    self.hover_destination = target;
+                    self.refresh_title();
+                }
+                if target_changed || text_cursor_hover != self.text_cursor_hover {
                     self.text_cursor_hover = text_cursor_hover;
                     if let Some(w) = &self.window {
-                        w.set_cursor(if text_cursor_hover {
+                        w.set_cursor(if self.hover_destination.is_some() {
+                            CursorIcon::Pointer
+                        } else if text_cursor_hover {
                             CursorIcon::Text
                         } else {
                             CursorIcon::Default
@@ -1865,6 +1879,8 @@ impl ApplicationHandler<AppEvent> for App {
                 self.pointer = None;
                 self.selecting = false;
                 self.text_cursor_hover = false;
+                self.hover_destination = None;
+                self.refresh_title();
                 if let Some(w) = &self.window {
                     w.set_cursor(CursorIcon::Default);
                 }
@@ -2165,11 +2181,15 @@ impl App {
 
     fn set_notice(&mut self, notice: &str) {
         self.notice = Some(notice.to_owned());
+        self.refresh_title();
+    }
+
+    fn refresh_title(&self) {
         if let Some(window) = &self.window {
             window.set_title(&window_title(
                 &self.path,
                 self.safe_mode,
-                self.notice.as_deref(),
+                self.hover_destination.as_deref().or(self.notice.as_deref()),
             ));
         }
     }
@@ -2187,6 +2207,18 @@ impl App {
                 offset: cursor.index(),
             })
         })
+    }
+
+    fn target_at(&self, x: f32, y: f32) -> Option<&InlineTarget> {
+        let cursor = self.cursor_at(x, y)?;
+        self.blocks
+            .get(cursor.block)?
+            .targets
+            .iter()
+            .find(|target| {
+                target.kind == InlineTargetKind::Link
+                    && (target.start..target.end).contains(&cursor.offset)
+            })
     }
 
     fn extend_selection_to(&mut self, x: f32, y: f32) {
@@ -2760,6 +2792,7 @@ fn main() {
         selection: None,
         modifiers: ModifiersState::empty(),
         text_cursor_hover: false,
+        hover_destination: None,
         clipboard: None,
         notice: Some("cargando documento".to_string()),
         fatal_error: false,
