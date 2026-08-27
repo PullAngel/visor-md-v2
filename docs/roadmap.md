@@ -55,6 +55,30 @@ salida de la anterior cubierto.
 | 7 | Exportación aislada | PDF fiel, DOCX útil y copias de plataforma sin alterar el documento ni ampliar el núcleo innecesariamente. |
 | 8 | Distribución verificable | CI, paquetes Windows y Linux, SBOM, notices, benchmarks y matriz de release. |
 
+## Sprints largos de ejecución
+
+Estos sprints agrupan las unidades anteriores para que cada período de trabajo
+termine en un producto más útil, no solo en una lista de refactors. Sus gates
+no se saltan: si uno falla, se corrige dentro del mismo sprint en lugar de
+arrastrar una base dudosa al siguiente.
+
+| Sprint largo | Alcance agrupado | Resultado para usar | Gate de salida |
+| --- | --- | --- | --- |
+| A. Lector seguro y usable | Recuperación, 1A, 1B y 1C | Abrir Markdown y texto inerte rápido, leerlo con formato, seleccionar, copiar, navegar y abrir enlaces externos explícitos sin que el documento obtenga permisos | Modelo y renderer completos para la sintaxis anunciada; fallback visible; corpus y patologías verdes; QA visual pendiente registrado; release menor de 8 MB |
+| B. Documento fiel y editor básico | 2A y 2B | Abrir, crear, editar fuente, comparar vista y guardar sin reescrituras silenciosas | VFS, rangos de fuente fiables, undo/redo, encoding/EOL, guardado atómico y conflictos probados en Windows y Linux |
+| C. Aplicación de trabajo | 3 y 4 | Pestañas, comandos, carpeta de trabajo, índice y búsqueda seguros | Chrome accesible; cierre sin pérdida; índice limitado, cancelable y contenido dentro de VFS; benchmark de carpeta grande |
+| D. Buen ciudadano de Obsidian y estudio | 5 y 6 | Navegar bóvedas existentes, usar wikilinks/backlinks/callouts y preparar estudio o contenido para IA | No migración ni ruido Git; enlaces contenidos; herramientas de estudio portables o sidecars versionados; cero IA embebida |
+| E. Salida profesional | 7 y 8 | Exportar PDF/DOCX/copia de plataforma y distribuir para Windows/Linux | Exportación aislada; CI y paquetes reproducibles; SBOM, licencias, benchmarks, threat model y matriz de release completos |
+
+### Sprint largo activo: A. Lector seguro y usable
+
+Se considera en cierre técnico, no terminado: parser, modelo, render, límites,
+selección, copia, menú contextual y apertura externa explícita están presentes.
+Quedan por cerrar corpus sistemático, QA visual, DPI/Unicode, evidencia de
+rendimiento actualizada y una señal útil del modo seguro dentro de la ventana.
+No se inicia el editor ni VFS de recursos secundarios hasta resolver el contrato
+de rangos de fuente, especialmente enlaces.
+
 ### Orden inmediato
 
 El trabajo activo termina 1A antes de iniciar 1B. Sus pendientes concretas son
