@@ -45,9 +45,17 @@ Resolver ambigüedades reversibles con la opción conservadora y documentarla.
 Detenerse ante decisiones difíciles de revertir que afecten producto, datos,
 seguridad, compatibilidad, arquitectura, dependencias o UX fundamental.
 
-Dar actualizaciones breves durante el trabajo y un cierre verificable. Pedir QA
+Dar actualizaciones breves y periódicas durante el trabajo, agrupadas por
+resultado útil. Un commit, una prueba verde o una herramienta completada no son
+por sí mismos un motivo para detener la ejecución ni pedir respuesta. Pedir QA
 manual solo cuando la percepción humana aporte evidencia que no puede obtenerse
 automáticamente.
+
+Mientras exista trabajo seguro, aprobado y útil dentro del sprint activo,
+continuar de forma autónoma. Detener la ejecución solo ante un bloqueante real:
+decisión del propietario, cambio difícil de revertir de producto, seguridad o
+UX, dependencia relevante, riesgo de pérdida de datos, permiso externo o QA que
+solo una persona pueda realizar.
 
 ## Comunicación y estilo
 
@@ -201,7 +209,10 @@ sin autorización explícita.
 No integrar como producto snapshots de recuperación, backups, artifacts de
 diseño, binarios de medición ni temporales. Los commits deben ser pequeños,
 coherentes y compilables; no mezclar recuperación, refactor, función nueva y
-actualización masiva de dependencias.
+actualización masiva de dependencias. En una rama de trabajo aprobada, crear y
+publicar commits coherentes al cerrar cada bloque técnico; hacerlo no cierra la
+tarea ni exige informar cada hash de inmediato. Comunicar hashes agrupados al
+cerrar un hito, ante una revisión o si ayudan a recuperar un estado.
 
 ## Documentación y cierre
 
@@ -222,3 +233,7 @@ Una tarea está terminada cuando:
 Para cambios sensibles deben existir pruebas de las propiedades afectadas. Para
 milestones y releases se exige auditoría amplia. "Funciona en mi máquina" y "no
 hizo crash" nunca bastan como única evidencia.
+
+Un bloque interno puede estar terminado y versionado sin que la solicitud global
+lo esté. No emitir cierre final mientras queden pasos seguros del roadmap o del
+objetivo explícito del propietario; seguir con el siguiente bloque coherente.
