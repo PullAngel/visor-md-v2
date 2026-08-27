@@ -2241,10 +2241,16 @@ impl ApplicationHandler<AppEvent> for App {
                     self.focused_link = None;
                     self.focus_destination = None;
                     self.refresh_title();
-                    self.selection = self
-                        .pointer
-                        .and_then(|(x, y)| self.cursor_at(x, y))
-                        .map(DocumentSelection::collapsed);
+                    if self.mode == DocumentMode::SourceEditing {
+                        if let Some(cursor) = self.pointer.and_then(|(x, y)| self.cursor_at(x, y)) {
+                            self.set_source_cursor_from_block(cursor, false);
+                        }
+                    } else {
+                        self.selection = self
+                            .pointer
+                            .and_then(|(x, y)| self.cursor_at(x, y))
+                            .map(DocumentSelection::collapsed);
+                    }
                     self.selecting = self.selection.is_some();
                     if let Some(w) = &self.window {
                         w.request_redraw();
@@ -2659,6 +2665,28 @@ impl App {
         }
     }
 
+    fn set_source_cursor_from_block(&mut self, cursor: BlockCursor, extend: bool) {
+        let Some(block) = self.blocks.get(cursor.block) else {
+            return;
+        };
+        let source_offset = block.source.start + cursor.offset.min(block.text.len());
+        if self
+            .source_editor
+            .set_cursor(&self.source, source_offset, extend)
+            .is_err()
+        {
+            return;
+        }
+        self.selection = Some(if extend {
+            DocumentSelection {
+                anchor: self.selection.map_or(cursor, |selection| selection.anchor),
+                focus: cursor,
+            }
+        } else {
+            DocumentSelection::collapsed(cursor)
+        });
+    }
+
     fn copy_selection(&mut self, source_markdown: bool) {
         let text = self.selection.and_then(|selection| {
             if source_markdown {
@@ -2818,6 +2846,12 @@ impl App {
     }
 
     fn extend_selection_to(&mut self, x: f32, y: f32) {
+        if self.mode == DocumentMode::SourceEditing {
+            if let Some(cursor) = self.cursor_at(x, y) {
+                self.set_source_cursor_from_block(cursor, true);
+            }
+            return;
+        }
         let Some(selection) = self.selection else {
             return;
         };
