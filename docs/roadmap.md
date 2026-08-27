@@ -16,6 +16,12 @@ final de cada hito.
   tests.
 - Todo cambio de dependencia mide tamaño y superficie.
 - El alcance de v2.0 puede entregarse mediante previews sin llamarlas estables.
+- Un commit, checkpoint, suite verde o actualización documental no cierra la
+  solicitud global. Mientras queden tareas automatizables y aprobadas, se
+  continúa con el siguiente bloque coherente.
+- Un gate manual o QA visual pendiente se registra y debe cerrarse antes de
+  declarar terminado su sprint o milestone, pero solo bloquea trabajo que
+  realmente dependa de esa evidencia.
 
 ## Estado
 
@@ -38,8 +44,10 @@ final de cada hito.
 
 Los sprints ordenan entregables pequeños y verificables. No representan fechas
 ni autorizan adelantar una dependencia de seguridad para mostrar una función.
-La siguiente unidad se inicia solo sobre una base verde y con el criterio de
-salida de la anterior cubierto.
+La siguiente unidad se inicia sobre una base técnicamente verde. Los criterios
+humanos pendientes de una unidad anterior permanecen registrados y se cierran
+antes de declarar su sprint o milestone terminado; no paralizan trabajo seguro
+e independiente.
 
 | Sprint | Objetivo | Criterio verificable de cierre |
 | --- | --- | --- |
@@ -74,17 +82,17 @@ arrastrar una base dudosa al siguiente.
 
 Se considera en cierre técnico, no terminado: parser, modelo, render, límites,
 selección, copia, menú contextual y apertura externa explícita están presentes.
-Quedan por cerrar corpus sistemático, QA visual, DPI/Unicode, evidencia de
-rendimiento actualizada y una señal útil del modo seguro dentro de la ventana.
-No se inicia el editor ni VFS de recursos secundarios hasta resolver el contrato
-de rangos de fuente, especialmente enlaces.
+Quedan QA visual, DPI/Unicode y evidencia de rendimiento actualizada para su
+cierre formal. El corpus, modo seguro y contrato de edición source-first ya
+permiten avanzar en el Sprint B sin usar rangos ambiguos de enlaces como
+autoridad de escritura.
 
 ### Orden inmediato
 
-El trabajo activo termina 1A antes de iniciar 1B. Sus pendientes concretas son
-la validación visual de la tipografía y de la allowlist HTML, más el corpus
-sistemático que confirma que cada sintaxis anunciada llega al dibujo. No se
-inicia edición ni carga de archivos secundarios durante este cierre.
+El trabajo activo mantiene abiertos los gates humanos del Sprint A mientras
+avanza la frontera documental y el editor source-first del Sprint B. La
+validación visual de tipografía y allowlist HTML se cierra antes de declarar A
+terminado; la carga de recursos secundarios sigue esperando VFS.
 
 ## Sprint 0: viabilidad nativa
 

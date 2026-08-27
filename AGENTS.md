@@ -57,6 +57,11 @@ decisión del propietario, cambio difícil de revertir de producto, seguridad o
 UX, dependencia relevante, riesgo de pérdida de datos, permiso externo o QA que
 solo una persona pueda realizar.
 
+Un gate manual, visual o de plataforma pendiente bloquea únicamente la decisión
+o el hito que necesita esa evidencia. Debe registrarse y cerrarse antes de
+declarar terminado el sprint o milestone correspondiente, pero no impide tareas
+automatizables e independientes del objetivo aprobado.
+
 ## Comunicación y estilo
 
 En código, comentarios, tests y commits usar lenguaje humano, concreto y
