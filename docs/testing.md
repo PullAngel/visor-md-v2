@@ -23,6 +23,10 @@ La estrategia debe demostrar:
 Prueban funciones pequeñas y rápidas: políticas de rutas, límites, conversión del
 AST, marcadores, rangos y operaciones de edición.
 
+El modelo de historial prueba además que un parche no parte UTF-8, que undo/redo
+reconstruyen exactamente el texto, que una edición nueva invalida redo y que el
+presupuesto de historial sacrifica únicamente pasos antiguos de undo.
+
 Son útiles para localizar un fallo, pero no demuestran por sí solas que la
 aplicación completa funciona.
 

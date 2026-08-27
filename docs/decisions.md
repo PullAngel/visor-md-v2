@@ -615,3 +615,21 @@ la ventana.
 **Por qué.** Separa trabajo pesado de la respuesta visual sin añadir runtime ni
 dependencia. Aún no hay cancelación: se incorpora cuando abrir o editar varios
 documentos aporte una identidad de operación que pueda cancelarse correctamente.
+
+## ADR-36: Editor de fuente antes que edición estructural
+
+**Contexto.** El modelo del lector guarda rangos válidos de bloque e inline,
+pero Comrak no siempre informa una extensión que coincida con la sintaxis total
+de un enlace. Usar esos rangos para modificar la fuente podría retirar solo un
+destino y dejar corchetes o paréntesis inválidos. Re-serializar el AST completo
+resolvería una parte del problema a costa de reformatear sintaxis que Visor MD
+no reconoce.
+
+**Decisión.** El editor inicial modifica un buffer de fuente UTF-8 mediante
+parches explícitos. La vista Markdown se vuelve a derivar de esa fuente; parser
+y renderer no son autoridades de guardado. Undo y redo retienen solo texto
+quitado e insertado, con un presupuesto de memoria de 4 MiB.
+
+**Por qué.** Mantiene la promesa de no reformatear ni perder sintaxis desconocida
+y evita basar la edición en rangos engañosos. La edición estructural o WYSIWYG
+queda fuera hasta que exista un contrato de mapeo fuente-vista completo y probado.

@@ -289,6 +289,7 @@ Amenazas principales:
 Controles:
 
 - parches sobre rangos;
+- el buffer fuente es la autoridad; el AST y la vista nunca reescriben Markdown;
 - preservación de bytes no editados;
 - archivo temporal en el mismo filesystem;
 - reemplazo atómico;
@@ -299,6 +300,12 @@ Controles:
 - tests con fallos simulados.
 
 No hay autoguardado por defecto.
+
+El historial de edición conserva solo los fragmentos retirados e insertados y
+tiene un presupuesto de 4 MiB por documento. Si se llena, se descartan pasos de
+undo más antiguos, no el texto actual ni cambios pendientes. Es una defensa de
+memoria: un historial ilimitado permitiría que un documento grande o una sesión
+de pegados agotara recursos aunque el archivo de entrada estuviera limitado.
 
 ## Sidecars
 

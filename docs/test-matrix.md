@@ -34,7 +34,8 @@ Estados permitidos:
 | Traversal y escape bloqueados | Seguridad | Bloqueado | Bloqueado | No hay apertura secundaria todavía; deberá pasar por VFS al existir enlaces o recursos |
 | Symlinks y junctions | Seguridad | Pendiente | Pendiente | VFS no implementado |
 | Guardado atómico | Integración | Bloqueado | Bloqueado | Editor pendiente |
-| Rangos de fuente preservados | Integración | Parcial | Pendiente | Bloques, tramos y destinos verificados |
+| Rangos de fuente preservados | Integración | Parcial | Pendiente | Bloques, tramos y destinos verificados; el editor source-first no usa el rango parcial que Comrak informa para la sintaxis de enlaces |
+| Parches de fuente y undo/redo | Unitario | Parcial | Pendiente | `editor::EditHistory` preserva UTF-8, revisiones, undo/redo y presupuesto de 4 MiB; falta interacción, IME y round-trip de guardado |
 | Sintaxis desconocida preservada | Property | Parcial | Pendiente | HTML inerte y documento defectuoso histórico; falta round-trip |
 | Cambios externos detectados | End to end | Bloqueado | Bloqueado | Editor pendiente |
 | EOL, BOM y UTF-8 | Corpus | Parcial | Pendiente | Apertura limitada exige UTF-8, separa BOM UTF-8 sin volverlo contenido, conserva CRLF/LF/mixto y reconstruye bytes sin edición en pruebas; faltan parches, guardado y política de otros encodings |

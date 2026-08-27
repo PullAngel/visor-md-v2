@@ -215,6 +215,18 @@ revisa el enfoque antes de continuar el editor.
 Opera sobre rangos y genera parches controlados. No serializa de nuevo el AST
 completo para cambios pequeños. Esto permite preservar sintaxis desconocida.
 
+La primera implementación es **source-first**: el buffer contiene el Markdown
+UTF-8 original y la vista renderizada es una derivación reemplazable. Los rangos
+del parser sirven al lector, pero una edición no depende de que una biblioteca
+informe la extensión exacta de toda sintaxis inline. Esto evita usar, por
+ejemplo, el rango del destino de un enlace como si cubriera también sus
+corchetes y paréntesis.
+
+`editor::EditHistory` ya define parches reversibles de bytes UTF-8, undo/redo,
+revisiones y un presupuesto de 4 MiB para historial. No conserva snapshots
+completos de un documento de hasta 16 MiB. La interfaz de edición, IME y el
+guardado todavía no consumen esta capa.
+
 Responsabilidades:
 
 - cursor y selección;

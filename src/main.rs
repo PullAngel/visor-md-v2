@@ -12,6 +12,7 @@
 // existe y cuando exista se aisla en su propio modulo y se revisa a mano.
 #![forbid(unsafe_code)]
 
+pub mod editor;
 mod files;
 mod fonts;
 mod limits;
