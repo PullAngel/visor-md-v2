@@ -184,11 +184,12 @@ enlace a otro archivo requiere una acción explícita.
 
 ## Portapapeles
 
-El portapapeles es una frontera entre Visor MD y otras aplicaciones. La primera
-integración solo escribe texto después de una acción inequívoca: `Ctrl+C` copia
-la selección visible y `Ctrl+Shift+C` copia la fuente Markdown de los bloques
-seleccionados. No existe pegado, lectura en segundo plano, historial, acceso a
-imágenes ni envío de su contenido.
+El portapapeles es una frontera entre Visor MD y otras aplicaciones. `Ctrl+C`
+copia la selección visible y `Ctrl+Shift+C` copia la fuente Markdown de los
+bloques seleccionados. `Ctrl+V` y la acción visible de pegar pueden leer texto
+solamente en ese instante y colocarlo en el editor fuente activo. No existe
+observador, lectura en segundo plano, historial, acceso a imágenes ni envío de
+su contenido.
 
 La copia de fuente se limita a bloques completos porque una selección visual no
 equivale necesariamente a los bytes de Markdown que la produjeron. Esto evita
@@ -305,6 +306,13 @@ Controles:
 - tests con fallos simulados.
 
 No hay autoguardado por defecto.
+
+La primera implementación de Guardar compara además los bytes completos de la
+versión abierta con el destino justo antes del reemplazo atómico. Esto detecta
+ediciones externas que una fecha de modificación o un tamaño iguales podrían
+ocultar. La comprobación reduce el riesgo TOCTOU, pero no elimina una carrera
+del filesystem entre esa lectura y el reemplazo; la identidad específica de
+handle y los tests por plataforma siguen siendo trabajo pendiente.
 
 El historial de edición conserva solo los fragmentos retirados e insertados y
 tiene un presupuesto de 4 MiB por documento. Si se llena, se descartan pasos de

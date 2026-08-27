@@ -3,12 +3,32 @@
 Este documento registra checkpoints verificables del grafo de dependencias. No
 reemplaza una SBOM ni convierte una auditoría puntual en garantía permanente.
 
+## Cambio en curso: editor, guardado y diálogos nativos
+
+La primera parte del Sprint B incorpora tres dependencias directas, aún en
+validación de cadena de suministro y presupuesto release:
+
+- `atomicwrites 0.4.4` crea el temporal junto al destino, sincroniza el archivo
+  y lo reemplaza atómicamente. Visor MD además compara los bytes completos de
+  la versión abierta antes de invocarlo; por tanto un conflicto externo no se
+  sobrescribe por accidente.
+- `ropey 1.6.1` será el buffer UTF-8 del editor. Sus operaciones se expresan
+  en límites de caracteres y están diseñadas para ediciones no contiguas sin
+  desplazar un documento completo en cada pulsación.
+- `rfd 0.17.2` se reserva para los diálogos nativos de abrir, guardar y elegir
+  carpeta. No recibe contenido de documentos ni otorga permisos secundarios.
+
+Antes de cerrar Sprint B se registrarán las licencias y transitivas reales de
+este lockfile, `cargo audit`, SBOM, build Windows/Linux y delta de tamaño. Si
+una dependencia no supera esos gates, no se sustituye silenciosamente por una
+escritura no atómica ni por una UI que exponga rutas arbitrarias.
+
 ## Cambio pendiente de validar: portapapeles de texto
 
 La rama de recuperación incorpora `arboard 3.6.1` con
 `default-features = false`. Es una dependencia directa, publicada bajo
-`MIT OR Apache-2.0`; su API usada por Visor MD es solamente `Clipboard::new` y
-`set_text` tras un atajo explícito de la persona.
+`MIT OR Apache-2.0`; su API usada por Visor MD es `Clipboard::new`, `set_text`
+y `get_text` tras un atajo o acción de menú explícita de la persona.
 
 Las funciones por defecto de `arboard` incluirían imágenes y sus decodificadores.
 Se mantienen desactivadas: Visor MD no lee ni escribe imágenes al portapapeles.
@@ -21,7 +41,9 @@ licencias y QA por target antes de elevar la cadena completa a estado verificado
 
 En X11 y Wayland la aplicación puede ser propietaria del texto copiado mientras
 vive. Por ello la instancia de portapapeles se mantiene en el estado de la app
-después de una copia, pero no se consulta ni se transmite su contenido.
+después de una copia, pero no se consulta ni se transmite su contenido. La única
+lectura permitida es el texto solicitado por `Ctrl+V` o la acción de pegar; no
+hay observador, historial ni lectura en segundo plano.
 
 ## Checkpoint del 26 de agosto de 2026
 

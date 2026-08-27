@@ -15,12 +15,15 @@ strip = true
 
 [dependencies]
 arboard = { version = "3.6.1", default-features = false }
+atomicwrites = "0.4.4"
 # Sin funciones por defecto a proposito. Las de comrak arrastran su CLI (clap,
 # xdg, shell-words) y, peor, `syntect-onig`: resaltado de sintaxis apoyado en
 # Oniguruma, una libreria de expresiones regulares escrita en C. Meter C al
 # binario contradice de frente el ADR-2. Ver ADR-14.
 comrak = { version = "0.54.0", default-features = false }
 parley = "0.11.1"
+rfd = "0.17.2"
+ropey = "1.6.1"
 softbuffer = "0.4.8"
 swash = "0.2.10"
 # Sin `png-format`: el decodificador de PNG entra cuando toquen las imagenes,

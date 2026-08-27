@@ -37,7 +37,7 @@ final de cada hito.
 | Sprint 1 | Parcial | Lector mínimo profesional |
 | Validación base | Iniciada | Gates Windows, auditoría, SBOM y benchmarks |
 | Lector completo | Pendiente | Markdown cotidiano completo |
-| Editor básico | Pendiente | Edición y guardado fiel |
+| Editor básico | En curso | Edición fuente, guardado atómico y VFS base; faltan buffer escalable, recuperación y Save As sobre destinos existentes con conflicto explícito |
 | Chrome | Pendiente | Ventana, pestañas y comandos |
 | Workspace | Pendiente | Carpetas, búsqueda e índice |
 | Obsidian | Pendiente | Wikilinks, backlinks y callouts |
@@ -98,7 +98,10 @@ autoridad de escritura.
 El trabajo activo mantiene abiertos los gates humanos del Sprint A mientras
 avanza la frontera documental y el editor source-first del Sprint B. La
 validación visual de tipografía y allowlist HTML se cierra antes de declarar A
-terminado; la carga de recursos secundarios sigue esperando VFS.
+terminado; la carga de recursos secundarios sigue esperando VFS. El Sprint B ya
+inició sus contratos internos de guardado y VFS, sin esperar esa evidencia
+manual: los resultados se incorporan antes de declarar cualquier milestone
+cerrado.
 
 ## Sprint 0: viabilidad nativa
 

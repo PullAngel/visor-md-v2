@@ -68,6 +68,10 @@ impl EditHistory {
         self.current_revision != self.saved_revision
     }
 
+    pub fn current_revision(&self) -> u64 {
+        self.current_revision
+    }
+
     pub fn mark_saved(&mut self) {
         self.saved_revision = self.current_revision;
     }
@@ -213,6 +217,14 @@ impl SourceEditor {
 
     pub fn is_dirty(&self) -> bool {
         self.history.is_dirty()
+    }
+
+    pub fn revision(&self) -> u64 {
+        self.history.current_revision()
+    }
+
+    pub fn mark_saved(&mut self) {
+        self.history.mark_saved();
     }
 
     pub fn select_all(&mut self, source: &str) {

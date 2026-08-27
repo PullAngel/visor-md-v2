@@ -17,9 +17,11 @@ mod files;
 mod fonts;
 mod limits;
 mod theme;
+mod vfs;
 
 use std::collections::HashMap;
 use std::num::NonZeroU32;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::thread;
 use std::time::Instant;
@@ -48,10 +50,11 @@ use winit::window::{CursorIcon, Theme, Window, WindowId};
 use editor::SourceEditor;
 use files::{
     DEFAULT_DOCUMENT_LIMIT_BYTES, FileIdentity, LineEndings, TextMetadata, is_markdown_path,
-    open_explicit_primary,
+    open_explicit_primary, save_explicit_primary, save_new_primary,
 };
 use fonts::{FONT_CODE, FONT_DOC, FONT_UI, register_embedded_fonts};
 use limits::{Degradation, MAX_BLOCKS, MAX_INDENT_DEPTH, MAX_NEST, MAX_SAFE_LINE_BYTES};
+use rfd::FileDialog;
 use theme::{DAY, NIGHT, Palette, Role};
 
 const MARGIN: f32 = 48.0;
@@ -64,6 +67,7 @@ const CONTEXT_MENU_PADDING: f32 = 8.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ContextAction {
+    Paste,
     CopyText,
     CopyMarkdown,
 }
@@ -71,6 +75,7 @@ enum ContextAction {
 impl ContextAction {
     fn label(self) -> &'static str {
         match self {
+            Self::Paste => "Pegar",
             Self::CopyText => "Copiar texto",
             Self::CopyMarkdown => "Copiar Markdown original",
         }
@@ -81,19 +86,32 @@ impl ContextAction {
     }
 }
 
-fn context_action_at(menu: (f32, f32), pointer: (f32, f32)) -> Option<ContextAction> {
+fn context_actions(mode: DocumentMode) -> &'static [ContextAction] {
+    match mode {
+        DocumentMode::Reading => &[ContextAction::CopyText, ContextAction::CopyMarkdown],
+        DocumentMode::SourceEditing => &[
+            ContextAction::Paste,
+            ContextAction::CopyText,
+            ContextAction::CopyMarkdown,
+        ],
+    }
+}
+
+fn context_action_at(
+    menu: (f32, f32),
+    pointer: (f32, f32),
+    mode: DocumentMode,
+) -> Option<ContextAction> {
     let (_, top) = menu;
     let (x, y) = pointer;
     if !(menu.0..=menu.0 + CONTEXT_MENU_WIDTH).contains(&x)
-        || !(top..=top + CONTEXT_MENU_ROW_HEIGHT * 2.0).contains(&y)
+        || !(top..=top + CONTEXT_MENU_ROW_HEIGHT * context_actions(mode).len() as f32).contains(&y)
     {
         return None;
     }
-    if y < top + CONTEXT_MENU_ROW_HEIGHT {
-        Some(ContextAction::CopyText)
-    } else {
-        Some(ContextAction::CopyMarkdown)
-    }
+    context_actions(mode)
+        .get(((y - top) / CONTEXT_MENU_ROW_HEIGHT) as usize)
+        .copied()
 }
 
 #[derive(Default)]
@@ -119,15 +137,29 @@ enum AppEvent {
         source: String,
         metadata: TextMetadata,
         identity: FileIdentity,
+        baseline_bytes: Vec<u8>,
         outcome: ParseOutcome,
         elapsed_ms: f64,
     },
     DocumentFailed(String),
     ViewReady {
+        revision: u64,
         outcome: ParseOutcome,
         elapsed_ms: f64,
     },
     ViewFailed(String),
+    SaveReady {
+        revision: u64,
+        identity: FileIdentity,
+        baseline_bytes: Vec<u8>,
+    },
+    SaveFailed(String),
+    SaveAsReady {
+        path: PathBuf,
+        revision: u64,
+        identity: FileIdentity,
+        baseline_bytes: Vec<u8>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1924,6 +1956,9 @@ struct App {
     /// Huella de la versión que llegó por la apertura primaria. La capa de
     /// guardado la comparará antes de reemplazar el destino.
     source_identity: Option<FileIdentity>,
+    /// Bytes de la última versión confirmada en disco. Sirven para detectar
+    /// conflictos incluso si otro programa conserva tamaño y fecha similares.
+    source_baseline_bytes: Option<Vec<u8>>,
     source_editor: SourceEditor,
     mode: DocumentMode,
     proxy: EventLoopProxy<AppEvent>,
@@ -1999,12 +2034,14 @@ impl ApplicationHandler<AppEvent> for App {
                 source,
                 metadata,
                 identity,
+                baseline_bytes,
                 outcome,
                 elapsed_ms,
             } => {
                 self.source = source;
                 self.source_metadata = metadata;
                 self.source_identity = Some(identity);
+                self.source_baseline_bytes = Some(baseline_bytes);
                 self.blocks = outcome.blocks;
                 self.safe_mode = outcome.degradation;
                 self.loading = false;
@@ -2065,9 +2102,15 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
             AppEvent::ViewReady {
+                revision,
                 outcome,
                 elapsed_ms,
             } => {
+                if revision != self.source_editor.revision() {
+                    self.log
+                        .push("[edición] se descartó una vista desactualizada".to_string());
+                    return;
+                }
                 self.blocks = outcome.blocks;
                 self.safe_mode = outcome.degradation;
                 self.loading = false;
@@ -2088,6 +2131,46 @@ impl ApplicationHandler<AppEvent> for App {
                 self.loading = false;
                 self.log.push(format!("[error] {error}"));
                 self.set_notice("no se pudo actualizar la vista; la fuente sigue intacta");
+            }
+            AppEvent::SaveReady {
+                revision,
+                identity,
+                baseline_bytes,
+            } => {
+                if revision == self.source_editor.revision() {
+                    self.source_identity = Some(identity);
+                    self.source_baseline_bytes = Some(baseline_bytes);
+                    self.source_editor.mark_saved();
+                    self.set_notice("documento guardado de forma atómica");
+                } else {
+                    // El archivo sí llegó a disco, pero la persona siguió
+                    // escribiendo durante el guardado. La nueva edición queda
+                    // marcada como pendiente y usa la versión guardada como
+                    // próximo baseline para no perder su conflicto.
+                    self.source_identity = Some(identity);
+                    self.source_baseline_bytes = Some(baseline_bytes);
+                    self.set_notice("se guardó una versión anterior; hay cambios nuevos");
+                }
+            }
+            AppEvent::SaveFailed(error) => {
+                self.log.push(format!("[error] {error}"));
+                self.set_notice(&error);
+            }
+            AppEvent::SaveAsReady {
+                path,
+                revision,
+                identity,
+                baseline_bytes,
+            } => {
+                self.path = path.to_string_lossy().into_owned();
+                self.source_identity = Some(identity);
+                self.source_baseline_bytes = Some(baseline_bytes);
+                if revision == self.source_editor.revision() {
+                    self.source_editor.mark_saved();
+                    self.set_notice("documento creado y guardado de forma atómica");
+                } else {
+                    self.set_notice("se creó una versión anterior; hay cambios nuevos");
+                }
             }
         }
     }
@@ -2260,9 +2343,14 @@ impl ApplicationHandler<AppEvent> for App {
                     if let Some(menu) = self.context_menu.take() {
                         if let Some(action) = self
                             .pointer
-                            .and_then(|pointer| context_action_at(menu, pointer))
+                            .and_then(|pointer| context_action_at(menu, pointer, self.mode))
                         {
-                            self.copy_selection(action.source_markdown());
+                            match action {
+                                ContextAction::Paste => self.paste_into_source(),
+                                ContextAction::CopyText | ContextAction::CopyMarkdown => {
+                                    self.copy_selection(action.source_markdown());
+                                }
+                            }
                         }
                         if let Some(w) = &self.window {
                             w.request_redraw();
@@ -2298,7 +2386,7 @@ impl ApplicationHandler<AppEvent> for App {
                     .selection
                     .and_then(|selection| selection.rendered_text(&self.blocks))
                     .is_some();
-                if !has_selection {
+                if !has_selection && self.mode != DocumentMode::SourceEditing {
                     self.set_notice("selecciona texto para copiar");
                     return;
                 }
@@ -2309,7 +2397,12 @@ impl ApplicationHandler<AppEvent> for App {
                     let size = window.inner_size();
                     (
                         x.min((size.width as f32 - CONTEXT_MENU_WIDTH).max(0.0)),
-                        y.min((size.height as f32 - CONTEXT_MENU_ROW_HEIGHT * 2.0).max(0.0)),
+                        y.min(
+                            (size.height as f32
+                                - CONTEXT_MENU_ROW_HEIGHT
+                                    * context_actions(self.mode).len() as f32)
+                                .max(0.0),
+                        ),
                     )
                 } else {
                     (x, y)
@@ -2327,6 +2420,42 @@ impl ApplicationHandler<AppEvent> for App {
                 if self.mode == DocumentMode::SourceEditing =>
             {
                 self.handle_source_key(&event);
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::KeyN),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } if self.modifiers.control_key() => {
+                self.create_new_document();
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::KeyS),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } if self.modifiers.control_key() && self.modifiers.shift_key() => {
+                self.save_as_current_document();
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::KeyS),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } if self.modifiers.control_key() => {
+                self.save_current_document();
             }
             WindowEvent::KeyboardInput {
                 event:
@@ -2658,11 +2787,13 @@ impl App {
                 self.loading = true;
                 self.set_notice("actualizando vista de lectura");
                 let source = self.source.clone();
+                let revision = self.source_editor.revision();
                 let proxy = self.proxy.clone();
                 thread::spawn(move || {
                     let started = Instant::now();
                     let event = match parse_blocks(&source) {
                         Ok(outcome) => AppEvent::ViewReady {
+                            revision,
                             outcome,
                             elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
                         },
@@ -2726,6 +2857,20 @@ impl App {
             PhysicalKey::Code(KeyCode::KeyC) if self.modifiers.control_key() => {
                 self.copy_selection(false);
             }
+            PhysicalKey::Code(KeyCode::KeyV) if self.modifiers.control_key() => {
+                self.paste_into_source();
+            }
+            PhysicalKey::Code(KeyCode::KeyS)
+                if self.modifiers.control_key() && self.modifiers.shift_key() =>
+            {
+                self.save_as_current_document();
+            }
+            PhysicalKey::Code(KeyCode::KeyS) if self.modifiers.control_key() => {
+                self.save_current_document();
+            }
+            PhysicalKey::Code(KeyCode::KeyN) if self.modifiers.control_key() => {
+                self.create_new_document();
+            }
             PhysicalKey::Code(KeyCode::KeyZ) if self.modifiers.control_key() => {
                 self.edit_source(|editor, source| editor.undo(source));
             }
@@ -2743,6 +2888,117 @@ impl App {
             if let Some(window) = &self.window {
                 window.request_redraw();
             }
+        }
+    }
+
+    fn paste_into_source(&mut self) {
+        let clipboard = match self.clipboard.as_mut() {
+            Some(clipboard) => clipboard,
+            None => match Clipboard::new() {
+                Ok(clipboard) => self.clipboard.insert(clipboard),
+                Err(error) => {
+                    self.log.push(format!(
+                        "[portapapeles] no se pudo iniciar para pegar: {error}"
+                    ));
+                    self.set_notice("no se pudo acceder al portapapeles");
+                    return;
+                }
+            },
+        };
+        match clipboard.get_text() {
+            Ok(text) => self.edit_source(|editor, source| editor.insert(source, &text)),
+            Err(error) => {
+                self.log
+                    .push(format!("[portapapeles] no se pudo pegar texto: {error}"));
+                self.set_notice("el portapapeles no contiene texto utilizable");
+            }
+        }
+    }
+
+    fn save_current_document(&mut self) {
+        if !self.source_editor.is_dirty() {
+            self.set_notice("no hay cambios para guardar");
+            return;
+        }
+        let (Some(identity), Some(baseline_bytes)) = (
+            self.source_identity.clone(),
+            self.source_baseline_bytes.clone(),
+        ) else {
+            self.set_notice("este documento todavía no tiene un destino para guardar");
+            return;
+        };
+        let path = self.path.clone();
+        let source = self.source.clone();
+        let metadata = self.source_metadata;
+        let revision = self.source_editor.revision();
+        let proxy = self.proxy.clone();
+        self.set_notice("guardando de forma atómica");
+        thread::spawn(move || {
+            let event =
+                match save_explicit_primary(&path, &source, metadata, &identity, &baseline_bytes) {
+                    Ok(saved) => AppEvent::SaveReady {
+                        revision,
+                        identity: saved.identity,
+                        baseline_bytes: saved.baseline_bytes,
+                    },
+                    Err(error) => AppEvent::SaveFailed(format!("no se pudo guardar: {error}")),
+                };
+            let _ = proxy.send_event(event);
+        });
+    }
+
+    fn save_as_current_document(&mut self) {
+        let Some(path) = FileDialog::new()
+            .add_filter("Markdown", &["md", "markdown"])
+            .set_file_name("nota.md")
+            .save_file()
+        else {
+            self.set_notice("guardar como cancelado");
+            return;
+        };
+        let source = self.source.clone();
+        let metadata = self.source_metadata;
+        let revision = self.source_editor.revision();
+        let proxy = self.proxy.clone();
+        self.set_notice("creando documento de forma atómica");
+        thread::spawn(move || {
+            let event = match save_new_primary(&path, &source, metadata) {
+                Ok(saved) => AppEvent::SaveAsReady {
+                    path,
+                    revision,
+                    identity: saved.identity,
+                    baseline_bytes: saved.baseline_bytes,
+                },
+                Err(error) => AppEvent::SaveFailed(format!(
+                    "no se pudo guardar como: {error}. El destino existente no se modificó"
+                )),
+            };
+            let _ = proxy.send_event(event);
+        });
+    }
+
+    fn create_new_document(&mut self) {
+        if self.source_editor.is_dirty() {
+            self.set_notice("guarda o descarta los cambios antes de crear otro documento");
+            return;
+        }
+        self.path = "sin título.md".to_string();
+        self.source.clear();
+        self.source_metadata = TextMetadata::default();
+        self.source_identity = None;
+        self.source_baseline_bytes = None;
+        self.source_editor = SourceEditor::new();
+        self.mode = DocumentMode::SourceEditing;
+        self.blocks.clear();
+        self.slots.clear();
+        self.live.clear();
+        self.doc_height = 0.0;
+        self.laid_for_width = -1.0;
+        self.selection = None;
+        self.set_notice("documento nuevo · Ctrl+Shift+S para elegir destino");
+        if let Some(window) = &self.window {
+            window.set_cursor(CursorIcon::Text);
+            window.request_redraw();
         }
     }
 
@@ -3226,20 +3482,17 @@ impl App {
             )
         });
         let menu_layouts = menu.map(|_| {
-            [
-                build_menu_layout(
-                    ContextAction::CopyText.label(),
-                    &mut self.font_cx,
-                    &mut self.layout_cx,
-                    self.palette,
-                ),
-                build_menu_layout(
-                    ContextAction::CopyMarkdown.label(),
-                    &mut self.font_cx,
-                    &mut self.layout_cx,
-                    self.palette,
-                ),
-            ]
+            context_actions(self.mode)
+                .iter()
+                .map(|action| {
+                    build_menu_layout(
+                        action.label(),
+                        &mut self.font_cx,
+                        &mut self.layout_cx,
+                        self.palette,
+                    )
+                })
+                .collect::<Vec<_>>()
         });
 
         // El pixmap se reusa entre cuadros: reservar 2,7 MB por cuadro y
@@ -3467,17 +3720,21 @@ impl App {
         }
 
         if let (Some((x, y)), Some(layouts)) = (menu, menu_layouts) {
-            if let Some(rect) =
-                Rect::from_xywh(x, y, CONTEXT_MENU_WIDTH, CONTEXT_MENU_ROW_HEIGHT * 2.0)
-            {
+            if let Some(rect) = Rect::from_xywh(
+                x,
+                y,
+                CONTEXT_MENU_WIDTH,
+                CONTEXT_MENU_ROW_HEIGHT * context_actions(self.mode).len() as f32,
+            ) {
                 pixmap.fill_rect(rect, &paint, Transform::identity(), None);
             }
-            for (row, (action, layout)) in [ContextAction::CopyText, ContextAction::CopyMarkdown]
-                .into_iter()
+            for (row, (action, layout)) in context_actions(self.mode)
+                .iter()
+                .copied()
                 .zip(layouts.iter())
                 .enumerate()
             {
-                if menu_pointer.and_then(|pointer| context_action_at((x, y), pointer))
+                if menu_pointer.and_then(|pointer| context_action_at((x, y), pointer, self.mode))
                     == Some(action)
                 {
                     let ac = palette.accent;
@@ -3586,10 +3843,7 @@ fn main() {
         )
     });
     let exact_measure = args.iter().any(|a| a == "--exacto");
-    let Some(path) = args.iter().find(|a| !a.starts_with("--")).cloned() else {
-        eprintln!("uso: visor-md <archivo.md> [--bench[=N]] [--exacto]");
-        std::process::exit(2);
-    };
+    let opening_path = args.iter().find(|a| !a.starts_with("--")).cloned();
 
     let t = Instant::now();
     let event_loop = match EventLoop::<AppEvent>::with_user_event().build() {
@@ -3622,12 +3876,19 @@ fn main() {
 
     let mut app = App {
         started,
-        path,
+        path: opening_path
+            .clone()
+            .unwrap_or_else(|| "sin título.md".to_string()),
         source: String::new(),
         source_metadata: TextMetadata::default(),
         source_identity: None,
+        source_baseline_bytes: None,
         source_editor: SourceEditor::new(),
-        mode: DocumentMode::Reading,
+        mode: if opening_path.is_some() {
+            DocumentMode::Reading
+        } else {
+            DocumentMode::SourceEditing
+        },
         proxy: proxy.clone(),
         blocks: Vec::new(),
         window: None,
@@ -3651,7 +3912,7 @@ fn main() {
         log,
         palette: NIGHT,
         safe_mode: None,
-        loading: true,
+        loading: opening_path.is_some(),
         pointer: None,
         selecting: false,
         selection: None,
@@ -3662,40 +3923,46 @@ fn main() {
         focus_destination: None,
         context_menu: None,
         clipboard: None,
-        notice: Some("cargando documento".to_string()),
+        notice: Some(if opening_path.is_some() {
+            "cargando documento".to_string()
+        } else {
+            "documento nuevo · Ctrl+Shift+S para elegir destino".to_string()
+        }),
         fatal_error: false,
     };
 
-    let worker_path = app.path.clone();
-    thread::spawn(move || {
-        let started = Instant::now();
-        let event = match open_explicit_primary(&worker_path, DEFAULT_DOCUMENT_LIMIT_BYTES) {
-            Ok(opened) => match if is_markdown_path(std::path::Path::new(&worker_path)) {
-                parse_blocks(&opened.source)
-            } else {
-                let source_index = SourceIndex::new(&opened.source);
-                safe_source_blocks(&opened.source, &source_index).map(|blocks| ParseOutcome {
-                    blocks,
-                    degradation: Some(Degradation::TextOnly),
-                })
-            } {
-                Ok(outcome) => AppEvent::DocumentReady {
-                    source: opened.source,
-                    metadata: opened.metadata,
-                    identity: opened.identity,
-                    outcome,
-                    elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
+    if let Some(worker_path) = opening_path {
+        thread::spawn(move || {
+            let started = Instant::now();
+            let event = match open_explicit_primary(&worker_path, DEFAULT_DOCUMENT_LIMIT_BYTES) {
+                Ok(opened) => match if is_markdown_path(std::path::Path::new(&worker_path)) {
+                    parse_blocks(&opened.source)
+                } else {
+                    let source_index = SourceIndex::new(&opened.source);
+                    safe_source_blocks(&opened.source, &source_index).map(|blocks| ParseOutcome {
+                        blocks,
+                        degradation: Some(Degradation::TextOnly),
+                    })
+                } {
+                    Ok(outcome) => AppEvent::DocumentReady {
+                        source: opened.source,
+                        metadata: opened.metadata,
+                        identity: opened.identity,
+                        baseline_bytes: opened.baseline_bytes,
+                        outcome,
+                        elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
+                    },
+                    Err(error) => AppEvent::DocumentFailed(format!(
+                        "el documento no se pudo preparar de forma segura: {error}"
+                    )),
                 },
-                Err(error) => AppEvent::DocumentFailed(format!(
-                    "el documento no se pudo preparar de forma segura: {error}"
-                )),
-            },
-            Err(error) => {
-                AppEvent::DocumentFailed(format!("no se pudo leer {worker_path}: {error}"))
-            }
-        };
-        let _ = proxy.send_event(event);
-    });
+                Err(error) => {
+                    AppEvent::DocumentFailed(format!("no se pudo leer {worker_path}: {error}"))
+                }
+            };
+            let _ = proxy.send_event(event);
+        });
+    }
 
     if let Err(error) = event_loop.run_app(&mut app) {
         eprintln!("la interfaz termino con un error: {error}");
@@ -3861,17 +4128,24 @@ mod pruebas {
     }
 
     #[test]
-    fn el_menu_contextual_limita_sus_acciones_a_copia_local() {
+    fn el_menu_contextual_solo_habilita_pegado_en_el_editor() {
         let menu = (100.0, 200.0);
         assert_eq!(
-            context_action_at(menu, (110.0, 210.0)),
+            context_action_at(menu, (110.0, 210.0), DocumentMode::Reading),
             Some(ContextAction::CopyText)
         );
         assert_eq!(
-            context_action_at(menu, (110.0, 250.0)),
+            context_action_at(menu, (110.0, 250.0), DocumentMode::Reading),
             Some(ContextAction::CopyMarkdown)
         );
-        assert_eq!(context_action_at(menu, (50.0, 210.0)), None);
+        assert_eq!(
+            context_action_at(menu, (110.0, 210.0), DocumentMode::SourceEditing),
+            Some(ContextAction::Paste)
+        );
+        assert_eq!(
+            context_action_at(menu, (50.0, 210.0), DocumentMode::SourceEditing),
+            None
+        );
         assert!(!ContextAction::CopyText.source_markdown());
         assert!(ContextAction::CopyMarkdown.source_markdown());
     }

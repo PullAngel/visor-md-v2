@@ -4,9 +4,10 @@
 //! bytes. Recursos secundarios seguirán una política más estricta cuando haya
 //! navegación de enlaces, imágenes o bóvedas.
 
+use atomicwrites::{AllowOverwrite, AtomicFile, DisallowOverwrite};
 use std::fmt;
-use std::fs::File;
-use std::io::Read;
+use std::fs::{self, File};
+use std::io::{Read, Write};
 use std::path::Path;
 use std::time::SystemTime;
 
@@ -52,7 +53,6 @@ impl FileIdentity {
         }
     }
 
-    #[cfg(test)]
     fn still_matches(&self, path: impl AsRef<Path>) -> Result<bool, std::io::Error> {
         let metadata = std::fs::metadata(path)?;
         Ok(self == &Self::from_metadata(&metadata))
@@ -101,11 +101,10 @@ impl TextMetadata {
         }
     }
 
-    /// La futura capa de guardado reconstruirá estos bytes después de aplicar
-    /// parches. Por ahora se mantiene en pruebas para fijar el contrato sin
-    /// introducir todavía una API de escritura a producción.
-    #[cfg(test)]
-    fn encode(self, source: &str) -> Vec<u8> {
+    /// Reconstruye exactamente la codificación UTF-8 que Visor MD admite.
+    /// Los EOL pertenecen a `source`: el editor inserta el estilo observado,
+    /// pero no normaliza las líneas ya existentes ni las mixtas.
+    pub(crate) fn encode(self, source: &str) -> Vec<u8> {
         let prefix: &[u8] = if self.has_utf8_bom {
             &[0xef, 0xbb, 0xbf]
         } else {
@@ -123,6 +122,18 @@ pub(crate) struct OpenedText {
     pub(crate) source: String,
     pub(crate) metadata: TextMetadata,
     pub(crate) identity: FileIdentity,
+    /// Bytes exactos que se leyeron del archivo. Se conservan solo hasta el
+    /// siguiente guardado para detectar una edición externa antes de reemplazar
+    /// el destino; no se escriben como sidecar ni se envían a ningún servicio.
+    pub(crate) baseline_bytes: Vec<u8>,
+}
+
+/// Resultado de una escritura explícita. El llamador reemplaza su baseline
+/// recién después de recibir este valor, nunca al iniciar Guardar.
+#[derive(Debug)]
+pub(crate) struct SavedText {
+    pub(crate) identity: FileIdentity,
+    pub(crate) baseline_bytes: Vec<u8>,
 }
 
 #[derive(Debug)]
@@ -137,6 +148,27 @@ pub(crate) enum FileOpenError {
         limit: u64,
     },
     InvalidUtf8,
+}
+
+#[derive(Debug)]
+pub(crate) enum FileSaveError {
+    Conflict,
+    NotAFile,
+    Io {
+        operation: &'static str,
+        source: std::io::Error,
+    },
+}
+
+impl fmt::Display for FileSaveError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Conflict => formatter
+                .write_str("el archivo cambió fuera de Visor MD; no se sobrescribió ningún dato"),
+            Self::NotAFile => formatter.write_str("el destino no es un archivo normal"),
+            Self::Io { operation, source } => write!(formatter, "{operation}: {source}"),
+        }
+    }
 }
 
 impl fmt::Display for FileOpenError {
@@ -188,7 +220,7 @@ pub(crate) fn open_explicit_primary(
     let mut bytes = Vec::with_capacity(capacity);
     // Un archivo puede crecer después de leer sus metadatos. Se lee como máximo
     // un byte adicional para comprobar el límite sin reservar de forma abierta.
-    file.by_ref()
+    Read::by_ref(&mut file)
         .take(limit.saturating_add(1))
         .read_to_end(&mut bytes)
         .map_err(|source| FileOpenError::Io {
@@ -211,6 +243,91 @@ pub(crate) fn open_explicit_primary(
         source,
         metadata,
         identity,
+        baseline_bytes: bytes,
+    })
+}
+
+/// Guarda una fuente UTF-8 con un reemplazo atómico en el mismo filesystem.
+///
+/// Antes de escribir compara los bytes actuales con la versión que se abrió o
+/// guardó por última vez. Esta comparación completa complementa la huella de
+/// metadatos, que por sí sola puede no detectar dos cambios de igual tamaño y
+/// fecha. Ante cualquier diferencia no se toca el destino.
+pub(crate) fn save_explicit_primary(
+    path: impl AsRef<Path>,
+    source: &str,
+    metadata: TextMetadata,
+    expected_identity: &FileIdentity,
+    baseline_bytes: &[u8],
+) -> Result<SavedText, FileSaveError> {
+    let path = path.as_ref();
+    let existing_metadata = fs::metadata(path).map_err(|source| FileSaveError::Io {
+        operation: "no se pudo consultar el destino antes de guardar",
+        source,
+    })?;
+    if !existing_metadata.is_file() {
+        return Err(FileSaveError::NotAFile);
+    }
+    let current_identity = FileIdentity::from_metadata(&existing_metadata);
+    let current_bytes = fs::read(path).map_err(|source| FileSaveError::Io {
+        operation: "no se pudo comprobar el contenido actual antes de guardar",
+        source,
+    })?;
+    if &current_identity != expected_identity || current_bytes != baseline_bytes {
+        return Err(FileSaveError::Conflict);
+    }
+
+    let output = metadata.encode(source);
+    let atomic = AtomicFile::new(path, AllowOverwrite);
+    atomic
+        .write(|file| {
+            file.write_all(&output)?;
+            file.sync_all()
+        })
+        .map_err(|error| FileSaveError::Io {
+            operation: "no se pudo reemplazar el archivo de forma atómica",
+            source: error.into(),
+        })?;
+
+    let saved_metadata = fs::metadata(path).map_err(|source| FileSaveError::Io {
+        operation: "el archivo se guardó pero no se pudo volver a identificar",
+        source,
+    })?;
+    Ok(SavedText {
+        identity: FileIdentity::from_metadata(&saved_metadata),
+        baseline_bytes: output,
+    })
+}
+
+/// Crea un documento en una ruta que la persona eligió explícitamente. No
+/// reemplaza un archivo existente: Guardar como no puede convertirse en una
+/// vía silenciosa para destruir un destino que todavía no fue abierto.
+pub(crate) fn save_new_primary(
+    path: impl AsRef<Path>,
+    source: &str,
+    metadata: TextMetadata,
+) -> Result<SavedText, FileSaveError> {
+    let path = path.as_ref();
+    if fs::symlink_metadata(path).is_ok() {
+        return Err(FileSaveError::Conflict);
+    }
+    let output = metadata.encode(source);
+    AtomicFile::new(path, DisallowOverwrite)
+        .write(|file| {
+            file.write_all(&output)?;
+            file.sync_all()
+        })
+        .map_err(|error| FileSaveError::Io {
+            operation: "no se pudo crear el archivo de forma atómica",
+            source: error.into(),
+        })?;
+    let saved_metadata = fs::metadata(path).map_err(|source| FileSaveError::Io {
+        operation: "el archivo se creó pero no se pudo volver a identificar",
+        source,
+    })?;
+    Ok(SavedText {
+        identity: FileIdentity::from_metadata(&saved_metadata),
+        baseline_bytes: output,
     })
 }
 
@@ -298,5 +415,52 @@ mod tests {
         fs::write(&path, b"uno cambiado").expect("la fixture se puede modificar");
 
         assert!(!opened.identity.still_matches(&path).unwrap());
+    }
+
+    #[test]
+    fn guardar_preserva_bom_crlf_y_actualiza_la_version_base() {
+        let path = temporary_file("save-bom-crlf", b"\xef\xbb\xbfuno\r\ndos\r\n");
+        let opened = open_explicit_primary(&path, 128).expect("la fixture es válida");
+        let saved = save_explicit_primary(
+            &path,
+            "uno\r\ntres\r\n",
+            opened.metadata,
+            &opened.identity,
+            &opened.baseline_bytes,
+        )
+        .expect("el guardado atómico funciona");
+
+        assert_eq!(fs::read(&path).unwrap(), b"\xef\xbb\xbfuno\r\ntres\r\n");
+        assert_eq!(saved.baseline_bytes, b"\xef\xbb\xbfuno\r\ntres\r\n");
+        assert!(saved.identity.still_matches(&path).unwrap());
+    }
+
+    #[test]
+    fn un_cambio_externo_no_se_sobrescribe_aunque_mantenga_el_tamano() {
+        let path = temporary_file("save-conflict", b"uno");
+        let opened = open_explicit_primary(&path, 64).expect("la fixture es válida");
+        fs::write(&path, b"dos").expect("la fixture se puede modificar");
+
+        assert!(matches!(
+            save_explicit_primary(
+                &path,
+                "tres",
+                opened.metadata,
+                &opened.identity,
+                &opened.baseline_bytes,
+            ),
+            Err(FileSaveError::Conflict)
+        ));
+        assert_eq!(fs::read(&path).unwrap(), b"dos");
+    }
+
+    #[test]
+    fn guardar_como_crea_un_destino_nuevo_sin_reemplazar_existentes() {
+        let path = temporary_file("save-new", b"existente");
+        assert!(matches!(
+            save_new_primary(&path, "nuevo", TextMetadata::default()),
+            Err(FileSaveError::Conflict)
+        ));
+        assert_eq!(fs::read(&path).unwrap(), b"existente");
     }
 }
