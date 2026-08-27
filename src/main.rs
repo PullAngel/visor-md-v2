@@ -4015,6 +4015,32 @@ con dos lineas
         assert!(visible.contains("concepto clave"));
         assert!(visible.contains("<script"));
     }
+
+    #[test]
+    fn unicode_general_llega_al_layout_con_fallback() {
+        let source = "العربية हिन्दी 日本語 한국어 🔒";
+        let outcome = parse_blocks(source).expect("Unicode debe parsearse");
+        assert_eq!(outcome.blocks[0].text, source);
+        let mut font_cx = FontContext::new();
+        register_embedded_fonts(&mut font_cx);
+        let mut layout_cx = LayoutContext::new();
+        let layout = build_layout(
+            &outcome.blocks[0],
+            &mut font_cx,
+            &mut layout_cx,
+            480.0,
+            NIGHT,
+        );
+        let glyph_runs = layout
+            .lines()
+            .flat_map(|line| line.items())
+            .filter(|entry| matches!(entry, PositionedLayoutItem::GlyphRun(_)))
+            .count();
+        assert!(
+            glyph_runs > 0,
+            "Unicode no produjo ninguna corrida de glifos"
+        );
+    }
 }
 
 // -------------------------------------------- pruebas del formato inline

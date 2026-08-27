@@ -51,3 +51,8 @@ salto forzado\
 otra línea
 
 <https://example.com?find=\*>
+
+## Unicode y fallback
+
+Español: información y ciberseguridad. العربية: مرحبا بالعالم. हिन्दी: नमस्ते दुनिया.
+日本語: 読書とメモ. 한국어: 읽기와 메모. Emoji: 🔒 📚 ✅.

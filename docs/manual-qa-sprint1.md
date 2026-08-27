@@ -26,8 +26,9 @@ Registrar antes de comenzar:
   altura de línea.
 - `kbd`, `mark`, subíndice y superíndice se distinguen sin desplazar ni tapar
   el texto vecino; una etiqueta HTML con atributo se ve como fuente inerte.
-- Los caracteres no latinos y emoji no desaparecen ni se convierten en cuadros
-  vacíos.
+- Los caracteres árabes, devanagari, japoneses, coreanos y emoji no desaparecen
+  ni se convierten en cuadros vacíos; registrar fuente fallback visible y si la
+  dirección de escritura árabe conserva un orden legible.
 - Las líneas largas ajustan sin cortar glifos ni salir del margen.
 - La tabla conserva columnas comprensibles y no oculta contenido.
 

@@ -22,7 +22,7 @@ Estados permitidos:
 | Línea extensa | Adversarial | Verificado | Pendiente | Más de 16 KiB degrada a tramos UTF-8 inertes y reconstruibles |
 | Barrido adversarial reproducible | Property y adversarial | Verificado | Pendiente | 128 combinaciones deterministas sin `panic`; no sustituye fuzzing formal |
 | Fallback a fuente segura | Modelo y end to end | Parcial | Pendiente | Fuente completa y título de aviso verificados; falta QA visual |
-| Unicode y fallback | Corpus y manual | Pendiente | Pendiente | Fuentes latinas parciales |
+| Unicode y fallback | Corpus, layout y manual | Parcial | Pendiente | Corpus árabe, devanagari, japonés, coreano y emoji llega a layout; fuentes embebidas siguen siendo latinas y falta QA visual |
 
 ## Archivos y edición
 
