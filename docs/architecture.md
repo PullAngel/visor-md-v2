@@ -256,6 +256,12 @@ Es una operación separada y auditable:
 No hay autoguardado por defecto. La recuperación de sesión usa almacenamiento
 separado y nunca se presenta como guardado definitivo.
 
+La recuperación local actual escribe snapshots limitados de una sesión activa
+en el perfil del usuario, fuera de documentos y bóvedas. La restauración es una
+acción explícita que crea un documento sin destino y marcado como modificado.
+Falta configuración persistente, limpieza de recuperaciones antiguas y QA de
+cierre inesperado.
+
 ### Chrome y comandos
 
 Ventana, pestañas, menús, paneles y paleta de comandos consumen un catálogo de

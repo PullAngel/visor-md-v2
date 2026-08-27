@@ -76,6 +76,12 @@ impl EditHistory {
         self.saved_revision = self.current_revision;
     }
 
+    pub fn mark_recovered(&mut self) {
+        self.current_revision = self.next_revision;
+        self.next_revision = self.next_revision.saturating_add(1);
+        self.saved_revision = 0;
+    }
+
     pub fn can_undo(&self) -> bool {
         !self.undo.is_empty()
     }
@@ -225,6 +231,10 @@ impl SourceEditor {
 
     pub fn mark_saved(&mut self) {
         self.history.mark_saved();
+    }
+
+    pub fn mark_recovered(&mut self) {
+        self.history.mark_recovered();
     }
 
     pub fn select_all(&mut self, source: &str) {

@@ -302,7 +302,7 @@ Controles:
 - identidad y revisión;
 - estado sucio visible;
 - diálogo de conflicto;
-- backup o recuperación separado cuando corresponda;
+- recuperación local temporal, separada del documento y eliminada tras guardar;
 - tests con fallos simulados.
 
 No hay autoguardado por defecto.
@@ -313,6 +313,13 @@ ediciones externas que una fecha de modificación o un tamaño iguales podrían
 ocultar. La comprobación reduce el riesgo TOCTOU, pero no elimina una carrera
 del filesystem entre esa lectura y el reemplazo; la identidad específica de
 handle y los tests por plataforma siguen siendo trabajo pendiente.
+
+La recuperación de sesión actual escribe texto UTF-8 sin cifrar en el perfil
+local de la persona, nunca dentro de la bóveda ni junto al documento. Se crea
+con una cadencia limitada durante la edición, se borra después de guardar y solo
+se abre mediante una acción explícita como documento sin destino. Es una defensa
+contra cierres inesperados, no un backup ni una garantía de durabilidad; la UI
+debe explicarlo y permitir desactivarla cuando exista configuración persistente.
 
 El historial de edición conserva solo los fragmentos retirados e insertados y
 tiene un presupuesto de 4 MiB por documento. Si se llena, se descartan pasos de

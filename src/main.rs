@@ -16,6 +16,7 @@ pub mod editor;
 mod files;
 mod fonts;
 mod limits;
+mod recovery;
 mod theme;
 mod vfs;
 mod workspace;
@@ -55,6 +56,7 @@ use files::{
 };
 use fonts::{FONT_CODE, FONT_DOC, FONT_UI, register_embedded_fonts};
 use limits::{Degradation, MAX_BLOCKS, MAX_INDENT_DEPTH, MAX_NEST, MAX_SAFE_LINE_BYTES};
+use recovery::RecoverySession;
 use rfd::FileDialog;
 use theme::{DAY, NIGHT, Palette, Role};
 use vfs::WorkspaceRoot;
@@ -1969,6 +1971,8 @@ struct App {
     /// conflictos incluso si otro programa conserva tamaño y fecha similares.
     source_baseline_bytes: Option<Vec<u8>>,
     source_editor: SourceEditor,
+    recovery: Option<RecoverySession>,
+    last_recovery: Instant,
     workspace: Option<(WorkspaceRoot, WorkspaceIndex)>,
     mode: DocumentMode,
     proxy: EventLoopProxy<AppEvent>,
@@ -2155,6 +2159,9 @@ impl ApplicationHandler<AppEvent> for App {
                     self.source_identity = Some(identity);
                     self.source_baseline_bytes = Some(baseline_bytes);
                     self.source_editor.mark_saved();
+                    if let Some(recovery) = &self.recovery {
+                        let _ = recovery.clear();
+                    }
                     self.set_notice("documento guardado de forma atómica");
                 } else {
                     // El archivo sí llegó a disco, pero la persona siguió
@@ -2181,6 +2188,9 @@ impl ApplicationHandler<AppEvent> for App {
                 self.source_baseline_bytes = Some(baseline_bytes);
                 if revision == self.source_editor.revision() {
                     self.source_editor.mark_saved();
+                    if let Some(recovery) = &self.recovery {
+                        let _ = recovery.clear();
+                    }
                     self.set_notice("documento creado y guardado de forma atómica");
                 } else {
                     self.set_notice("se creó una versión anterior; hay cambios nuevos");
@@ -2448,6 +2458,18 @@ impl ApplicationHandler<AppEvent> for App {
                 if self.mode == DocumentMode::SourceEditing =>
             {
                 self.handle_source_key(&event);
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::KeyR),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } if self.modifiers.control_key() && self.modifiers.shift_key() => {
+                self.restore_latest_recovery();
             }
             WindowEvent::KeyboardInput {
                 event:
@@ -2818,6 +2840,7 @@ impl App {
             Ok(true) => match self.refresh_source_blocks() {
                 Ok(()) => {
                     self.notice = None;
+                    self.schedule_recovery();
                     if let Some(window) = &self.window {
                         window.request_redraw();
                     }
@@ -2827,6 +2850,20 @@ impl App {
             Ok(false) => {}
             Err(error) => self.set_notice(&format!("edición rechazada: {error:?}")),
         }
+    }
+
+    fn schedule_recovery(&mut self) {
+        if self.last_recovery.elapsed().as_secs() < 3 {
+            return;
+        }
+        let Some(recovery) = self.recovery.clone() else {
+            return;
+        };
+        self.last_recovery = Instant::now();
+        let source = self.source.clone();
+        thread::spawn(move || {
+            let _ = recovery.write(&source);
+        });
     }
 
     fn handle_source_key(&mut self, event: &KeyEvent) {
@@ -2929,6 +2966,11 @@ impl App {
                 } else {
                     self.choose_document_to_open();
                 }
+            }
+            PhysicalKey::Code(KeyCode::KeyR)
+                if self.modifiers.control_key() && self.modifiers.shift_key() =>
+            {
+                self.restore_latest_recovery();
             }
             PhysicalKey::Code(KeyCode::KeyZ) if self.modifiers.control_key() => {
                 self.edit_source(|editor, source| editor.undo(source));
@@ -3102,6 +3144,31 @@ impl App {
             };
             let _ = proxy.send_event(event);
         });
+    }
+
+    fn restore_latest_recovery(&mut self) {
+        match RecoverySession::latest_pending(DEFAULT_DOCUMENT_LIMIT_BYTES) {
+            Ok(Some(source)) => {
+                self.path = "recuperación sin guardar.md".to_string();
+                self.source = source;
+                self.source_metadata = TextMetadata::default();
+                self.source_identity = None;
+                self.source_baseline_bytes = None;
+                self.source_editor = SourceEditor::new();
+                self.source_editor.mark_recovered();
+                self.mode = DocumentMode::SourceEditing;
+                if let Err(error) = self.refresh_source_blocks() {
+                    self.set_notice(&format!("no se pudo mostrar la recuperación: {error}"));
+                    return;
+                }
+                self.set_notice("recuperación abierta como documento sin guardar");
+            }
+            Ok(None) => self.set_notice("no hay recuperaciones locales disponibles"),
+            Err(error) => {
+                self.log.push(format!("[recuperación] {error}"));
+                self.set_notice("no se pudo leer la recuperación local");
+            }
+        }
     }
 
     fn open_document_path(&mut self, path: PathBuf) {
@@ -4022,6 +4089,8 @@ fn main() {
         source_identity: None,
         source_baseline_bytes: None,
         source_editor: SourceEditor::new(),
+        recovery: RecoverySession::start().ok(),
+        last_recovery: Instant::now(),
         workspace: None,
         mode: if opening_path.is_some() {
             DocumentMode::Reading
