@@ -96,14 +96,20 @@ impl WorkspaceIndex {
         }
     }
 
-    pub(crate) fn backlinks_to(&self, target: &str) -> Vec<&WorkspaceNote> {
-        let target = normalized_note_key(target);
+    /// Calcula backlinks hacia una nota concreta usando la misma resolución
+    /// conservadora que la navegación. Un wikilink ambiguo no se atribuye a
+    /// ninguna de sus posibles notas.
+    pub(crate) fn backlinks_to(&self, target: &WorkspaceNote) -> Vec<&WorkspaceNote> {
         self.notes
             .iter()
             .filter(|note| {
-                note.wikilinks
-                    .iter()
-                    .any(|link| normalized_note_key(&link.note) == target)
+                note.wikilinks.iter().any(|link| {
+                    matches!(
+                        self.resolve_wikilink(&link.note),
+                        WikiResolution::Found(resolved)
+                            if resolved.relative_path == target.relative_path
+                    )
+                })
             })
             .collect()
     }
@@ -322,7 +328,12 @@ mod tests {
             index.notes[0].wikilinks[0].alias.as_deref(),
             Some("la guía")
         );
-        assert_eq!(index.backlinks_to("seguridad.md").len(), 1);
+        let seguridad = index
+            .notes
+            .iter()
+            .find(|note| note.title == "Seguridad")
+            .expect("la nota se indexó");
+        assert_eq!(index.backlinks_to(seguridad).len(), 1);
         assert_eq!(index.search("modelo").len(), 1);
         assert!(matches!(
             index.resolve_wikilink("seguridad#Modelo"),
@@ -371,5 +382,11 @@ mod tests {
             index.resolve_wikilink("archivo/seguridad"),
             WikiResolution::Found(note) if note.title == "Archivo"
         ));
+        let raiz = index
+            .notes
+            .iter()
+            .find(|note| note.title == "Seguridad")
+            .expect("la nota raíz se indexó");
+        assert!(index.backlinks_to(raiz).is_empty());
     }
 }
