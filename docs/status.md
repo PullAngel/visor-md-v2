@@ -95,7 +95,9 @@ Evidencia actual en Windows:
 - `cargo check`: verde;
 - `cargo fmt -- --check`: verde;
 - `cargo clippy --all-targets -- -D warnings`: verde;
-- `cargo test`: 58 de 58 pruebas verdes tras lector, archivos y texto inerte;
+- `cargo test`: 67 de 67 pruebas verdes tras lector, archivos y texto inerte;
+- `scripts/check.ps1`: verde el 27 de agosto de 2026 tras el cierre parcial de
+  Sprint A (formato, Clippy, 67 pruebas, SBOM, documentación y release);
 - `scripts/check.ps1`: verde el 27 de agosto de 2026;
 - `scripts/check.ps1`: verde el 26 de agosto de 2026 (formato, Clippy, pruebas,
   SBOM, documentación y release);
@@ -110,6 +112,7 @@ Evidencia actual en Windows:
 - working tree con portapapeles de texto: 3.019.264 bytes, 2,879 MiB;
 - working tree con apertura primaria limitada: 3.021.312 bytes, 2,881 MiB;
 - gate lector y archivos: 3.031.040 bytes, 2,891 MiB;
+- gate Sprint A parcial: 3.103.232 bytes, 2,960 MiB;
 - primer pintado mediano sobre diez ejecuciones: 102,5 ms;
 - P95 de primer pintado: 612 ms;
 - scroll automatizado: 4,4 ms por cuadro.
