@@ -2706,6 +2706,20 @@ impl App {
                     self.source_editor
                         .move_line(&self.source, true, self.modifiers.shift_key());
             }
+            PhysicalKey::Code(KeyCode::Home) => {
+                let _ = self.source_editor.move_line_boundary(
+                    &self.source,
+                    false,
+                    self.modifiers.shift_key(),
+                );
+            }
+            PhysicalKey::Code(KeyCode::End) => {
+                let _ = self.source_editor.move_line_boundary(
+                    &self.source,
+                    true,
+                    self.modifiers.shift_key(),
+                );
+            }
             PhysicalKey::Code(KeyCode::KeyZ) if self.modifiers.control_key() => {
                 self.edit_source(|editor, source| editor.undo(source));
             }

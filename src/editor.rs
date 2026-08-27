@@ -323,6 +323,24 @@ impl SourceEditor {
         Ok(())
     }
 
+    pub fn move_line_boundary(
+        &mut self,
+        source: &str,
+        end: bool,
+        extend: bool,
+    ) -> Result<(), EditError> {
+        let target = if end {
+            source[self.cursor..]
+                .find('\n')
+                .map_or(source.len(), |offset| self.cursor + offset)
+        } else {
+            source[..self.cursor]
+                .rfind('\n')
+                .map_or(0, |offset| offset + 1)
+        };
+        self.set_cursor(source, target, extend)
+    }
+
     pub fn undo(&mut self, source: &mut String) -> Result<bool, EditError> {
         let changed = self.history.undo(source)?;
         if changed {
@@ -463,5 +481,16 @@ mod tests {
         assert_eq!(editor.cursor(), "áéí\n文".len());
         editor.move_line(source, true, false).unwrap();
         assert_eq!(editor.cursor(), "áéí\n文\n🔒".len());
+    }
+
+    #[test]
+    fn inicio_y_fin_respetan_crlf_y_seleccion() {
+        let source = "uno\r\ndos\r\n";
+        let mut editor = SourceEditor::new();
+        editor.set_cursor(source, "uno\r\nd".len(), false).unwrap();
+        editor.move_line_boundary(source, false, false).unwrap();
+        assert_eq!(editor.cursor(), "uno\r\n".len());
+        editor.move_line_boundary(source, true, true).unwrap();
+        assert_eq!(editor.selection(), "uno\r\n".len().."uno\r\ndos\r".len());
     }
 }
