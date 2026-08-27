@@ -135,6 +135,7 @@ struct ParseOutcome {
 
 enum AppEvent {
     DocumentReady {
+        path: PathBuf,
         source: String,
         metadata: TextMetadata,
         identity: FileIdentity,
@@ -2032,6 +2033,7 @@ impl ApplicationHandler<AppEvent> for App {
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: AppEvent) {
         match event {
             AppEvent::DocumentReady {
+                path,
                 source,
                 metadata,
                 identity,
@@ -2039,10 +2041,13 @@ impl ApplicationHandler<AppEvent> for App {
                 outcome,
                 elapsed_ms,
             } => {
+                self.path = path.to_string_lossy().into_owned();
                 self.source = source;
                 self.source_metadata = metadata;
                 self.source_identity = Some(identity);
                 self.source_baseline_bytes = Some(baseline_bytes);
+                self.source_editor = SourceEditor::new();
+                self.mode = DocumentMode::Reading;
                 self.blocks = outcome.blocks;
                 self.safe_mode = outcome.degradation;
                 self.loading = false;
@@ -2421,6 +2426,18 @@ impl ApplicationHandler<AppEvent> for App {
                 if self.mode == DocumentMode::SourceEditing =>
             {
                 self.handle_source_key(&event);
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::KeyO),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } if self.modifiers.control_key() => {
+                self.choose_document_to_open();
             }
             WindowEvent::KeyboardInput {
                 event:
@@ -2872,6 +2889,9 @@ impl App {
             PhysicalKey::Code(KeyCode::KeyN) if self.modifiers.control_key() => {
                 self.create_new_document();
             }
+            PhysicalKey::Code(KeyCode::KeyO) if self.modifiers.control_key() => {
+                self.choose_document_to_open();
+            }
             PhysicalKey::Code(KeyCode::KeyZ) if self.modifiers.control_key() => {
                 self.edit_source(|editor, source| editor.undo(source));
             }
@@ -3001,6 +3021,63 @@ impl App {
             window.set_cursor(CursorIcon::Text);
             window.request_redraw();
         }
+    }
+
+    fn choose_document_to_open(&mut self) {
+        if self.source_editor.is_dirty() {
+            self.set_notice("guarda o descarta los cambios antes de abrir otro documento");
+            return;
+        }
+        let Some(path) = FileDialog::new()
+            .add_filter(
+                "Texto y Markdown",
+                &[
+                    "md", "markdown", "txt", "json", "yaml", "yml", "toml", "csv",
+                ],
+            )
+            .set_title("Abrir documento")
+            .pick_file()
+        else {
+            self.set_notice("abrir documento cancelado");
+            return;
+        };
+        self.open_document_path(path);
+    }
+
+    fn open_document_path(&mut self, path: PathBuf) {
+        self.loading = true;
+        self.set_notice("cargando documento");
+        let proxy = self.proxy.clone();
+        thread::spawn(move || {
+            let event = match open_explicit_primary(&path, DEFAULT_DOCUMENT_LIMIT_BYTES) {
+                Ok(opened) => match if is_markdown_path(&path) {
+                    parse_blocks(&opened.source)
+                } else {
+                    let source_index = SourceIndex::new(&opened.source);
+                    safe_source_blocks(&opened.source, &source_index).map(|blocks| ParseOutcome {
+                        blocks,
+                        degradation: Some(Degradation::TextOnly),
+                    })
+                } {
+                    Ok(outcome) => AppEvent::DocumentReady {
+                        path,
+                        source: opened.source,
+                        metadata: opened.metadata,
+                        identity: opened.identity,
+                        baseline_bytes: opened.baseline_bytes,
+                        outcome,
+                        elapsed_ms: 0.0,
+                    },
+                    Err(error) => AppEvent::DocumentFailed(format!(
+                        "el documento no se pudo preparar de forma segura: {error}"
+                    )),
+                },
+                Err(error) => {
+                    AppEvent::DocumentFailed(format!("no se pudo abrir el documento: {error}"))
+                }
+            };
+            let _ = proxy.send_event(event);
+        });
     }
 
     fn source_block_cursor(&self, source_offset: usize) -> Option<BlockCursor> {
@@ -3946,6 +4023,7 @@ fn main() {
                     })
                 } {
                     Ok(outcome) => AppEvent::DocumentReady {
+                        path: PathBuf::from(&worker_path),
                         source: opened.source,
                         metadata: opened.metadata,
                         identity: opened.identity,
