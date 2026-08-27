@@ -26,7 +26,9 @@ escritura no atómica ni por una UI que exponga rutas arbitrarias.
 ### Medición inicial del 27 de agosto de 2026
 
 Con `atomicwrites`, `rfd` y `ropey` resueltos en el lockfile, el build release
-Windows produjo `visor-md.exe` de 3.144.704 bytes (3,00 MiB). `cargo audit`
+Windows produjo inicialmente `visor-md.exe` de 3.144.704 bytes (3,00 MiB). El
+checkpoint posterior de wikilinks y callouts produjo 3.202.048 bytes (3,05 MiB);
+la diferencia proviene de código propio y no de una dependencia nueva. `cargo audit`
 revisó 286 paquetes: cero vulnerabilidades conocidas y la misma advertencia
 permitida `RUSTSEC-2026-0192` de `ttf-parser` transitivo ya explicada abajo.
 Faltan SBOM regenerado, licencias por target y evidencia Linux antes de cerrar

@@ -17,11 +17,28 @@ compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
 | **Límite deseado** | < 8 MB |
 | **Medido en el Sprint 0** | **2,14 MB** |
 | **Checkpoint de recuperación actual** | **3.103.232 bytes, 2,960 MiB** |
+| **Checkpoint de wikilinks y callouts** | **3.202.048 bytes, 3,054 MiB** |
 
 Superar 8 MB exige medición, explicación y aprobación. El límite no se usa para
 recortar seguridad, estabilidad, accesibilidad, Unicode o funciones esenciales.
 Mermaid, correctores y otros componentes pesados no tienen permiso automático
 para ampliar el núcleo.
+
+### Checkpoint de wikilinks y callouts del 27 de agosto de 2026
+
+El commit `79e6828` se compiló en Windows MSVC con el perfil release después de
+agregar navegación de bóveda contenida y callouts nativos. La comprobación fue
+de tamaño; no sustituye una nueva medición de arranque o QA visual.
+
+| Medida | Resultado |
+| --- | --- |
+| Binario Windows | 3.202.048 bytes, 3,054 MiB |
+| SHA-256 | `3C48257A1AD7A58802AA2F5E2561DFE6544A67E4ECE0499B260F249D6950504E` |
+| Margen frente al límite deseado | 4,946 MiB |
+
+El incremento respecto de la medición inicial del editor es 57.344 bytes. No
+agrega dependencias ni capacidades de red: corresponde al modelo, navegación y
+dibujo nativo incorporados en el ejecutable.
 
 ---
 
