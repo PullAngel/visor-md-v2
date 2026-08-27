@@ -264,6 +264,12 @@ está disponible.
 
 ### Workspace e índice
 
+La primera implementación usa un índice regenerable en memoria, sin SQLite ni
+sidecar de contenido. Ya existe un recorrido acotado que canoniza cada entrada,
+omite `.git` y `.obsidian`, descarta escapes y extrae títulos, encabezados y
+wikilinks de Markdown UTF-8 permitido. Todavía falta ejecutarlo de forma
+cancelable desde la UI, mostrar sus resultados y detectar cambios externos.
+
 Indexa incrementalmente una carpeta permitida:
 
 - archivos y metadatos;
@@ -273,9 +279,9 @@ Indexa incrementalmente una carpeta permitida:
 - etiquetas y frontmatter elegidos;
 - términos de búsqueda.
 
-No se decidió todavía persistir con SQLite o un formato propio. La elección debe
-medir tamaño, corrupción, concurrencia y portabilidad. El índice es regenerable y
-nunca la única copia de información del usuario.
+El índice es regenerable y nunca la única copia de información del usuario. No
+se persistirá contenido de bóveda mientras no haya una necesidad medida que
+justifique tamaño, corrupción potencial y nueva superficie de privacidad.
 
 ### Anotaciones
 

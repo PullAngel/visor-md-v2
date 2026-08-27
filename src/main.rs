@@ -18,6 +18,7 @@ mod fonts;
 mod limits;
 mod theme;
 mod vfs;
+mod workspace;
 
 use std::collections::HashMap;
 use std::num::NonZeroU32;

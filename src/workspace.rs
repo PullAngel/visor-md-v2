@@ -1,0 +1,304 @@
+//! Índice regenerable y acotado para una carpeta autorizada.
+//!
+//! No persiste contenido, no modifica la bóveda y no sigue rutas que escapen
+//! de `WorkspaceRoot`. La interfaz podrá ejecutarlo fuera del hilo de ventana
+//! y descartar su resultado al cambiar de workspace.
+
+use crate::files::{DEFAULT_DOCUMENT_LIMIT_BYTES, open_explicit_primary};
+use crate::vfs::WorkspaceRoot;
+use std::collections::HashSet;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+pub(crate) const DEFAULT_MAX_WORKSPACE_FILES: usize = 10_000;
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct WorkspaceLimits {
+    pub(crate) max_files: usize,
+}
+
+impl Default for WorkspaceLimits {
+    fn default() -> Self {
+        Self {
+            max_files: DEFAULT_MAX_WORKSPACE_FILES,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Heading {
+    pub(crate) text: String,
+    pub(crate) level: u8,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct WikiLink {
+    /// Destino de nota sin alias ni ancla.
+    pub(crate) note: String,
+    pub(crate) alias: Option<String>,
+    pub(crate) heading: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct WorkspaceNote {
+    pub(crate) relative_path: PathBuf,
+    pub(crate) title: String,
+    pub(crate) headings: Vec<Heading>,
+    pub(crate) wikilinks: Vec<WikiLink>,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct WorkspaceIndex {
+    pub(crate) notes: Vec<WorkspaceNote>,
+    pub(crate) skipped: usize,
+    pub(crate) truncated: bool,
+}
+
+impl WorkspaceIndex {
+    pub(crate) fn backlinks_to(&self, target: &str) -> Vec<&WorkspaceNote> {
+        let target = normalized_note_key(target);
+        self.notes
+            .iter()
+            .filter(|note| {
+                note.wikilinks
+                    .iter()
+                    .any(|link| normalized_note_key(&link.note) == target)
+            })
+            .collect()
+    }
+
+    pub(crate) fn search(&self, query: &str) -> Vec<&WorkspaceNote> {
+        let query = query.trim().to_lowercase();
+        if query.is_empty() {
+            return Vec::new();
+        }
+        self.notes
+            .iter()
+            .filter(|note| {
+                note.title.to_lowercase().contains(&query)
+                    || note
+                        .relative_path
+                        .to_string_lossy()
+                        .to_lowercase()
+                        .contains(&query)
+                    || note
+                        .headings
+                        .iter()
+                        .any(|heading| heading.text.to_lowercase().contains(&query))
+            })
+            .collect()
+    }
+}
+
+/// Recorre únicamente rutas ya contenidas. `.git` y `.obsidian` son metadatos
+/// de otras herramientas: no se indexan para evitar ruido, secretos de plugin
+/// y un falso efecto de compatibilidad al interpretar sus configuraciones.
+pub(crate) fn index_workspace(root: &WorkspaceRoot, limits: WorkspaceLimits) -> WorkspaceIndex {
+    let mut index = WorkspaceIndex::default();
+    let mut pending = vec![root.root().to_path_buf()];
+    let mut visited_directories = HashSet::new();
+
+    while let Some(directory) = pending.pop() {
+        if !visited_directories.insert(directory.clone()) {
+            continue;
+        }
+        let Ok(entries) = fs::read_dir(&directory) else {
+            index.skipped += 1;
+            continue;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            if name == ".git" || name == ".obsidian" {
+                continue;
+            }
+            let Ok(canonical) = fs::canonicalize(entry.path()) else {
+                index.skipped += 1;
+                continue;
+            };
+            if !canonical.starts_with(root.root()) {
+                index.skipped += 1;
+                continue;
+            }
+            let Ok(file_type) = entry.file_type() else {
+                index.skipped += 1;
+                continue;
+            };
+            if file_type.is_dir() {
+                pending.push(canonical);
+                continue;
+            }
+            if !file_type.is_file() || !is_markdown_path(&canonical) {
+                continue;
+            }
+            if index.notes.len() >= limits.max_files {
+                index.truncated = true;
+                return index;
+            }
+            match open_explicit_primary(&canonical, DEFAULT_DOCUMENT_LIMIT_BYTES) {
+                Ok(opened) => {
+                    let relative_path = canonical
+                        .strip_prefix(root.root())
+                        .expect("la contención se comprobó antes")
+                        .to_path_buf();
+                    index
+                        .notes
+                        .push(note_from_source(relative_path, &opened.source));
+                }
+                Err(_) => index.skipped += 1,
+            }
+        }
+    }
+    index
+        .notes
+        .sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+    index
+}
+
+fn is_markdown_path(path: &Path) -> bool {
+    matches!(
+        path.extension()
+            .and_then(|extension| extension.to_str())
+            .map(str::to_ascii_lowercase)
+            .as_deref(),
+        Some("md" | "markdown" | "mdown" | "mkdn")
+    )
+}
+
+fn note_from_source(relative_path: PathBuf, source: &str) -> WorkspaceNote {
+    let headings = headings_in(source);
+    let title = headings
+        .first()
+        .map(|heading| heading.text.clone())
+        .unwrap_or_else(|| {
+            relative_path
+                .file_stem()
+                .and_then(|name| name.to_str())
+                .unwrap_or("nota")
+                .to_owned()
+        });
+    WorkspaceNote {
+        relative_path,
+        title,
+        headings,
+        wikilinks: wikilinks_in(source),
+    }
+}
+
+fn headings_in(source: &str) -> Vec<Heading> {
+    source
+        .lines()
+        .filter_map(|line| {
+            let trimmed = line.trim_start();
+            let level = trimmed.bytes().take_while(|byte| *byte == b'#').count();
+            (1..=6)
+                .contains(&level)
+                .then_some(())
+                .and_then(|()| trimmed.get(level..))
+                .map(str::trim_start)
+                .filter(|text| !text.is_empty())
+                .map(|text| Heading {
+                    text: text.trim_end_matches('#').trim().to_owned(),
+                    level: level as u8,
+                })
+        })
+        .collect()
+}
+
+fn wikilinks_in(source: &str) -> Vec<WikiLink> {
+    let mut links = Vec::new();
+    let mut rest = source;
+    while let Some(start) = rest.find("[[") {
+        let after_open = &rest[start + 2..];
+        let Some(end) = after_open.find("]]") else {
+            break;
+        };
+        let raw = after_open[..end].trim();
+        if !raw.is_empty() {
+            let (target, alias) = raw.split_once('|').map_or((raw, None), |(target, alias)| {
+                (target.trim(), Some(alias.trim().to_owned()))
+            });
+            let (note, heading) = target
+                .split_once('#')
+                .map_or((target.trim().to_owned(), None), |(note, heading)| {
+                    (note.trim().to_owned(), Some(heading.trim().to_owned()))
+                });
+            if !note.is_empty() {
+                links.push(WikiLink {
+                    note,
+                    alias: alias.filter(|alias| !alias.is_empty()),
+                    heading: heading.filter(|heading| !heading.is_empty()),
+                });
+            }
+        }
+        rest = &after_open[end + 2..];
+    }
+    links
+}
+
+fn normalized_note_key(note: &str) -> String {
+    note.trim()
+        .trim_end_matches(".md")
+        .replace('\\', "/")
+        .to_lowercase()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn fixture_root() -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("el reloj es válido")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("visor-md-workspace-{nonce}"));
+        fs::create_dir_all(root.join("clases")).expect("se crea la fixture");
+        fs::create_dir_all(root.join(".obsidian")).expect("se crea metadato ajeno");
+        fs::write(
+            root.join("clases").join("redes.md"),
+            "# Redes\n\nVer [[seguridad|la guía]] y [[seguridad#Modelo]].",
+        )
+        .expect("se crea la nota");
+        fs::write(root.join("seguridad.md"), "# Seguridad\n## Modelo").expect("se crea la nota");
+        fs::write(root.join(".obsidian").join("plugin.md"), "# No indexar")
+            .expect("se crea configuración");
+        root
+    }
+
+    #[test]
+    fn indexa_notas_y_extrae_titulos_enlaces_y_backlinks() {
+        let root = fixture_root();
+        let vfs = WorkspaceRoot::open(&root).expect("la raíz es válida");
+        let index = index_workspace(&vfs, WorkspaceLimits::default());
+        assert_eq!(index.notes.len(), 2);
+        assert_eq!(index.notes[0].title, "Redes");
+        assert_eq!(index.notes[0].wikilinks.len(), 2);
+        assert_eq!(
+            index.notes[0].wikilinks[0].alias.as_deref(),
+            Some("la guía")
+        );
+        assert_eq!(index.backlinks_to("seguridad.md").len(), 1);
+        assert_eq!(index.search("modelo").len(), 1);
+    }
+
+    #[test]
+    fn respeta_el_limite_y_no_interpreta_configuracion_de_obsidian() {
+        let root = fixture_root();
+        let vfs = WorkspaceRoot::open(&root).expect("la raíz es válida");
+        let index = index_workspace(&vfs, WorkspaceLimits { max_files: 1 });
+        assert_eq!(index.notes.len(), 1);
+        assert!(index.truncated);
+        assert!(
+            index
+                .notes
+                .iter()
+                .all(|note| !note.relative_path.starts_with(".obsidian"))
+        );
+    }
+
+    #[test]
+    fn wikilinks_defectuosos_no_crean_destinos_vacios() {
+        assert_eq!(wikilinks_in("[[ ]] [[abierta"), Vec::<WikiLink>::new());
+    }
+}
