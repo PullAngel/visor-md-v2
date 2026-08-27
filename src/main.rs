@@ -57,6 +57,8 @@ use fonts::{FONT_CODE, FONT_DOC, FONT_UI, register_embedded_fonts};
 use limits::{Degradation, MAX_BLOCKS, MAX_INDENT_DEPTH, MAX_NEST, MAX_SAFE_LINE_BYTES};
 use rfd::FileDialog;
 use theme::{DAY, NIGHT, Palette, Role};
+use vfs::WorkspaceRoot;
+use workspace::{WorkspaceIndex, WorkspaceLimits, index_workspace};
 
 const MARGIN: f32 = 48.0;
 const MAX_MEASURE: f32 = 720.0;
@@ -162,6 +164,11 @@ enum AppEvent {
         identity: FileIdentity,
         baseline_bytes: Vec<u8>,
     },
+    WorkspaceReady {
+        root: WorkspaceRoot,
+        index: WorkspaceIndex,
+    },
+    WorkspaceFailed(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1962,6 +1969,7 @@ struct App {
     /// conflictos incluso si otro programa conserva tamaño y fecha similares.
     source_baseline_bytes: Option<Vec<u8>>,
     source_editor: SourceEditor,
+    workspace: Option<(WorkspaceRoot, WorkspaceIndex)>,
     mode: DocumentMode,
     proxy: EventLoopProxy<AppEvent>,
     blocks: Vec<Block>,
@@ -2177,6 +2185,20 @@ impl ApplicationHandler<AppEvent> for App {
                 } else {
                     self.set_notice("se creó una versión anterior; hay cambios nuevos");
                 }
+            }
+            AppEvent::WorkspaceReady { root, index } => {
+                let note_count = index.notes.len();
+                let skipped = index.skipped;
+                let truncated = index.truncated;
+                self.workspace = Some((root, index));
+                let suffix = if truncated { "; límite alcanzado" } else { "" };
+                self.set_notice(&format!(
+                    "workspace indexado: {note_count} notas, {skipped} omitidas{suffix}"
+                ));
+            }
+            AppEvent::WorkspaceFailed(error) => {
+                self.log.push(format!("[workspace] {error}"));
+                self.set_notice("no se pudo abrir la carpeta de trabajo");
             }
         }
     }
@@ -2426,6 +2448,18 @@ impl ApplicationHandler<AppEvent> for App {
                 if self.mode == DocumentMode::SourceEditing =>
             {
                 self.handle_source_key(&event);
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::KeyO),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } if self.modifiers.control_key() && self.modifiers.shift_key() => {
+                self.choose_workspace();
             }
             WindowEvent::KeyboardInput {
                 event:
@@ -2890,7 +2924,11 @@ impl App {
                 self.create_new_document();
             }
             PhysicalKey::Code(KeyCode::KeyO) if self.modifiers.control_key() => {
-                self.choose_document_to_open();
+                if self.modifiers.shift_key() {
+                    self.choose_workspace();
+                } else {
+                    self.choose_document_to_open();
+                }
             }
             PhysicalKey::Code(KeyCode::KeyZ) if self.modifiers.control_key() => {
                 self.edit_source(|editor, source| editor.undo(source));
@@ -3042,6 +3080,28 @@ impl App {
             return;
         };
         self.open_document_path(path);
+    }
+
+    fn choose_workspace(&mut self) {
+        let Some(path) = FileDialog::new()
+            .set_title("Elegir carpeta de trabajo")
+            .pick_folder()
+        else {
+            self.set_notice("abrir carpeta cancelado");
+            return;
+        };
+        let proxy = self.proxy.clone();
+        self.set_notice("indexando carpeta de trabajo");
+        thread::spawn(move || {
+            let event = match WorkspaceRoot::open(path) {
+                Ok(root) => {
+                    let index = index_workspace(&root, WorkspaceLimits::default());
+                    AppEvent::WorkspaceReady { root, index }
+                }
+                Err(error) => AppEvent::WorkspaceFailed(error.to_string()),
+            };
+            let _ = proxy.send_event(event);
+        });
     }
 
     fn open_document_path(&mut self, path: PathBuf) {
@@ -3962,6 +4022,7 @@ fn main() {
         source_identity: None,
         source_baseline_bytes: None,
         source_editor: SourceEditor::new(),
+        workspace: None,
         mode: if opening_path.is_some() {
             DocumentMode::Reading
         } else {
