@@ -68,6 +68,9 @@ Registrar antes de comenzar:
   visible sin marcadores Markdown. `Ctrl+Shift+C` pega el Markdown original de
   los bloques seleccionados, incluso si la selección visual solo tomó una parte
   de ellos.
+- Con texto seleccionado, click derecho abre un menú propio con solo "Copiar
+  texto" y "Copiar Markdown original". Probar ambas acciones en otra
+  aplicación; sin selección, el menú no aparece ni hace otra operación.
 - Si se inicia una selección y el cursor o foco salen de la ventana, el
   arrastre se detiene sin borrar la selección ya conseguida.
 

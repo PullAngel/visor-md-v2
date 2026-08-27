@@ -77,6 +77,8 @@ exacto del traspaso.
 - los rangos que Comrak informa para enlaces cubren hoy el destino y no toda su
   sintaxis; es suficiente para el lector inerte actual, pero debe resolverse
   antes de edición, round-trip fino o activación de enlaces.
+- menú contextual propio inicial: solo ofrece copia de una selección y reutiliza
+  el portapapeles explícito; no abre rutas, navegador ni acciones de documento.
 - un fallo de apertura asíncrona conserva la ventana y muestra un mensaje
   inerte simple dentro del lienzo; el detalle técnico queda solo en el registro
   local de la sesión.

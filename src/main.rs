@@ -2,7 +2,7 @@
 //
 // Nucleo nativo en recuperacion. Abre un .md, lo parsea con comrak, lo maqueta
 // con parley y lo dibuja con tiny-skia sobre una ventana winit + softbuffer.
-// Todavía no tiene chrome, copia ni edición.
+// Todavía no tiene edición ni chrome de aplicación completo.
 //
 // Lo que se mide con esto va a docs/budget.md. El criterio de salida del
 // Sprint 0 esta en docs/roadmap.md.
@@ -45,7 +45,7 @@ use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 use winit::window::{CursorIcon, Theme, Window, WindowId};
 
 use files::{DEFAULT_DOCUMENT_LIMIT_BYTES, is_markdown_path, open_explicit_primary};
-use fonts::{FONT_CODE, FONT_DOC, register_embedded_fonts};
+use fonts::{FONT_CODE, FONT_DOC, FONT_UI, register_embedded_fonts};
 use limits::{Degradation, MAX_BLOCKS, MAX_INDENT_DEPTH, MAX_NEST};
 use theme::{DAY, NIGHT, Palette, Role};
 
@@ -53,6 +53,43 @@ const MARGIN: f32 = 48.0;
 const MAX_MEASURE: f32 = 720.0;
 const SELECTION_SCROLL_EDGE: f32 = 32.0;
 const SELECTION_SCROLL_MAX_STEP: f32 = 18.0;
+const CONTEXT_MENU_WIDTH: f32 = 224.0;
+const CONTEXT_MENU_ROW_HEIGHT: f32 = 34.0;
+const CONTEXT_MENU_PADDING: f32 = 8.0;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ContextAction {
+    CopyText,
+    CopyMarkdown,
+}
+
+impl ContextAction {
+    fn label(self) -> &'static str {
+        match self {
+            Self::CopyText => "Copiar texto",
+            Self::CopyMarkdown => "Copiar Markdown original",
+        }
+    }
+
+    fn source_markdown(self) -> bool {
+        matches!(self, Self::CopyMarkdown)
+    }
+}
+
+fn context_action_at(menu: (f32, f32), pointer: (f32, f32)) -> Option<ContextAction> {
+    let (_, top) = menu;
+    let (x, y) = pointer;
+    if !(menu.0..=menu.0 + CONTEXT_MENU_WIDTH).contains(&x)
+        || !(top..=top + CONTEXT_MENU_ROW_HEIGHT * 2.0).contains(&y)
+    {
+        return None;
+    }
+    if y < top + CONTEXT_MENU_ROW_HEIGHT {
+        Some(ContextAction::CopyText)
+    } else {
+        Some(ContextAction::CopyMarkdown)
+    }
+}
 
 #[derive(Default)]
 struct TraversalState {
@@ -1467,6 +1504,27 @@ fn build_marker_layout(
     layout
 }
 
+fn build_menu_layout(
+    label: &str,
+    font_cx: &mut FontContext,
+    layout_cx: &mut LayoutContext<Brush>,
+    palette: Palette,
+) -> Layout<Brush> {
+    let stack: &[FontFamilyName] = &[
+        FontFamilyName::Named(std::borrow::Cow::Borrowed(FONT_UI)),
+        FontFamilyName::Generic(GenericFamily::SystemUi),
+    ];
+    let mut builder = layout_cx.ranged_builder(font_cx, label, 1.0, true);
+    builder.push_default(StyleProperty::Brush(Brush::text(palette.text)));
+    builder.push_default(StyleProperty::FontFamily(FontFamily::List(
+        std::borrow::Cow::Borrowed(stack),
+    )));
+    builder.push_default(StyleProperty::FontSize(13.0));
+    let mut layout: Layout<Brush> = builder.build(label);
+    layout.break_all_lines(None);
+    layout
+}
+
 /// Representacion cacheada de un marcador visible. Los marcadores de texto
 /// usan parley; las tareas conservan solo su estado y se dibujan con tiny-skia.
 enum CachedMarker {
@@ -1816,6 +1874,9 @@ struct App {
     /// dependa de que el mouse permanezca inmóvil sobre el documento.
     focused_link: Option<(usize, usize)>,
     focus_destination: Option<String>,
+    /// Origen del menú contextual propio. Solo contiene acciones de copia
+    /// locales; no usa menús del sistema ni ejecuta destinos del documento.
+    context_menu: Option<(f32, f32)>,
     /// Se crea solamente ante una copia explícita. Mantenerlo vivo respeta el
     /// modelo de propiedad de X11/Wayland, donde el proceso sirve el texto
     /// hasta que otra aplicación lo solicita.
@@ -1847,6 +1908,7 @@ impl ApplicationHandler<AppEvent> for App {
                 self.notice = None;
                 self.focused_link = None;
                 self.focus_destination = None;
+                self.context_menu = None;
                 self.log.push(format!(
                     "[medicion] preparar documento de {:.1} KB fuera de UI: {elapsed_ms:.0} ms  ({} bloques)",
                     self.source.len() as f64 / 1024.0,
@@ -1873,6 +1935,7 @@ impl ApplicationHandler<AppEvent> for App {
                 self.laid_for_width = -1.0;
                 self.focused_link = None;
                 self.focus_destination = None;
+                self.context_menu = None;
                 self.notice = Some("no se pudo abrir el documento".to_string());
                 self.refresh_title();
                 if let Some(window) = &self.window {
@@ -1979,6 +2042,11 @@ impl ApplicationHandler<AppEvent> for App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.pointer = Some((position.x as f32, position.y as f32));
+                if self.context_menu.is_some() {
+                    if let Some(w) = &self.window {
+                        w.request_redraw();
+                    }
+                }
                 let target = self
                     .target_at(position.x as f32, position.y as f32)
                     .map(|target| {
@@ -2038,6 +2106,18 @@ impl ApplicationHandler<AppEvent> for App {
                 ..
             } => match state {
                 ElementState::Pressed => {
+                    if let Some(menu) = self.context_menu.take() {
+                        if let Some(action) = self
+                            .pointer
+                            .and_then(|pointer| context_action_at(menu, pointer))
+                        {
+                            self.copy_selection(action.source_markdown());
+                        }
+                        if let Some(w) = &self.window {
+                            w.request_redraw();
+                        }
+                        return;
+                    }
                     self.focused_link = None;
                     self.focus_destination = None;
                     self.refresh_title();
@@ -2052,6 +2132,36 @@ impl ApplicationHandler<AppEvent> for App {
                 }
                 ElementState::Released => self.selecting = false,
             },
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button: MouseButton::Right,
+                ..
+            } => {
+                let has_selection = self
+                    .selection
+                    .and_then(|selection| selection.rendered_text(&self.blocks))
+                    .is_some();
+                if !has_selection {
+                    self.set_notice("selecciona texto para copiar");
+                    return;
+                }
+                let Some((x, y)) = self.pointer else {
+                    return;
+                };
+                let (x, y) = if let Some(window) = &self.window {
+                    let size = window.inner_size();
+                    (
+                        x.min((size.width as f32 - CONTEXT_MENU_WIDTH).max(0.0)),
+                        y.min((size.height as f32 - CONTEXT_MENU_ROW_HEIGHT * 2.0).max(0.0)),
+                    )
+                } else {
+                    (x, y)
+                };
+                self.context_menu = Some((x, y));
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
+            }
             WindowEvent::ModifiersChanged(modifiers) => self.modifiers = modifiers.state(),
             WindowEvent::KeyboardInput {
                 event:
@@ -2687,6 +2797,25 @@ impl App {
             window.request_redraw();
         }
 
+        let menu = self.context_menu;
+        let menu_pointer = self.pointer;
+        let menu_layouts = menu.map(|_| {
+            [
+                build_menu_layout(
+                    ContextAction::CopyText.label(),
+                    &mut self.font_cx,
+                    &mut self.layout_cx,
+                    self.palette,
+                ),
+                build_menu_layout(
+                    ContextAction::CopyMarkdown.label(),
+                    &mut self.font_cx,
+                    &mut self.layout_cx,
+                    self.palette,
+                ),
+            ]
+        });
+
         // El pixmap se reusa entre cuadros: reservar 2,7 MB por cuadro y
         // ponerlos en cero es trabajo que no hace falta repetir.
         let needs_new = self
@@ -2891,6 +3020,55 @@ impl App {
             }
         }
 
+        if let (Some((x, y)), Some(layouts)) = (menu, menu_layouts) {
+            if let Some(rect) =
+                Rect::from_xywh(x, y, CONTEXT_MENU_WIDTH, CONTEXT_MENU_ROW_HEIGHT * 2.0)
+            {
+                pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+            }
+            for (row, (action, layout)) in [ContextAction::CopyText, ContextAction::CopyMarkdown]
+                .into_iter()
+                .zip(layouts.iter())
+                .enumerate()
+            {
+                if menu_pointer.and_then(|pointer| context_action_at((x, y), pointer))
+                    == Some(action)
+                {
+                    let ac = palette.accent;
+                    let mut hover = Paint::default();
+                    hover.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 38));
+                    if let Some(rect) = Rect::from_xywh(
+                        x,
+                        y + row as f32 * CONTEXT_MENU_ROW_HEIGHT,
+                        CONTEXT_MENU_WIDTH,
+                        CONTEXT_MENU_ROW_HEIGHT,
+                    ) {
+                        pixmap.fill_rect(rect, &hover, Transform::identity(), None);
+                    }
+                }
+                for line in layout.lines() {
+                    for entry in line.items() {
+                        if let PositionedLayoutItem::GlyphRun(run) = entry {
+                            draw_run_background(
+                                pixmap,
+                                &run,
+                                x + CONTEXT_MENU_PADDING,
+                                y + row as f32 * CONTEXT_MENU_ROW_HEIGHT + 9.0,
+                            );
+                            draw_glyph_run(
+                                pixmap,
+                                scale_cx,
+                                glyphs,
+                                &run,
+                                x + CONTEXT_MENU_PADDING,
+                                y + row as f32 * CONTEXT_MENU_ROW_HEIGHT + 9.0,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
         // Volcado del pixmap a la ventana.
         let surface = surface
             .as_mut()
@@ -3029,6 +3207,7 @@ fn main() {
         hover_destination: None,
         focused_link: None,
         focus_destination: None,
+        context_menu: None,
         clipboard: None,
         notice: Some("cargando documento".to_string()),
         fatal_error: false,
@@ -3199,6 +3378,22 @@ mod pruebas {
         assert!(!layout_width_is_stale(900.0, 900.3));
         assert!(layout_width_is_stale(900.0, 900.6));
         assert!(layout_width_is_stale(-1.0, 900.0));
+    }
+
+    #[test]
+    fn el_menu_contextual_limita_sus_acciones_a_copia_local() {
+        let menu = (100.0, 200.0);
+        assert_eq!(
+            context_action_at(menu, (110.0, 210.0)),
+            Some(ContextAction::CopyText)
+        );
+        assert_eq!(
+            context_action_at(menu, (110.0, 250.0)),
+            Some(ContextAction::CopyMarkdown)
+        );
+        assert_eq!(context_action_at(menu, (50.0, 210.0)), None);
+        assert!(!ContextAction::CopyText.source_markdown());
+        assert!(ContextAction::CopyMarkdown.source_markdown());
     }
 
     #[test]
