@@ -226,7 +226,8 @@ ejemplo, el rango del destino de un enlace como si cubriera también sus
 corchetes y paréntesis.
 
 `editor::EditHistory` ya define parches reversibles de bytes UTF-8, undo/redo,
-revisiones y un presupuesto de 4 MiB para historial. No conserva snapshots
+revisiones y un presupuesto de 4 MiB para historial. `editor::SourceEditor`
+añade cursor y selección sin partir caracteres Unicode. No conservan snapshots
 completos de un documento de hasta 16 MiB. La interfaz de edición, IME y el
 guardado todavía no consumen esta capa.
 

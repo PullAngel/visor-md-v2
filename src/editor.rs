@@ -183,6 +183,88 @@ impl EditHistory {
     }
 }
 
+/// Estado de interacción para un editor de fuente. Los offsets siempre caen en
+/// límites de caracteres UTF-8; el renderer puede traducirlos después a líneas
+/// y píxeles sin convertirse en autoridad sobre el texto.
+#[derive(Debug, Default)]
+pub struct SourceEditor {
+    history: EditHistory,
+    cursor: usize,
+    anchor: usize,
+}
+
+impl SourceEditor {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn cursor(&self) -> usize {
+        self.cursor
+    }
+
+    pub fn selection(&self) -> Range<usize> {
+        self.cursor.min(self.anchor)..self.cursor.max(self.anchor)
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        self.history.is_dirty()
+    }
+
+    pub fn set_cursor(
+        &mut self,
+        source: &str,
+        offset: usize,
+        extend: bool,
+    ) -> Result<(), EditError> {
+        if offset > source.len() || !source.is_char_boundary(offset) {
+            return Err(EditError::InvalidRange);
+        }
+        self.cursor = offset;
+        if !extend {
+            self.anchor = offset;
+        }
+        Ok(())
+    }
+
+    pub fn insert(&mut self, source: &mut String, text: &str) -> Result<bool, EditError> {
+        let range = self.selection();
+        let changed = self.history.apply(source, range.clone(), text)?;
+        if changed {
+            self.cursor = range.start + text.len();
+            self.anchor = self.cursor;
+        }
+        Ok(changed)
+    }
+
+    pub fn backspace(&mut self, source: &mut String) -> Result<bool, EditError> {
+        let selection = self.selection();
+        let range = if selection.is_empty() {
+            let previous = source[..self.cursor]
+                .char_indices()
+                .next_back()
+                .map_or(0, |(offset, _)| offset);
+            previous..self.cursor
+        } else {
+            selection
+        };
+        let changed = self.history.apply(source, range.clone(), "")?;
+        if changed {
+            self.cursor = range.start;
+            self.anchor = range.start;
+        }
+        Ok(changed)
+    }
+
+    pub fn undo(&mut self, source: &mut String) -> Result<bool, EditError> {
+        let changed = self.history.undo(source)?;
+        if changed {
+            self.cursor = self.cursor.min(source.len());
+            self.anchor = self.cursor;
+        }
+        Ok(changed)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -269,5 +351,20 @@ mod tests {
         history.undo(&mut source).unwrap();
         history.undo(&mut source).unwrap();
         assert!(source.is_empty());
+    }
+
+    #[test]
+    fn cursor_y_seleccion_editan_fuente_sin_partir_unicode() {
+        let mut source = "ábc".to_owned();
+        let mut editor = SourceEditor::new();
+        editor.set_cursor(&source, "á".len(), false).unwrap();
+        editor.set_cursor(&source, source.len(), true).unwrap();
+        assert_eq!(editor.selection(), "á".len()..source.len());
+        editor.insert(&mut source, "🔒").unwrap();
+        assert_eq!(source, "á🔒");
+        editor.backspace(&mut source).unwrap();
+        assert_eq!(source, "á");
+        editor.undo(&mut source).unwrap();
+        assert_eq!(source, "á🔒");
     }
 }
