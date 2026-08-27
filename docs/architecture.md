@@ -283,6 +283,12 @@ igual a un encabezado visible se aplica después de abrir la nota. Todavía falt
 paneles de resultados, backlinks visibles, cancelación explícita y detección de
 cambios externos.
 
+Los callouts conocidos de Obsidian dentro de una cita (`NOTE`, `INFO`, `TIP`,
+`WARNING`, `CAUTION`, `DANGER` e `IMPORTANT`) reciben una presentación nativa
+sin ejecutar HTML ni interpretar atributos. Variantes desconocidas permanecen
+como citas con su marcador fuente visible; editar y guardar conserva la sintaxis
+original.
+
 Las aperturas y el parseo inicial llevan una versión de solicitud. Si una tarea
 termina tarde después de una apertura posterior, su resultado se descarta en vez
 de reemplazar el documento activo.

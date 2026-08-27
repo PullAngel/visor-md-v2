@@ -488,6 +488,9 @@ enum Kind {
         header: bool,
     },
     Quote,
+    /// Callout de Obsidian reconocido dentro de una cita. Sigue siendo texto
+    /// local: no crea comportamiento, estado ni recursos externos.
+    Callout,
     /// Linea horizontal (`---`). No lleva texto.
     Rule,
 }
@@ -631,6 +634,7 @@ impl Kind {
             Kind::TableRow { header: true } => (15.0, 600.0, Role::Text, true),
             Kind::TableRow { header: false } => (15.0, 400.0, Role::Dim, true),
             Kind::Quote => (16.0, 400.0, Role::Dim, false),
+            Kind::Callout => (16.0, 400.0, Role::Text, false),
             Kind::Rule => (16.0, 400.0, Role::Dim, false),
         }
     }
@@ -662,7 +666,7 @@ impl Kind {
     fn indent(self) -> f32 {
         match self {
             Kind::Item(d) => 22.0 * d.min(MAX_INDENT_DEPTH) as f32,
-            Kind::Quote => 20.0,
+            Kind::Quote | Kind::Callout => 20.0,
             _ => 0.0,
         }
     }
@@ -1042,6 +1046,74 @@ enum Marker {
     Task { done: bool },
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CalloutKind {
+    Note,
+    Info,
+    Tip,
+    Warning,
+    Danger,
+}
+
+impl CalloutKind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Note => "Nota",
+            Self::Info => "Info",
+            Self::Tip => "Consejo",
+            Self::Warning => "Atención",
+            Self::Danger => "Peligro",
+        }
+    }
+}
+
+/// Devuelve un callout conocido y cuántos bytes de la primera línea visible se
+/// deben omitir. Variantes desconocidas siguen como cita y conservan su fuente
+/// literalmente, que es una degradación visible y fiel.
+fn callout_prefix(text: &str) -> Option<(CalloutKind, usize)> {
+    let rest = text.strip_prefix("[!")?;
+    let close = rest.find(']')?;
+    let kind = match rest[..close].to_ascii_lowercase().as_str() {
+        "note" => CalloutKind::Note,
+        "info" => CalloutKind::Info,
+        "tip" => CalloutKind::Tip,
+        "warning" | "caution" => CalloutKind::Warning,
+        "danger" | "important" => CalloutKind::Danger,
+        _ => return None,
+    };
+    let mut prefix = 2 + close + 1;
+    if matches!(text.as_bytes().get(prefix), Some(b'+' | b'-')) {
+        prefix += 1;
+    }
+    while matches!(text.as_bytes().get(prefix), Some(b' ' | b'\t')) {
+        prefix += 1;
+    }
+    Some((kind, prefix))
+}
+
+fn remove_rendered_prefix(block: &mut Block, prefix: usize) {
+    if prefix == 0 || prefix > block.text.len() || !block.text.is_char_boundary(prefix) {
+        return;
+    }
+    block.text.replace_range(..prefix, "");
+    block.spans.retain_mut(|span| {
+        if span.end <= prefix {
+            return false;
+        }
+        span.start = span.start.saturating_sub(prefix);
+        span.end -= prefix;
+        span.start < span.end
+    });
+    block.targets.retain_mut(|target| {
+        if target.end <= prefix {
+            return false;
+        }
+        target.start = target.start.saturating_sub(prefix);
+        target.end -= prefix;
+        target.start < target.end
+    });
+}
+
 /// Marcador de un item, resuelto contra la lista que lo contiene.
 fn marker_for(list: &comrak::nodes::NodeList, index: usize, task: Option<char>) -> Marker {
     if let Some(mark) = task {
@@ -1284,6 +1356,21 @@ fn flatten<'a>(
                 // parrafos, listas dentro de la cita) en vez de aplastarla.
                 let antes = out.len();
                 flatten(child, depth, nest + 1, source_index, traversal, out);
+                let callout = out.get(antes).and_then(|block| callout_prefix(&block.text));
+                if let Some((kind, prefix)) = callout {
+                    remove_rendered_prefix(&mut out[antes], prefix);
+                    if out[antes].text.trim().is_empty() {
+                        out.remove(antes);
+                    }
+                    if let Some(first) = out.get_mut(antes) {
+                        if first.marker.is_none() {
+                            first.marker = Some(Marker::Text(kind.label().to_owned()));
+                        }
+                    }
+                    for block in &mut out[antes..] {
+                        block.kind = Kind::Callout;
+                    }
+                }
                 for block in &mut out[antes..] {
                     block.quote_depth = block.quote_depth.saturating_add(1);
                     if matches!(block.kind, Kind::Para) {
@@ -3991,6 +4078,24 @@ impl App {
                         pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
                     }
                 }
+                // Un callout es una cita semántica con una superficie tenue y
+                // rótulo nativo. No interpreta atributos de Obsidian ni crea
+                // estado interactivo.
+                Kind::Callout => {
+                    if let Some(rect) = Rect::from_xywh(
+                        slot.x - 20.0,
+                        top - 4.0,
+                        ancho_texto + 20.0,
+                        slot.height + 8.0,
+                    ) {
+                        pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+                    }
+                    if let Some(rect) =
+                        Rect::from_xywh(slot.x - 20.0, top - 4.0, 3.0, slot.height + 8.0)
+                    {
+                        pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
+                    }
+                }
                 // Linea horizontal: un filete tenue, no un borde grueso.
                 Kind::Rule => {
                     if let Some(rect) = Rect::from_xywh(slot.x, top, ancho_texto, 1.0) {
@@ -5369,6 +5474,30 @@ mod pruebas_inline {
             .filter(|b| matches!(b.kind, Kind::Quote))
             .collect();
         assert_eq!(citas.len(), 2, "la cita se aplasto: {blocks:?}",);
+    }
+
+    #[test]
+    fn callout_conocido_se_renderiza_sin_reescribir_su_fuente() {
+        let source = "> [!WARNING] Revisa la red\n>\n> Texto de apoyo.";
+        let blocks = aplanar(source);
+        assert!(
+            blocks
+                .iter()
+                .all(|block| matches!(block.kind, Kind::Callout))
+        );
+        assert_eq!(blocks[0].text, "Revisa la red");
+        assert!(matches!(
+            blocks[0].marker,
+            Some(Marker::Text(ref label)) if label == "Atención"
+        ));
+        assert!(source.contains("[!WARNING]"));
+    }
+
+    #[test]
+    fn callout_desconocido_permanece_como_cita_visible() {
+        let blocks = aplanar("> [!CUSTOM] Conserva el marcador");
+        assert!(matches!(blocks[0].kind, Kind::Quote));
+        assert_eq!(blocks[0].text, "[!CUSTOM] Conserva el marcador");
     }
 
     #[test]
