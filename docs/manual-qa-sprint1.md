@@ -59,6 +59,7 @@ Registrar antes de comenzar:
   elimina el cursor o selección.
 - Inicio y Fin llevan el cursor al borde del bloque; Ctrl+Inicio y Ctrl+Fin al
   comienzo y final del documento. Shift conserva el ancla para seleccionar.
+- RePág y AvPág desplazan aproximadamente una pantalla sin perder la selección.
 - Ctrl+A abarca todo el documento; `Ctrl+C` pega en otra aplicación el texto
   visible sin marcadores Markdown. `Ctrl+Shift+C` pega el Markdown original de
   los bloques seleccionados, incluso si la selección visual solo tomó una parte

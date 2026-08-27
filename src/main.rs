@@ -1988,6 +1988,30 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::PageUp),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } => {
+                self.scroll_page(false);
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::PageDown),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } => {
+                self.scroll_page(true);
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
                         physical_key: PhysicalKey::Code(KeyCode::End),
                         state: ElementState::Pressed,
                         repeat: false,
@@ -2206,6 +2230,17 @@ impl App {
         } else {
             DocumentSelection::collapsed(cursor)
         });
+    }
+
+    fn scroll_page(&mut self, down: bool) {
+        let Some(window) = &self.window else {
+            return;
+        };
+        let viewport = window.inner_size().height as f32;
+        let step = (viewport * 0.88).max(1.0);
+        let delta = if down { step } else { -step };
+        self.scroll = (self.scroll + delta).clamp(0.0, max_scroll(self.doc_height, viewport));
+        window.request_redraw();
     }
 
     fn move_selection_visually(&mut self, forward: bool, extend: bool) {
