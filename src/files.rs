@@ -8,6 +8,7 @@ use std::fmt;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
+use std::time::SystemTime;
 
 /// Límite normal mientras no exista una preferencia avanzada persistente.
 /// Supera holgadamente el corpus de 5 MiB medido, pero evita reservar memoria
@@ -32,6 +33,30 @@ pub(crate) fn is_markdown_path(path: &Path) -> bool {
 pub(crate) struct TextMetadata {
     pub(crate) has_utf8_bom: bool,
     pub(crate) line_endings: LineEndings,
+}
+
+/// Huella portátil de la versión abierta. No sustituye una identidad de handle
+/// para reemplazo atómico, pero permite detectar el caso común de un archivo
+/// que otra aplicación cambió antes de intentar guardarlo.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct FileIdentity {
+    pub(crate) byte_len: u64,
+    modified: Option<SystemTime>,
+}
+
+impl FileIdentity {
+    fn from_metadata(metadata: &std::fs::Metadata) -> Self {
+        Self {
+            byte_len: metadata.len(),
+            modified: metadata.modified().ok(),
+        }
+    }
+
+    #[cfg(test)]
+    fn still_matches(&self, path: impl AsRef<Path>) -> Result<bool, std::io::Error> {
+        let metadata = std::fs::metadata(path)?;
+        Ok(self == &Self::from_metadata(&metadata))
+    }
 }
 
 /// Forma observada de los saltos de línea de la fuente. `Mixed` no es un error:
@@ -97,6 +122,7 @@ impl TextMetadata {
 pub(crate) struct OpenedText {
     pub(crate) source: String,
     pub(crate) metadata: TextMetadata,
+    pub(crate) identity: FileIdentity,
 }
 
 #[derive(Debug)]
@@ -149,7 +175,8 @@ pub(crate) fn open_explicit_primary(
     if !metadata.is_file() {
         return Err(FileOpenError::NotAFile);
     }
-    let declared_len = metadata.len();
+    let identity = FileIdentity::from_metadata(&metadata);
+    let declared_len = identity.byte_len;
     if declared_len > limit {
         return Err(FileOpenError::TooLarge {
             bytes: declared_len,
@@ -180,7 +207,11 @@ pub(crate) fn open_explicit_primary(
     let source =
         String::from_utf8(source_bytes.to_vec()).map_err(|_| FileOpenError::InvalidUtf8)?;
     let metadata = TextMetadata::from_source(&source, has_utf8_bom);
-    Ok(OpenedText { source, metadata })
+    Ok(OpenedText {
+        source,
+        metadata,
+        identity,
+    })
 }
 
 #[cfg(test)]
@@ -208,6 +239,7 @@ mod tests {
         assert_eq!(opened.source.len(), 7);
         assert_eq!(opened.metadata.line_endings, LineEndings::Lf);
         assert!(!opened.metadata.has_utf8_bom);
+        assert!(opened.identity.still_matches(&path).unwrap());
     }
 
     #[test]
@@ -257,5 +289,14 @@ mod tests {
 
         assert_eq!(opened.metadata.line_endings, LineEndings::Mixed);
         assert_eq!(opened.metadata.encode(&opened.source), original);
+    }
+
+    #[test]
+    fn la_huella_detecta_cambio_externo_de_tamano() {
+        let path = temporary_file("identity", b"uno");
+        let opened = open_explicit_primary(&path, 64).expect("la fixture es válida");
+        fs::write(&path, b"uno cambiado").expect("la fixture se puede modificar");
+
+        assert!(!opened.identity.still_matches(&path).unwrap());
     }
 }

@@ -45,7 +45,10 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 use winit::window::{CursorIcon, Theme, Window, WindowId};
 
-use files::{DEFAULT_DOCUMENT_LIMIT_BYTES, TextMetadata, is_markdown_path, open_explicit_primary};
+use files::{
+    DEFAULT_DOCUMENT_LIMIT_BYTES, FileIdentity, TextMetadata, is_markdown_path,
+    open_explicit_primary,
+};
 use fonts::{FONT_CODE, FONT_DOC, FONT_UI, register_embedded_fonts};
 use limits::{Degradation, MAX_BLOCKS, MAX_INDENT_DEPTH, MAX_NEST, MAX_SAFE_LINE_BYTES};
 use theme::{DAY, NIGHT, Palette, Role};
@@ -114,6 +117,7 @@ enum AppEvent {
     DocumentReady {
         source: String,
         metadata: TextMetadata,
+        identity: FileIdentity,
         outcome: ParseOutcome,
         elapsed_ms: f64,
     },
@@ -1905,6 +1909,9 @@ struct App {
     /// BOM y estilo de EOL que llegaron con la entrada. Aún no hay guardado;
     /// retenerlos ahora evita que el futuro editor tenga que adivinarlos.
     source_metadata: TextMetadata,
+    /// Huella de la versión que llegó por la apertura primaria. La capa de
+    /// guardado la comparará antes de reemplazar el destino.
+    source_identity: Option<FileIdentity>,
     blocks: Vec<Block>,
     window: Option<Rc<Window>>,
     surface: Option<softbuffer::Surface<Rc<Window>, Rc<Window>>>,
@@ -1976,11 +1983,13 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::DocumentReady {
                 source,
                 metadata,
+                identity,
                 outcome,
                 elapsed_ms,
             } => {
                 self.source = source;
                 self.source_metadata = metadata;
+                self.source_identity = Some(identity);
                 self.blocks = outcome.blocks;
                 self.safe_mode = outcome.degradation;
                 self.loading = false;
@@ -2006,6 +2015,12 @@ impl ApplicationHandler<AppEvent> for App {
                     },
                     self.source_metadata.line_endings
                 ));
+                if let Some(identity) = &self.source_identity {
+                    self.log.push(format!(
+                        "[fidelidad] huella inicial: {} bytes",
+                        identity.byte_len
+                    ));
+                }
                 if let Some(reason) = self.safe_mode {
                     self.log.push(format!(
                         "[seguridad] {}; se muestra la fuente inerte",
@@ -3346,6 +3361,7 @@ fn main() {
         path,
         source: String::new(),
         source_metadata: TextMetadata::default(),
+        source_identity: None,
         blocks: Vec::new(),
         window: None,
         surface: None,
@@ -3400,6 +3416,7 @@ fn main() {
                 Ok(outcome) => AppEvent::DocumentReady {
                     source: opened.source,
                     metadata: opened.metadata,
+                    identity: opened.identity,
                     outcome,
                     elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
                 },

@@ -153,6 +153,11 @@ podría validar un archivo y abrir otro si un proceso local lo reemplaza entre
 ambas operaciones. La contención de recursos secundarios, symlinks y junctions
 todavía no existe porque Visor MD aún no abre recursos secundarios.
 
+La sesión retiene además tamaño y fecha de modificación observados al abrir. Es
+una señal de conflicto previa al guardado, no una prueba criptográfica ni una
+identidad de handle: un guardado seguro volverá a validar el destino y hará el
+reemplazo atómico en la misma frontera de filesystem.
+
 Solo las extensiones Markdown (`.md`, `.markdown`, `.mdown`, `.mkdn`) pasan al
 parser. `.txt`, JSON, YAML, TOML, CSV y código se conservan como texto inerte:
 la aplicación no intenta ejecutar, compilar ni tratar su sintaxis como una

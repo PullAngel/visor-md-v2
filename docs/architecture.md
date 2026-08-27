@@ -133,9 +133,12 @@ para que no aparezca en pantalla, y conserva su presencia junto con el patrón
 de EOL. La reconstrucción de prueba devuelve los mismos bytes si no hubo
 edición. Secuencias UTF-8 inválidas se rechazan antes del parser.
 
-La capa posterior conserva identidad, aplica parches de fuente y define otros
-encodings solo si puede preservarlos sin sustitución silenciosa. No se añade una
-conversión de codificación por comodidad del renderer.
+La apertura también conserva una huella portátil de tamaño y fecha de
+modificación de la versión leída. La capa de guardado la comparará antes de
+reemplazar el destino; todavía falta una identidad de handle específica de cada
+plataforma para reemplazo atómico. Otros encodings se admitirán solo si pueden
+preservarse sin sustitución silenciosa. No se añade una conversión de
+codificación por comodidad del renderer.
 
 ### Parser
 
