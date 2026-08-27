@@ -217,6 +217,31 @@ enum InlineTargetKind {
     Image,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LinkDestinationKind {
+    Web,
+    Mail,
+    RelativeFile,
+    Blocked,
+}
+
+fn classify_link_destination(destination: &str) -> LinkDestinationKind {
+    let lowered = destination.trim().to_ascii_lowercase();
+    if lowered.starts_with("https://") || lowered.starts_with("http://") {
+        LinkDestinationKind::Web
+    } else if lowered.starts_with("mailto:") {
+        LinkDestinationKind::Mail
+    } else if lowered.starts_with("file:")
+        || lowered.starts_with("\\\\")
+        || lowered.starts_with('/')
+        || lowered.contains(':')
+    {
+        LinkDestinationKind::Blocked
+    } else {
+        LinkDestinationKind::RelativeFile
+    }
+}
+
 /// Semantica interactiva que no puede perderse al producir texto visible.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct InlineTarget {
@@ -1854,7 +1879,15 @@ impl ApplicationHandler<AppEvent> for App {
                 self.pointer = Some((position.x as f32, position.y as f32));
                 let target = self
                     .target_at(position.x as f32, position.y as f32)
-                    .map(|target| target.destination.clone());
+                    .map(|target| {
+                        let label = match classify_link_destination(&target.destination) {
+                            LinkDestinationKind::Web => "enlace web",
+                            LinkDestinationKind::Mail => "correo",
+                            LinkDestinationKind::RelativeFile => "archivo relativo",
+                            LinkDestinationKind::Blocked => "destino bloqueado",
+                        };
+                        format!("{label}: {}", target.destination)
+                    });
                 let text_cursor_hover = target.is_none()
                     && self
                         .cursor_at(position.x as f32, position.y as f32)
@@ -2980,6 +3013,28 @@ mod pruebas {
         let title = window_title("datos.json", Some(Degradation::TextOnly), None);
         assert!(title.contains("texto inerte"));
         assert!(!title.contains("modo seguro"));
+    }
+
+    #[test]
+    fn los_destinos_de_enlace_se_clasifican_sin_acceder_a_ellos() {
+        assert_eq!(
+            classify_link_destination("https://example.test"),
+            LinkDestinationKind::Web
+        );
+        assert_eq!(
+            classify_link_destination("mailto:alguien@example.test"),
+            LinkDestinationKind::Mail
+        );
+        assert_eq!(
+            classify_link_destination("notas/tema.md"),
+            LinkDestinationKind::RelativeFile
+        );
+        for path in ["file:///C:/secreto", "\\\\servidor\\share", "C:/secreto"] {
+            assert_eq!(
+                classify_link_destination(path),
+                LinkDestinationKind::Blocked
+            );
+        }
     }
 
     #[test]

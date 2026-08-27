@@ -163,6 +163,10 @@ El contenido no puede cargar automáticamente:
 - destinos fuera del espacio permitido;
 - symlinks o junctions que escapen de ese espacio.
 
+El hover de enlaces clasifica y etiqueta destinos web, correo, archivos
+relativos y formatos bloqueados. Esta clasificación no abre ni resuelve nada;
+una futura acción de clic deberá volver a aplicar la política correspondiente.
+
 Las rutas relativas locales pueden resolverse mediante VFS y límites. Seguir un
 enlace a otro archivo requiere una acción explícita.
 
