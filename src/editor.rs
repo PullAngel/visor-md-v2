@@ -113,7 +113,7 @@ impl EditHistory {
             after_revision,
         };
         self.current_revision = after_revision;
-        self.push_undo(change);
+        self.push_new_undo(change);
         Ok(true)
     }
 
@@ -159,7 +159,9 @@ impl EditHistory {
         }
         source.replace_range(change.start..end, &change.inserted);
         self.current_revision = change.after_revision;
-        self.push_undo(change);
+        // El cambio ya está contabilizado mientras estuvo en `redo`; moverlo
+        // de vuelta no puede cobrar memoria dos veces ni expulsar undo válido.
+        self.undo.push_back(change);
         Ok(true)
     }
 
@@ -169,7 +171,7 @@ impl EditHistory {
         }
     }
 
-    fn push_undo(&mut self, change: Change) {
+    fn push_new_undo(&mut self, change: Change) {
         self.history_bytes = self.history_bytes.saturating_add(change.bytes());
         self.undo.push_back(change);
         while self.history_bytes > MAX_HISTORY_BYTES {
@@ -251,5 +253,21 @@ mod tests {
         history.undo(&mut source).unwrap();
         assert_eq!(source, chunk);
         assert!(!history.can_undo());
+    }
+
+    #[test]
+    fn rehacer_no_duplica_el_presupuesto_del_mismo_cambio() {
+        let mut source = String::new();
+        let mut history = EditHistory::new();
+        let chunk = "x".repeat(MAX_HISTORY_BYTES / 3 + 1);
+        history.apply(&mut source, 0..0, &chunk).unwrap();
+        let end = source.len();
+        history.apply(&mut source, end..end, &chunk).unwrap();
+
+        history.undo(&mut source).unwrap();
+        history.redo(&mut source).unwrap();
+        history.undo(&mut source).unwrap();
+        history.undo(&mut source).unwrap();
+        assert!(source.is_empty());
     }
 }
