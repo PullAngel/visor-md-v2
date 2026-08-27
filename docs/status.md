@@ -72,6 +72,8 @@ exacto del traspaso.
   destinos bloqueados en tono tenue, sin concederles capacidad alguna.
 - Tab y Shift+Tab recorren enlaces sin abrirlos; el foco tiene resalte y muestra
   el destino antes de cualquier acción futura.
+- resize y cambio de escala del sistema invalidan los layouts visibles antes de
+  redibujar; la escala tipográfica integral sigue pendiente de QA de DPI.
 - un fallo de apertura asíncrona conserva la ventana y muestra un mensaje
   inerte simple dentro del lienzo; el detalle técnico queda solo en el registro
   local de la sesión.

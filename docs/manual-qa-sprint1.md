@@ -45,7 +45,9 @@ Registrar antes de comenzar:
 
 - La primera apertura comienza en modo lectura.
 - La tecla `T` alterna tema sin parpadeo ni pérdida de posición.
-- Redimensionar angosto, mediano y maximizado no rompe layout ni scroll.
+- Redimensionar angosto, mediano y maximizado no rompe layout ni scroll. Repetir
+  al mover la ventana entre escalas de pantalla distintas si hay más de un
+  monitor; registrar aparte si el tamaño tipográfico percibido cambia.
 - La rueda llega al principio y al final sin zonas inaccesibles.
 - Texto, enlaces, decoración y casillas conservan contraste suficiente.
 - La sensación de scroll es estable, sin saltos perceptibles.

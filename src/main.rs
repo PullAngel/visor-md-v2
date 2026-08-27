@@ -1269,6 +1269,10 @@ fn max_scroll(doc_height: f32, viewport_height: f32) -> f32 {
     (doc_height - viewport_height).max(0.0)
 }
 
+fn layout_width_is_stale(laid_for_width: f32, viewport_width: f32) -> bool {
+    (laid_for_width - viewport_width).abs() > 0.5
+}
+
 fn selection_scroll_delta(pointer_y: f32, viewport_height: f32) -> f32 {
     if viewport_height <= SELECTION_SCROLL_EDGE * 2.0 {
         return 0.0;
@@ -1963,6 +1967,16 @@ impl ApplicationHandler<AppEvent> for App {
                     w.request_redraw();
                 }
             }
+            // La ventana usa coordenadas físicas para dibujar. Al cambiar el
+            // viewport o el factor de escala, ningún layout anterior puede
+            // reutilizarse con seguridad; se recalcula al próximo cuadro.
+            WindowEvent::Resized(_) | WindowEvent::ScaleFactorChanged { .. } => {
+                self.live.clear();
+                self.laid_for_width = -1.0;
+                if let Some(w) = &self.window {
+                    w.request_redraw();
+                }
+            }
             WindowEvent::CursorMoved { position, .. } => {
                 self.pointer = Some((position.x as f32, position.y as f32));
                 let target = self
@@ -2609,7 +2623,7 @@ impl App {
         let frame_start = Instant::now();
 
         // Re-medir solo si cambio el ancho.
-        if (self.laid_for_width - size.width as f32).abs() > 0.5 {
+        if layout_width_is_stale(self.laid_for_width, size.width as f32) {
             let t = Instant::now();
             let (slots, height) = measure_all(
                 &self.blocks,
@@ -3178,6 +3192,13 @@ mod pruebas {
     fn el_scroll_respeta_el_alto_real_de_la_ventana() {
         assert_eq!(max_scroll(1_000.0, 760.0), 240.0);
         assert_eq!(max_scroll(500.0, 760.0), 0.0);
+    }
+
+    #[test]
+    fn un_ancho_nuevo_invalida_el_layout_anterior() {
+        assert!(!layout_width_is_stale(900.0, 900.3));
+        assert!(layout_width_is_stale(900.0, 900.6));
+        assert!(layout_width_is_stale(-1.0, 900.0));
     }
 
     #[test]
