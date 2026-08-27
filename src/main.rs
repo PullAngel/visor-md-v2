@@ -291,6 +291,7 @@ fn link_color(palette: Palette, destination: &str) -> (u8, u8, u8) {
 }
 
 fn external_destination(destination: &str) -> Option<&str> {
+    let destination = destination.trim();
     matches!(
         classify_link_destination(destination),
         LinkDestinationKind::Web | LinkDestinationKind::Mail
@@ -3594,6 +3595,10 @@ mod pruebas {
     fn solo_web_y_correo_pueden_delegarse_al_sistema() {
         assert_eq!(
             external_destination("https://example.test"),
+            Some("https://example.test")
+        );
+        assert_eq!(
+            external_destination("  https://example.test  "),
             Some("https://example.test")
         );
         assert_eq!(
