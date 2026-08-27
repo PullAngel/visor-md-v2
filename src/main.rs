@@ -1200,10 +1200,10 @@ fn selection_scroll_delta(pointer_y: f32, viewport_height: f32) -> f32 {
 }
 
 fn window_title(path: &str, safe_mode: Option<Degradation>, notice: Option<&str>) -> String {
-    let mode = if safe_mode.is_some() {
-        " · modo seguro"
-    } else {
-        ""
+    let mode = match safe_mode {
+        Some(Degradation::TextOnly) => " · texto inerte",
+        Some(_) => " · modo seguro",
+        None => "",
     };
     let notice = notice
         .map(|notice| format!(" · {notice}"))
@@ -2973,6 +2973,13 @@ mod pruebas {
         assert!(!normal.contains("modo seguro"));
         assert!(seguro.contains("modo seguro"));
         assert!(seguro.contains("hostil.md"));
+    }
+
+    #[test]
+    fn el_texto_inerte_no_se_presenta_como_error_de_seguridad() {
+        let title = window_title("datos.json", Some(Degradation::TextOnly), None);
+        assert!(title.contains("texto inerte"));
+        assert!(!title.contains("modo seguro"));
     }
 
     #[test]
