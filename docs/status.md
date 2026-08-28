@@ -167,6 +167,7 @@ causa porque todavía no se controlan caché, carga y planificación del sistema
 - selección de ejemplos de la suite oficial CommonMark y ampliación GFM sistemática;
 - separación incompleta de `main.rs`; fuentes y tema ya tienen módulos propios;
 - VFS de recursos secundarios, contención de rutas y política de bóvedas;
+- paneles de árbol, búsqueda y backlinks sobre el índice ya cancelable;
 - cancelación de parsing y política de reemplazo si cambia el documento;
 - virtualización y alturas todavía aproximadas;
 - cobertura y fallback tipográfico todavía sin matriz completa;

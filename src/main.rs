@@ -26,6 +26,8 @@ use std::fs;
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Instant;
 
@@ -61,7 +63,7 @@ use recovery::RecoverySession;
 use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
 use theme::{DAY, NIGHT, Palette, Role};
 use vfs::WorkspaceRoot;
-use workspace::{WikiResolution, WorkspaceIndex, WorkspaceLimits, index_workspace};
+use workspace::{WikiResolution, WorkspaceIndex, WorkspaceLimits, index_workspace_cancellable};
 
 const MARGIN: f32 = 48.0;
 const MAX_MEASURE: f32 = 720.0;
@@ -175,10 +177,14 @@ enum AppEvent {
         baseline_bytes: Vec<u8>,
     },
     WorkspaceReady {
+        request: u64,
         root: WorkspaceRoot,
         index: WorkspaceIndex,
     },
-    WorkspaceFailed(String),
+    WorkspaceFailed {
+        request: u64,
+        error: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2370,6 +2376,10 @@ struct App {
     recovery: Option<RecoverySession>,
     last_recovery: Instant,
     workspace: Option<(WorkspaceRoot, WorkspaceIndex)>,
+    /// Cambiar de carpeta cancela cooperativamente el recorrido anterior. El
+    /// contador descarta además cualquier resultado tardío del hilo anterior.
+    workspace_request: u64,
+    workspace_cancel: Option<Arc<AtomicBool>>,
     /// Versión de apertura solicitada. Una tarea terminada tarde no puede
     /// reemplazar el documento que la persona pidió después.
     document_request: u64,
@@ -2620,7 +2630,16 @@ impl ApplicationHandler<AppEvent> for App {
                     self.set_notice("se creó una versión anterior; hay cambios nuevos");
                 }
             }
-            AppEvent::WorkspaceReady { root, index } => {
+            AppEvent::WorkspaceReady {
+                request,
+                root,
+                index,
+            } => {
+                if request != self.workspace_request || index.cancelled {
+                    self.log
+                        .push("[workspace] se descartó un índice desactualizado".to_string());
+                    return;
+                }
                 let note_count = index.notes.len();
                 let skipped = index.skipped;
                 let truncated = index.truncated;
@@ -2630,7 +2649,12 @@ impl ApplicationHandler<AppEvent> for App {
                     "workspace indexado: {note_count} notas, {skipped} omitidas{suffix}"
                 ));
             }
-            AppEvent::WorkspaceFailed(error) => {
+            AppEvent::WorkspaceFailed { request, error } => {
+                if request != self.workspace_request {
+                    self.log
+                        .push("[workspace] se descartó un error desactualizado".to_string());
+                    return;
+                }
                 self.log.push(format!("[workspace] {error}"));
                 self.set_notice("no se pudo abrir la carpeta de trabajo");
             }
@@ -3715,15 +3739,30 @@ impl App {
             self.set_notice("abrir carpeta cancelado");
             return;
         };
+        if let Some(cancel) = &self.workspace_cancel {
+            cancel.store(true, Ordering::Relaxed);
+        }
+        self.workspace_request = self.workspace_request.saturating_add(1);
+        let request = self.workspace_request;
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.workspace_cancel = Some(cancel.clone());
         let proxy = self.proxy.clone();
         self.set_notice("indexando carpeta de trabajo");
         thread::spawn(move || {
             let event = match WorkspaceRoot::open(path) {
                 Ok(root) => {
-                    let index = index_workspace(&root, WorkspaceLimits::default());
-                    AppEvent::WorkspaceReady { root, index }
+                    let index =
+                        index_workspace_cancellable(&root, WorkspaceLimits::default(), &cancel);
+                    AppEvent::WorkspaceReady {
+                        request,
+                        root,
+                        index,
+                    }
                 }
-                Err(error) => AppEvent::WorkspaceFailed(error.to_string()),
+                Err(error) => AppEvent::WorkspaceFailed {
+                    request,
+                    error: error.to_string(),
+                },
             };
             let _ = proxy.send_event(event);
         });
@@ -4962,6 +5001,8 @@ fn main() {
         recovery: RecoverySession::start().ok(),
         last_recovery: Instant::now(),
         workspace: None,
+        workspace_request: 0,
+        workspace_cancel: None,
         document_request: initial_document_request,
         pending_workspace_heading: None,
         mode: if opening_path.is_some() {

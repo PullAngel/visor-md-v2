@@ -43,7 +43,7 @@ final de cada hito.
 | Lector completo | Pendiente | Markdown cotidiano completo |
 | Editor básico | En curso | Abrir, crear, edición fuente, guardado atómico, conflictos explícitos y recuperación local inicial; faltan buffer escalable, configuración de recuperación y QA manual de los diálogos nativos |
 | Chrome | Pendiente | Ventana, pestañas y comandos |
-| Workspace | En curso | Carpeta explícita, VFS e índice acotado; faltan UI de búsqueda, cancelación y cambios externos |
+| Workspace | En curso | Carpeta explícita, VFS e índice acotado/cancelable; faltan UI de búsqueda y cambios externos |
 | Obsidian | En curso | Wikilinks, callouts y navegación inicial de backlinks contenidos; faltan panel visible y actualización incremental |
 | Estudio | Pendiente | Herramientas portables |
 | Exportación | Pendiente | PDF, DOCX y copias preparadas |

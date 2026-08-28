@@ -9,6 +9,7 @@ use crate::vfs::WorkspaceRoot;
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub(crate) const DEFAULT_MAX_WORKSPACE_FILES: usize = 10_000;
 
@@ -63,6 +64,9 @@ pub(crate) struct WorkspaceIndex {
     pub(crate) notes: Vec<WorkspaceNote>,
     pub(crate) skipped: usize,
     pub(crate) truncated: bool,
+    /// El recorrido se interrumpió por una acción posterior de la persona.
+    /// Un resultado cancelado nunca debe sustituir el índice activo.
+    pub(crate) cancelled: bool,
 }
 
 impl WorkspaceIndex {
@@ -157,12 +161,27 @@ impl WorkspaceIndex {
 /// Recorre únicamente rutas ya contenidas. `.git` y `.obsidian` son metadatos
 /// de otras herramientas: no se indexan para evitar ruido, secretos de plugin
 /// y un falso efecto de compatibilidad al interpretar sus configuraciones.
+#[cfg(test)]
 pub(crate) fn index_workspace(root: &WorkspaceRoot, limits: WorkspaceLimits) -> WorkspaceIndex {
+    index_workspace_cancellable(root, limits, &AtomicBool::new(false))
+}
+
+/// Variante cooperativa del indexado. La señal solo se comprueba entre
+/// entradas, por lo que no hace falta matar hilos ni publicar estado parcial.
+pub(crate) fn index_workspace_cancellable(
+    root: &WorkspaceRoot,
+    limits: WorkspaceLimits,
+    cancelled: &AtomicBool,
+) -> WorkspaceIndex {
     let mut index = WorkspaceIndex::default();
     let mut pending = vec![root.root().to_path_buf()];
     let mut visited_directories = HashSet::new();
 
     while let Some(directory) = pending.pop() {
+        if cancelled.load(Ordering::Relaxed) {
+            index.cancelled = true;
+            return index;
+        }
         if !visited_directories.insert(directory.clone()) {
             continue;
         }
@@ -171,6 +190,10 @@ pub(crate) fn index_workspace(root: &WorkspaceRoot, limits: WorkspaceLimits) -> 
             continue;
         };
         for entry in entries.flatten() {
+            if cancelled.load(Ordering::Relaxed) {
+                index.cancelled = true;
+                return index;
+            }
             let name = entry.file_name();
             if name == ".git" || name == ".obsidian" {
                 continue;
@@ -376,6 +399,17 @@ mod tests {
                 .iter()
                 .all(|note| !note.relative_path.starts_with(".obsidian"))
         );
+    }
+
+    #[test]
+    fn cancelar_el_indice_no_publica_un_resultado_completo() {
+        let root = fixture_root();
+        let vfs = WorkspaceRoot::open(&root).expect("la raíz es válida");
+        let cancelled = AtomicBool::new(true);
+        let index = index_workspace_cancellable(&vfs, WorkspaceLimits::default(), &cancelled);
+
+        assert!(index.cancelled);
+        assert!(index.notes.is_empty());
     }
 
     #[test]
