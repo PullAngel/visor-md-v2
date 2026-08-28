@@ -4,7 +4,7 @@
 //! de `WorkspaceRoot`. La interfaz podrá ejecutarlo fuera del hilo de ventana
 //! y descartar su resultado al cambiar de workspace.
 
-use crate::files::{DEFAULT_DOCUMENT_LIMIT_BYTES, open_explicit_primary};
+use crate::files::open_explicit_primary;
 use crate::vfs::WorkspaceRoot;
 use std::collections::HashSet;
 use std::fs;
@@ -12,6 +12,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 pub(crate) const DEFAULT_MAX_WORKSPACE_FILES: usize = 10_000;
+pub(crate) const DEFAULT_MAX_WORKSPACE_NOTE_BYTES: u64 = 512 * 1024;
+pub(crate) const DEFAULT_MAX_WORKSPACE_SCAN_BYTES: u64 = 64 * 1024 * 1024;
 /// Presupuesto global de texto retenido para búsqueda. El índice nunca se
 /// persiste y debe poder descartarse sin dejar una copia completa de la bóveda.
 pub(crate) const DEFAULT_MAX_INDEXED_CONTENT_BYTES: usize = 8 * 1024 * 1024;
@@ -20,6 +22,8 @@ const MAX_INDEXED_BYTES_PER_NOTE: usize = 8 * 1024;
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct WorkspaceLimits {
     pub(crate) max_files: usize,
+    pub(crate) max_note_bytes: u64,
+    pub(crate) max_scanned_bytes: u64,
     pub(crate) max_indexed_content_bytes: usize,
 }
 
@@ -27,6 +31,8 @@ impl Default for WorkspaceLimits {
     fn default() -> Self {
         Self {
             max_files: DEFAULT_MAX_WORKSPACE_FILES,
+            max_note_bytes: DEFAULT_MAX_WORKSPACE_NOTE_BYTES,
+            max_scanned_bytes: DEFAULT_MAX_WORKSPACE_SCAN_BYTES,
             max_indexed_content_bytes: DEFAULT_MAX_INDEXED_CONTENT_BYTES,
         }
     }
@@ -74,6 +80,8 @@ pub(crate) struct WorkspaceIndex {
     pub(crate) truncated: bool,
     pub(crate) indexed_content_bytes: usize,
     pub(crate) content_truncated: bool,
+    pub(crate) scanned_bytes: u64,
+    pub(crate) scan_truncated: bool,
     /// El recorrido se interrumpió por una acción posterior de la persona.
     /// Un resultado cancelado nunca debe sustituir el índice activo.
     pub(crate) cancelled: bool,
@@ -232,7 +240,20 @@ pub(crate) fn index_workspace_cancellable(
                 index.truncated = true;
                 return index;
             }
-            match open_explicit_primary(&canonical, DEFAULT_DOCUMENT_LIMIT_BYTES) {
+            let Ok(metadata) = entry.metadata() else {
+                index.skipped += 1;
+                continue;
+            };
+            if metadata.len() > limits.max_note_bytes {
+                index.skipped += 1;
+                continue;
+            }
+            if index.scanned_bytes.saturating_add(metadata.len()) > limits.max_scanned_bytes {
+                index.scan_truncated = true;
+                return index;
+            }
+            index.scanned_bytes = index.scanned_bytes.saturating_add(metadata.len());
+            match open_explicit_primary(&canonical, limits.max_note_bytes) {
                 Ok(opened) => {
                     let relative_path = canonical
                         .strip_prefix(root.root())
@@ -462,6 +483,31 @@ mod tests {
         assert_eq!(note.search_text, "á");
         assert_eq!(bytes, "á".len());
         assert!(truncated);
+    }
+
+    #[test]
+    fn limita_la_lectura_de_notas_y_de_la_carpeta() {
+        let root = fixture_root();
+        let vfs = WorkspaceRoot::open(&root).expect("la raíz es válida");
+        let small_note_limit = index_workspace(
+            &vfs,
+            WorkspaceLimits {
+                max_note_bytes: 1,
+                ..WorkspaceLimits::default()
+            },
+        );
+        assert!(small_note_limit.notes.is_empty());
+        assert!(small_note_limit.skipped >= 2);
+
+        let small_scan_limit = index_workspace(
+            &vfs,
+            WorkspaceLimits {
+                max_scanned_bytes: 1,
+                ..WorkspaceLimits::default()
+            },
+        );
+        assert!(small_scan_limit.scan_truncated);
+        assert!(small_scan_limit.notes.is_empty());
     }
 
     #[test]
