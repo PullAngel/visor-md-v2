@@ -28,7 +28,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Listas, citas y reglas | Parcial | Casos anidados cubiertos; falta corpus y QA visual ampliados |
 | Task list checkboxes | Parcial | Dibujo nativo, clic reversible y pruebas; falta QA de plataforma |
 | CommonMark aplicable | Parcial | Corpus versionado de sintaxis soportada y política HTML; falta suite oficial seleccionada |
-| GFM elegido | Parcial | Tablas, tachado, tareas y autolinks; faltan footnotes y corpus sistemático |
+| GFM elegido | Parcial | Tablas, tachado, tareas, autolinks y notas al pie; falta corpus sistemático |
 | Índice de encabezados | Parcial | Encabezados indexados y anclas internas; falta panel filtrable y accesible |
 | Plegado de secciones | Planificado | Sin perder posición ni selección |
 | Búsqueda en documento | Planificado | Resultados y marcas de scroll |

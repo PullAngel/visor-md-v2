@@ -10,6 +10,10 @@ La siguiente empieza aparte.
 
 Visita <https://example.com/ruta> o escribe contacto@example.com.
 
+Una referencia a pie[^seguridad] permanece como texto nativo.
+
+[^seguridad]: La definición no crea HTML ni navegación de navegador.
+
 > Cita de primer nivel.
 >
 > > Cita anidada con **énfasis**.

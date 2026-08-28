@@ -1047,6 +1047,12 @@ fn inline_into<'a>(
                     title: link.title,
                 });
             }
+            // La referencia se representa como texto compacto nativo. No se
+            // genera HTML ni un ancla de navegador; el bloque de definición
+            // conserva su propia fuente y se lee al final del documento.
+            NodeValue::FootnoteReference(reference) => {
+                output.literal(&format!("[{}]", reference.ix), state, child_source);
+            }
             NodeValue::HtmlInline(html) => {
                 match native_html(&html) {
                     Some(NativeHtml::Break) => output.literal("\n", state, child_source),
@@ -1522,6 +1528,7 @@ fn markdown_options() -> Options<'static> {
     options.extension.strikethrough = true;
     options.extension.autolink = true;
     options.extension.tasklist = true;
+    options.extension.footnotes = true;
     options
 }
 
@@ -5916,6 +5923,8 @@ con dos lineas
             .join("\n");
         assert!(visible.contains("concepto clave"));
         assert!(visible.contains("<script"));
+        assert!(visible.contains("referencia a pie[1]"));
+        assert!(visible.contains("La definición no crea HTML"));
 
         // El contrato del lector termina en el layout, no en el AST ni en el
         // modelo intermedio. Cada bloque anunciado debe producir geometría
@@ -5927,6 +5936,22 @@ con dos lineas
             let layout = build_layout(block, &mut font_cx, &mut layout_cx, 680.0, 1.0, NIGHT);
             assert!(layout.height().is_finite() && layout.height() >= 0.0);
         }
+    }
+
+    #[test]
+    fn las_notas_al_pie_se_muestran_sin_html_ni_perder_la_definicion() {
+        let source = "Texto con nota[^uno].\n\n[^uno]: Definición con áéí.";
+        let outcome = parse_blocks(source).expect("las notas al pie deben parsearse");
+        validate_model(source, &outcome.blocks).expect("los rangos de nota son válidos");
+        let rendered = outcome
+            .blocks
+            .iter()
+            .map(|block| block.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(rendered.contains("Texto con nota[1]."));
+        assert!(rendered.contains("Definición con áéí."));
     }
 
     /// Casos pequeños y trazables que complementan la fixture de lectura. No
