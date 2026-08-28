@@ -73,6 +73,8 @@ const SELECTION_SCROLL_MAX_STEP: f32 = 18.0;
 const CONTEXT_MENU_WIDTH: f32 = 224.0;
 const CONTEXT_MENU_ROW_HEIGHT: f32 = 34.0;
 const CONTEXT_MENU_PADDING: f32 = 8.0;
+const CODE_COPY_WIDTH: f32 = 60.0;
+const CODE_COPY_HEIGHT: f32 = 22.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ContextAction {
@@ -2898,6 +2900,14 @@ impl ApplicationHandler<AppEvent> for App {
                     }
                     if self.mode == DocumentMode::Reading
                         && let Some((x, y)) = self.pointer
+                        && let Some(block) = self.code_copy_at(x, y)
+                    {
+                        self.copy_code_block(block);
+                        self.selecting = false;
+                        return;
+                    }
+                    if self.mode == DocumentMode::Reading
+                        && let Some((x, y)) = self.pointer
                         && let Some(block) = self.task_at(x, y)
                     {
                         self.toggle_task(block);
@@ -4017,6 +4027,15 @@ impl App {
             return;
         };
 
+        let kind = if source_markdown {
+            "Markdown original copiado"
+        } else {
+            "texto copiado"
+        };
+        self.copy_text_to_clipboard(text, kind);
+    }
+
+    fn copy_text_to_clipboard(&mut self, text: String, kind: &str) {
         let clipboard = match self.clipboard.as_mut() {
             Some(clipboard) => clipboard,
             None => match Clipboard::new() {
@@ -4035,11 +4054,6 @@ impl App {
             self.set_notice("no se pudo copiar");
             return;
         }
-        let kind = if source_markdown {
-            "Markdown original copiado"
-        } else {
-            "texto copiado"
-        };
         self.log.push(format!("[portapapeles] {kind}"));
         self.set_notice(kind);
     }
@@ -4304,6 +4318,33 @@ impl App {
                 && (marker_left..=slot.x).contains(&x))
             .then_some(index)
         })
+    }
+
+    fn code_copy_at(&self, x: f32, y: f32) -> Option<usize> {
+        let window = self.window.as_ref()?;
+        let text_width = (window.inner_size().width as f32 - MARGIN * self.scale_factor * 2.0)
+            .min(MAX_MEASURE * self.scale_factor);
+        self.slots.iter().enumerate().find_map(|(index, slot)| {
+            if !matches!(slot.kind, Kind::Code) {
+                return None;
+            }
+            let (left, top, width, height) =
+                code_copy_bounds(slot, text_width, self.scroll, self.scale_factor);
+            ((left..=left + width).contains(&x) && (top..=top + height).contains(&y))
+                .then_some(index)
+        })
+    }
+
+    fn copy_code_block(&mut self, block: usize) {
+        let Some(source) = self.blocks.get(block).and_then(|block| {
+            self.source
+                .get(block.source.start..block.source.end)
+                .map(str::to_owned)
+        }) else {
+            self.set_notice("no se pudo localizar el bloque de código en la fuente");
+            return;
+        };
+        self.copy_text_to_clipboard(source, "bloque de código copiado");
     }
 
     fn toggle_task(&mut self, block: usize) {
@@ -4648,6 +4689,12 @@ impl App {
                 })
                 .collect::<Vec<_>>()
         });
+        let code_copy_layout = build_menu_layout(
+            "Copiar",
+            &mut self.font_cx,
+            &mut self.layout_cx,
+            self.palette,
+        );
 
         // El pixmap se reusa entre cuadros: reservar 2,7 MB por cuadro y
         // ponerlos en cero es trabajo que no hace falta repetir.
@@ -4774,6 +4821,22 @@ impl App {
                         slot.height + 4.0,
                     ) {
                         pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+                    }
+                    let (x, y, width, height) =
+                        code_copy_bounds(slot, ancho_texto, *scroll, *scale_factor);
+                    let ac = palette.accent;
+                    let mut button = Paint::default();
+                    button.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 42));
+                    if let Some(rect) = Rect::from_xywh(x, y, width, height) {
+                        pixmap.fill_rect(rect, &button, Transform::identity(), None);
+                    }
+                    for line in code_copy_layout.lines() {
+                        for entry in line.items() {
+                            if let PositionedLayoutItem::GlyphRun(run) = entry {
+                                draw_run_background(pixmap, &run, x + 8.0, y + 4.0);
+                                draw_glyph_run(pixmap, scale_cx, glyphs, &run, x + 8.0, y + 4.0);
+                            }
+                        }
                     }
                 }
                 // Filete de acento a la izquierda de la cita, como las alertas.
@@ -5060,6 +5123,17 @@ fn task_marker_replacement(text: &str) -> Option<(usize, &'static str)> {
         .map(|offset| (offset + 1, "x"))
         .or_else(|| text.find("[x]").map(|offset| (offset + 1, " ")))
         .or_else(|| text.find("[X]").map(|offset| (offset + 1, " ")))
+}
+
+fn code_copy_bounds(slot: &Slot, text_width: f32, scroll: f32, scale: f32) -> (f32, f32, f32, f32) {
+    let width = CODE_COPY_WIDTH * scale;
+    let height = CODE_COPY_HEIGHT * scale;
+    (
+        slot.x + text_width - width - 4.0 * scale,
+        slot.y - scroll + 4.0 * scale,
+        width,
+        height,
+    )
 }
 
 fn main() {
@@ -5952,6 +6026,22 @@ con dos lineas
 
         assert!(rendered.contains("Texto con nota[1]."));
         assert!(rendered.contains("Definición con áéí."));
+    }
+
+    #[test]
+    fn el_boton_de_copiar_codigo_queda_dentro_del_bloque_visible() {
+        let slot = Slot {
+            y: 120.0,
+            height: 48.0,
+            x: 48.0,
+            kind: Kind::Code,
+        };
+        let (x, y, width, height) = code_copy_bounds(&slot, 640.0, 40.0, 1.0);
+
+        assert!(x >= slot.x);
+        assert!(y >= slot.y - 40.0);
+        assert!(x + width <= slot.x + 640.0);
+        assert!(y + height <= slot.y - 40.0 + slot.height);
     }
 
     /// Casos pequeños y trazables que complementan la fixture de lectura. No

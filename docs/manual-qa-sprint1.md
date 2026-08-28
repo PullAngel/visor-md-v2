@@ -134,7 +134,7 @@ la clave de caché de fuentes variables, composición RGBA de fallback, sangría
 de citas y copia legible. Falta repetir esta lista con el ejecutable release
 posterior a esas correcciones antes de cerrar Sprint A.
 
-La acción visible de copiar un bloque de código sigue registrada como trabajo de
-"Lector completo". Las tablas ya se representan con celdas y bordes nativos;
-selección y copia TSV de celdas quedan pendientes. En ambos casos, el contenido
-permanece inerte y la fuente se conserva sin activar recursos.
+Los bloques de código ahora muestran una acción nativa `Copiar` que copia su
+fuente de forma explícita. Las tablas ya se representan con celdas y bordes
+nativos; selección y copia TSV de celdas quedan pendientes. En ambos casos, el
+contenido permanece inerte y la fuente se conserva sin activar recursos.

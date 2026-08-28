@@ -124,6 +124,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | --- | --- | --- |
 | Imágenes locales | Planificado | VFS, límites y errores visibles |
 | Imágenes remotas confirmadas | Planificado | Componente de red aislado |
+| Copiar bloque de código | Parcial | Acción visible y explícita; falta QA visual y de plataformas destino |
 | Resaltado de código | Planificado | Sin runtime o dependencia desproporcionada |
 | Matemática | Futuro | Componente opcional seguro |
 | Mermaid nativo | Futuro | Sin servicio remoto ni scripts |
