@@ -92,6 +92,8 @@ Registrar antes de comenzar:
 
 - Pulsar `F2` muestra la fuente Markdown como texto inerte; escribir texto con
   teclado o IME, Backspace, Delete, Ctrl+Z y Ctrl+Y no debe cerrar la ventana.
+- Tras editar, el título muestra `*` junto al nombre del documento; desaparece
+  solamente después de un guardado confirmado.
 - Pulsar `F2` otra vez vuelve a lectura y muestra el contenido modificado, sin
   superponer bloques aunque se haya pegado o escrito una cantidad grande de
   texto. `Ctrl+Z` desde lectura también actualiza la vista y conserva la

@@ -1691,7 +1691,12 @@ fn selection_scroll_delta(pointer_y: f32, viewport_height: f32) -> f32 {
     0.0
 }
 
-fn window_title(path: &str, safe_mode: Option<Degradation>, notice: Option<&str>) -> String {
+fn window_title(
+    path: &str,
+    safe_mode: Option<Degradation>,
+    dirty: bool,
+    notice: Option<&str>,
+) -> String {
     let mode = match safe_mode {
         Some(Degradation::TextOnly) => " · texto inerte",
         Some(_) => " · modo seguro",
@@ -1700,7 +1705,8 @@ fn window_title(path: &str, safe_mode: Option<Degradation>, notice: Option<&str>
     let notice = notice
         .map(|notice| format!(" · {notice}"))
         .unwrap_or_default();
-    format!("Visor MD v2 · {path}{mode}{notice}")
+    let dirty = if dirty { " *" } else { "" };
+    format!("Visor MD v2 · {path}{dirty}{mode}{notice}")
 }
 
 fn safe_mode_label(reason: Degradation) -> String {
@@ -2505,7 +2511,7 @@ impl ApplicationHandler<AppEvent> for App {
                     ));
                 }
                 if let Some(window) = &self.window {
-                    window.set_title(&window_title(&self.path, self.safe_mode, None));
+                    window.set_title(&window_title(&self.path, self.safe_mode, false, None));
                     window.request_redraw();
                 }
             }
@@ -2643,6 +2649,7 @@ impl ApplicationHandler<AppEvent> for App {
             .with_title(window_title(
                 &self.path,
                 self.safe_mode,
+                self.source_editor.is_dirty(),
                 self.notice.as_deref(),
             ))
             .with_inner_size(winit::dpi::LogicalSize::new(900.0, 760.0));
@@ -3274,6 +3281,7 @@ impl App {
             Ok(true) => match self.refresh_source_blocks() {
                 Ok(()) => {
                     self.notice = None;
+                    self.refresh_title();
                     self.schedule_recovery();
                     if let Some(window) = &self.window {
                         window.request_redraw();
@@ -3869,6 +3877,7 @@ impl App {
             window.set_title(&window_title(
                 &self.path,
                 self.safe_mode,
+                self.source_editor.is_dirty(),
                 self.hover_destination
                     .as_deref()
                     .or(self.focus_destination.as_deref())
@@ -5174,11 +5183,19 @@ mod pruebas {
 
     #[test]
     fn el_titulo_hace_visible_el_modo_seguro() {
-        let normal = window_title("nota.md", None, None);
-        let seguro = window_title("hostil.md", Some(Degradation::DepthLimit), None);
+        let normal = window_title("nota.md", None, false, None);
+        let seguro = window_title("hostil.md", Some(Degradation::DepthLimit), false, None);
         assert!(!normal.contains("modo seguro"));
         assert!(seguro.contains("modo seguro"));
         assert!(seguro.contains("hostil.md"));
+    }
+
+    #[test]
+    fn el_titulo_marca_cambios_sin_guardar() {
+        let limpio = window_title("nota.md", None, false, None);
+        let sucio = window_title("nota.md", None, true, None);
+        assert!(!limpio.contains("nota.md *"));
+        assert!(sucio.contains("nota.md *"));
     }
 
     #[test]
@@ -5191,7 +5208,7 @@ mod pruebas {
 
     #[test]
     fn el_texto_inerte_no_se_presenta_como_error_de_seguridad() {
-        let title = window_title("datos.json", Some(Degradation::TextOnly), None);
+        let title = window_title("datos.json", Some(Degradation::TextOnly), false, None);
         assert!(title.contains("texto inerte"));
         assert!(!title.contains("modo seguro"));
     }
