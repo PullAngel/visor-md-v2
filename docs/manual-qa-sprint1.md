@@ -60,6 +60,15 @@ Registrar antes de comenzar:
   el mismo tamaño lógico percibido. Registrar aparte si un control flotante
   (banda de modo seguro o menú contextual) se percibe desproporcionado.
 - La rueda llega al principio y al final sin zonas inaccesibles.
+
+## Carpeta de trabajo
+
+- Con `Ctrl+Shift+O`, elegir una carpeta de pruebas que tenga dos o más notas
+  Markdown. `Ctrl+Shift+F` debe buscar solo dentro de esa carpeta; las flechas
+  cambian la coincidencia y Enter abre la elegida.
+- Crear o modificar una nota desde otro editor y pulsar `Ctrl+Shift+I`. La
+  actualización debe ser visible en la búsqueda posterior, sin crear archivos
+  auxiliares en la carpeta ni tocar `.obsidian`.
 - Texto, enlaces, decoración y casillas conservan contraste suficiente.
 - La sensación de scroll es estable, sin saltos perceptibles.
 - Arrastrar cerca de un borde desplaza el documento de manera controlable y

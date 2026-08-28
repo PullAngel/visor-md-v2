@@ -283,8 +283,9 @@ por orden. Una ancla igual a un encabezado visible se aplica después de abrir l
 nota. El recorrido del índice se cancela cooperativamente al elegir otra carpeta
 y su versión evita publicar resultados tardíos. `Ctrl+Shift+F` consulta el
 índice local y solo abre la nota elegida después de resolver su ruta con la VFS.
-Todavía faltan paneles de resultados, backlinks visibles y detección de cambios
-externos del workspace.
+`Ctrl+Shift+I` vuelve a crear el índice de la raíz ya concedida y cancela el
+recorrido anterior si aún estaba activo. Todavía faltan paneles de resultados,
+backlinks visibles y detección de cambios externos del workspace.
 
 Los callouts conocidos de Obsidian dentro de una cita (`NOTE`, `INFO`, `TIP`,
 `WARNING`, `CAUTION`, `DANGER` e `IMPORTANT`) reciben una presentación nativa

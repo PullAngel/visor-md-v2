@@ -3068,6 +3068,18 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::KeyI),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } if self.modifiers.control_key() && self.modifiers.shift_key() => {
+                self.reindex_workspace()
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
                         physical_key: PhysicalKey::Code(KeyCode::KeyO),
                         state: ElementState::Pressed,
                         repeat: false,
@@ -3643,6 +3655,11 @@ impl App {
                     self.choose_document_to_open();
                 }
             }
+            PhysicalKey::Code(KeyCode::KeyI)
+                if self.modifiers.control_key() && self.modifiers.shift_key() =>
+            {
+                self.reindex_workspace();
+            }
             PhysicalKey::Code(KeyCode::KeyR)
                 if self.modifiers.control_key() && self.modifiers.shift_key() =>
             {
@@ -3961,6 +3978,21 @@ impl App {
             self.set_notice("abrir carpeta cancelado");
             return;
         };
+        self.start_workspace_index(path, "indexando carpeta de trabajo");
+    }
+
+    /// Volver a recorrer una carpeta ya concedida es una acción explícita. No
+    /// instala vigilancia de directorios ni permite que contenido Markdown
+    /// active lecturas nuevas fuera de la raíz elegida.
+    fn reindex_workspace(&mut self) {
+        let Some((root, _)) = &self.workspace else {
+            self.set_notice("elige primero una carpeta de trabajo con Ctrl+Shift+O");
+            return;
+        };
+        self.start_workspace_index(root.root().to_path_buf(), "actualizando carpeta de trabajo");
+    }
+
+    fn start_workspace_index(&mut self, path: PathBuf, notice: &str) {
         if let Some(cancel) = &self.workspace_cancel {
             cancel.store(true, Ordering::Relaxed);
         }
@@ -3969,7 +4001,7 @@ impl App {
         let cancel = Arc::new(AtomicBool::new(false));
         self.workspace_cancel = Some(cancel.clone());
         let proxy = self.proxy.clone();
-        self.set_notice("indexando carpeta de trabajo");
+        self.set_notice(notice);
         thread::spawn(move || {
             let event = match WorkspaceRoot::open(path) {
                 Ok(root) => {

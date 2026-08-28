@@ -94,7 +94,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 
 | Función | Estado | Criterio mínimo |
 | --- | --- | --- |
-| Abrir carpeta o bóveda | Parcial | Sin migración ni cambios implícitos; falta UI de árbol |
+| Abrir carpeta o bóveda | Parcial | Sin migración ni cambios implícitos; `Ctrl+Shift+I` vuelve a indexar la raíz elegida; falta UI de árbol |
 | Árbol de archivos | Planificado | Navegación y estado de disco |
 | Búsqueda de bóveda | Parcial | `Ctrl+Shift+F` consulta el índice en memoria y abre solo notas contenidas; faltan panel y resultados múltiples visibles |
 | Wikilinks | Parcial | Resolución contenida y explícita; falta panel de diagnóstico |
