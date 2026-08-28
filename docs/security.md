@@ -343,6 +343,12 @@ se abre mediante una acción explícita como documento sin destino. Es una defen
 contra cierres inesperados, no un backup ni una garantía de durabilidad; la UI
 debe explicarlo y permitir desactivarla cuando exista configuración persistente.
 
+Al pedir cerrar con cambios pendientes, Visor MD fuerza una escritura de esa
+recuperación antes de ofrecer el cierre. Si falla, mantiene la ventana abierta.
+El diálogo explica que la copia no está cifrada y que la restauración posterior
+es explícita. Este control evita una pérdida silenciosa, pero no reemplaza un
+guardado definitivo.
+
 El historial de edición conserva solo los fragmentos retirados e insertados y
 tiene un presupuesto de 4 MiB por documento. Si se llena, se descartan pasos de
 undo más antiguos, no el texto actual ni cambios pendientes. Es una defensa de

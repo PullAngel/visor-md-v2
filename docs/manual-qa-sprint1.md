@@ -102,6 +102,10 @@ Registrar antes de comenzar:
   explica las tres acciones. Probar Cancelar; para Recargar, verificar que la
   recuperación queda disponible con `Ctrl+Shift+R`; para Guardar una copia,
   elegir un destino nuevo y verificar que el original externo no cambia.
+- Editar un documento, intentar cerrar la ventana y confirmar que aparece el
+  aviso de cambios sin guardar. Elegir seguir editando y comprobar que nada se
+  pierde; repetir, elegir cerrar y usar `Ctrl+Shift+R` tras reiniciar para abrir
+  la recuperación como documento sin destino.
 - Esta comprobación no autoriza guardar: cursor visible, selección por mouse,
   navegación vertical y guardado siguen fuera de esta etapa.
 

@@ -2702,8 +2702,10 @@ impl ApplicationHandler<AppEvent> for App {
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         match event {
             WindowEvent::CloseRequested => {
-                self.report();
-                event_loop.exit();
+                if self.request_close() {
+                    self.report();
+                    event_loop.exit();
+                }
             }
             WindowEvent::ThemeChanged(theme) => {
                 self.palette = if matches!(theme, Theme::Light) {
@@ -3598,6 +3600,41 @@ impl App {
                 self.set_notice("conflicto conservado: el archivo externo no se sobrescribió")
             }
         }
+    }
+
+    /// El cierre no puede transformar una edición activa en pérdida silenciosa.
+    /// Como todavía no existe el chrome de pestañas, la confirmación usa un
+    /// diálogo nativo pequeño y conserva una recuperación sin cifrar antes de
+    /// permitir abandonar la ventana.
+    fn request_close(&mut self) -> bool {
+        if !self.source_editor.is_dirty() {
+            if let Some(recovery) = &self.recovery {
+                let _ = recovery.clear();
+            }
+            return true;
+        }
+        let Some(recovery) = &self.recovery else {
+            self.set_notice("no se cerró: no hay recuperación local disponible");
+            return false;
+        };
+        if let Err(error) = recovery.write(&self.source) {
+            self.log.push(format!("[recuperación] {error}"));
+            self.set_notice("no se cerró: no se pudo conservar la recuperación local");
+            return false;
+        }
+        let dialog = MessageDialog::new()
+            .set_level(MessageLevel::Warning)
+            .set_title("Visor MD · cambios sin guardar")
+            .set_description(
+                "Hay cambios sin guardar. Se conservó una recuperación local sin cifrar.\n\nSí: seguir editando.\nNo: cerrar y conservar la recuperación para restaurarla después.",
+            )
+            .set_buttons(MessageButtons::YesNo);
+        let result = if let Some(window) = &self.window {
+            dialog.set_parent(window.as_ref()).show()
+        } else {
+            dialog.show()
+        };
+        matches!(result, MessageDialogResult::No)
     }
 
     fn create_new_document(&mut self) {
