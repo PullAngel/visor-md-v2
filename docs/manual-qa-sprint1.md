@@ -74,9 +74,9 @@ Registrar antes de comenzar:
   aplicación del sistema. Un enlace relativo avisa que requiere VFS; una ruta
   bloqueada no se abre.
 - Ctrl+A abarca todo el documento; `Ctrl+C` pega en otra aplicación el texto
-  visible sin marcadores Markdown. `Ctrl+Shift+C` pega el Markdown original de
-  los bloques seleccionados, incluso si la selección visual solo tomó una parte
-  de ellos.
+  visible conservando viñetas, numeración, casillas y citas cuando los bloques
+  entraron completos. `Ctrl+Shift+C` pega el Markdown original de los bloques
+  seleccionados, incluso si la selección visual solo tomó una parte de ellos.
 - Con texto seleccionado, click derecho abre un menú propio con solo "Copiar
   texto" y "Copiar Markdown original". Probar ambas acciones en otra
   aplicación; sin selección, el menú no aparece ni hace otra operación.
@@ -104,3 +104,17 @@ Para cada defecto anotar:
 La revisión queda `Pendiente` hasta completar toda la lista. Un defecto se
 convierte en test automatizado cuando su propiedad puede comprobarse sin juicio
 estético.
+
+## Ronda del 27 de agosto de 2026
+
+La primera ejecución de esta lista encontró defectos reales en negrita, emoji,
+escritura de teclado, profundidad visual de citas y copia estructurada. Se
+corrigieron en el siguiente bloque de trabajo con regresiones automáticas para
+la clave de caché de fuentes variables, composición RGBA de fallback, sangría
+de citas y copia legible. Falta repetir esta lista con el ejecutable release
+posterior a esas correcciones antes de cerrar Sprint A.
+
+La tabla con cuadrícula y la acción visible de copiar un bloque de código no
+formaban parte de esta ronda: siguen registradas como trabajo de "Lector
+completo". Mientras tanto, las tablas conservan sus celdas y el código su texto
+fuente, sin activar recursos ni perder contenido.

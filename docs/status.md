@@ -97,11 +97,11 @@ exacto del traspaso.
 - solo extensiones Markdown pasan al parser; otros textos UTF-8 se muestran de
   forma inerte, sin comportamiento de IDE ni ejecución.
 - `F2` entra en una primera edición de fuente: el Markdown se muestra como
-  texto inerte, IME inserta texto y Backspace, Delete, Ctrl+Z y Ctrl+Y aplican
-  parches reversibles. Clic y arrastre actualizan cursor y selección de fuente
-  con el layout visible. `F2` vuelve a derivar la vista Markdown en un hilo de
-  trabajo; un fallo conserva la fuente editada. Queda guardado y QA manual de
-  la interacción completa.
+  texto inerte, teclado normal e IME insertan texto y Backspace, Delete,
+  Ctrl+Z y Ctrl+Y aplican parches reversibles. Clic y arrastre actualizan cursor
+  y selección de fuente con el layout visible. `F2` vuelve a derivar la vista
+  Markdown en un hilo de trabajo; un fallo conserva la fuente editada. Queda
+  guardado y QA manual de la interacción completa.
 
 Evidencia actual en Windows:
 
@@ -109,6 +109,8 @@ Evidencia actual en Windows:
 - `cargo fmt -- --check`: verde;
 - `cargo clippy --all-targets -- -D warnings`: verde;
 - `cargo test`: 68 de 68 pruebas verdes tras lector, archivos y texto inerte;
+- `cargo test --offline`: 104 de 104 pruebas verdes el 28 de agosto de 2026
+  tras corregir el QA visual de tipografía, emoji, citas y copia;
 - `scripts/check.ps1`: verde el 27 de agosto de 2026 tras el cierre parcial de
   Sprint A (formato, Clippy, 67 pruebas, SBOM, documentación y release);
 - `scripts/check.ps1`: verde el 27 de agosto de 2026;
@@ -126,6 +128,7 @@ Evidencia actual en Windows:
 - working tree con apertura primaria limitada: 3.021.312 bytes, 2,881 MiB;
 - gate lector y archivos: 3.031.040 bytes, 2,891 MiB;
 - gate Sprint A parcial: 3.103.232 bytes, 2,960 MiB;
+- correcciones posteriores al QA visual: 3.203.584 bytes, 3,055 MiB;
 - primer pintado mediano sobre diez ejecuciones: 102,5 ms;
 - P95 de primer pintado: 612 ms;
 - scroll automatizado: 4,4 ms por cuadro.

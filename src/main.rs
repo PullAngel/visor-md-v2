@@ -570,7 +570,9 @@ impl DocumentSelection {
 
     /// Copia la representación legible de la selección. Cada bloque conserva
     /// su texto visible y los bloques distintos se separan con un salto de
-    /// línea; no se intenta reconstruir sintaxis Markdown desde esa vista.
+    /// línea. Cuando un bloque entra completo, mantiene sus marcadores
+    /// estructurales legibles; Ctrl+Shift+C sigue siendo la vía para la fuente
+    /// Markdown exacta.
     fn rendered_text(self, blocks: &[Block]) -> Option<String> {
         let first = self.anchor.min(self.focus);
         let last = self.anchor.max(self.focus);
@@ -578,7 +580,12 @@ impl DocumentSelection {
         for index in first.block..=last.block {
             let block = blocks.get(index)?;
             let (start, end) = self.range_for(index, block.text.len())?;
-            pieces.push(block.text.get(start..end)?);
+            let text = block.text.get(start..end)?;
+            if start == 0 && end == block.text.len() {
+                pieces.push(format!("{}{}", rendered_block_prefix(block), text));
+            } else {
+                pieces.push(text.to_owned());
+            }
         }
         let text = pieces.join("\n");
         (!text.is_empty()).then_some(text)
@@ -594,6 +601,24 @@ impl DocumentSelection {
         let end = blocks.get(last)?.source.end;
         let text = source.get(start..end)?;
         (!text.is_empty()).then_some(text.to_owned())
+    }
+}
+
+/// Prefijo semántico de una copia de lectura. No intenta serializar Markdown:
+/// solo evita que una lista, tarea o cita quede convertida en párrafos planos
+/// al pegarla en otra aplicación.
+fn rendered_block_prefix(block: &Block) -> String {
+    match block.marker.as_ref() {
+        Some(Marker::Text(marker)) => format!("{marker} "),
+        Some(Marker::Task { done }) => {
+            if *done {
+                "[x] ".to_owned()
+            } else {
+                "[ ] ".to_owned()
+            }
+        }
+        None if matches!(block.kind, Kind::Quote) => "> ".repeat(block.quote_depth.max(1) as usize),
+        None => String::new(),
     }
 }
 
@@ -617,6 +642,18 @@ impl Block {
             kind,
             marker: None,
         }
+    }
+
+    /// Sangría efectiva del bloque. Las citas conservan la profundidad en el
+    /// modelo y cada nivel adicional se desplaza sin dejar que una entrada
+    /// patológica consuma todo el ancho de lectura.
+    fn indent(&self) -> f32 {
+        let nested_quote = if matches!(self.kind, Kind::Quote | Kind::Callout) {
+            self.quote_depth.saturating_sub(1).min(MAX_INDENT_DEPTH) as f32 * 20.0
+        } else {
+            0.0
+        };
+        self.kind.indent() + nested_quote
     }
 }
 
@@ -1362,10 +1399,10 @@ fn flatten<'a>(
                     if out[antes].text.trim().is_empty() {
                         out.remove(antes);
                     }
-                    if let Some(first) = out.get_mut(antes) {
-                        if first.marker.is_none() {
-                            first.marker = Some(Marker::Text(kind.label().to_owned()));
-                        }
+                    if let Some(first) = out.get_mut(antes)
+                        && first.marker.is_none()
+                    {
+                        first.marker = Some(Marker::Text(kind.label().to_owned()));
                     }
                     for block in &mut out[antes..] {
                         block.kind = Kind::Callout;
@@ -1654,7 +1691,7 @@ fn build_layout(
 ) -> Layout<Brush> {
     let (size, weight, role, mono) = block.kind.style();
     let color = palette.resolve(role);
-    let advance = (width - MARGIN * scale * 2.0 - block.kind.indent() * scale)
+    let advance = (width - MARGIN * scale * 2.0 - block.indent() * scale)
         .clamp(80.0 * scale, MAX_MEASURE * scale);
 
     // Nombre embebido primero, generico del sistema como red de seguridad si
@@ -1848,7 +1885,7 @@ fn estimate_height(block: &Block, width: f32, scale: f32) -> f32 {
         return scale;
     }
     let (size, _, _, mono) = block.kind.style();
-    let advance = (width - MARGIN * scale * 2.0 - block.kind.indent() * scale)
+    let advance = (width - MARGIN * scale * 2.0 - block.indent() * scale)
         .clamp(80.0 * scale, MAX_MEASURE * scale);
     // Ancho medio de caracter como fraccion del tamano de fuente. Aproximado
     // a proposito: el error se corrige al maquetar de verdad el bloque.
@@ -1887,7 +1924,7 @@ fn measure_all(
         slots.push(Slot {
             y,
             height,
-            x: MARGIN * scale + block.kind.indent() * scale,
+            x: MARGIN * scale + block.indent() * scale,
             kind: block.kind,
         });
         y += height;
@@ -1915,23 +1952,55 @@ fn blend(px: &mut PremultipliedColorU8, color: (u8, u8, u8), alpha: u8) {
     }
 }
 
-/// Identidad de un glifo ya rasterizado. Sin posicion subpixel: parley ya
-/// entrega las posiciones alineadas a pixel (`quantize = true`), asi que una
-/// sola mascara por glifo y tamano alcanza.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+/// Cantidad de ejes de variación que se conservan en la clave de caché. Las
+/// fuentes embebidas usan como máximo dos; una fuente ajena con más ejes se
+/// dibuja sin caché antes que arriesgar reutilizar una forma equivocada.
+const MAX_CACHED_VARIATION_COORDS: usize = 16;
+
+/// Identidad de un glifo ya rasterizado. Sin posición subpixel: parley ya
+/// entrega las posiciones alineadas a pixel (`quantize = true`). El tamaño no
+/// basta para una fuente variable: peso, cursiva y otros ejes también cambian
+/// la máscara del mismo identificador de glifo.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 struct GlyphKey {
     blob: u64,
     index: u32,
     size: u32,
     glyph: u16,
+    coord_len: u8,
+    coords: [i16; MAX_CACHED_VARIATION_COORDS],
 }
 
-/// Mascara alpha de un glifo, lista para mezclar.
+fn glyph_key(
+    blob: u64,
+    index: u32,
+    size: f32,
+    glyph: u16,
+    normalized_coords: &[i16],
+) -> Option<GlyphKey> {
+    if normalized_coords.len() > MAX_CACHED_VARIATION_COORDS {
+        return None;
+    }
+    let mut coords = [0; MAX_CACHED_VARIATION_COORDS];
+    coords[..normalized_coords.len()].copy_from_slice(normalized_coords);
+    Some(GlyphKey {
+        blob,
+        index,
+        size: size.to_bits(),
+        glyph,
+        coord_len: normalized_coords.len() as u8,
+        coords,
+    })
+}
+
+/// Imagen de un glifo lista para mezclar. Las fuentes de texto normales dan
+/// una máscara; los emoji pueden ser mapas RGBA y deben conservar sus colores.
 struct CachedGlyph {
     left: i32,
     top: i32,
     width: i32,
     height: i32,
+    content: Content,
     data: Vec<u8>,
 }
 
@@ -2001,14 +2070,17 @@ fn draw_glyph_run(
             continue;
         }
 
-        let key = GlyphKey {
+        let key = glyph_key(
             blob,
             index,
-            size: font_size.to_bits(),
-            glyph: glyph.id as u16,
-        };
+            font_size,
+            glyph.id as u16,
+            r.normalized_coords(),
+        );
+        let needs_raster = key.is_none_or(|key| !cache.contains_key(&key));
+        let mut uncached = None;
 
-        if let std::collections::hash_map::Entry::Vacant(vacant) = cache.entry(key) {
+        if needs_raster {
             if scaler.is_none() {
                 let Some(font_ref) = FontRef::from_index(font.data.as_ref(), index as usize) else {
                     return;
@@ -2036,22 +2108,37 @@ fn draw_glyph_run(
             .render(s, glyph.id as u16);
 
             let cached = match rendered {
-                Some(image) if matches!(image.content, Content::Mask) => Some(CachedGlyph {
-                    left: image.placement.left,
-                    top: image.placement.top,
-                    width: image.placement.width as i32,
-                    height: image.placement.height as i32,
-                    data: image.data,
-                }),
+                Some(image) if matches!(image.content, Content::Mask | Content::Color) => {
+                    Some(CachedGlyph {
+                        left: image.placement.left,
+                        top: image.placement.top,
+                        width: image.placement.width as i32,
+                        height: image.placement.height as i32,
+                        content: image.content,
+                        data: image.data,
+                    })
+                }
                 _ => None,
             };
-            vacant.insert(cached);
+            if let Some(key) = key {
+                cache.insert(key, cached);
+            } else {
+                uncached = cached;
+            }
         }
 
-        let Some(Some(g)) = cache.get(&key) else {
+        let cached = match key {
+            Some(key) => cache.get(&key).and_then(Option::as_ref),
+            None => uncached.as_ref(),
+        };
+        let Some(g) = cached else {
             continue;
         };
-        blit(pixmap, g, gx, gy, color, width, height);
+        match g.content {
+            Content::Mask => blit(pixmap, g, gx, gy, color, width, height),
+            Content::Color => blit_color(pixmap, g, gx, gy, width, height),
+            Content::SubpixelMask => {}
+        }
     }
 }
 
@@ -2121,6 +2208,36 @@ fn blit(
             }
             let alpha = g.data[(row * g.width + col) as usize];
             blend(&mut pixels[(y * width + x) as usize], color, alpha);
+        }
+    }
+}
+
+/// Compone un emoji RGBA sobre el lienzo opaco. Swash entrega los bitmaps en
+/// RGBA y `blend` mantiene la misma composición fuente-sobre-fondo que las
+/// máscaras monocromas.
+fn blit_color(pixmap: &mut Pixmap, g: &CachedGlyph, gx: f32, gy: f32, width: i32, height: i32) {
+    let x0 = gx.round() as i32 + g.left;
+    let y0 = gy.round() as i32 - g.top;
+    let pixels = pixmap.pixels_mut();
+    for row in 0..g.height {
+        let y = y0 + row;
+        if y < 0 || y >= height {
+            continue;
+        }
+        for col in 0..g.width {
+            let x = x0 + col;
+            if x < 0 || x >= width {
+                continue;
+            }
+            let offset = ((row * g.width + col) * 4) as usize;
+            let Some(rgba) = g.data.get(offset..offset + 4) else {
+                continue;
+            };
+            blend(
+                &mut pixels[(y * width + x) as usize],
+                (rgba[0], rgba[1], rgba[2]),
+                rgba[3],
+            );
         }
     }
 }
@@ -3052,8 +3169,36 @@ impl App {
         });
     }
 
+    fn direct_source_text<'a>(&self, event: &'a KeyEvent) -> Option<&'a str> {
+        if self.modifiers.control_key()
+            || self.modifiers.alt_key()
+            || self.modifiers.super_key()
+            || matches!(event.physical_key, PhysicalKey::Code(KeyCode::Enter))
+        {
+            return None;
+        }
+        event.text.as_deref().filter(|text| !text.is_empty())
+    }
+
     fn handle_source_key(&mut self, event: &KeyEvent) {
-        if event.state != ElementState::Pressed || event.repeat {
+        if event.state != ElementState::Pressed {
+            return;
+        }
+
+        // En Windows la escritura ordinaria llega en `KeyEvent::text`; IME
+        // sigue entrando por `WindowEvent::Ime::Commit`. Las combinaciones de
+        // control nunca se tratan como texto para no convertir Ctrl+S, Ctrl+V
+        // ni atajos del sistema en contenido del documento.
+        if let Some(text) = self.direct_source_text(event).map(str::to_owned) {
+            self.edit_source(|editor, source| editor.insert(source, &text));
+            self.sync_source_selection();
+            if let Some(window) = &self.window {
+                window.request_redraw();
+            }
+            return;
+        }
+
+        if event.repeat {
             return;
         }
         match event.physical_key {
@@ -4806,6 +4951,31 @@ mod pruebas {
         );
     }
 
+    #[test]
+    fn la_cache_de_glifos_separa_las_variaciones_de_fuente() {
+        let regular = glyph_key(1, 0, 16.0, 42, &[0, 0]).unwrap();
+        let bold = glyph_key(1, 0, 16.0, 42, &[0, 14_000]).unwrap();
+        assert_ne!(regular, bold, "peso normal y negrita compartieron máscara");
+        assert!(glyph_key(1, 0, 16.0, 42, &[0; 17]).is_none());
+    }
+
+    #[test]
+    fn un_glifo_rgba_de_fallback_se_compone_en_el_lienzo() {
+        let glyph = CachedGlyph {
+            left: 0,
+            top: 1,
+            width: 1,
+            height: 1,
+            content: Content::Color,
+            data: vec![255, 180, 0, 255],
+        };
+        let mut pixmap = Pixmap::new(4, 4).unwrap();
+        pixmap.fill(Color::from_rgba8(NIGHT.bg.0, NIGHT.bg.1, NIGHT.bg.2, 255));
+        let before = pixmap.data().to_vec();
+        blit_color(&mut pixmap, &glyph, 1.0, 2.0, 4, 4);
+        assert_ne!(pixmap.data(), before, "el bitmap RGBA no produjo píxeles");
+    }
+
     /// Un bloque siempre ocupa algo. Un alto de cero haria que se superpongan
     /// y que la barra de scroll mienta hacia el otro lado.
     #[test]
@@ -4974,6 +5144,26 @@ con dos lineas
         assert_eq!(
             selection.rendered_text(&blocks).as_deref(),
             Some("mero\nsegundo\nterc")
+        );
+    }
+
+    #[test]
+    fn copiar_vista_completa_conserva_la_estructura_legible() {
+        let source = "- primero\n3. tercero\n- [x] terminado\n> una cita\n";
+        let blocks = aplanar(source);
+        let selection = DocumentSelection {
+            anchor: BlockCursor {
+                block: 0,
+                offset: 0,
+            },
+            focus: BlockCursor {
+                block: blocks.len() - 1,
+                offset: blocks.last().unwrap().text.len(),
+            },
+        };
+        assert_eq!(
+            selection.rendered_text(&blocks).as_deref(),
+            Some("• primero\n3. tercero\n[x] terminado\n> una cita")
         );
     }
 
@@ -5801,6 +5991,20 @@ Pagina 14 de 14"#;
         let depths: Vec<_> = blocks.iter().map(|block| block.quote_depth).collect();
         assert!(depths.contains(&1), "falta cita exterior: {depths:?}");
         assert!(depths.contains(&2), "falta cita interior: {depths:?}");
+    }
+
+    #[test]
+    fn las_citas_anidadas_tambien_aumentan_la_sangria_visual() {
+        let blocks = aplanar("> exterior\n>\n> > interior");
+        let outer = blocks
+            .iter()
+            .find(|block| block.quote_depth == 1)
+            .expect("cita exterior");
+        let inner = blocks
+            .iter()
+            .find(|block| block.quote_depth == 2)
+            .expect("cita interior");
+        assert!(inner.indent() > outer.indent());
     }
 }
 
