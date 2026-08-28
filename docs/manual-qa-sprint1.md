@@ -30,14 +30,19 @@ Registrar antes de comenzar:
   ni se convierten en cuadros vacíos; registrar fuente fallback visible y si la
   dirección de escritura árabe conserva un orden legible.
 - Las líneas largas ajustan sin cortar glifos ni salir del margen.
-- La tabla conserva columnas comprensibles y no oculta contenido.
+- La tabla presenta una celda por columna, sin caracteres `|` visibles dentro
+  del contenido, con bordes tenues, encabezado distinguible y alineaciones
+  izquierda, centro y derecha cuando la sintaxis GFM las declara. Probar al
+  menos una celda suficientemente larga para ajustarse en varias líneas.
 
 ## Estructuras
 
 - Las listas numeradas mantienen su número y las viñetas quedan alineadas.
 - Una línea envuelta dentro de una lista comienza bajo el texto, no bajo el
   marcador.
-- Las tareas abiertas y completadas se distinguen en ambos temas.
+- Las tareas abiertas y completadas se distinguen en ambos temas. Un clic sobre
+  la casilla cambia solo `[ ]`/`[x]` de la fuente, marca el documento como
+  modificado y `Ctrl+Z` revierte ese cambio desde lectura.
 - Las citas anidadas muestran profundidad sin consumir un ancho excesivo.
 - La regla horizontal es visible pero no domina la página.
 - HTML no permitido aparece como fuente inerte y no cambia la interfaz.
@@ -87,7 +92,10 @@ Registrar antes de comenzar:
 
 - Pulsar `F2` muestra la fuente Markdown como texto inerte; escribir texto con
   teclado o IME, Backspace, Delete, Ctrl+Z y Ctrl+Y no debe cerrar la ventana.
-- Pulsar `F2` otra vez vuelve a lectura y muestra el contenido modificado.
+- Pulsar `F2` otra vez vuelve a lectura y muestra el contenido modificado, sin
+  superponer bloques aunque se haya pegado o escrito una cantidad grande de
+  texto. `Ctrl+Z` desde lectura también actualiza la vista y conserva la
+  posibilidad de volver a entrar en edición.
 - Esta comprobación no autoriza guardar: cursor visible, selección por mouse,
   navegación vertical y guardado siguen fuera de esta etapa.
 
@@ -114,7 +122,7 @@ la clave de caché de fuentes variables, composición RGBA de fallback, sangría
 de citas y copia legible. Falta repetir esta lista con el ejecutable release
 posterior a esas correcciones antes de cerrar Sprint A.
 
-La tabla con cuadrícula y la acción visible de copiar un bloque de código no
-formaban parte de esta ronda: siguen registradas como trabajo de "Lector
-completo". Mientras tanto, las tablas conservan sus celdas y el código su texto
-fuente, sin activar recursos ni perder contenido.
+La acción visible de copiar un bloque de código sigue registrada como trabajo de
+"Lector completo". Las tablas ya se representan con celdas y bordes nativos;
+selección y copia TSV de celdas quedan pendientes. En ambos casos, el contenido
+permanece inerte y la fuente se conserva sin activar recursos.

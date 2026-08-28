@@ -19,6 +19,7 @@ compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
 | **Checkpoint de recuperación actual** | **3.103.232 bytes, 2,960 MiB** |
 | **Checkpoint de wikilinks y callouts** | **3.202.048 bytes, 3,054 MiB** |
 | **Correcciones posteriores al QA visual** | **3.203.584 bytes, 3,055 MiB** |
+| **Reflow, tareas y tablas por celdas** | **3.209.216 bytes, 3,061 MiB** |
 
 Superar 8 MB exige medición, explicación y aprobación. El límite no se usa para
 recortar seguridad, estabilidad, accesibilidad, Unicode o funciones esenciales.
@@ -58,6 +59,24 @@ dependencias ni capacidades nuevas.
 La build confirma el presupuesto de distribución. No sustituye la repetición
 del QA visual: en particular, emoji, negrita y escritura normal deben revisarse
 en una ventana real antes de cerrar el hito del lector.
+
+### Reflow, tareas y tablas por celdas del 28 de agosto de 2026
+
+Este checkpoint reemplaza la fila de tabla aplanada por layouts nativos por
+celda, añade la actualización reversible de task lists y mide de forma exacta
+la primera vista posterior a una edición. No incorpora dependencias, red ni
+lectura adicional de archivos.
+
+| Medida | Resultado |
+| --- | --- |
+| Binario Windows | 3.209.216 bytes, 3,061 MiB |
+| SHA-256 | `9317A4CE9D8C8853F59EC4CFEA58C23257A48B805C6624DD2AEEACC59D27956E` |
+| Variación frente al checkpoint anterior | +5.632 bytes |
+| Margen frente al límite deseado | 4,939 MiB |
+
+La medición no sustituye el QA visual pendiente de tablas estrechas y reflow
+tras una edición grande. Ese gate humano está registrado en la lista manual y
+no bloquea el trabajo independiente del editor.
 
 ---
 

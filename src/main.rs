@@ -451,10 +451,14 @@ struct InlineTarget {
     title: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 struct TableCell {
     source: SourceRange,
     text: String,
+    /// El estilo y los destinos son relativos al texto de esta celda. No se
+    /// reconstruyen desde los separadores `|`, que no forman parte del valor.
+    spans: Vec<Span>,
+    targets: Vec<InlineTarget>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1358,6 +1362,11 @@ fn flatten<'a>(
                 for cell in child.children() {
                     let (cell_text, mut cell_spans, mut cell_targets) =
                         inline_of(cell, source_index, traversal);
+                    // La celda necesita sus rangos locales para ser maquetada
+                    // sola; la fila conserva además copias desplazadas para
+                    // selección/copia del modelo aplanado existente.
+                    let local_spans = cell_spans.clone();
+                    let local_targets = cell_targets.clone();
                     if !text.is_empty() {
                         text.push_str("  |  ");
                     }
@@ -1371,12 +1380,14 @@ fn flatten<'a>(
                         target.start += offset;
                         target.end += offset;
                     }
-                    spans.extend(cell_spans);
-                    targets.extend(cell_targets);
                     cells.push(TableCell {
                         source: source_index.range_of(cell),
                         text: cell_text,
+                        spans: local_spans,
+                        targets: local_targets,
                     });
+                    spans.extend(cell_spans);
+                    targets.extend(cell_targets);
                 }
                 let mut block = Block::new(
                     text,
@@ -1627,6 +1638,21 @@ struct Slot {
     kind: Kind,
 }
 
+/// Un bloque visible puede ser un texto normal o una fila de tabla. Conservar
+/// los layouts de las celdas evita convertir una tabla de vuelta en una línea
+/// con separadores y permite ajustar cada columna dentro de su propio ancho.
+enum CachedBlockLayout {
+    Text(Box<Layout<Brush>>),
+    Table(Vec<Layout<Brush>>),
+}
+
+const TABLE_CELL_PADDING: f32 = 8.0;
+
+fn table_cell_advance(width: f32, scale: f32, columns: usize) -> f32 {
+    let table_width = (width - MARGIN * scale * 2.0).min(MAX_MEASURE * scale);
+    ((table_width / columns.max(1) as f32) - TABLE_CELL_PADDING * 2.0).max(1.0)
+}
+
 /// Busca el tramo visible sin recorrer todos los bloques en cada cuadro.
 /// `slots` esta ordenado por `y`, por lo que dos busquedas binarias hacen que
 /// el trabajo de scroll dependa de lo visible, no del largo del documento.
@@ -1689,10 +1715,24 @@ fn build_layout(
     scale: f32,
     palette: Palette,
 ) -> Layout<Brush> {
+    build_layout_with_advance(block, font_cx, layout_cx, width, scale, palette, None)
+}
+
+fn build_layout_with_advance(
+    block: &Block,
+    font_cx: &mut FontContext,
+    layout_cx: &mut LayoutContext<Brush>,
+    width: f32,
+    scale: f32,
+    palette: Palette,
+    explicit_advance: Option<f32>,
+) -> Layout<Brush> {
     let (size, weight, role, mono) = block.kind.style();
     let color = palette.resolve(role);
-    let advance = (width - MARGIN * scale * 2.0 - block.indent() * scale)
-        .clamp(80.0 * scale, MAX_MEASURE * scale);
+    let advance = explicit_advance.unwrap_or_else(|| {
+        (width - MARGIN * scale * 2.0 - block.indent() * scale)
+            .clamp(80.0 * scale, MAX_MEASURE * scale)
+    });
 
     // Nombre embebido primero, generico del sistema como red de seguridad si
     // el registro fallara. Ver docs/design.md, "Contraste editorial".
@@ -1813,6 +1853,53 @@ fn build_layout(
     layout
 }
 
+fn build_table_layouts(
+    block: &Block,
+    font_cx: &mut FontContext,
+    layout_cx: &mut LayoutContext<Brush>,
+    width: f32,
+    scale: f32,
+    palette: Palette,
+) -> Vec<Layout<Brush>> {
+    let columns = block.table_cells.len().max(1);
+    let advance = table_cell_advance(width, scale, columns);
+    block
+        .table_cells
+        .iter()
+        .enumerate()
+        .map(|(column, cell)| {
+            let cell_block = Block::new(
+                cell.text.clone(),
+                cell.spans.clone(),
+                block.kind,
+                cell.source,
+                cell.targets.clone(),
+            );
+            let mut layout = build_layout_with_advance(
+                &cell_block,
+                font_cx,
+                layout_cx,
+                width,
+                scale,
+                palette,
+                Some(advance),
+            );
+            let alignment = block
+                .table_alignments
+                .get(column)
+                .copied()
+                .unwrap_or(CellAlignment::None);
+            let alignment = match alignment {
+                CellAlignment::None | CellAlignment::Left => Alignment::Start,
+                CellAlignment::Center => Alignment::Center,
+                CellAlignment::Right => Alignment::End,
+            };
+            layout.align(alignment, AlignmentOptions::default());
+            layout
+        })
+        .collect()
+}
+
 /// Maqueta la vineta o el numero de un item, como pieza aparte del texto.
 /// Va aparte a proposito: si el marcador viviera dentro del mismo texto, la
 /// segunda linea de un item largo quedaria alineada bajo la vineta en vez de
@@ -1914,6 +2001,15 @@ fn measure_all(
     for block in blocks {
         let height = if matches!(block.kind, Kind::Rule) {
             scale
+        } else if matches!(block.kind, Kind::TableRow { .. }) {
+            // Una fila se mide siempre por celda. Estimar desde el texto
+            // aplanado permitiría que el contenido se pinte sobre la fila
+            // siguiente al partirse una columna estrecha.
+            build_table_layouts(block, font_cx, layout_cx, width, scale, NIGHT)
+                .iter()
+                .map(Layout::height)
+                .fold(0.0_f32, f32::max)
+                .max(1.0)
         } else if exact {
             // El color no afecta el alto: la paleta es irrelevante aca.
             build_layout(block, font_cx, layout_cx, width, scale, NIGHT).height()
@@ -2282,7 +2378,7 @@ struct App {
     pixmap: Option<Pixmap>,
     slots: Vec<Slot>,
     /// Layouts de los bloques visibles, por indice. Se poda cada cuadro.
-    live: HashMap<usize, (Layout<Brush>, Option<CachedMarker>)>,
+    live: HashMap<usize, (CachedBlockLayout, Option<CachedMarker>)>,
     doc_height: f32,
     laid_for_width: f32,
     scale_factor: f32,
@@ -2296,6 +2392,10 @@ struct App {
     /// Si el alto de cada bloque se saca maquetandolo (exacto y lento) o
     /// estimandolo (aproximado e instantaneo). Ver ADR-16.
     exact_measure: bool,
+    /// Una edición puede cambiar mucho el ajuste de líneas. La primera vista
+    /// posterior se mide completa para que un slot estimado no superponga
+    /// bloques; después vuelve a regir la política normal de virtualización.
+    exact_after_edit: bool,
     /// Las mediciones se acumulan y se imprimen al final. Escribir a stderr
     /// en el medio distorsiona lo que se esta midiendo: con la salida
     /// redirigida a un archivo, cada `eprintln` costaba mas que el trabajo
@@ -2369,6 +2469,7 @@ impl ApplicationHandler<AppEvent> for App {
                 self.live.clear();
                 self.doc_height = 0.0;
                 self.laid_for_width = -1.0;
+                self.exact_after_edit = true;
                 self.scroll = 0.0;
                 self.notice = None;
                 self.focused_link = None;
@@ -2443,6 +2544,7 @@ impl ApplicationHandler<AppEvent> for App {
                 self.slots.clear();
                 self.live.clear();
                 self.laid_for_width = -1.0;
+                self.exact_after_edit = true;
                 self.selection = None;
                 self.notice = Some("vista de lectura actualizada".to_string());
                 self.log.push(format!(
@@ -2698,6 +2800,14 @@ impl ApplicationHandler<AppEvent> for App {
                         }
                         return;
                     }
+                    if self.mode == DocumentMode::Reading
+                        && let Some((x, y)) = self.pointer
+                        && let Some(block) = self.task_at(x, y)
+                    {
+                        self.toggle_task(block);
+                        self.selecting = false;
+                        return;
+                    }
                     self.focused_link = None;
                     self.focus_destination = None;
                     self.refresh_title();
@@ -2833,6 +2943,19 @@ impl ApplicationHandler<AppEvent> for App {
                 ..
             } if self.modifiers.control_key() => {
                 self.save_current_document();
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::KeyZ),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } if self.mode == DocumentMode::Reading && self.modifiers.control_key() => {
+                self.edit_source(|editor, source| editor.undo(source));
+                self.refresh_reading_async("deshaciendo cambio");
             }
             WindowEvent::KeyboardInput {
                 event:
@@ -3111,7 +3234,6 @@ impl App {
             Ok(blocks) => {
                 self.mode = DocumentMode::SourceEditing;
                 self.blocks = blocks;
-                self.source_editor = SourceEditor::new();
                 self.slots.clear();
                 self.live.clear();
                 self.laid_for_width = -1.0;
@@ -3177,7 +3299,33 @@ impl App {
         {
             return None;
         }
-        event.text.as_deref().filter(|text| !text.is_empty())
+        event
+            .text
+            .as_deref()
+            .filter(|text| !text.is_empty() && !text.chars().any(char::is_control))
+    }
+
+    fn refresh_reading_async(&mut self, notice: &str) {
+        self.mode = DocumentMode::Reading;
+        self.loading = true;
+        self.set_notice(notice);
+        let source = self.source.clone();
+        let revision = self.source_editor.revision();
+        let proxy = self.proxy.clone();
+        thread::spawn(move || {
+            let started = Instant::now();
+            let event = match parse_blocks(&source) {
+                Ok(outcome) => AppEvent::ViewReady {
+                    revision,
+                    outcome,
+                    elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
+                },
+                Err(error) => {
+                    AppEvent::ViewFailed(format!("no se pudo actualizar la vista: {error}"))
+                }
+            };
+            let _ = proxy.send_event(event);
+        });
     }
 
     fn handle_source_key(&mut self, event: &KeyEvent) {
@@ -3203,26 +3351,7 @@ impl App {
         }
         match event.physical_key {
             PhysicalKey::Code(KeyCode::F2) => {
-                self.mode = DocumentMode::Reading;
-                self.loading = true;
-                self.set_notice("actualizando vista de lectura");
-                let source = self.source.clone();
-                let revision = self.source_editor.revision();
-                let proxy = self.proxy.clone();
-                thread::spawn(move || {
-                    let started = Instant::now();
-                    let event = match parse_blocks(&source) {
-                        Ok(outcome) => AppEvent::ViewReady {
-                            revision,
-                            outcome,
-                            elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
-                        },
-                        Err(error) => {
-                            AppEvent::ViewFailed(format!("no se pudo actualizar la vista: {error}"))
-                        }
-                    };
-                    let _ = proxy.send_event(event);
-                });
+                self.refresh_reading_async("actualizando vista de lectura");
             }
             PhysicalKey::Code(KeyCode::Backspace) => {
                 self.edit_source(|editor, source| editor.backspace(source));
@@ -3235,7 +3364,14 @@ impl App {
                     LineEndings::CrLf => "\r\n",
                     LineEndings::None | LineEndings::Lf | LineEndings::Mixed => "\n",
                 };
-                self.edit_source(|editor, source| editor.insert(source, eol));
+                let hard_break = self.modifiers.shift_key().then_some("\\");
+                self.edit_source(|editor, source| {
+                    if let Some(marker) = hard_break {
+                        editor.insert(source, &format!("{marker}{eol}"))
+                    } else {
+                        editor.insert(source, eol)
+                    }
+                });
             }
             PhysicalKey::Code(KeyCode::ArrowLeft) => {
                 let _ = self
@@ -3828,13 +3964,53 @@ impl App {
             if y < top || y > top + slot.height {
                 return None;
             }
-            let (layout, _) = self.live.get(&block)?;
+            let (CachedBlockLayout::Text(layout), _) = self.live.get(&block)? else {
+                // La selección por celda requiere mapear rangos de fuente y
+                // geometría independientes. Hasta incorporarlo, no mentimos
+                // devolviendo el offset del texto aplanado de una tabla.
+                return None;
+            };
             let cursor = Cursor::from_point(layout, x - slot.x, y - top);
             Some(BlockCursor {
                 block,
                 offset: cursor.index(),
             })
         })
+    }
+
+    fn task_at(&self, x: f32, y: f32) -> Option<usize> {
+        self.slots.iter().enumerate().find_map(|(index, slot)| {
+            let top = slot.y - self.scroll;
+            let is_task = matches!(self.blocks[index].marker, Some(Marker::Task { .. }));
+            let marker_left = slot.x - 28.0 * self.scale_factor;
+            (is_task
+                && (top..=top + slot.height).contains(&y)
+                && (marker_left..=slot.x).contains(&x))
+            .then_some(index)
+        })
+    }
+
+    fn toggle_task(&mut self, block: usize) {
+        let Some(block) = self.blocks.get(block) else {
+            return;
+        };
+        let source = block.source;
+        let Some(text) = self.source.get(source.start..source.end) else {
+            self.set_notice("no se pudo localizar la tarea en la fuente");
+            return;
+        };
+        let Some((offset, replacement)) = task_marker_replacement(text) else {
+            self.set_notice("la tarea no conserva un marcador editable");
+            return;
+        };
+        let start = source.start + offset;
+        self.edit_source(|editor, source| {
+            editor.set_cursor(source, start, false)?;
+            editor.set_cursor(source, start + 1, true)?;
+            editor.insert(source, replacement)
+        });
+        self.selection = None;
+        self.set_notice("tarea actualizada · Ctrl+Z para deshacer");
     }
 
     fn target_at(&self, x: f32, y: f32) -> Option<&InlineTarget> {
@@ -3921,7 +4097,8 @@ impl App {
             self.selection = Some(DocumentSelection::collapsed(boundary));
             return;
         }
-        let Some((layout, _)) = self.live.get(&selection.focus.block) else {
+        let Some((CachedBlockLayout::Text(layout), _)) = self.live.get(&selection.focus.block)
+        else {
             return;
         };
         let current = Selection::new(
@@ -3980,7 +4157,8 @@ impl App {
             self.selection = Some(DocumentSelection::collapsed(boundary));
             return;
         }
-        let Some((layout, _)) = self.live.get(&selection.focus.block) else {
+        let Some((CachedBlockLayout::Text(layout), _)) = self.live.get(&selection.focus.block)
+        else {
             return;
         };
         let focus = Cursor::from_byte_index(layout, selection.focus.offset, Affinity::Downstream);
@@ -4048,7 +4226,7 @@ impl App {
         let frame_start = Instant::now();
 
         // Re-medir solo si cambio el ancho.
-        if layout_width_is_stale(self.laid_for_width, size.width as f32) {
+        if self.exact_after_edit || layout_width_is_stale(self.laid_for_width, size.width as f32) {
             let t = Instant::now();
             let (slots, height) = measure_all(
                 &self.blocks,
@@ -4056,11 +4234,12 @@ impl App {
                 &mut self.layout_cx,
                 size.width as f32,
                 self.scale_factor,
-                self.exact_measure,
+                self.exact_measure || self.exact_after_edit,
             );
             self.slots = slots;
             self.doc_height = height;
             self.laid_for_width = size.width as f32;
+            self.exact_after_edit = false;
             self.scroll = self
                 .scroll
                 .min(max_scroll(self.doc_height, size.height as f32));
@@ -4092,14 +4271,25 @@ impl App {
         for i in visible.clone() {
             if !self.live.contains_key(&i) {
                 let block = &self.blocks[i];
-                let layout = build_layout(
-                    block,
-                    &mut self.font_cx,
-                    &mut self.layout_cx,
-                    size.width as f32,
-                    self.scale_factor,
-                    self.palette,
-                );
+                let layout = if matches!(block.kind, Kind::TableRow { .. }) {
+                    CachedBlockLayout::Table(build_table_layouts(
+                        block,
+                        &mut self.font_cx,
+                        &mut self.layout_cx,
+                        size.width as f32,
+                        self.scale_factor,
+                        self.palette,
+                    ))
+                } else {
+                    CachedBlockLayout::Text(Box::new(build_layout(
+                        block,
+                        &mut self.font_cx,
+                        &mut self.layout_cx,
+                        size.width as f32,
+                        self.scale_factor,
+                        self.palette,
+                    )))
+                };
                 let marker = block.marker.as_ref().map(|m| match m {
                     Marker::Text(text) => CachedMarker::Text(Box::new(build_marker_layout(
                         text,
@@ -4200,10 +4390,63 @@ impl App {
 
         for i in visible {
             let slot = &slots[i];
-            let Some((layout, marker)) = live.get(&i) else {
+            let Some((cached_layout, marker)) = live.get(&i) else {
                 continue;
             };
             let top = slot.y - *scroll;
+
+            if let CachedBlockLayout::Table(cells) = cached_layout {
+                let columns = cells.len().max(1) as f32;
+                let left = slot.x - 6.0;
+                let table_width = ancho_texto + 12.0;
+                let mut line = Paint::default();
+                let dc = palette.dim;
+                line.set_color(Color::from_rgba8(dc.0, dc.1, dc.2, 112));
+                if matches!(slot.kind, Kind::TableRow { header: true }) {
+                    let ac = palette.accent;
+                    let mut header = Paint::default();
+                    header.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 26));
+                    if let Some(rect) =
+                        Rect::from_xywh(left, top - 1.0, table_width, slot.height + 2.0)
+                    {
+                        pixmap.fill_rect(rect, &header, Transform::identity(), None);
+                    }
+                }
+                for (x, y, width, height) in [
+                    (left, top - 1.0, table_width, 1.0),
+                    (left, top + slot.height, table_width, 1.0),
+                    (left, top - 1.0, 1.0, slot.height + 2.0),
+                    (left + table_width - 1.0, top - 1.0, 1.0, slot.height + 2.0),
+                ] {
+                    if let Some(rect) = Rect::from_xywh(x, y, width, height) {
+                        pixmap.fill_rect(rect, &line, Transform::identity(), None);
+                    }
+                }
+                for column in 1..columns as usize {
+                    let x = left + table_width * column as f32 / columns;
+                    if let Some(rect) = Rect::from_xywh(x, top - 1.0, 1.0, slot.height + 2.0) {
+                        pixmap.fill_rect(rect, &line, Transform::identity(), None);
+                    }
+                }
+                let column_width = ancho_texto / columns;
+                for (column, layout) in cells.iter().enumerate() {
+                    let x = slot.x + column as f32 * column_width + TABLE_CELL_PADDING;
+                    let y = top + (slot.height - layout.height()).max(0.0) * 0.5;
+                    for line in layout.lines() {
+                        for entry in line.items() {
+                            if let PositionedLayoutItem::GlyphRun(run) = entry {
+                                draw_run_background(pixmap, &run, x, y);
+                                draw_decorations(pixmap, &run, x, y);
+                                draw_glyph_run(pixmap, scale_cx, glyphs, &run, x, y);
+                            }
+                        }
+                    }
+                }
+                continue;
+            }
+            let CachedBlockLayout::Text(layout) = cached_layout else {
+                continue;
+            };
 
             match slot.kind {
                 // Fondo de los bloques de codigo, dibujado con tiny-skia.
@@ -4493,6 +4736,16 @@ impl App {
     }
 }
 
+/// Devuelve únicamente el byte central de un marcador CommonMark reconocido.
+/// Así el clic no puede alterar el texto de la tarea, sus espacios ni otras
+/// ocurrencias de corchetes en el mismo ítem.
+fn task_marker_replacement(text: &str) -> Option<(usize, &'static str)> {
+    text.find("[ ]")
+        .map(|offset| (offset + 1, "x"))
+        .or_else(|| text.find("[x]").map(|offset| (offset + 1, " ")))
+        .or_else(|| text.find("[X]").map(|offset| (offset + 1, " ")))
+}
+
 fn main() {
     let started = Instant::now();
 
@@ -4581,6 +4834,7 @@ fn main() {
         frame_time_total: 0.0,
         bench,
         exact_measure,
+        exact_after_edit: false,
         log,
         palette: NIGHT,
         safe_mode: None,
@@ -5968,6 +6222,41 @@ Pagina 14 de 14"#;
     }
 
     #[test]
+    fn las_celdas_guardan_estilos_con_rangos_locales() {
+        let blocks = aplanar("| nombre | valor |\n| --- | --- |\n| uno | **dos** |");
+        let row = blocks
+            .iter()
+            .find(|block| matches!(block.kind, Kind::TableRow { header: false }))
+            .expect("fila de datos");
+        let cell = &row.table_cells[1];
+        assert_eq!(cell.text, "dos");
+        assert!(
+            cell.spans
+                .iter()
+                .any(|span| span.style.strong && span.end <= cell.text.len())
+        );
+    }
+
+    #[test]
+    fn una_fila_de_tabla_se_maqueta_por_celdas_sin_separadores() {
+        let blocks = aplanar("| izquierda | centro |\n| :--- | :---: |\n| texto | **valor** |");
+        let row = blocks
+            .iter()
+            .find(|block| matches!(block.kind, Kind::TableRow { header: false }))
+            .expect("fila de datos");
+        let mut font_cx = FontContext::new();
+        register_embedded_fonts(&mut font_cx);
+        let mut layout_cx = LayoutContext::new();
+        let cells = build_table_layouts(row, &mut font_cx, &mut layout_cx, 720.0, 1.0, NIGHT);
+        assert_eq!(cells.len(), 2);
+        assert!(cells.iter().all(|layout| layout.width() > 0.0));
+        assert!(
+            cells.iter().all(|layout| layout.width() < 360.0),
+            "una celda no debe ocupar toda la fila"
+        );
+    }
+
+    #[test]
     fn las_tablas_conservan_alineacion_por_columna() {
         let blocks =
             aplanar("| izquierda | centro | derecha |\n| :--- | :---: | ---: |\n| a | b | c |");
@@ -5983,6 +6272,14 @@ Pagina 14 de 14"#;
                 CellAlignment::Right
             ]
         );
+    }
+
+    #[test]
+    fn el_cambio_de_tarea_toca_solo_el_marcador() {
+        assert_eq!(task_marker_replacement("- [ ] pendiente"), Some((3, "x")));
+        assert_eq!(task_marker_replacement("- [x] terminada"), Some((3, " ")));
+        assert_eq!(task_marker_replacement("- [X] terminada"), Some((3, " ")));
+        assert_eq!(task_marker_replacement("- [nota] sin tarea"), None);
     }
 
     #[test]

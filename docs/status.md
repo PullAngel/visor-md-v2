@@ -100,8 +100,17 @@ exacto del traspaso.
   texto inerte, teclado normal e IME insertan texto y Backspace, Delete,
   Ctrl+Z y Ctrl+Y aplican parches reversibles. Clic y arrastre actualizan cursor
   y selección de fuente con el layout visible. `F2` vuelve a derivar la vista
-  Markdown en un hilo de trabajo; un fallo conserva la fuente editada. Queda
-  guardado y QA manual de la interacción completa.
+  Markdown en un hilo de trabajo; un fallo conserva la fuente editada. La
+  primera vista posterior a una edición mide los bloques de forma exacta para
+  impedir solapamientos; después vuelve la virtualización estimada. `Ctrl+Z`
+  desde lectura también actualiza la vista sin perder el historial.
+- las task lists se dibujan sin depender de glifos de fuente y permiten cambiar
+  `[ ]` por `[x]` con clic sobre la casilla. La mutación toca un solo byte de la
+  fuente y entra al mismo historial reversible que el editor.
+- cada fila GFM se representa como celdas con layouts, estilos y alineación
+  independientes; los bordes y el encabezado ya no dependen de dibujar una
+  línea aplanada con caracteres `|`. La selección de rangos dentro de una celda
+  sigue pendiente: se desactiva antes que devolver offsets falsos.
 
 Evidencia actual en Windows:
 
@@ -111,6 +120,8 @@ Evidencia actual en Windows:
 - `cargo test`: 68 de 68 pruebas verdes tras lector, archivos y texto inerte;
 - `cargo test --offline`: 104 de 104 pruebas verdes el 28 de agosto de 2026
   tras corregir el QA visual de tipografía, emoji, citas y copia;
+- `cargo test --offline`: 107 de 107 pruebas verdes tras la estabilización de
+  reflow, tareas reversibles y presentación real por celdas de tabla;
 - `scripts/check.ps1`: verde el 27 de agosto de 2026 tras el cierre parcial de
   Sprint A (formato, Clippy, 67 pruebas, SBOM, documentación y release);
 - `scripts/check.ps1`: verde el 27 de agosto de 2026;
@@ -129,6 +140,7 @@ Evidencia actual en Windows:
 - gate lector y archivos: 3.031.040 bytes, 2,891 MiB;
 - gate Sprint A parcial: 3.103.232 bytes, 2,960 MiB;
 - correcciones posteriores al QA visual: 3.203.584 bytes, 3,055 MiB;
+- reflow, tareas y tablas por celdas: 3.209.216 bytes, 3,061 MiB;
 - primer pintado mediano sobre diez ejecuciones: 102,5 ms;
 - P95 de primer pintado: 612 ms;
 - scroll automatizado: 4,4 ms por cuadro.
@@ -140,6 +152,8 @@ causa porque todavía no se controlan caché, carga y planificación del sistema
 ## Pendientes inmediatos
 
 - verificación visual de task lists, decoraciones, temas y cursiva;
+- QA manual focalizado de tablas con celdas largas, alineación y de la primera
+  vuelta lectura-edición-lectura tras una edición grande;
 - selección de ejemplos de la suite oficial CommonMark y ampliación GFM sistemática;
 - separación incompleta de `main.rs`; fuentes y tema ya tienen módulos propios;
 - VFS de recursos secundarios, contención de rutas y política de bóvedas;

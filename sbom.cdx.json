@@ -140,6 +140,18 @@
     },
     {
       "type": "library",
+      "bom-ref": "pkg:cargo/atomicwrites@0.4.4",
+      "name": "atomicwrites",
+      "version": "0.4.4",
+      "purl": "pkg:cargo/atomicwrites@0.4.4",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "pkg:cargo/bitflags@1.3.2",
       "name": "bitflags",
       "version": "1.3.2",
@@ -168,6 +180,18 @@
       "name": "block2",
       "version": "0.5.1",
       "purl": "pkg:cargo/block2@0.5.1",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:cargo/block2@0.6.2",
+      "name": "block2",
+      "version": "0.6.2",
+      "purl": "pkg:cargo/block2@0.6.2",
       "licenses": [
         {
           "expression": "MIT"
@@ -1796,6 +1820,18 @@
     },
     {
       "type": "library",
+      "bom-ref": "pkg:cargo/pollster@0.4.0",
+      "name": "pollster",
+      "version": "0.4.0",
+      "purl": "pkg:cargo/pollster@0.4.0",
+      "licenses": [
+        {
+          "expression": "Apache-2.0/MIT"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "pkg:cargo/potential_utf@0.1.6",
       "name": "potential_utf",
       "version": "0.1.6",
@@ -1932,6 +1968,30 @@
       "name": "redox_syscall",
       "version": "0.9.3",
       "purl": "pkg:cargo/redox_syscall@0.9.3",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:cargo/rfd@0.17.2",
+      "name": "rfd",
+      "version": "0.17.2",
+      "purl": "pkg:cargo/rfd@0.17.2",
+      "licenses": [
+        {
+          "expression": "MIT"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:cargo/ropey@1.6.1",
+      "name": "ropey",
+      "version": "1.6.1",
+      "purl": "pkg:cargo/ropey@1.6.1",
       "licenses": [
         {
           "expression": "MIT"
@@ -2240,6 +2300,18 @@
     },
     {
       "type": "library",
+      "bom-ref": "pkg:cargo/str_indices@0.4.4",
+      "name": "str_indices",
+      "version": "0.4.4",
+      "purl": "pkg:cargo/str_indices@0.4.4",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
+        }
+      ]
+    },
+    {
+      "type": "library",
       "bom-ref": "pkg:cargo/strict-num@0.1.1",
       "name": "strict-num",
       "version": "0.1.1",
@@ -2295,6 +2367,18 @@
       "licenses": [
         {
           "expression": "MIT"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:cargo/tempfile@3.27.0",
+      "name": "tempfile",
+      "version": "3.27.0",
+      "purl": "pkg:cargo/tempfile@3.27.0",
+      "licenses": [
+        {
+          "expression": "MIT OR Apache-2.0"
         }
       ]
     },
@@ -3428,6 +3512,14 @@
       "dependsOn": []
     },
     {
+      "ref": "pkg:cargo/atomicwrites@0.4.4",
+      "dependsOn": [
+        "pkg:cargo/rustix@0.38.44",
+        "pkg:cargo/tempfile@3.27.0",
+        "pkg:cargo/windows-sys@0.52.0"
+      ]
+    },
+    {
       "ref": "pkg:cargo/bitflags@1.3.2",
       "dependsOn": []
     },
@@ -3439,6 +3531,12 @@
       "ref": "pkg:cargo/block2@0.5.1",
       "dependsOn": [
         "pkg:cargo/objc2@0.5.2"
+      ]
+    },
+    {
+      "ref": "pkg:cargo/block2@0.6.2",
+      "dependsOn": [
+        "pkg:cargo/objc2@0.6.4"
       ]
     },
     {
@@ -3590,6 +3688,8 @@
       "ref": "pkg:cargo/dispatch2@0.3.1",
       "dependsOn": [
         "pkg:cargo/bitflags@2.13.1",
+        "pkg:cargo/block2@0.6.2",
+        "pkg:cargo/libc@0.2.189",
         "pkg:cargo/objc2@0.6.4"
       ]
     },
@@ -4074,6 +4174,7 @@
       "ref": "pkg:cargo/objc2-app-kit@0.3.2",
       "dependsOn": [
         "pkg:cargo/bitflags@2.13.1",
+        "pkg:cargo/block2@0.6.2",
         "pkg:cargo/objc2-core-graphics@0.3.2",
         "pkg:cargo/objc2-foundation@0.3.2",
         "pkg:cargo/objc2@0.6.4"
@@ -4400,6 +4501,10 @@
       ]
     },
     {
+      "ref": "pkg:cargo/pollster@0.4.0",
+      "dependsOn": []
+    },
+    {
       "ref": "pkg:cargo/potential_utf@0.1.6",
       "dependsOn": [
         "pkg:cargo/serde_core@1.0.229",
@@ -4467,6 +4572,37 @@
       "ref": "pkg:cargo/redox_syscall@0.9.3",
       "dependsOn": [
         "pkg:cargo/bitflags@2.13.1"
+      ]
+    },
+    {
+      "ref": "pkg:cargo/rfd@0.17.2",
+      "dependsOn": [
+        "pkg:cargo/block2@0.6.2",
+        "pkg:cargo/dispatch2@0.3.1",
+        "pkg:cargo/js-sys@0.3.104",
+        "pkg:cargo/libc@0.2.189",
+        "pkg:cargo/log@0.4.34",
+        "pkg:cargo/objc2-app-kit@0.3.2",
+        "pkg:cargo/objc2-core-foundation@0.3.2",
+        "pkg:cargo/objc2-foundation@0.3.2",
+        "pkg:cargo/objc2@0.6.4",
+        "pkg:cargo/percent-encoding@2.3.2",
+        "pkg:cargo/pollster@0.4.0",
+        "pkg:cargo/raw-window-handle@0.6.2",
+        "pkg:cargo/wasm-bindgen-futures@0.4.77",
+        "pkg:cargo/wasm-bindgen@0.2.127",
+        "pkg:cargo/wayland-backend@0.3.17",
+        "pkg:cargo/wayland-client@0.31.15",
+        "pkg:cargo/wayland-protocols@0.32.13",
+        "pkg:cargo/web-sys@0.3.104",
+        "pkg:cargo/windows-sys@0.61.2"
+      ]
+    },
+    {
+      "ref": "pkg:cargo/ropey@1.6.1",
+      "dependsOn": [
+        "pkg:cargo/smallvec@1.15.2",
+        "pkg:cargo/str_indices@0.4.4"
       ]
     },
     {
@@ -4654,6 +4790,10 @@
       "dependsOn": []
     },
     {
+      "ref": "pkg:cargo/str_indices@0.4.4",
+      "dependsOn": []
+    },
+    {
       "ref": "pkg:cargo/strict-num@0.1.1",
       "dependsOn": []
     },
@@ -4687,6 +4827,16 @@
         "pkg:cargo/proc-macro2@1.0.107",
         "pkg:cargo/quote@1.0.47",
         "pkg:cargo/syn@2.0.119"
+      ]
+    },
+    {
+      "ref": "pkg:cargo/tempfile@3.27.0",
+      "dependsOn": [
+        "pkg:cargo/fastrand@2.5.0",
+        "pkg:cargo/getrandom@0.4.3",
+        "pkg:cargo/once_cell@1.21.4",
+        "pkg:cargo/rustix@1.1.4",
+        "pkg:cargo/windows-sys@0.61.2"
       ]
     },
     {
@@ -4849,8 +4999,11 @@
       "ref": "pkg:cargo/visor-md@0.1.0",
       "dependsOn": [
         "pkg:cargo/arboard@3.6.1",
+        "pkg:cargo/atomicwrites@0.4.4",
         "pkg:cargo/comrak@0.54.0",
         "pkg:cargo/parley@0.11.1",
+        "pkg:cargo/rfd@0.17.2",
+        "pkg:cargo/ropey@1.6.1",
         "pkg:cargo/softbuffer@0.4.8",
         "pkg:cargo/swash@0.2.10",
         "pkg:cargo/tiny-skia@0.12.0",
