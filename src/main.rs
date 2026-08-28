@@ -2466,6 +2466,10 @@ struct App {
     /// Consulta efímera del documento abierto. No se persiste ni se comparte.
     search_query: Option<String>,
     search_match: usize,
+    /// Consulta efímera sobre el índice local de la carpeta autorizada. Nunca
+    /// toca el disco ni conserva la consulta fuera de esta ejecución.
+    workspace_search_query: Option<String>,
+    workspace_search_match: usize,
     /// Se crea solamente ante una copia explícita. Mantenerlo vivo respeta el
     /// modelo de propiedad de X11/Wayland, donde el proceso sirve el texto
     /// hasta que otra aplicación lo solicita.
@@ -2973,11 +2977,17 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
             WindowEvent::ModifiersChanged(modifiers) => self.modifiers = modifiers.state(),
+            WindowEvent::Ime(Ime::Commit(text)) if self.workspace_search_query.is_some() => {
+                self.append_workspace_search_text(&text);
+            }
             WindowEvent::Ime(Ime::Commit(text)) if self.search_query.is_some() => {
                 self.append_search_text(&text);
             }
             WindowEvent::Ime(Ime::Commit(text)) if self.mode == DocumentMode::SourceEditing => {
                 self.edit_source(|editor, source| editor.insert(source, text.as_str()));
+            }
+            WindowEvent::KeyboardInput { event, .. } if self.workspace_search_query.is_some() => {
+                self.handle_workspace_search_key(&event);
             }
             WindowEvent::KeyboardInput { event, .. } if self.search_query.is_some() => {
                 self.handle_search_key(&event);
@@ -2986,6 +2996,18 @@ impl ApplicationHandler<AppEvent> for App {
                 if self.mode == DocumentMode::SourceEditing =>
             {
                 self.handle_source_key(&event);
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::KeyF),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } if self.modifiers.control_key() && self.modifiers.shift_key() => {
+                self.open_workspace_search()
             }
             WindowEvent::KeyboardInput {
                 event:
@@ -3474,7 +3496,11 @@ impl App {
             && self.modifiers.control_key()
             && matches!(event.physical_key, PhysicalKey::Code(KeyCode::KeyF))
         {
-            self.open_document_search();
+            if self.modifiers.shift_key() {
+                self.open_workspace_search();
+            } else {
+                self.open_document_search();
+            }
             return;
         }
 
@@ -4315,9 +4341,116 @@ impl App {
     }
 
     fn open_document_search(&mut self) {
+        self.workspace_search_query = None;
         self.search_query = Some(String::new());
         self.search_match = 0;
         self.set_notice("búsqueda local · escribe texto, Enter recorre resultados, Escape cierra");
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    fn open_workspace_search(&mut self) {
+        if self.workspace.is_none() {
+            self.set_notice("elige primero una carpeta de trabajo con Ctrl+Shift+O");
+            return;
+        }
+        self.search_query = None;
+        self.workspace_search_query = Some(String::new());
+        self.workspace_search_match = 0;
+        self.set_notice(
+            "buscar en carpeta · escribe texto, flechas eligen, Enter abre, Escape cierra",
+        );
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    fn append_workspace_search_text(&mut self, text: &str) {
+        if text.chars().any(char::is_control) {
+            return;
+        }
+        if let Some(query) = &mut self.workspace_search_query {
+            query.push_str(text);
+            self.workspace_search_match = 0;
+        }
+    }
+
+    fn workspace_search_matches(&self) -> Vec<PathBuf> {
+        let Some(query) = self
+            .workspace_search_query
+            .as_deref()
+            .filter(|query| !query.is_empty())
+        else {
+            return Vec::new();
+        };
+        self.workspace.as_ref().map_or_else(Vec::new, |(_, index)| {
+            index
+                .search(query)
+                .into_iter()
+                .map(|note| note.relative_path.clone())
+                .collect()
+        })
+    }
+
+    fn open_workspace_search_match(&mut self) {
+        if self.source_editor.is_dirty() {
+            self.set_notice("guarda o descarta los cambios antes de abrir otra nota");
+            return;
+        }
+        let matches = self.workspace_search_matches();
+        let Some(relative_path) = matches
+            .get(self.workspace_search_match % matches.len().max(1))
+            .cloned()
+        else {
+            self.set_notice("no hay notas que coincidan con la búsqueda");
+            return;
+        };
+        let Some((root, _)) = &self.workspace else {
+            return;
+        };
+        match root.resolve_existing(&relative_path) {
+            Ok(path) => {
+                self.workspace_search_query = None;
+                self.open_document_path(path);
+            }
+            Err(error) => {
+                self.log.push(format!("[vfs] {error}"));
+                self.set_notice("la nota encontrada fue bloqueada por la política de archivos");
+            }
+        }
+    }
+
+    fn handle_workspace_search_key(&mut self, event: &KeyEvent) {
+        if event.state != ElementState::Pressed || event.repeat {
+            return;
+        }
+        match event.physical_key {
+            PhysicalKey::Code(KeyCode::Escape) => {
+                self.workspace_search_query = None;
+                self.set_notice("búsqueda de carpeta cerrada");
+            }
+            PhysicalKey::Code(KeyCode::Backspace) => {
+                if let Some(query) = &mut self.workspace_search_query {
+                    query.pop();
+                    self.workspace_search_match = 0;
+                }
+            }
+            PhysicalKey::Code(KeyCode::ArrowDown) => {
+                let count = self.workspace_search_matches().len();
+                if count > 0 {
+                    self.workspace_search_match = (self.workspace_search_match + 1) % count;
+                }
+            }
+            PhysicalKey::Code(KeyCode::ArrowUp) => {
+                let count = self.workspace_search_matches().len();
+                if count > 0 {
+                    self.workspace_search_match = (self.workspace_search_match + count - 1) % count;
+                }
+            }
+            PhysicalKey::Code(KeyCode::Enter) => self.open_workspace_search_match(),
+            _ => {}
+        }
         if let Some(window) = &self.window {
             window.request_redraw();
         }
@@ -4797,6 +4930,24 @@ impl App {
             };
             build_menu_layout(&label, &mut self.font_cx, &mut self.layout_cx, self.palette)
         });
+        let workspace_search_query = self.workspace_search_query.clone();
+        let workspace_search_overlay = workspace_search_query.as_ref().map(|query| {
+            let matches = self.workspace_search_matches();
+            let label = if query.is_empty() {
+                "Buscar en carpeta…".to_string()
+            } else if matches.is_empty() {
+                format!("Carpeta: {query} · sin resultados")
+            } else {
+                let selected = &matches[self.workspace_search_match % matches.len()];
+                format!(
+                    "Carpeta: {query} · {}/{} · {}",
+                    self.workspace_search_match % matches.len() + 1,
+                    matches.len(),
+                    selected.display()
+                )
+            };
+            build_menu_layout(&label, &mut self.font_cx, &mut self.layout_cx, self.palette)
+        });
         let menu_layouts = menu.map(|_| {
             context_actions(self.mode)
                 .iter()
@@ -5128,7 +5279,7 @@ impl App {
             }
         }
 
-        if let Some(layout) = search_overlay {
+        if let Some(layout) = search_overlay.or(workspace_search_overlay) {
             let overlay_width = (layout.width() + 24.0).min(w.get() as f32 - MARGIN * 2.0);
             if let Some(rect) = Rect::from_xywh(MARGIN, 44.0, overlay_width, 28.0) {
                 pixmap.fill_rect(rect, &paint, Transform::identity(), None);
@@ -5404,6 +5555,8 @@ fn main() {
         context_menu: None,
         search_query: None,
         search_match: 0,
+        workspace_search_query: None,
+        workspace_search_match: 0,
         clipboard: None,
         notice: Some(if opening_path.is_some() {
             "cargando documento".to_string()

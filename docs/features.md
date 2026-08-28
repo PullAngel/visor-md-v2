@@ -96,7 +96,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | --- | --- | --- |
 | Abrir carpeta o bóveda | Parcial | Sin migración ni cambios implícitos; falta UI de árbol |
 | Árbol de archivos | Planificado | Navegación y estado de disco |
-| Búsqueda de bóveda | Parcial | Índice cancelable y acotado; falta UI de resultados |
+| Búsqueda de bóveda | Parcial | `Ctrl+Shift+F` consulta el índice en memoria y abre solo notas contenidas; faltan panel y resultados múltiples visibles |
 | Wikilinks | Parcial | Resolución contenida y explícita; falta panel de diagnóstico |
 | Backlinks | Parcial | Índice coherente y navegación inicial; falta panel visible e incrementalidad |
 | Callouts | Parcial | Sintaxis Obsidian elegida y render nativo; falta corpus de bóvedas |
