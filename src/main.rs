@@ -2463,6 +2463,9 @@ struct App {
     /// Origen del menú contextual propio. Solo contiene acciones de copia
     /// locales; no usa menús del sistema ni ejecuta destinos del documento.
     context_menu: Option<(f32, f32)>,
+    /// Consulta efímera del documento abierto. No se persiste ni se comparte.
+    search_query: Option<String>,
+    search_match: usize,
     /// Se crea solamente ante una copia explícita. Mantenerlo vivo respeta el
     /// modelo de propiedad de X11/Wayland, donde el proceso sirve el texto
     /// hasta que otra aplicación lo solicita.
@@ -2970,14 +2973,30 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
             WindowEvent::ModifiersChanged(modifiers) => self.modifiers = modifiers.state(),
+            WindowEvent::Ime(Ime::Commit(text)) if self.search_query.is_some() => {
+                self.append_search_text(&text);
+            }
             WindowEvent::Ime(Ime::Commit(text)) if self.mode == DocumentMode::SourceEditing => {
                 self.edit_source(|editor, source| editor.insert(source, text.as_str()));
+            }
+            WindowEvent::KeyboardInput { event, .. } if self.search_query.is_some() => {
+                self.handle_search_key(&event);
             }
             WindowEvent::KeyboardInput { event, .. }
                 if self.mode == DocumentMode::SourceEditing =>
             {
                 self.handle_source_key(&event);
             }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::KeyF),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } if self.modifiers.control_key() => self.open_document_search(),
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
@@ -4288,6 +4307,91 @@ impl App {
         self.set_notice("encabezado enfocado");
     }
 
+    fn open_document_search(&mut self) {
+        self.search_query = Some(String::new());
+        self.search_match = 0;
+        self.set_notice("búsqueda local · escribe texto, Enter recorre resultados, Escape cierra");
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    fn append_search_text(&mut self, text: &str) {
+        if text.chars().any(char::is_control) {
+            return;
+        }
+        if let Some(query) = &mut self.search_query {
+            query.push_str(text);
+            self.search_match = 0;
+            self.focus_search_match(0);
+        }
+    }
+
+    fn search_matches(&self) -> Vec<usize> {
+        let Some(query) = self
+            .search_query
+            .as_deref()
+            .filter(|query| !query.is_empty())
+        else {
+            return Vec::new();
+        };
+        matching_block_indices(&self.blocks, query)
+    }
+
+    fn focus_search_match(&mut self, direction: i8) {
+        let matches = self.search_matches();
+        if matches.is_empty() {
+            self.selection = None;
+            return;
+        }
+        if direction > 0 {
+            self.search_match = (self.search_match + 1) % matches.len();
+        } else if direction < 0 {
+            self.search_match = (self.search_match + matches.len() - 1) % matches.len();
+        } else {
+            self.search_match %= matches.len();
+        }
+        let block = matches[self.search_match];
+        self.selection = Some(DocumentSelection::collapsed(BlockCursor {
+            block,
+            offset: 0,
+        }));
+        if let (Some(slot), Some(window)) = (self.slots.get(block), &self.window) {
+            self.scroll = slot.y.min(max_scroll(
+                self.doc_height,
+                window.inner_size().height as f32,
+            ));
+            window.request_redraw();
+        }
+    }
+
+    fn handle_search_key(&mut self, event: &KeyEvent) {
+        if event.state != ElementState::Pressed || event.repeat {
+            return;
+        }
+        match event.physical_key {
+            PhysicalKey::Code(KeyCode::Escape) => {
+                self.search_query = None;
+                self.selection = None;
+                self.set_notice("búsqueda cerrada");
+            }
+            PhysicalKey::Code(KeyCode::Backspace) => {
+                if let Some(query) = &mut self.search_query {
+                    query.pop();
+                    self.search_match = 0;
+                }
+                self.focus_search_match(0);
+            }
+            PhysicalKey::Code(KeyCode::Enter) => {
+                self.focus_search_match(if self.modifiers.shift_key() { -1 } else { 1 })
+            }
+            _ => {}
+        }
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
     fn cursor_at(&self, x: f32, y: f32) -> Option<BlockCursor> {
         self.slots.iter().enumerate().find_map(|(block, slot)| {
             let top = slot.y - self.scroll;
@@ -4676,6 +4780,16 @@ impl App {
                 self.palette,
             )
         });
+        let search_query = self.search_query.clone();
+        let search_overlay = search_query.as_ref().map(|query| {
+            let matches = self.search_matches().len();
+            let label = if query.is_empty() {
+                "Buscar en documento…".to_string()
+            } else {
+                format!("Buscar: {query} · {matches} resultados")
+            };
+            build_menu_layout(&label, &mut self.font_cx, &mut self.layout_cx, self.palette)
+        });
         let menu_layouts = menu.map(|_| {
             context_actions(self.mode)
                 .iter()
@@ -5007,6 +5121,21 @@ impl App {
             }
         }
 
+        if let Some(layout) = search_overlay {
+            let overlay_width = (layout.width() + 24.0).min(w.get() as f32 - MARGIN * 2.0);
+            if let Some(rect) = Rect::from_xywh(MARGIN, 44.0, overlay_width, 28.0) {
+                pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+            }
+            for line in layout.lines() {
+                for entry in line.items() {
+                    if let PositionedLayoutItem::GlyphRun(run) = entry {
+                        draw_run_background(pixmap, &run, MARGIN + 10.0, 49.0);
+                        draw_glyph_run(pixmap, scale_cx, glyphs, &run, MARGIN + 10.0, 49.0);
+                    }
+                }
+            }
+        }
+
         if let (Some((x, y)), Some(layouts)) = (menu, menu_layouts) {
             if let Some(rect) = Rect::from_xywh(
                 x,
@@ -5136,6 +5265,17 @@ fn code_copy_bounds(slot: &Slot, text_width: f32, scroll: f32, scale: f32) -> (f
     )
 }
 
+fn matching_block_indices(blocks: &[Block], query: &str) -> Vec<usize> {
+    if query.is_empty() {
+        return Vec::new();
+    }
+    blocks
+        .iter()
+        .enumerate()
+        .filter_map(|(index, block)| block.text.contains(query).then_some(index))
+        .collect()
+}
+
 fn main() {
     let started = Instant::now();
 
@@ -5245,6 +5385,8 @@ fn main() {
         focused_link: None,
         focus_destination: None,
         context_menu: None,
+        search_query: None,
+        search_match: 0,
         clipboard: None,
         notice: Some(if opening_path.is_some() {
             "cargando documento".to_string()
@@ -6042,6 +6184,17 @@ con dos lineas
         assert!(y >= slot.y - 40.0);
         assert!(x + width <= slot.x + 640.0);
         assert!(y + height <= slot.y - 40.0 + slot.height);
+    }
+
+    #[test]
+    fn la_busqueda_local_devuelve_solo_bloques_que_contienen_la_consulta() {
+        let blocks = parse_blocks("uno\n\ndos con clave\n\ntres con clave")
+            .expect("la fixture debe parsearse")
+            .blocks;
+
+        assert_eq!(matching_block_indices(&blocks, "clave"), vec![1, 2]);
+        assert!(matching_block_indices(&blocks, "ausente").is_empty());
+        assert!(matching_block_indices(&blocks, "").is_empty());
     }
 
     /// Casos pequeños y trazables que complementan la fixture de lectura. No

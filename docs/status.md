@@ -173,6 +173,8 @@ causa porque todavía no se controlan caché, carga y planificación del sistema
 - paneles de árbol, búsqueda y backlinks sobre el índice ya cancelable;
 - UI de búsqueda sobre el índice de ruta, encabezados y contenido acotado a
   8 MiB de memoria;
+- búsqueda local del documento con `Ctrl+F`, sin persistir ni transmitir la
+  consulta;
 - presupuestos de recorrido para una carpeta grande: 10.000 notas, 512 KiB por
   nota y 64 MiB de lectura acumulada;
 - QA manual del aviso inicial y recuperación tras cierre inesperado;
