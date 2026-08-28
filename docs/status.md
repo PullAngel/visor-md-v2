@@ -111,6 +111,9 @@ exacto del traspaso.
   independientes; los bordes y el encabezado ya no dependen de dibujar una
   línea aplanada con caracteres `|`. La selección de rangos dentro de una celda
   sigue pendiente: se desactiva antes que devolver offsets falsos.
+- guardar compara la identidad y los bytes base antes del reemplazo atómico.
+  Ante un conflicto externo, no sobrescribe: permite conservar la edición,
+  elegir una copia o recargar solo después de escribir una recuperación local.
 
 Evidencia actual en Windows:
 
@@ -141,6 +144,7 @@ Evidencia actual en Windows:
 - gate Sprint A parcial: 3.103.232 bytes, 2,960 MiB;
 - correcciones posteriores al QA visual: 3.203.584 bytes, 3,055 MiB;
 - reflow, tareas y tablas por celdas: 3.209.216 bytes, 3,061 MiB;
+- conflictos de guardado explícitos: 3.211.264 bytes, 3,062 MiB;
 - primer pintado mediano sobre diez ejecuciones: 102,5 ms;
 - P95 de primer pintado: 612 ms;
 - scroll automatizado: 4,4 ms por cuadro.

@@ -158,6 +158,14 @@ una señal de conflicto previa al guardado, no una prueba criptográfica ni una
 identidad de handle: un guardado seguro volverá a validar el destino y hará el
 reemplazo atómico en la misma frontera de filesystem.
 
+Antes de ese reemplazo, la implementación compara también los bytes completos
+del archivo con la versión base. Si cambió fuera de Visor MD, no escribe nada y
+ofrece tres acciones explícitas: mantener la edición abierta, elegir una copia
+con otro destino o recargar la versión externa. La recarga primero escribe una
+recuperación local temporal; si esa recuperación falla, se cancela la recarga.
+Así un conflicto no puede transformarse silenciosamente en una pérdida de la
+versión local.
+
 Solo las extensiones Markdown (`.md`, `.markdown`, `.mdown`, `.mkdn`) pasan al
 parser. `.txt`, JSON, YAML, TOML, CSV y código se conservan como texto inerte:
 la aplicación no intenta ejecutar, compilar ni tratar su sintaxis como una

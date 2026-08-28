@@ -96,6 +96,12 @@ Registrar antes de comenzar:
   superponer bloques aunque se haya pegado o escrito una cantidad grande de
   texto. `Ctrl+Z` desde lectura también actualiza la vista y conserva la
   posibilidad de volver a entrar en edición.
+- Para comprobar un conflicto de guardado, abrir una copia de la fixture,
+  editarla en Visor MD, modificarla también con un editor externo y pulsar
+  `Ctrl+S`. Confirmar que el archivo externo no se sobrescribe y que el diálogo
+  explica las tres acciones. Probar Cancelar; para Recargar, verificar que la
+  recuperación queda disponible con `Ctrl+Shift+R`; para Guardar una copia,
+  elegir un destino nuevo y verificar que el original externo no cambia.
 - Esta comprobación no autoriza guardar: cursor visible, selección por mouse,
   navegación vertical y guardado siguen fuera de esta etapa.
 

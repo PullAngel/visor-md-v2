@@ -51,13 +51,13 @@ use winit::window::{CursorIcon, Theme, Window, WindowId};
 
 use editor::SourceEditor;
 use files::{
-    DEFAULT_DOCUMENT_LIMIT_BYTES, FileIdentity, LineEndings, TextMetadata, is_markdown_path,
-    open_explicit_primary, save_explicit_primary, save_new_primary,
+    DEFAULT_DOCUMENT_LIMIT_BYTES, FileIdentity, FileSaveError, LineEndings, TextMetadata,
+    is_markdown_path, open_explicit_primary, save_explicit_primary, save_new_primary,
 };
 use fonts::{FONT_CODE, FONT_DOC, FONT_UI, register_embedded_fonts};
 use limits::{Degradation, MAX_BLOCKS, MAX_INDENT_DEPTH, MAX_NEST, MAX_SAFE_LINE_BYTES};
 use recovery::RecoverySession;
-use rfd::FileDialog;
+use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
 use theme::{DAY, NIGHT, Palette, Role};
 use vfs::WorkspaceRoot;
 use workspace::{WikiResolution, WorkspaceIndex, WorkspaceLimits, index_workspace};
@@ -163,7 +163,10 @@ enum AppEvent {
         identity: FileIdentity,
         baseline_bytes: Vec<u8>,
     },
-    SaveFailed(String),
+    SaveFailed {
+        error: String,
+        conflict: bool,
+    },
     SaveAsReady {
         path: PathBuf,
         revision: u64,
@@ -2583,9 +2586,13 @@ impl ApplicationHandler<AppEvent> for App {
                     self.set_notice("se guardó una versión anterior; hay cambios nuevos");
                 }
             }
-            AppEvent::SaveFailed(error) => {
+            AppEvent::SaveFailed { error, conflict } => {
                 self.log.push(format!("[error] {error}"));
-                self.set_notice(&error);
+                if conflict {
+                    self.resolve_save_conflict();
+                } else {
+                    self.set_notice(&error);
+                }
             }
             AppEvent::SaveAsReady {
                 path,
@@ -3509,7 +3516,10 @@ impl App {
                         identity: saved.identity,
                         baseline_bytes: saved.baseline_bytes,
                     },
-                    Err(error) => AppEvent::SaveFailed(format!("no se pudo guardar: {error}")),
+                    Err(error) => AppEvent::SaveFailed {
+                        conflict: matches!(&error, FileSaveError::Conflict),
+                        error: format!("no se pudo guardar: {error}"),
+                    },
                 };
             let _ = proxy.send_event(event);
         });
@@ -3537,12 +3547,57 @@ impl App {
                     identity: saved.identity,
                     baseline_bytes: saved.baseline_bytes,
                 },
-                Err(error) => AppEvent::SaveFailed(format!(
-                    "no se pudo guardar como: {error}. El destino existente no se modificó"
-                )),
+                Err(error) => AppEvent::SaveFailed {
+                    conflict: matches!(&error, FileSaveError::Conflict),
+                    error: format!(
+                        "no se pudo guardar como: {error}. El destino existente no se modificó"
+                    ),
+                },
             };
             let _ = proxy.send_event(event);
         });
+    }
+
+    /// Un conflicto externo nunca sobrescribe el destino. La única acción que
+    /// descarta la versión local es recargar, y antes se guarda una
+    /// recuperación local explícita para que un fallo posterior no la pierda.
+    fn resolve_save_conflict(&mut self) {
+        let dialog = MessageDialog::new()
+            .set_level(MessageLevel::Warning)
+            .set_title("Visor MD · conflicto al guardar")
+            .set_description(
+                "El archivo cambió fuera de Visor MD y no se sobrescribió.\n\nSí: recargar la versión externa después de conservar una recuperación local.\nNo: Guardar una copia con otro nombre.\nCancelar: mantener esta edición abierta.",
+            )
+            .set_buttons(MessageButtons::YesNoCancel);
+        let result = if let Some(window) = &self.window {
+            dialog.set_parent(window.as_ref()).show()
+        } else {
+            dialog.show()
+        };
+        match result {
+            MessageDialogResult::Yes => {
+                let Some(recovery) = &self.recovery else {
+                    self.set_notice(
+                        "no se pudo recargar: la recuperación local no está disponible; guarda una copia",
+                    );
+                    return;
+                };
+                if let Err(error) = recovery.write(&self.source) {
+                    self.log.push(format!("[recuperación] {error}"));
+                    self.set_notice(
+                        "no se pudo conservar una recuperación; no se recargó el archivo externo",
+                    );
+                    return;
+                }
+                self.open_document_path(PathBuf::from(&self.path));
+            }
+            MessageDialogResult::No => self.save_as_current_document(),
+            MessageDialogResult::Cancel
+            | MessageDialogResult::Ok
+            | MessageDialogResult::Custom(_) => {
+                self.set_notice("conflicto conservado: el archivo externo no se sobrescribió")
+            }
+        }
     }
 
     fn create_new_document(&mut self) {

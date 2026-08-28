@@ -20,6 +20,7 @@ compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
 | **Checkpoint de wikilinks y callouts** | **3.202.048 bytes, 3,054 MiB** |
 | **Correcciones posteriores al QA visual** | **3.203.584 bytes, 3,055 MiB** |
 | **Reflow, tareas y tablas por celdas** | **3.209.216 bytes, 3,061 MiB** |
+| **Conflictos de guardado explícitos** | **3.211.264 bytes, 3,062 MiB** |
 
 Superar 8 MB exige medición, explicación y aprobación. El límite no se usa para
 recortar seguridad, estabilidad, accesibilidad, Unicode o funciones esenciales.
@@ -77,6 +78,19 @@ lectura adicional de archivos.
 La medición no sustituye el QA visual pendiente de tablas estrechas y reflow
 tras una edición grande. Ese gate humano está registrado en la lista manual y
 no bloquea el trabajo independiente del editor.
+
+### Conflictos de guardado explícitos del 28 de agosto de 2026
+
+El diálogo nativo de conflicto reutiliza `rfd`, ya presente para abrir y guardar;
+no agrega dependencias. Conserva la regla de no sobrescritura y permite elegir
+recarga protegida por recuperación o una copia explícita.
+
+| Medida | Resultado |
+| --- | --- |
+| Binario Windows | 3.211.264 bytes, 3,062 MiB |
+| SHA-256 | `08AB3BF43A73EF3BBEB6A6F8D7EAF529CA84BB99EC7FC2C380107ED9139DFA45` |
+| Variación frente al checkpoint anterior | +2.048 bytes |
+| Margen frente al límite deseado | 4,938 MiB |
 
 ---
 
