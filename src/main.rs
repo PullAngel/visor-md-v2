@@ -3470,6 +3470,13 @@ impl App {
         if event.state != ElementState::Pressed {
             return;
         }
+        if !event.repeat
+            && self.modifiers.control_key()
+            && matches!(event.physical_key, PhysicalKey::Code(KeyCode::KeyF))
+        {
+            self.open_document_search();
+            return;
+        }
 
         // En Windows la escritura ordinaria llega en `KeyEvent::text`; IME
         // sigue entrando por `WindowEvent::Ime::Commit`. Las combinaciones de
