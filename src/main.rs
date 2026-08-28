@@ -2374,6 +2374,9 @@ struct App {
     source_baseline_bytes: Option<Vec<u8>>,
     source_editor: SourceEditor,
     recovery: Option<RecoverySession>,
+    /// Solo la primera sesión informa que la recuperación es texto local sin
+    /// cifrar. La decisión no depende del documento abierto.
+    recovery_privacy_notice_pending: bool,
     last_recovery: Instant,
     workspace: Option<(WorkspaceRoot, WorkspaceIndex)>,
     /// Cambiar de carpeta cancela cooperativamente el recorrido anterior. El
@@ -2729,6 +2732,18 @@ impl ApplicationHandler<AppEvent> for App {
         self.scale_factor = window.scale_factor() as f32;
         window.request_redraw();
         self.window = Some(window);
+        if self.recovery_privacy_notice_pending {
+            self.recovery_privacy_notice_pending = false;
+            MessageDialog::new()
+                .set_level(MessageLevel::Info)
+                .set_title("Recuperación local activada")
+                .set_description(
+                    "Visor MD conserva temporalmente cambios sin guardar en tu perfil local para recuperarlos tras un cierre inesperado. Esa copia es texto sin cifrar, no un guardado definitivo y nunca se escribe dentro de la bóveda.",
+                )
+                .set_buttons(MessageButtons::Ok)
+                .show();
+            self.set_notice("recuperación local temporal activada");
+        }
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
@@ -4988,6 +5003,9 @@ fn main() {
         t.elapsed().as_secs_f64() * 1000.0
     ));
 
+    let recovery = RecoverySession::start().ok();
+    let recovery_privacy_notice_pending =
+        recovery.is_some() && RecoverySession::privacy_notice_needed().unwrap_or(false);
     let mut app = App {
         started,
         path: opening_path
@@ -4998,7 +5016,8 @@ fn main() {
         source_identity: None,
         source_baseline_bytes: None,
         source_editor: SourceEditor::new(),
-        recovery: RecoverySession::start().ok(),
+        recovery,
+        recovery_privacy_notice_pending,
         last_recovery: Instant::now(),
         workspace: None,
         workspace_request: 0,

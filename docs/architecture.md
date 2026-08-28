@@ -259,8 +259,9 @@ separado y nunca se presenta como guardado definitivo.
 La recuperación local actual escribe snapshots limitados de una sesión activa
 en el perfil del usuario, fuera de documentos y bóvedas. La restauración es una
 acción explícita que crea un documento sin destino y marcado como modificado.
-Falta configuración persistente, limpieza de recuperaciones antiguas y QA de
-cierre inesperado.
+La primera sesión muestra un aviso claro de que esa copia es texto sin cifrar;
+las sesiones propias de más de catorce días se eliminan de forma limitada. Falta
+configuración persistente y QA de cierre inesperado.
 
 ### Chrome y comandos
 

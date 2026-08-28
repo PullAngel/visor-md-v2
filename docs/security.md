@@ -341,7 +341,10 @@ local de la persona, nunca dentro de la bóveda ni junto al documento. Se crea
 con una cadencia limitada durante la edición, se borra después de guardar y solo
 se abre mediante una acción explícita como documento sin destino. Es una defensa
 contra cierres inesperados, no un backup ni una garantía de durabilidad; la UI
-debe explicarlo y permitir desactivarla cuando exista configuración persistente.
+lo explica una vez antes de usarla y permitirá desactivarla cuando exista
+configuración persistente. Los snapshots propios de más de catorce días se
+limpian al iniciar; el proceso no elimina enlaces simbólicos ni archivos ajenos
+dentro de ese directorio.
 
 Al pedir cerrar con cambios pendientes, Visor MD fuerza una escritura de esa
 recuperación antes de ofrecer el cierre. Si falla, mantiene la ventana abierta.
