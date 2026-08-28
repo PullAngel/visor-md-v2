@@ -377,7 +377,7 @@ nativas reales. macOS permanece como posibilidad futura, no gate actual.
 
 | Área | Implementación actual | Objetivo |
 | --- | --- | --- |
-| Archivos | Apertura primaria limitada, guardado atómico, conflicto explícito y VFS de workspace | Política completa para recursos secundarios y detección de cambios externos |
+| Archivos | Apertura primaria limitada, guardado atómico, conflicto explícito, comprobación al recuperar foco y VFS de workspace | Política completa para recursos secundarios |
 | Parsing | Hilo de trabajo, revisión de apertura y evento interno; errores conservan ventana | Cancelación cooperativa con límites |
 | Modelo | `Block` y `Span` simplificados | Documento con rangos y semántica |
 | Layout | Visible con estimaciones | Geometría para render e interacción |

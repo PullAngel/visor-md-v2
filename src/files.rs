@@ -248,6 +248,41 @@ pub(crate) fn open_explicit_primary(
     })
 }
 
+/// Comprueba una modificación externa usando el mismo límite de lectura que la
+/// apertura primaria. El archivo ya fue elegido explícitamente por la persona;
+/// esta función no sigue rutas declaradas por Markdown ni carga su contenido
+/// como comportamiento activo.
+pub(crate) fn changed_on_disk(
+    path: impl AsRef<Path>,
+    baseline_bytes: &[u8],
+) -> Result<bool, FileOpenError> {
+    let path = path.as_ref();
+    let mut file = File::open(path).map_err(|source| FileOpenError::Io {
+        operation: "no se pudo comprobar el archivo abierto",
+        source,
+    })?;
+    let metadata = file.metadata().map_err(|source| FileOpenError::Io {
+        operation: "no se pudo consultar el archivo abierto",
+        source,
+    })?;
+    if !metadata.is_file() {
+        return Err(FileOpenError::NotAFile);
+    }
+    let baseline_len = u64::try_from(baseline_bytes.len()).unwrap_or(u64::MAX);
+    if metadata.len() != baseline_len {
+        return Ok(true);
+    }
+    let mut bytes = Vec::with_capacity(baseline_bytes.len());
+    Read::by_ref(&mut file)
+        .take(baseline_len.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .map_err(|source| FileOpenError::Io {
+            operation: "no se pudo comprobar el contenido del archivo abierto",
+            source,
+        })?;
+    Ok(bytes != baseline_bytes)
+}
+
 /// Guarda una fuente UTF-8 con un reemplazo atómico en el mismo filesystem.
 ///
 /// Antes de escribir compara los bytes actuales con la versión que se abrió o
@@ -416,6 +451,16 @@ mod tests {
         fs::write(&path, b"uno cambiado").expect("la fixture se puede modificar");
 
         assert!(!opened.identity.still_matches(&path).unwrap());
+    }
+
+    #[test]
+    fn la_comprobacion_externa_detecta_cambios_de_igual_tamano() {
+        let path = temporary_file("external-check", b"uno");
+        let opened = open_explicit_primary(&path, 64).expect("la fixture es válida");
+        assert!(!changed_on_disk(&path, &opened.baseline_bytes).unwrap());
+
+        fs::write(&path, b"dos").expect("la fixture se puede modificar");
+        assert!(changed_on_disk(&path, &opened.baseline_bytes).unwrap());
     }
 
     #[test]

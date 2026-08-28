@@ -55,7 +55,8 @@ use winit::window::{CursorIcon, Theme, Window, WindowId};
 use editor::SourceEditor;
 use files::{
     DEFAULT_DOCUMENT_LIMIT_BYTES, FileIdentity, FileSaveError, LineEndings, TextMetadata,
-    is_markdown_path, open_explicit_primary, save_explicit_primary, save_new_primary,
+    changed_on_disk, is_markdown_path, open_explicit_primary, save_explicit_primary,
+    save_new_primary,
 };
 use fonts::{FONT_CODE, FONT_DOC, FONT_UI, register_embedded_fonts};
 use limits::{Degradation, MAX_BLOCKS, MAX_INDENT_DEPTH, MAX_NEST, MAX_SAFE_LINE_BYTES};
@@ -184,6 +185,10 @@ enum AppEvent {
     WorkspaceFailed {
         request: u64,
         error: String,
+    },
+    ExternalChangeChecked {
+        request: u64,
+        result: Result<bool, String>,
     },
 }
 
@@ -2373,6 +2378,7 @@ struct App {
     /// conflictos incluso si otro programa conserva tamaño y fecha similares.
     source_baseline_bytes: Option<Vec<u8>>,
     source_editor: SourceEditor,
+    external_check_in_flight: bool,
     recovery: Option<RecoverySession>,
     /// Solo la primera sesión informa que la recuperación es texto local sin
     /// cifrar. La decisión no depende del documento abierto.
@@ -2484,6 +2490,7 @@ impl ApplicationHandler<AppEvent> for App {
                 self.source_identity = Some(identity);
                 self.source_baseline_bytes = Some(baseline_bytes);
                 self.source_editor = SourceEditor::new();
+                self.external_check_in_flight = false;
                 self.mode = DocumentMode::Reading;
                 self.blocks = outcome.blocks;
                 self.safe_mode = outcome.degradation;
@@ -2536,6 +2543,7 @@ impl ApplicationHandler<AppEvent> for App {
                     return;
                 }
                 self.loading = false;
+                self.external_check_in_flight = false;
                 self.log.push(format!("[error] {error}"));
                 (self.source, self.blocks) = opening_failure_blocks();
                 self.slots.clear();
@@ -2660,6 +2668,22 @@ impl ApplicationHandler<AppEvent> for App {
                 }
                 self.log.push(format!("[workspace] {error}"));
                 self.set_notice("no se pudo abrir la carpeta de trabajo");
+            }
+            AppEvent::ExternalChangeChecked { request, result } => {
+                if request != self.document_request {
+                    return;
+                }
+                self.external_check_in_flight = false;
+                match result {
+                    Ok(true) => self.resolve_external_change(),
+                    Ok(false) => {}
+                    Err(error) => {
+                        self.log.push(format!("[archivos] {error}"));
+                        self.set_notice(
+                            "no se pudo comprobar si el archivo cambió fuera de Visor MD",
+                        );
+                    }
+                }
             }
         }
     }
@@ -2833,6 +2857,7 @@ impl ApplicationHandler<AppEvent> for App {
                 self.selecting = false;
                 self.modifiers = ModifiersState::empty();
             }
+            WindowEvent::Focused(true) => self.check_external_change(),
             WindowEvent::MouseInput {
                 state,
                 button: MouseButton::Left,
@@ -3621,6 +3646,73 @@ impl App {
             };
             let _ = proxy.send_event(event);
         });
+    }
+
+    /// Revisa el archivo solo cuando la ventana vuelve a recibir foco. La
+    /// lectura es acotada y ocurre fuera de UI; no se instala un watcher que
+    /// observe carpetas o rutas que la persona no eligió.
+    fn check_external_change(&mut self) {
+        if self.loading || self.external_check_in_flight {
+            return;
+        }
+        let Some(baseline_bytes) = self.source_baseline_bytes.clone() else {
+            return;
+        };
+        let path = PathBuf::from(&self.path);
+        let request = self.document_request;
+        let proxy = self.proxy.clone();
+        self.external_check_in_flight = true;
+        thread::spawn(move || {
+            let result = changed_on_disk(&path, &baseline_bytes).map_err(|error| error.to_string());
+            let _ = proxy.send_event(AppEvent::ExternalChangeChecked { request, result });
+        });
+    }
+
+    /// Detectar un cambio no modifica nada por sí mismo. Recargar conserva una
+    /// recuperación si había cambios locales; guardar una copia nunca toca la
+    /// versión externa; cancelar mantiene la vista actual.
+    fn resolve_external_change(&mut self) {
+        let description = if self.source_editor.is_dirty() {
+            "El archivo cambió fuera de Visor MD mientras tenías cambios locales.\n\nSí: recargar la versión externa después de conservar una recuperación local.\nNo: Guardar una copia con otro nombre.\nCancelar: mantener esta edición abierta."
+        } else {
+            "El archivo cambió fuera de Visor MD.\n\nSí: recargar la versión externa.\nNo: Guardar una copia de la vista actual.\nCancelar: mantener la vista actual."
+        };
+        let dialog = MessageDialog::new()
+            .set_level(MessageLevel::Warning)
+            .set_title("Visor MD · archivo modificado externamente")
+            .set_description(description)
+            .set_buttons(MessageButtons::YesNoCancel);
+        let result = if let Some(window) = &self.window {
+            dialog.set_parent(window.as_ref()).show()
+        } else {
+            dialog.show()
+        };
+        match result {
+            MessageDialogResult::Yes => {
+                if self.source_editor.is_dirty() {
+                    let Some(recovery) = &self.recovery else {
+                        self.set_notice(
+                            "no se pudo recargar: la recuperación local no está disponible; guarda una copia",
+                        );
+                        return;
+                    };
+                    if let Err(error) = recovery.write(&self.source) {
+                        self.log.push(format!("[recuperación] {error}"));
+                        self.set_notice(
+                            "no se pudo conservar una recuperación; no se recargó el archivo externo",
+                        );
+                        return;
+                    }
+                }
+                self.open_document_path(PathBuf::from(&self.path));
+            }
+            MessageDialogResult::No => self.save_as_current_document(),
+            MessageDialogResult::Cancel
+            | MessageDialogResult::Ok
+            | MessageDialogResult::Custom(_) => {
+                self.set_notice("cambio externo detectado: se conservó la vista actual")
+            }
+        }
     }
 
     /// Un conflicto externo nunca sobrescribe el destino. La única acción que
@@ -5016,6 +5108,7 @@ fn main() {
         source_identity: None,
         source_baseline_bytes: None,
         source_editor: SourceEditor::new(),
+        external_check_in_flight: false,
         recovery,
         recovery_privacy_notice_pending,
         last_recovery: Instant::now(),

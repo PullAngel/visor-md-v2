@@ -336,6 +336,11 @@ ocultar. La comprobación reduce el riesgo TOCTOU, pero no elimina una carrera
 del filesystem entre esa lectura y el reemplazo; la identidad específica de
 handle y los tests por plataforma siguen siendo trabajo pendiente.
 
+Al recuperar foco, la aplicación compara de forma acotada el archivo abierto
+con su baseline confirmado. Si difiere, no recarga ni guarda por sí sola: ofrece
+recargar, guardar una copia o conservar la vista actual. Esta comprobación no
+instala observadores de carpetas ni sigue rutas provenientes del documento.
+
 La recuperación de sesión actual escribe texto UTF-8 sin cifrar en el perfil
 local de la persona, nunca dentro de la bóveda ni junto al documento. Se crea
 con una cadencia limitada durante la edición, se borra después de guardar y solo
