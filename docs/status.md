@@ -157,6 +157,10 @@ causa porque todavía no se controlan caché, carga y planificación del sistema
 
 ## Pendientes inmediatos
 
+- primera ejecución remota de CI en Windows MSVC y Linux; hasta que GitHub
+  informe ambos resultados, el workflow es configuración revisada, no evidencia
+  de compatibilidad multiplataforma;
+
 - verificación visual de task lists, decoraciones, temas y cursiva;
 - QA manual focalizado de tablas con celdas largas, alineación y de la primera
   vuelta lectura-edición-lectura tras una edición grande;
