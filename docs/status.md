@@ -1,6 +1,6 @@
 # Estado actual
 
-Última revisión: 26 de agosto de 2026.
+Última revisión: 28 de agosto de 2026.
 
 ## Resumen
 
@@ -170,11 +170,12 @@ causa porque todavía no se controlan caché, carga y planificación del sistema
 - selección de ejemplos de la suite oficial CommonMark y ampliación GFM sistemática;
 - separación incompleta de `main.rs`; fuentes y tema ya tienen módulos propios;
 - VFS de recursos secundarios, contención de rutas y política de bóvedas;
-- paneles de árbol, búsqueda y backlinks sobre el índice ya cancelable;
-- UI de búsqueda sobre el índice de ruta, encabezados y contenido acotado a
-  8 MiB de memoria;
+- paneles de árbol y backlinks sobre el índice ya cancelable;
+- panel visible de resultados múltiples sobre el índice de ruta, encabezados y
+  contenido acotado a 8 MiB de memoria; `Ctrl+Shift+F` ya permite buscar y abrir
+  de forma contenida la coincidencia elegida;
 - búsqueda local del documento con `Ctrl+F`, sin persistir ni transmitir la
-  consulta;
+  consulta, y búsqueda de carpeta con `Ctrl+Shift+F` sobre el índice en memoria;
 - presupuestos de recorrido para una carpeta grande: 10.000 notas, 512 KiB por
   nota y 64 MiB de lectura acumulada;
 - QA manual del aviso inicial y recuperación tras cierre inesperado;

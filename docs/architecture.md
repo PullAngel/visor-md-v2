@@ -278,12 +278,13 @@ wikilinks de Markdown UTF-8 permitido. La selección de carpeta y el indexado ya
 corren fuera de la UI; los enlaces relativos solo se abren tras resolverlos con
 la raíz autorizada. Los wikilinks `[[nota]]`, `[[nota|alias]]`,
 `[[nota#encabezado]]` y `[[#encabezado]]` se representan como enlaces nativos:
-el índice exige una
-coincidencia única y rechaza ambigüedades en vez de elegir por orden. Una ancla
-igual a un encabezado visible se aplica después de abrir la nota. El recorrido
-del índice se cancela cooperativamente al elegir otra carpeta y su versión evita
-publicar resultados tardíos. Todavía faltan paneles de resultados, backlinks
-visibles y detección de cambios externos.
+el índice exige una coincidencia única y rechaza ambigüedades en vez de elegir
+por orden. Una ancla igual a un encabezado visible se aplica después de abrir la
+nota. El recorrido del índice se cancela cooperativamente al elegir otra carpeta
+y su versión evita publicar resultados tardíos. `Ctrl+Shift+F` consulta el
+índice local y solo abre la nota elegida después de resolver su ruta con la VFS.
+Todavía faltan paneles de resultados, backlinks visibles y detección de cambios
+externos del workspace.
 
 Los callouts conocidos de Obsidian dentro de una cita (`NOTE`, `INFO`, `TIP`,
 `WARNING`, `CAUTION`, `DANGER` e `IMPORTANT`) reciben una presentación nativa
