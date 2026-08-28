@@ -66,6 +66,15 @@ pub(crate) struct WorkspaceIndex {
 }
 
 impl WorkspaceIndex {
+    /// Busca una nota por su ruta ya relativa a la raíz autorizada. La UI usa
+    /// esto para asociar el documento abierto con los backlinks del índice sin
+    /// volver a recorrer el disco ni aceptar rutas absolutas desde contenido.
+    pub(crate) fn note_at_relative(&self, relative_path: &Path) -> Option<&WorkspaceNote> {
+        self.notes
+            .iter()
+            .find(|note| note.relative_path == relative_path)
+    }
+
     /// Resuelve la parte de nota de un wikilink sin tocar el filesystem. El
     /// resultado siempre proviene del índice ya contenido por la VFS.
     pub(crate) fn resolve_wikilink(&self, target: &str) -> WikiResolution<'_> {
@@ -342,6 +351,7 @@ mod tests {
             .find(|note| note.title == "Seguridad")
             .expect("la nota se indexó");
         assert_eq!(index.backlinks_to(seguridad).len(), 1);
+        assert!(index.note_at_relative(Path::new("seguridad.md")).is_some());
         assert_eq!(index.search("modelo").len(), 1);
         assert!(matches!(
             index.resolve_wikilink("seguridad#Modelo"),

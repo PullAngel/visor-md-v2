@@ -22,6 +22,7 @@ mod vfs;
 mod workspace;
 
 use std::collections::HashMap;
+use std::fs;
 use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -2915,6 +2916,18 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::KeyB),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } if self.modifiers.control_key() && self.modifiers.shift_key() => {
+                self.open_first_backlink();
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
                         physical_key: PhysicalKey::Code(KeyCode::KeyO),
                         state: ElementState::Pressed,
                         repeat: false,
@@ -4033,6 +4046,44 @@ impl App {
             Err(error) => {
                 self.log.push(format!("[vfs] {error}"));
                 self.set_notice("el enlace de bóveda fue bloqueado por la política de archivos");
+            }
+        }
+    }
+
+    /// Navega al primer backlink de la nota abierta. La selección se limita al
+    /// índice de la carpeta concedida y la apertura pasa otra vez por VFS; un
+    /// documento no puede usar esta acción para salir de la bóveda.
+    fn open_first_backlink(&mut self) {
+        if self.source_editor.is_dirty() {
+            self.set_notice("guarda o descarta los cambios antes de abrir otro documento");
+            return;
+        }
+        let Some((root, index)) = self.workspace.as_ref() else {
+            self.set_notice("abre una carpeta de trabajo para consultar backlinks");
+            return;
+        };
+        let Ok(current) = fs::canonicalize(&self.path) else {
+            self.set_notice("el documento abierto no se puede asociar al workspace");
+            return;
+        };
+        let Ok(relative) = current.strip_prefix(root.root()) else {
+            self.set_notice("el documento abierto no pertenece a la carpeta de trabajo");
+            return;
+        };
+        let Some(note) = index.note_at_relative(relative) else {
+            self.set_notice("el documento abierto no está indexado como una nota Markdown");
+            return;
+        };
+        let backlinks = index.backlinks_to(note);
+        let Some(backlink) = backlinks.first() else {
+            self.set_notice("ninguna nota de la carpeta apunta al documento actual");
+            return;
+        };
+        match root.resolve_existing(&backlink.relative_path) {
+            Ok(path) => self.open_document_path(path),
+            Err(error) => {
+                self.log.push(format!("[vfs] {error}"));
+                self.set_notice("el backlink fue bloqueado por la política de archivos");
             }
         }
     }
