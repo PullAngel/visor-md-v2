@@ -3558,7 +3558,10 @@ impl App {
                     baseline_bytes: saved.baseline_bytes,
                 },
                 Err(error) => AppEvent::SaveFailed {
-                    conflict: matches!(&error, FileSaveError::Conflict),
+                    // Guardar como nunca reemplaza destinos existentes. Ese
+                    // rechazo no es un conflicto de la fuente abierta y no
+                    // debe ofrecer recargar el documento actual.
+                    conflict: false,
                     error: format!(
                         "no se pudo guardar como: {error}. El destino existente no se modificó"
                     ),
