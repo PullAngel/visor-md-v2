@@ -41,7 +41,7 @@ final de cada hito.
 | Sprint 1 | Parcial | Lector mínimo profesional |
 | Validación base | Iniciada | Gates Windows, auditoría, SBOM y benchmarks |
 | Lector completo | Pendiente | Markdown cotidiano completo |
-| Editor básico | En curso | Abrir, crear, edición fuente, guardado atómico y recuperación local inicial; faltan buffer escalable, configuración de recuperación y Save As sobre destinos existentes con conflicto explícito |
+| Editor básico | En curso | Abrir, crear, edición fuente, guardado atómico, conflictos explícitos y recuperación local inicial; faltan buffer escalable, configuración de recuperación y QA manual de los diálogos nativos |
 | Chrome | Pendiente | Ventana, pestañas y comandos |
 | Workspace | En curso | Carpeta explícita, VFS e índice acotado; faltan UI de búsqueda, cancelación y cambios externos |
 | Obsidian | En curso | Wikilinks y callouts nativos contenidos; faltan backlinks visibles |
