@@ -5276,10 +5276,20 @@ fn matching_block_indices(blocks: &[Block], query: &str) -> Vec<usize> {
     if query.is_empty() {
         return Vec::new();
     }
+    // La búsqueda es una interacción explícita y acotada al documento ya
+    // cargado. Normalizar una vez la consulta evita que una diferencia de
+    // mayúsculas vuelva inaccesible contenido Unicode al usuario.
+    let folded_query = query.to_lowercase();
     blocks
         .iter()
         .enumerate()
-        .filter_map(|(index, block)| block.text.contains(query).then_some(index))
+        .filter_map(|(index, block)| {
+            block
+                .text
+                .to_lowercase()
+                .contains(&folded_query)
+                .then_some(index)
+        })
         .collect()
 }
 
@@ -6195,11 +6205,12 @@ con dos lineas
 
     #[test]
     fn la_busqueda_local_devuelve_solo_bloques_que_contienen_la_consulta() {
-        let blocks = parse_blocks("uno\n\ndos con clave\n\ntres con clave")
+        let blocks = parse_blocks("uno\n\ndos con Clave\n\ntres con ñANDÚ")
             .expect("la fixture debe parsearse")
             .blocks;
 
-        assert_eq!(matching_block_indices(&blocks, "clave"), vec![1, 2]);
+        assert_eq!(matching_block_indices(&blocks, "clave"), vec![1]);
+        assert_eq!(matching_block_indices(&blocks, "Ñandú"), vec![2]);
         assert!(matching_block_indices(&blocks, "ausente").is_empty());
         assert!(matching_block_indices(&blocks, "").is_empty());
     }
