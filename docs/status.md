@@ -168,6 +168,8 @@ causa porque todavía no se controlan caché, carga y planificación del sistema
 - separación incompleta de `main.rs`; fuentes y tema ya tienen módulos propios;
 - VFS de recursos secundarios, contención de rutas y política de bóvedas;
 - paneles de árbol, búsqueda y backlinks sobre el índice ya cancelable;
+- UI de búsqueda sobre el índice de ruta, encabezados y contenido acotado a
+  8 MiB de memoria;
 - QA manual del aviso inicial y recuperación tras cierre inesperado;
 - QA manual de modificación externa mientras la ventana pierde y recupera foco;
 - cancelación de parsing y política de reemplazo si cambia el documento;

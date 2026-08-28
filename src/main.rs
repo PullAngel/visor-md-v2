@@ -2654,8 +2654,14 @@ impl ApplicationHandler<AppEvent> for App {
                 let note_count = index.notes.len();
                 let skipped = index.skipped;
                 let truncated = index.truncated;
+                let content_truncated = index.content_truncated;
                 self.workspace = Some((root, index));
-                let suffix = if truncated { "; límite alcanzado" } else { "" };
+                let suffix = match (truncated, content_truncated) {
+                    (true, true) => "; límite de notas y contenido alcanzado",
+                    (true, false) => "; límite de notas alcanzado",
+                    (false, true) => "; búsqueda limitada por presupuesto de memoria",
+                    (false, false) => "",
+                };
                 self.set_notice(&format!(
                     "workspace indexado: {note_count} notas, {skipped} omitidas{suffix}"
                 ));

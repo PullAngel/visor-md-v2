@@ -302,6 +302,12 @@ Indexa incrementalmente una carpeta permitida:
 - wikilinks;
 - backlinks y términos de búsqueda para uso futuro de la UI.
 
+La búsqueda retiene como máximo 8 MiB de fragmentos de fuente, con un tope de
+8 KiB por nota y corte en límite Unicode válido. Al alcanzar el presupuesto, la
+nota conserva ruta, títulos, encabezados y enlaces, pero la UI informa que la
+búsqueda de cuerpo quedó limitada; no se intercambia memoria ilimitada por una
+coincidencia adicional.
+
 El índice es regenerable y nunca la única copia de información del usuario. No
 se persistirá contenido de bóveda mientras no haya una necesidad medida que
 justifique tamaño, corrupción potencial y nueva superficie de privacidad.

@@ -12,16 +12,22 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 pub(crate) const DEFAULT_MAX_WORKSPACE_FILES: usize = 10_000;
+/// Presupuesto global de texto retenido para búsqueda. El índice nunca se
+/// persiste y debe poder descartarse sin dejar una copia completa de la bóveda.
+pub(crate) const DEFAULT_MAX_INDEXED_CONTENT_BYTES: usize = 8 * 1024 * 1024;
+const MAX_INDEXED_BYTES_PER_NOTE: usize = 8 * 1024;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct WorkspaceLimits {
     pub(crate) max_files: usize,
+    pub(crate) max_indexed_content_bytes: usize,
 }
 
 impl Default for WorkspaceLimits {
     fn default() -> Self {
         Self {
             max_files: DEFAULT_MAX_WORKSPACE_FILES,
+            max_indexed_content_bytes: DEFAULT_MAX_INDEXED_CONTENT_BYTES,
         }
     }
 }
@@ -43,12 +49,14 @@ pub(crate) struct WikiLink {
 #[derive(Clone, Debug)]
 // La UI de workspace todavía no expone búsqueda, encabezados ni backlinks.
 // Estos campos forman parte del índice ya validado y se usan en sus pruebas.
-#[allow(dead_code)]
 pub(crate) struct WorkspaceNote {
     pub(crate) relative_path: PathBuf,
     pub(crate) title: String,
     pub(crate) headings: Vec<Heading>,
     pub(crate) wikilinks: Vec<WikiLink>,
+    /// Fragmento acotado y en memoria de la fuente. Sirve únicamente para
+    /// búsqueda local; no se escribe, envía ni interpreta como código.
+    search_text: String,
 }
 
 /// Resultado explícito de resolver un wikilink. No se elige una coincidencia
@@ -64,6 +72,8 @@ pub(crate) struct WorkspaceIndex {
     pub(crate) notes: Vec<WorkspaceNote>,
     pub(crate) skipped: usize,
     pub(crate) truncated: bool,
+    pub(crate) indexed_content_bytes: usize,
+    pub(crate) content_truncated: bool,
     /// El recorrido se interrumpió por una acción posterior de la persona.
     /// Un resultado cancelado nunca debe sustituir el índice activo.
     pub(crate) cancelled: bool,
@@ -153,6 +163,7 @@ impl WorkspaceIndex {
                         .headings
                         .iter()
                         .any(|heading| heading.text.to_lowercase().contains(&query))
+                    || note.search_text.to_lowercase().contains(&query)
             })
             .collect()
     }
@@ -227,9 +238,15 @@ pub(crate) fn index_workspace_cancellable(
                         .strip_prefix(root.root())
                         .expect("la contención se comprobó antes")
                         .to_path_buf();
-                    index
-                        .notes
-                        .push(note_from_source(relative_path, &opened.source));
+                    let available = limits
+                        .max_indexed_content_bytes
+                        .saturating_sub(index.indexed_content_bytes);
+                    let (note, indexed_bytes, content_truncated) =
+                        note_from_source(relative_path, &opened.source, available);
+                    index.indexed_content_bytes =
+                        index.indexed_content_bytes.saturating_add(indexed_bytes);
+                    index.content_truncated |= content_truncated;
+                    index.notes.push(note);
                 }
                 Err(_) => index.skipped += 1,
             }
@@ -251,7 +268,11 @@ fn is_markdown_path(path: &Path) -> bool {
     )
 }
 
-fn note_from_source(relative_path: PathBuf, source: &str) -> WorkspaceNote {
+fn note_from_source(
+    relative_path: PathBuf,
+    source: &str,
+    available_content_bytes: usize,
+) -> (WorkspaceNote, usize, bool) {
     let headings = headings_in(source);
     let title = headings
         .first()
@@ -263,12 +284,26 @@ fn note_from_source(relative_path: PathBuf, source: &str) -> WorkspaceNote {
                 .unwrap_or("nota")
                 .to_owned()
         });
-    WorkspaceNote {
-        relative_path,
-        title,
-        headings,
-        wikilinks: wikilinks_in(source),
+    let keep = available_content_bytes
+        .min(MAX_INDEXED_BYTES_PER_NOTE)
+        .min(source.len());
+    let mut end = keep;
+    while end > 0 && !source.is_char_boundary(end) {
+        end -= 1;
     }
+    let search_text = source[..end].to_owned();
+    let content_truncated = end < source.len();
+    (
+        WorkspaceNote {
+            relative_path,
+            title,
+            headings,
+            wikilinks: wikilinks_in(source),
+            search_text,
+        },
+        end,
+        content_truncated,
+    )
 }
 
 fn headings_in(source: &str) -> Vec<Heading> {
@@ -347,7 +382,7 @@ mod tests {
         fs::create_dir_all(root.join(".obsidian")).expect("se crea metadato ajeno");
         fs::write(
             root.join("clases").join("redes.md"),
-            "# Redes\n\nVer [[seguridad|la guía]] y [[seguridad#Modelo]].",
+            "# Redes\n\nVer [[seguridad|la guía]] y [[seguridad#Modelo]].\nClave: ciberseguridad interna.",
         )
         .expect("se crea la nota");
         fs::write(root.join("seguridad.md"), "# Seguridad\n## Modelo").expect("se crea la nota");
@@ -375,7 +410,8 @@ mod tests {
             .expect("la nota se indexó");
         assert_eq!(index.backlinks_to(seguridad).len(), 1);
         assert!(index.note_at_relative(Path::new("seguridad.md")).is_some());
-        assert_eq!(index.search("modelo").len(), 1);
+        assert_eq!(index.search("modelo").len(), 2);
+        assert_eq!(index.search("ciberseguridad interna").len(), 1);
         assert!(matches!(
             index.resolve_wikilink("seguridad#Modelo"),
             WikiResolution::Found(note) if note.title == "Seguridad"
@@ -390,7 +426,13 @@ mod tests {
     fn respeta_el_limite_y_no_interpreta_configuracion_de_obsidian() {
         let root = fixture_root();
         let vfs = WorkspaceRoot::open(&root).expect("la raíz es válida");
-        let index = index_workspace(&vfs, WorkspaceLimits { max_files: 1 });
+        let index = index_workspace(
+            &vfs,
+            WorkspaceLimits {
+                max_files: 1,
+                ..WorkspaceLimits::default()
+            },
+        );
         assert_eq!(index.notes.len(), 1);
         assert!(index.truncated);
         assert!(
@@ -410,6 +452,16 @@ mod tests {
 
         assert!(index.cancelled);
         assert!(index.notes.is_empty());
+    }
+
+    #[test]
+    fn limita_el_texto_retenido_para_busqueda_sin_partir_unicode() {
+        let (note, bytes, truncated) =
+            note_from_source(PathBuf::from("nota.md"), "áéí contenido importante", 3);
+
+        assert_eq!(note.search_text, "á");
+        assert_eq!(bytes, "á".len());
+        assert!(truncated);
     }
 
     #[test]
