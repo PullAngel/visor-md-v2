@@ -21,6 +21,7 @@ compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
 | **Correcciones posteriores al QA visual** | **3.203.584 bytes, 3,055 MiB** |
 | **Reflow, tareas y tablas por celdas** | **3.209.216 bytes, 3,061 MiB** |
 | **Conflictos de guardado explícitos** | **3.211.264 bytes, 3,062 MiB** |
+| **Workspace acotado y lector ampliado** | **3.222.016 bytes, 3,073 MiB** |
 
 Superar 8 MB exige medición, explicación y aprobación. El límite no se usa para
 recortar seguridad, estabilidad, accesibilidad, Unicode o funciones esenciales.
@@ -91,6 +92,22 @@ recarga protegida por recuperación o una copia explícita.
 | SHA-256 | `08AB3BF43A73EF3BBEB6A6F8D7EAF529CA84BB99EC7FC2C380107ED9139DFA45` |
 | Variación frente al checkpoint anterior | +2.048 bytes |
 | Margen frente al límite deseado | 4,938 MiB |
+
+### Workspace acotado y lector ampliado del 28 de agosto de 2026
+
+El checkpoint incorpora cancelación y presupuestos del índice de bóveda,
+comprobación de cambios externos, recuperación local acotada, backlinks,
+notas al pie y copia explícita de código. No añade dependencias ni red.
+
+| Medida | Resultado |
+| --- | --- |
+| Binario Windows | 3.222.016 bytes, 3,073 MiB |
+| SHA-256 | `292B85BC914255F3A5B6F483192082D60DC047BB3B1BA5A5B41E985C978BE387` |
+| Variación frente al checkpoint anterior | +10.752 bytes |
+| Margen frente al límite deseado | 4,927 MiB |
+
+La medición queda muy por debajo de 8 MiB. Aún no sustituye QA visual de los
+nuevos controles ni mediciones repetidas de arranque y memoria.
 
 ---
 
