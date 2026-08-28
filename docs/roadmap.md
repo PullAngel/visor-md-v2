@@ -1,6 +1,6 @@
 # Roadmap
 
-Última revisión: 26 de agosto de 2026.
+Última revisión: 28 de agosto de 2026.
 
 El roadmap ordena dependencias y criterios de salida. No promete fechas. Una
 etapa solo se cierra con evidencia y el producto debe quedar en un punto útil al
@@ -44,7 +44,7 @@ final de cada hito.
 | Editor básico | En curso | Abrir, crear, edición fuente, guardado atómico, conflictos explícitos y recuperación local inicial; faltan buffer escalable, configuración de recuperación y QA manual de los diálogos nativos |
 | Chrome | Pendiente | Ventana, pestañas y comandos |
 | Workspace | En curso | Carpeta explícita, VFS e índice acotado; faltan UI de búsqueda, cancelación y cambios externos |
-| Obsidian | En curso | Wikilinks y callouts nativos contenidos; faltan backlinks visibles |
+| Obsidian | En curso | Wikilinks, callouts y navegación inicial de backlinks contenidos; faltan panel visible y actualización incremental |
 | Estudio | Pendiente | Herramientas portables |
 | Exportación | Pendiente | PDF, DOCX y copias preparadas |
 | Distribución | Pendiente | Windows y Linux profesionales |

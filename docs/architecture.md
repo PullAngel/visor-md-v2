@@ -375,15 +375,15 @@ nativas reales. macOS permanece como posibilidad futura, no gate actual.
 
 | Área | Implementación actual | Objetivo |
 | --- | --- | --- |
-| Archivos | Apertura primaria limitada desde un mismo handle | File policy y VFS completo |
-| Parsing | Hilo de trabajo y evento interno; errores conservan ventana, sin cancelación | Tarea cancelable con límites |
+| Archivos | Apertura primaria limitada, guardado atómico, conflicto explícito y VFS de workspace | Política completa para recursos secundarios y detección de cambios externos |
+| Parsing | Hilo de trabajo, revisión de apertura y evento interno; errores conservan ventana | Cancelación cooperativa con límites |
 | Modelo | `Block` y `Span` simplificados | Documento con rangos y semántica |
 | Layout | Visible con estimaciones | Geometría para render e interacción |
 | Rendering | Software nativo funcional | Display list validada y accesible |
-| UI | Ventana y tema | Chrome, comandos y paneles |
-| Edición | No existe | Fuente y split con guardado fiel |
-| Workspace | No existe | Índice incremental contenido |
-| Seguridad | Principios y algunos límites | Controles y pruebas completas |
+| UI | Ventana, tema, menú contextual y avisos | Chrome, pestañas, comandos y paneles |
+| Edición | Fuente alternable, undo/redo, portapapeles explícito, guardado fiel y recuperación local | Buffer escalable, split y accesibilidad completa |
+| Workspace | Raíz explícita, VFS, índice acotado, wikilinks, callouts y navegación inicial de backlinks | Paneles, búsqueda, cancelación y detección de cambios |
+| Seguridad | Límites, HTML inerte, VFS, guardado y recuperación con pruebas | Controles de recursos secundarios, campaña de fuzzing y validación de release |
 
 ## Riesgos arquitectónicos abiertos
 

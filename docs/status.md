@@ -171,8 +171,9 @@ causa porque todavía no se controlan caché, carga y planificación del sistema
 - virtualización y alturas todavía aproximadas;
 - cobertura y fallback tipográfico todavía sin matriz completa;
 - medición de memoria pendiente de repetir tras retener la fuente de sesión;
-- ausencia de CI, fuzzing, validación independiente del SBOM y gates
-  multiplataforma.
+- workflow de CI publicado para Windows MSVC y Linux; falta registrar su
+  primera evidencia remota y mantenerla verde;
+- fuzzing y validación independiente del SBOM;
 - QA manual de copia, incluidos atajos, aplicaciones destino y plataforma;
 - selección parcial con mouse y autoscroll, flechas y Shift+flechas en ambas
   direcciones, Ctrl+A y Escape; la copia ya tiene pruebas unitarias.
