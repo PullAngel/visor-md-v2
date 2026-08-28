@@ -24,28 +24,28 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Tema claro y oscuro | Estable | Sistema y alternancia manual |
 | Tipografía embebida | Parcial | Reproducción verificada; falta matriz Unicode y fallback |
 | Virtualización inicial | Parcial | Debe eliminar recorridos O(n) por frame |
-| Formato inline real | Recuperación | Modelo, layout, dibujo y corpus |
-| Listas, citas y reglas | Recuperación | Casos anidados y visuales |
-| Task list checkboxes | Recuperación | Parser a dibujo sin glifos externos |
+| Formato inline real | Parcial | Modelo, layout y dibujo nativos; falta corpus y QA visual sistemáticos |
+| Listas, citas y reglas | Parcial | Casos anidados cubiertos; falta corpus y QA visual ampliados |
+| Task list checkboxes | Parcial | Dibujo nativo, clic reversible y pruebas; falta QA de plataforma |
 | CommonMark aplicable | Parcial | Corpus versionado de sintaxis soportada y política HTML; falta suite oficial seleccionada |
-| GFM elegido | Planificado | Tablas, tachado, tareas, autolinks y footnotes definidos |
-| Índice de encabezados | Planificado | Navegable, filtrable y accesible |
+| GFM elegido | Parcial | Tablas, tachado, tareas y autolinks; faltan footnotes y corpus sistemático |
+| Índice de encabezados | Parcial | Encabezados indexados y anclas internas; falta panel filtrable y accesible |
 | Plegado de secciones | Planificado | Sin perder posición ni selección |
 | Búsqueda en documento | Planificado | Resultados y marcas de scroll |
-| Vista de texto segura | Planificado | Fallback por límites o sintaxis hostil |
+| Vista de texto segura | Parcial | Fallback por límites y HTML inerte; falta QA end to end completo |
 
 ## Edición y archivos
 
 | Función | Estado | Criterio mínimo |
 | --- | --- | --- |
-| Modo fuente | Planificado | Selección, IME, undo y atajos |
+| Modo fuente | Parcial | Selección, IME, undo y atajos; falta buffer escalable y split |
 | Vista dividida | Planificado | Correspondencia estable fuente y render |
-| Guardado atómico | Planificado | Sin corrupción ante fallo |
-| Preservar sintaxis desconocida | Planificado | Property tests de round-trip |
-| Detectar cambios externos | Planificado | Conflicto visible y recuperable |
-| Crear documento | Planificado | Flujo simple y seguro |
+| Guardado atómico | Parcial | Sin corrupción ante fallo y conflictos probados; falta QA multiplataforma |
+| Preservar sintaxis desconocida | Parcial | Fuente no se reserializa; falta property testing de round-trip |
+| Detectar cambios externos | Parcial | Conflicto visible al guardar y al recuperar foco; falta QA multiplataforma |
+| Crear documento | Parcial | Flujo simple y seguro; falta pestañas |
 | Varios documentos y pestañas | Planificado | Estados sucio, fijado y cierre seguro |
-| Menú contextual | Planificado | Acciones según selección y contexto |
+| Menú contextual | Parcial | Copia y pegado explícito según modo; faltan acciones de aplicación |
 | Paleta de comandos | Planificado | Descubrible y operable por teclado |
 | `.txt` y otros textos inertes | Parcial | Extensiones no Markdown se muestran como texto inerte; falta QA y reconocimiento UX |
 | Edición en vivo | Futuro | Solo tras editor y modelo estables |
@@ -57,8 +57,8 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Sin WebView ni JavaScript | Estable | Grafo de dependencias y runtime |
 | Sin red durante uso normal | Parcial | Falta prueba automatizada de sockets |
 | Límites de anidamiento | Recuperación | Tiempo, memoria y fallback |
-| VFS central | Parcial | Archivo principal limitado; recursos secundarios todavía no se abren |
-| Política de rutas | Planificado | UNC, traversal, symlinks y junctions |
+| VFS central | Parcial | Workspace contenido y archivo principal limitado; recursos secundarios todavía no se abren |
+| Política de rutas | Parcial | UNC, traversal, symlinks y junctions cubiertos para workspace; faltan recursos secundarios |
 | Allowlist HTML semántica | Recuperación | `br`, `kbd`, `mark`, `sub` y `sup` nativos sin atributos; falta corpus sistemático y QA visual |
 | Límites de imágenes | Planificado | Tipo, bytes, dimensiones y memoria |
 | Consentimiento remoto | Planificado | Aislado, explícito y revocable |
@@ -94,12 +94,12 @@ La evidencia detallada vive en [`status.md`](status.md) y
 
 | Función | Estado | Criterio mínimo |
 | --- | --- | --- |
-| Abrir carpeta o bóveda | Planificado | Sin migración ni cambios implícitos |
+| Abrir carpeta o bóveda | Parcial | Sin migración ni cambios implícitos; falta UI de árbol |
 | Árbol de archivos | Planificado | Navegación y estado de disco |
-| Búsqueda de bóveda | Planificado | Índice incremental con límites |
-| Wikilinks | Planificado | Resolución contenida y explícita |
-| Backlinks | Planificado | Índice coherente y actualizable |
-| Callouts | Planificado | Sintaxis Obsidian elegida |
+| Búsqueda de bóveda | Parcial | Índice cancelable y acotado; falta UI de resultados |
+| Wikilinks | Parcial | Resolución contenida y explícita; falta panel de diagnóstico |
+| Backlinks | Parcial | Índice coherente y navegación inicial; falta panel visible e incrementalidad |
+| Callouts | Parcial | Sintaxis Obsidian elegida y render nativo; falta corpus de bóvedas |
 | Etiquetas y frontmatter | Planificado | Lectura sin reescritura |
 | Link peek | Planificado | Reusa renderer con límites |
 | Referencias de bloque | Futuro | Requiere identidad estable |
