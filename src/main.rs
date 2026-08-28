@@ -159,11 +159,16 @@ enum AppEvent {
         error: String,
     },
     ViewReady {
+        document_request: u64,
         revision: u64,
         outcome: ParseOutcome,
         elapsed_ms: f64,
     },
-    ViewFailed(String),
+    ViewFailed {
+        document_request: u64,
+        revision: u64,
+        error: String,
+    },
     SaveReady {
         revision: u64,
         identity: FileIdentity,
@@ -198,6 +203,15 @@ enum AppEvent {
 enum DocumentMode {
     Reading,
     SourceEditing,
+}
+
+fn is_current_view_result(
+    result_document_request: u64,
+    active_document_request: u64,
+    result_revision: u64,
+    active_revision: u64,
+) -> bool {
+    result_document_request == active_document_request && result_revision == active_revision
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
@@ -2576,11 +2590,17 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
             AppEvent::ViewReady {
+                document_request,
                 revision,
                 outcome,
                 elapsed_ms,
             } => {
-                if revision != self.source_editor.revision() {
+                if !is_current_view_result(
+                    document_request,
+                    self.document_request,
+                    revision,
+                    self.source_editor.revision(),
+                ) {
                     self.log
                         .push("[edición] se descartó una vista desactualizada".to_string());
                     return;
@@ -2602,7 +2622,21 @@ impl ApplicationHandler<AppEvent> for App {
                     window.request_redraw();
                 }
             }
-            AppEvent::ViewFailed(error) => {
+            AppEvent::ViewFailed {
+                document_request,
+                revision,
+                error,
+            } => {
+                if !is_current_view_result(
+                    document_request,
+                    self.document_request,
+                    revision,
+                    self.source_editor.revision(),
+                ) {
+                    self.log
+                        .push("[edición] se descartó un error de vista desactualizado".to_string());
+                    return;
+                }
                 self.loading = false;
                 self.log.push(format!("[error] {error}"));
                 self.set_notice("no se pudo actualizar la vista; la fuente sigue intacta");
@@ -3470,19 +3504,23 @@ impl App {
         self.loading = true;
         self.set_notice(notice);
         let source = self.source.clone();
+        let document_request = self.document_request;
         let revision = self.source_editor.revision();
         let proxy = self.proxy.clone();
         thread::spawn(move || {
             let started = Instant::now();
             let event = match parse_blocks(&source) {
                 Ok(outcome) => AppEvent::ViewReady {
+                    document_request,
                     revision,
                     outcome,
                     elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
                 },
-                Err(error) => {
-                    AppEvent::ViewFailed(format!("no se pudo actualizar la vista: {error}"))
-                }
+                Err(error) => AppEvent::ViewFailed {
+                    document_request,
+                    revision,
+                    error: format!("no se pudo actualizar la vista: {error}"),
+                },
             };
             let _ = proxy.send_event(event);
         });
@@ -6366,6 +6404,13 @@ con dos lineas
         assert_eq!(matching_block_indices(&blocks, "Ñandú"), vec![2]);
         assert!(matching_block_indices(&blocks, "ausente").is_empty());
         assert!(matching_block_indices(&blocks, "").is_empty());
+    }
+
+    #[test]
+    fn una_vista_asincrona_solo_es_actual_para_su_documento_y_revision() {
+        assert!(is_current_view_result(7, 7, 12, 12));
+        assert!(!is_current_view_result(6, 7, 12, 12));
+        assert!(!is_current_view_result(7, 7, 11, 12));
     }
 
     /// Casos pequeños y trazables que complementan la fixture de lectura. No

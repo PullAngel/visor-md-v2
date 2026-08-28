@@ -292,9 +292,10 @@ sin ejecutar HTML ni interpretar atributos. Variantes desconocidas permanecen
 como citas con su marcador fuente visible; editar y guardar conserva la sintaxis
 original.
 
-Las aperturas y el parseo inicial llevan una versión de solicitud. Si una tarea
-termina tarde después de una apertura posterior, su resultado se descarta en vez
-de reemplazar el documento activo.
+Las aperturas y los resultados de vista llevan una versión de solicitud y de
+revisión. Si una tarea termina tarde después de una apertura o edición posterior,
+tanto su resultado como su error se descartan en vez de reemplazar el documento
+activo o borrar un aviso actual.
 
 Indexa incrementalmente una carpeta permitida:
 
