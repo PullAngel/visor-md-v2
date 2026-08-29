@@ -148,6 +148,7 @@ Evidencia actual en Windows:
 - reflow, tareas y tablas por celdas: 3.209.216 bytes, 3,061 MiB;
 - conflictos de guardado explícitos: 3.211.264 bytes, 3,062 MiB;
 - workspace acotado y lector ampliado: 3.222.016 bytes, 3,073 MiB;
+- navegación y resaltado portable: 3.231.744 bytes, 3,082 MiB;
 - `scripts/check.ps1`: formato, Clippy y 116 pruebas verdes el 28 de agosto
   de 2026; build release medida por separado en este checkpoint;
 - primer pintado mediano sobre diez ejecuciones: 102,5 ms;

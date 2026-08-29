@@ -22,6 +22,7 @@ compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
 | **Reflow, tareas y tablas por celdas** | **3.209.216 bytes, 3,061 MiB** |
 | **Conflictos de guardado explícitos** | **3.211.264 bytes, 3,062 MiB** |
 | **Workspace acotado y lector ampliado** | **3.222.016 bytes, 3,073 MiB** |
+| **Navegación y resaltado portable** | **3.231.744 bytes, 3,082 MiB** |
 
 Superar 8 MB exige medición, explicación y aprobación. El límite no se usa para
 recortar seguridad, estabilidad, accesibilidad, Unicode o funciones esenciales.
@@ -108,6 +109,24 @@ notas al pie y copia explícita de código. No añade dependencias ni red.
 
 La medición queda muy por debajo de 8 MiB. Aún no sustituye QA visual de los
 nuevos controles ni mediciones repetidas de arranque y memoria.
+
+### Navegación y resaltado portable del 29 de agosto de 2026
+
+Este checkpoint añade búsqueda local Unicode, búsqueda y reindexación explícita
+de workspace, selección visible de backlinks y resaltado Markdown `==texto==`.
+Reutiliza el parser y los layouts nativos existentes; no añade dependencias,
+red, lectura en segundo plano ni acceso a archivos fuera de la VFS.
+
+| Medida | Resultado |
+| --- | --- |
+| Binario Windows | 3.231.744 bytes, 3,082 MiB |
+| SHA-256 | `1503982A774EF5000A8733DEBCFD2713C5C4A70E2411AB4F745877713E000E0F` |
+| Variación frente al checkpoint anterior | +9.728 bytes |
+| Margen frente al límite deseado | 4,918 MiB |
+
+La variación corresponde a código de interfaz y estados locales. La medición
+confirma que estas capacidades siguen ampliamente dentro del presupuesto; aún
+falta QA visual de sus overlays y una serie renovada de arranque y memoria.
 
 ---
 
