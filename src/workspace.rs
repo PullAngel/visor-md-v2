@@ -88,6 +88,15 @@ pub(crate) struct WorkspaceIndex {
 }
 
 impl WorkspaceIndex {
+    /// Devuelve únicamente rutas relativas que ya pasaron por el recorrido
+    /// contenido. La interfaz debe resolverlas otra vez antes de abrirlas.
+    pub(crate) fn note_paths(&self) -> Vec<PathBuf> {
+        self.notes
+            .iter()
+            .map(|note| note.relative_path.clone())
+            .collect()
+    }
+
     /// Busca una nota por su ruta ya relativa a la raíz autorizada. La UI usa
     /// esto para asociar el documento abierto con los backlinks del índice sin
     /// volver a recorrer el disco ni aceptar rutas absolutas desde contenido.
@@ -432,6 +441,13 @@ mod tests {
             index.resolve_wikilink("seguridad#Modelo"),
             WikiResolution::Found(note) if note.title == "Seguridad"
         ));
+        assert_eq!(
+            index.note_paths(),
+            vec![
+                PathBuf::from("clases/redes.md"),
+                PathBuf::from("seguridad.md")
+            ]
+        );
         assert!(matches!(
             index.resolve_wikilink("clases/redes"),
             WikiResolution::Found(note) if note.title == "Redes"

@@ -2504,6 +2504,10 @@ struct App {
     /// toca el disco ni conserva la consulta fuera de esta ejecución.
     workspace_search_query: Option<String>,
     workspace_search_match: usize,
+    /// Rutas relativas del índice ya autorizado para recorrer una carpeta sin
+    /// repetir el recorrido de disco ni aceptar una ruta desde el documento.
+    workspace_paths: Option<Vec<PathBuf>>,
+    workspace_path_match: usize,
     /// Backlinks del documento actual obtenidos del índice ya autorizado. No
     /// se persisten ni se resuelven contra el disco hasta pulsar Enter.
     backlink_paths: Option<Vec<PathBuf>>,
@@ -2740,6 +2744,7 @@ impl ApplicationHandler<AppEvent> for App {
                 let content_truncated = index.content_truncated;
                 let scan_truncated = index.scan_truncated;
                 self.workspace = Some((root, index));
+                self.workspace_paths = None;
                 let suffix = match (truncated, content_truncated, scan_truncated) {
                     (_, _, true) => "; límite de lectura de carpeta alcanzado",
                     (true, true, false) => "; límite de notas y contenido alcanzado",
@@ -3057,6 +3062,9 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::KeyboardInput { event, .. } if self.workspace_search_query.is_some() => {
                 self.handle_workspace_search_key(&event);
             }
+            WindowEvent::KeyboardInput { event, .. } if self.workspace_paths.is_some() => {
+                self.handle_workspace_path_key(&event);
+            }
             WindowEvent::KeyboardInput { event, .. } if self.backlink_paths.is_some() => {
                 self.handle_backlink_key(&event);
             }
@@ -3152,6 +3160,18 @@ impl ApplicationHandler<AppEvent> for App {
                 ..
             } if self.modifiers.control_key() && self.modifiers.shift_key() => {
                 self.show_backlinks();
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::KeyT),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } if self.modifiers.control_key() && self.modifiers.shift_key() => {
+                self.show_workspace_files();
             }
             WindowEvent::KeyboardInput {
                 event:
@@ -4493,6 +4513,7 @@ impl App {
         }
         self.search_query = None;
         self.workspace_search_query = None;
+        self.workspace_paths = None;
         self.backlink_match = 0;
         self.backlink_paths = Some(paths);
         self.set_notice("backlinks · flechas eligen, Enter abre, Escape cierra");
@@ -4561,6 +4582,7 @@ impl App {
         }
         self.search_query = None;
         self.workspace_search_query = None;
+        self.workspace_paths = None;
         self.backlink_paths = None;
         self.outline_match = 0;
         self.outline_headings = Some(headings);
@@ -4641,6 +4663,7 @@ impl App {
 
     fn open_document_search(&mut self) {
         self.workspace_search_query = None;
+        self.workspace_paths = None;
         self.backlink_paths = None;
         self.outline_headings = None;
         self.search_query = Some(String::new());
@@ -4657,6 +4680,7 @@ impl App {
             return;
         }
         self.search_query = None;
+        self.workspace_paths = None;
         self.backlink_paths = None;
         self.outline_headings = None;
         self.workspace_search_query = Some(String::new());
@@ -4664,6 +4688,85 @@ impl App {
         self.set_notice(
             "buscar en carpeta · escribe texto, flechas eligen, Enter abre, Escape cierra",
         );
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    /// Recorre las notas que ya entregó el índice en memoria. Esto no es un
+    /// explorador de archivos: el único destino que puede abrirse se vuelve a
+    /// resolver contra la raíz concedida al confirmar con Enter.
+    fn show_workspace_files(&mut self) {
+        let Some((_, index)) = self.workspace.as_ref() else {
+            self.set_notice("elige primero una carpeta de trabajo con Ctrl+Shift+O");
+            return;
+        };
+        let paths = index.note_paths();
+        if paths.is_empty() {
+            self.set_notice("la carpeta de trabajo no contiene notas Markdown indexadas");
+            return;
+        }
+        self.search_query = None;
+        self.workspace_search_query = None;
+        self.backlink_paths = None;
+        self.outline_headings = None;
+        self.workspace_path_match = 0;
+        self.workspace_paths = Some(paths);
+        self.set_notice("notas de la carpeta · flechas eligen, Enter abre, Escape cierra");
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    fn open_workspace_path_match(&mut self) {
+        if self.document.source_editor.is_dirty() {
+            self.set_notice("guarda o descarta los cambios antes de abrir otra nota");
+            return;
+        }
+        let Some(paths) = &self.workspace_paths else {
+            return;
+        };
+        let Some(relative_path) = paths
+            .get(self.workspace_path_match % paths.len().max(1))
+            .cloned()
+        else {
+            return;
+        };
+        let Some((root, _)) = &self.workspace else {
+            self.set_notice("la carpeta de trabajo ya no está disponible");
+            return;
+        };
+        match root.resolve_existing(&relative_path) {
+            Ok(path) => {
+                self.workspace_paths = None;
+                self.open_document_path(path);
+            }
+            Err(error) => {
+                self.log.push(format!("[vfs] {error}"));
+                self.set_notice("la nota fue bloqueada por la política de archivos");
+            }
+        }
+    }
+
+    fn handle_workspace_path_key(&mut self, event: &KeyEvent) {
+        if event.state != ElementState::Pressed || event.repeat {
+            return;
+        }
+        let count = self.workspace_paths.as_ref().map_or(0, Vec::len);
+        match event.physical_key {
+            PhysicalKey::Code(KeyCode::Escape) => {
+                self.workspace_paths = None;
+                self.set_notice("lista de notas cerrada");
+            }
+            PhysicalKey::Code(KeyCode::ArrowDown) if count > 0 => {
+                self.workspace_path_match = (self.workspace_path_match + 1) % count;
+            }
+            PhysicalKey::Code(KeyCode::ArrowUp) if count > 0 => {
+                self.workspace_path_match = (self.workspace_path_match + count - 1) % count;
+            }
+            PhysicalKey::Code(KeyCode::Enter) => self.open_workspace_path_match(),
+            _ => {}
+        }
         if let Some(window) = &self.window {
             window.request_redraw();
         }
@@ -5259,6 +5362,24 @@ impl App {
             let label = abbreviated_label(&label, MAX_OVERLAY_LABEL_CHARS);
             build_menu_layout(&label, &mut self.font_cx, &mut self.layout_cx, self.palette)
         });
+        let workspace_paths_overlay = self.workspace_paths.as_ref().and_then(|paths| {
+            let selected = paths.get(self.workspace_path_match % paths.len().max(1))?;
+            let label = abbreviated_label(
+                &format!(
+                    "Notas: {}/{} · {}",
+                    self.workspace_path_match % paths.len() + 1,
+                    paths.len(),
+                    selected.display()
+                ),
+                MAX_OVERLAY_LABEL_CHARS,
+            );
+            Some(build_menu_layout(
+                &label,
+                &mut self.font_cx,
+                &mut self.layout_cx,
+                self.palette,
+            ))
+        });
         let backlink_overlay = self.backlink_paths.as_ref().and_then(|paths| {
             let selected = paths.get(self.backlink_match % paths.len().max(1))?;
             let label = format!(
@@ -5627,6 +5748,7 @@ impl App {
 
         if let Some(layout) = search_overlay
             .or(workspace_search_overlay)
+            .or(workspace_paths_overlay)
             .or(backlink_overlay)
             .or(outline_overlay)
         {
@@ -5927,6 +6049,8 @@ fn main() {
         search_match: 0,
         workspace_search_query: None,
         workspace_search_match: 0,
+        workspace_paths: None,
+        workspace_path_match: 0,
         backlink_paths: None,
         backlink_match: 0,
         outline_headings: None,

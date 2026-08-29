@@ -171,7 +171,9 @@ causa porque todavía no se controlan caché, carga y planificación del sistema
 - selección de ejemplos de la suite oficial CommonMark y ampliación GFM sistemática;
 - separación incompleta de `main.rs`; fuentes y tema ya tienen módulos propios;
 - VFS de recursos secundarios, contención de rutas y política de bóvedas;
-- paneles de árbol y backlinks sobre el índice ya cancelable;
+- lista efímera de notas indexadas con `Ctrl+Shift+T`: no recorre el disco ni
+  acepta rutas del documento y vuelve a resolver la elección dentro de VFS;
+  falta el panel plegable de árbol y backlinks;
 - panel visible de resultados múltiples sobre el índice de ruta, encabezados y
   contenido acotado a 8 MiB de memoria; `Ctrl+Shift+F` ya permite buscar y abrir
   de forma contenida la coincidencia elegida;
