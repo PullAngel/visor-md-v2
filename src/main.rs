@@ -1014,6 +1014,11 @@ fn inline_into<'a>(
                 s.strike = true;
                 inline_into(child, s, nest + 1, source_index, traversal, output);
             }
+            NodeValue::Highlight => {
+                let mut s = state;
+                s.mark = true;
+                inline_into(child, s, nest + 1, source_index, traversal, output);
+            }
             NodeValue::Link(link) => {
                 let mut s = state;
                 s.link = true;
@@ -1542,6 +1547,7 @@ fn markdown_options() -> Options<'static> {
     let mut options = Options::default();
     options.extension.table = true;
     options.extension.strikethrough = true;
+    options.extension.highlight = true;
     options.extension.autolink = true;
     options.extension.tasklist = true;
     options.extension.footnotes = true;
@@ -6675,6 +6681,7 @@ mod pruebas_inline {
         assert!(enfasis_de("un _suave_ aca", "suave").emph);
         assert!(enfasis_de("un `mono` aca", "mono").code);
         assert!(enfasis_de("un ~~tachado~~ aca", "tachado").strike);
+        assert!(enfasis_de("un ==importante== aca", "importante").mark);
         assert!(enfasis_de("un [enlace](http://x) aca", "enlace").link);
     }
 

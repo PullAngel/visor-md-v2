@@ -45,7 +45,7 @@ final de cada hito.
 | Chrome | Pendiente | Ventana, pestañas y comandos |
 | Workspace | En curso | Carpeta explícita, VFS, índice acotado/cancelable y búsqueda por teclado; faltan árbol/panel y cambios externos |
 | Obsidian | En curso | Wikilinks, callouts y navegación inicial de backlinks contenidos; faltan panel visible y actualización incremental |
-| Estudio | Pendiente | Herramientas portables |
+| Estudio | En curso | Resaltado portable inicial; faltan herramientas portables |
 | Exportación | Pendiente | PDF, DOCX y copias preparadas |
 | Distribución | Pendiente | Windows y Linux profesionales |
 

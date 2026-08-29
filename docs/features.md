@@ -109,7 +109,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 
 | Función | Estado | Criterio mínimo |
 | --- | --- | --- |
-| Resaltado `==texto==` | Planificado | Compatible con Obsidian |
+| Resaltado `==texto==` | Parcial | Render nativo y fuente preservada; falta corpus de compatibilidad y QA visual |
 | Sidecar para datos no portables | Planificado | Formato versionado y recuperable |
 | Preguntas y respuestas | Planificado | Sintaxis portable elegida |
 | Ocultar respuesta | Planificado | Accesible y sin alterar fuente |
