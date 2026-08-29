@@ -2411,23 +2411,21 @@ fn blit_color(pixmap: &mut Pixmap, g: &CachedGlyph, gx: f32, gy: f32, width: i32
 
 // ---------------------------------------------------------------- app
 
-struct App {
-    started: Instant,
+struct DocumentState {
     path: String,
-    /// Texto UTF-8 que se abrió. Se conserva junto a los rangos del modelo
-    /// para que futuras copias y ediciones no intenten reconstruir Markdown
-    /// desde la vista renderizada.
     source: String,
-    /// BOM y estilo de EOL que llegaron con la entrada. Aún no hay guardado;
-    /// retenerlos ahora evita que el futuro editor tenga que adivinarlos.
     source_metadata: TextMetadata,
-    /// Huella de la versión que llegó por la apertura primaria. La capa de
-    /// guardado la comparará antes de reemplazar el destino.
     source_identity: Option<FileIdentity>,
-    /// Bytes de la última versión confirmada en disco. Sirven para detectar
-    /// conflictos incluso si otro programa conserva tamaño y fecha similares.
     source_baseline_bytes: Option<Vec<u8>>,
     source_editor: SourceEditor,
+    mode: DocumentMode,
+    blocks: Vec<Block>,
+    safe_mode: Option<Degradation>,
+}
+
+struct App {
+    started: Instant,
+    document: DocumentState,
     external_check_in_flight: bool,
     recovery: Option<RecoverySession>,
     /// Solo la primera sesión informa que la recuperación es texto local sin
@@ -2445,9 +2443,7 @@ struct App {
     /// Ancla solicitada por un wikilink ya resuelto dentro del workspace.
     /// Se aplica recién después de medir el documento que se abrió.
     pending_workspace_heading: Option<String>,
-    mode: DocumentMode,
     proxy: EventLoopProxy<AppEvent>,
-    blocks: Vec<Block>,
     window: Option<Rc<Window>>,
     surface: Option<softbuffer::Surface<Rc<Window>, Rc<Window>>>,
     font_cx: FontContext,
@@ -2483,9 +2479,6 @@ struct App {
     /// Tema activo. Arranca siguiendo al sistema operativo (`Window::theme`);
     /// `T` lo alterna a mano. Ver docs/design.md.
     palette: Palette,
-    /// Indica que el render enriquecido excedio un limite defensivo. En ese
-    /// caso `blocks` contiene la fuente inerte, no un arbol truncado.
-    safe_mode: Option<Degradation>,
     loading: bool,
     /// Punto actual del cursor dentro de la ventana, en pixeles físicos.
     pointer: Option<(f32, f32)>,
@@ -2549,16 +2542,16 @@ impl ApplicationHandler<AppEvent> for App {
                         .push("[apertura] se descartó un documento desactualizado".to_string());
                     return;
                 }
-                self.path = path.to_string_lossy().into_owned();
-                self.source = source;
-                self.source_metadata = metadata;
-                self.source_identity = Some(identity);
-                self.source_baseline_bytes = Some(baseline_bytes);
-                self.source_editor = SourceEditor::new();
+                self.document.path = path.to_string_lossy().into_owned();
+                self.document.source = source;
+                self.document.source_metadata = metadata;
+                self.document.source_identity = Some(identity);
+                self.document.source_baseline_bytes = Some(baseline_bytes);
+                self.document.source_editor = SourceEditor::new();
                 self.external_check_in_flight = false;
-                self.mode = DocumentMode::Reading;
-                self.blocks = outcome.blocks;
-                self.safe_mode = outcome.degradation;
+                self.document.mode = DocumentMode::Reading;
+                self.document.blocks = outcome.blocks;
+                self.document.safe_mode = outcome.degradation;
                 self.loading = false;
                 self.slots.clear();
                 self.live.clear();
@@ -2572,32 +2565,37 @@ impl ApplicationHandler<AppEvent> for App {
                 self.context_menu = None;
                 self.log.push(format!(
                     "[medicion] preparar documento de {:.1} KB fuera de UI: {elapsed_ms:.0} ms  ({} bloques)",
-                    self.source.len() as f64 / 1024.0,
-                    self.blocks.len()
+                    self.document.source.len() as f64 / 1024.0,
+                    self.document.blocks.len()
                 ));
                 self.log.push(format!(
                     "[fidelidad] UTF-8{}; EOL {:?}",
-                    if self.source_metadata.has_utf8_bom {
+                    if self.document.source_metadata.has_utf8_bom {
                         " con BOM"
                     } else {
                         " sin BOM"
                     },
-                    self.source_metadata.line_endings
+                    self.document.source_metadata.line_endings
                 ));
-                if let Some(identity) = &self.source_identity {
+                if let Some(identity) = &self.document.source_identity {
                     self.log.push(format!(
                         "[fidelidad] huella inicial: {} bytes",
                         identity.byte_len
                     ));
                 }
-                if let Some(reason) = self.safe_mode {
+                if let Some(reason) = self.document.safe_mode {
                     self.log.push(format!(
                         "[seguridad] {}; se muestra la fuente inerte",
                         reason.explanation()
                     ));
                 }
                 if let Some(window) = &self.window {
-                    window.set_title(&window_title(&self.path, self.safe_mode, false, None));
+                    window.set_title(&window_title(
+                        &self.document.path,
+                        self.document.safe_mode,
+                        false,
+                        None,
+                    ));
                     window.request_redraw();
                 }
             }
@@ -2610,7 +2608,7 @@ impl ApplicationHandler<AppEvent> for App {
                 self.loading = false;
                 self.external_check_in_flight = false;
                 self.log.push(format!("[error] {error}"));
-                (self.source, self.blocks) = opening_failure_blocks();
+                (self.document.source, self.document.blocks) = opening_failure_blocks();
                 self.slots.clear();
                 self.live.clear();
                 self.doc_height = 0.0;
@@ -2634,14 +2632,14 @@ impl ApplicationHandler<AppEvent> for App {
                     document_request,
                     self.document_request,
                     revision,
-                    self.source_editor.revision(),
+                    self.document.source_editor.revision(),
                 ) {
                     self.log
                         .push("[edición] se descartó una vista desactualizada".to_string());
                     return;
                 }
-                self.blocks = outcome.blocks;
-                self.safe_mode = outcome.degradation;
+                self.document.blocks = outcome.blocks;
+                self.document.safe_mode = outcome.degradation;
                 self.loading = false;
                 self.slots.clear();
                 self.live.clear();
@@ -2666,7 +2664,7 @@ impl ApplicationHandler<AppEvent> for App {
                     document_request,
                     self.document_request,
                     revision,
-                    self.source_editor.revision(),
+                    self.document.source_editor.revision(),
                 ) {
                     self.log
                         .push("[edición] se descartó un error de vista desactualizado".to_string());
@@ -2681,10 +2679,10 @@ impl ApplicationHandler<AppEvent> for App {
                 identity,
                 baseline_bytes,
             } => {
-                if revision == self.source_editor.revision() {
-                    self.source_identity = Some(identity);
-                    self.source_baseline_bytes = Some(baseline_bytes);
-                    self.source_editor.mark_saved();
+                if revision == self.document.source_editor.revision() {
+                    self.document.source_identity = Some(identity);
+                    self.document.source_baseline_bytes = Some(baseline_bytes);
+                    self.document.source_editor.mark_saved();
                     if let Some(recovery) = &self.recovery {
                         let _ = recovery.clear();
                     }
@@ -2694,8 +2692,8 @@ impl ApplicationHandler<AppEvent> for App {
                     // escribiendo durante el guardado. La nueva edición queda
                     // marcada como pendiente y usa la versión guardada como
                     // próximo baseline para no perder su conflicto.
-                    self.source_identity = Some(identity);
-                    self.source_baseline_bytes = Some(baseline_bytes);
+                    self.document.source_identity = Some(identity);
+                    self.document.source_baseline_bytes = Some(baseline_bytes);
                     self.set_notice("se guardó una versión anterior; hay cambios nuevos");
                 }
             }
@@ -2713,11 +2711,11 @@ impl ApplicationHandler<AppEvent> for App {
                 identity,
                 baseline_bytes,
             } => {
-                self.path = path.to_string_lossy().into_owned();
-                self.source_identity = Some(identity);
-                self.source_baseline_bytes = Some(baseline_bytes);
-                if revision == self.source_editor.revision() {
-                    self.source_editor.mark_saved();
+                self.document.path = path.to_string_lossy().into_owned();
+                self.document.source_identity = Some(identity);
+                self.document.source_baseline_bytes = Some(baseline_bytes);
+                if revision == self.document.source_editor.revision() {
+                    self.document.source_editor.mark_saved();
                     if let Some(recovery) = &self.recovery {
                         let _ = recovery.clear();
                     }
@@ -2792,9 +2790,9 @@ impl ApplicationHandler<AppEvent> for App {
 
         let attrs = Window::default_attributes()
             .with_title(window_title(
-                &self.path,
-                self.safe_mode,
-                self.source_editor.is_dirty(),
+                &self.document.path,
+                self.document.safe_mode,
+                self.document.source_editor.is_dirty(),
                 self.notice.as_deref(),
             ))
             .with_inner_size(winit::dpi::LogicalSize::new(900.0, 760.0));
@@ -2958,10 +2956,9 @@ impl ApplicationHandler<AppEvent> for App {
             } => match state {
                 ElementState::Pressed => {
                     if let Some(menu) = self.context_menu.take() {
-                        if let Some(action) = self
-                            .pointer
-                            .and_then(|pointer| context_action_at(menu, pointer, self.mode))
-                        {
+                        if let Some(action) = self.pointer.and_then(|pointer| {
+                            context_action_at(menu, pointer, self.document.mode)
+                        }) {
                             match action {
                                 ContextAction::Paste => self.paste_into_source(),
                                 ContextAction::CopyText | ContextAction::CopyMarkdown => {
@@ -2974,7 +2971,7 @@ impl ApplicationHandler<AppEvent> for App {
                         }
                         return;
                     }
-                    if self.mode == DocumentMode::Reading
+                    if self.document.mode == DocumentMode::Reading
                         && let Some((x, y)) = self.pointer
                         && let Some(block) = self.code_copy_at(x, y)
                     {
@@ -2982,7 +2979,7 @@ impl ApplicationHandler<AppEvent> for App {
                         self.selecting = false;
                         return;
                     }
-                    if self.mode == DocumentMode::Reading
+                    if self.document.mode == DocumentMode::Reading
                         && let Some((x, y)) = self.pointer
                         && let Some(block) = self.task_at(x, y)
                     {
@@ -2993,7 +2990,7 @@ impl ApplicationHandler<AppEvent> for App {
                     self.focused_link = None;
                     self.focus_destination = None;
                     self.refresh_title();
-                    if self.mode == DocumentMode::SourceEditing {
+                    if self.document.mode == DocumentMode::SourceEditing {
                         if let Some(cursor) = self.pointer.and_then(|(x, y)| self.cursor_at(x, y)) {
                             self.set_source_cursor_from_block(cursor, false);
                         }
@@ -3017,9 +3014,9 @@ impl ApplicationHandler<AppEvent> for App {
             } => {
                 let has_selection = self
                     .selection
-                    .and_then(|selection| selection.rendered_text(&self.blocks))
+                    .and_then(|selection| selection.rendered_text(&self.document.blocks))
                     .is_some();
-                if !has_selection && self.mode != DocumentMode::SourceEditing {
+                if !has_selection && self.document.mode != DocumentMode::SourceEditing {
                     self.set_notice("selecciona texto para copiar");
                     return;
                 }
@@ -3033,7 +3030,7 @@ impl ApplicationHandler<AppEvent> for App {
                         y.min(
                             (size.height as f32
                                 - CONTEXT_MENU_ROW_HEIGHT
-                                    * context_actions(self.mode).len() as f32)
+                                    * context_actions(self.document.mode).len() as f32)
                                 .max(0.0),
                         ),
                     )
@@ -3052,7 +3049,9 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::Ime(Ime::Commit(text)) if self.search_query.is_some() => {
                 self.append_search_text(&text);
             }
-            WindowEvent::Ime(Ime::Commit(text)) if self.mode == DocumentMode::SourceEditing => {
+            WindowEvent::Ime(Ime::Commit(text))
+                if self.document.mode == DocumentMode::SourceEditing =>
+            {
                 self.edit_source(|editor, source| editor.insert(source, text.as_str()));
             }
             WindowEvent::KeyboardInput { event, .. } if self.workspace_search_query.is_some() => {
@@ -3068,7 +3067,7 @@ impl ApplicationHandler<AppEvent> for App {
                 self.handle_search_key(&event);
             }
             WindowEvent::KeyboardInput { event, .. }
-                if self.mode == DocumentMode::SourceEditing =>
+                if self.document.mode == DocumentMode::SourceEditing =>
             {
                 self.handle_source_key(&event);
             }
@@ -3211,7 +3210,7 @@ impl ApplicationHandler<AppEvent> for App {
                         ..
                     },
                 ..
-            } if self.mode == DocumentMode::Reading
+            } if self.document.mode == DocumentMode::Reading
                 && self.modifiers.control_key()
                 && self.modifiers.shift_key() =>
             {
@@ -3227,7 +3226,7 @@ impl ApplicationHandler<AppEvent> for App {
                         ..
                     },
                 ..
-            } if self.mode == DocumentMode::Reading && self.modifiers.control_key() => {
+            } if self.document.mode == DocumentMode::Reading && self.modifiers.control_key() => {
                 self.edit_source(|editor, source| editor.redo(source));
                 self.refresh_reading_async("rehaciendo cambio");
             }
@@ -3240,7 +3239,7 @@ impl ApplicationHandler<AppEvent> for App {
                         ..
                     },
                 ..
-            } if self.mode == DocumentMode::Reading
+            } if self.document.mode == DocumentMode::Reading
                 && self.modifiers.control_key()
                 && !self.modifiers.shift_key() =>
             {
@@ -3519,11 +3518,11 @@ impl ApplicationHandler<AppEvent> for App {
 
 impl App {
     fn enter_source_mode(&mut self) {
-        let index = SourceIndex::new(&self.source);
-        match safe_source_blocks(&self.source, &index) {
+        let index = SourceIndex::new(&self.document.source);
+        match safe_source_blocks(&self.document.source, &index) {
             Ok(blocks) => {
-                self.mode = DocumentMode::SourceEditing;
-                self.blocks = blocks;
+                self.document.mode = DocumentMode::SourceEditing;
+                self.document.blocks = blocks;
                 self.slots.clear();
                 self.live.clear();
                 self.laid_for_width = -1.0;
@@ -3539,8 +3538,8 @@ impl App {
     }
 
     fn refresh_source_blocks(&mut self) -> Result<(), &'static str> {
-        let index = SourceIndex::new(&self.source);
-        self.blocks = safe_source_blocks(&self.source, &index)?;
+        let index = SourceIndex::new(&self.document.source);
+        self.document.blocks = safe_source_blocks(&self.document.source, &index)?;
         self.slots.clear();
         self.live.clear();
         self.laid_for_width = -1.0;
@@ -3551,7 +3550,8 @@ impl App {
         &mut self,
         operation: impl FnOnce(&mut SourceEditor, &mut String) -> Result<bool, editor::EditError>,
     ) {
-        match operation(&mut self.source_editor, &mut self.source) {
+        let document = &mut self.document;
+        match operation(&mut document.source_editor, &mut document.source) {
             Ok(true) => match self.refresh_source_blocks() {
                 Ok(()) => {
                     self.notice = None;
@@ -3576,7 +3576,7 @@ impl App {
             return;
         };
         self.last_recovery = Instant::now();
-        let source = self.source.clone();
+        let source = self.document.source.clone();
         thread::spawn(move || {
             let _ = recovery.write(&source);
         });
@@ -3597,12 +3597,12 @@ impl App {
     }
 
     fn refresh_reading_async(&mut self, notice: &str) {
-        self.mode = DocumentMode::Reading;
+        self.document.mode = DocumentMode::Reading;
         self.loading = true;
         self.set_notice(notice);
-        let source = self.source.clone();
+        let source = self.document.source.clone();
         let document_request = self.document_request;
-        let revision = self.source_editor.revision();
+        let revision = self.document.source_editor.revision();
         let proxy = self.proxy.clone();
         thread::spawn(move || {
             let started = Instant::now();
@@ -3674,7 +3674,7 @@ impl App {
                 self.edit_source(|editor, source| editor.delete(source));
             }
             PhysicalKey::Code(KeyCode::Enter) => {
-                let eol = match self.source_metadata.line_endings {
+                let eol = match self.document.source_metadata.line_endings {
                     LineEndings::CrLf => "\r\n",
                     LineEndings::None | LineEndings::Lf | LineEndings::Mixed => "\n",
                 };
@@ -3688,41 +3688,46 @@ impl App {
                 });
             }
             PhysicalKey::Code(KeyCode::ArrowLeft) => {
-                let _ = self
-                    .source_editor
-                    .move_left(&self.source, self.modifiers.shift_key());
+                let shift = self.modifiers.shift_key();
+                let document = &mut self.document;
+                let _ = document.source_editor.move_left(&document.source, shift);
             }
             PhysicalKey::Code(KeyCode::ArrowRight) => {
-                let _ = self
-                    .source_editor
-                    .move_right(&self.source, self.modifiers.shift_key());
+                let shift = self.modifiers.shift_key();
+                let document = &mut self.document;
+                let _ = document.source_editor.move_right(&document.source, shift);
             }
             PhysicalKey::Code(KeyCode::ArrowUp) => {
-                let _ =
-                    self.source_editor
-                        .move_line(&self.source, false, self.modifiers.shift_key());
+                let shift = self.modifiers.shift_key();
+                let document = &mut self.document;
+                let _ = document
+                    .source_editor
+                    .move_line(&document.source, false, shift);
             }
             PhysicalKey::Code(KeyCode::ArrowDown) => {
-                let _ =
-                    self.source_editor
-                        .move_line(&self.source, true, self.modifiers.shift_key());
+                let shift = self.modifiers.shift_key();
+                let document = &mut self.document;
+                let _ = document
+                    .source_editor
+                    .move_line(&document.source, true, shift);
             }
             PhysicalKey::Code(KeyCode::Home) => {
-                let _ = self.source_editor.move_line_boundary(
-                    &self.source,
-                    false,
-                    self.modifiers.shift_key(),
-                );
+                let shift = self.modifiers.shift_key();
+                let document = &mut self.document;
+                let _ = document
+                    .source_editor
+                    .move_line_boundary(&document.source, false, shift);
             }
             PhysicalKey::Code(KeyCode::End) => {
-                let _ = self.source_editor.move_line_boundary(
-                    &self.source,
-                    true,
-                    self.modifiers.shift_key(),
-                );
+                let shift = self.modifiers.shift_key();
+                let document = &mut self.document;
+                let _ = document
+                    .source_editor
+                    .move_line_boundary(&document.source, true, shift);
             }
             PhysicalKey::Code(KeyCode::KeyA) if self.modifiers.control_key() => {
-                self.source_editor.select_all(&self.source);
+                let document = &mut self.document;
+                document.source_editor.select_all(&document.source);
             }
             PhysicalKey::Code(KeyCode::KeyC) if self.modifiers.control_key() => {
                 self.copy_selection(false);
@@ -3765,12 +3770,15 @@ impl App {
                 self.edit_source(|editor, source| editor.redo(source));
             }
             PhysicalKey::Code(KeyCode::Escape) => {
-                let cursor = self.source_editor.cursor();
-                let _ = self.source_editor.set_cursor(&self.source, cursor, false);
+                let document = &mut self.document;
+                let cursor = document.source_editor.cursor();
+                let _ = document
+                    .source_editor
+                    .set_cursor(&document.source, cursor, false);
             }
             _ => {}
         }
-        if self.mode == DocumentMode::SourceEditing {
+        if self.document.mode == DocumentMode::SourceEditing {
             self.sync_source_selection();
             if let Some(window) = &self.window {
                 window.request_redraw();
@@ -3803,21 +3811,21 @@ impl App {
     }
 
     fn save_current_document(&mut self) {
-        if !self.source_editor.is_dirty() {
+        if !self.document.source_editor.is_dirty() {
             self.set_notice("no hay cambios para guardar");
             return;
         }
         let (Some(identity), Some(baseline_bytes)) = (
-            self.source_identity.clone(),
-            self.source_baseline_bytes.clone(),
+            self.document.source_identity.clone(),
+            self.document.source_baseline_bytes.clone(),
         ) else {
             self.set_notice("este documento todavía no tiene un destino para guardar");
             return;
         };
-        let path = self.path.clone();
-        let source = self.source.clone();
-        let metadata = self.source_metadata;
-        let revision = self.source_editor.revision();
+        let path = self.document.path.clone();
+        let source = self.document.source.clone();
+        let metadata = self.document.source_metadata;
+        let revision = self.document.source_editor.revision();
         let proxy = self.proxy.clone();
         self.set_notice("guardando de forma atómica");
         thread::spawn(move || {
@@ -3846,9 +3854,9 @@ impl App {
             self.set_notice("guardar como cancelado");
             return;
         };
-        let source = self.source.clone();
-        let metadata = self.source_metadata;
-        let revision = self.source_editor.revision();
+        let source = self.document.source.clone();
+        let metadata = self.document.source_metadata;
+        let revision = self.document.source_editor.revision();
         let proxy = self.proxy.clone();
         self.set_notice("creando documento de forma atómica");
         thread::spawn(move || {
@@ -3880,10 +3888,10 @@ impl App {
         if self.loading || self.external_check_in_flight {
             return;
         }
-        let Some(baseline_bytes) = self.source_baseline_bytes.clone() else {
+        let Some(baseline_bytes) = self.document.source_baseline_bytes.clone() else {
             return;
         };
-        let path = PathBuf::from(&self.path);
+        let path = PathBuf::from(&self.document.path);
         let request = self.document_request;
         let proxy = self.proxy.clone();
         self.external_check_in_flight = true;
@@ -3897,7 +3905,7 @@ impl App {
     /// recuperación si había cambios locales; guardar una copia nunca toca la
     /// versión externa; cancelar mantiene la vista actual.
     fn resolve_external_change(&mut self) {
-        let description = if self.source_editor.is_dirty() {
+        let description = if self.document.source_editor.is_dirty() {
             "El archivo cambió fuera de Visor MD mientras tenías cambios locales.\n\nSí: recargar la versión externa después de conservar una recuperación local.\nNo: Guardar una copia con otro nombre.\nCancelar: mantener esta edición abierta."
         } else {
             "El archivo cambió fuera de Visor MD.\n\nSí: recargar la versión externa.\nNo: Guardar una copia de la vista actual.\nCancelar: mantener la vista actual."
@@ -3914,14 +3922,14 @@ impl App {
         };
         match result {
             MessageDialogResult::Yes => {
-                if self.source_editor.is_dirty() {
+                if self.document.source_editor.is_dirty() {
                     let Some(recovery) = &self.recovery else {
                         self.set_notice(
                             "no se pudo recargar: la recuperación local no está disponible; guarda una copia",
                         );
                         return;
                     };
-                    if let Err(error) = recovery.write(&self.source) {
+                    if let Err(error) = recovery.write(&self.document.source) {
                         self.log.push(format!("[recuperación] {error}"));
                         self.set_notice(
                             "no se pudo conservar una recuperación; no se recargó el archivo externo",
@@ -3929,7 +3937,7 @@ impl App {
                         return;
                     }
                 }
-                self.open_document_path(PathBuf::from(&self.path));
+                self.open_document_path(PathBuf::from(&self.document.path));
             }
             MessageDialogResult::No => self.save_as_current_document(),
             MessageDialogResult::Cancel
@@ -3964,14 +3972,14 @@ impl App {
                     );
                     return;
                 };
-                if let Err(error) = recovery.write(&self.source) {
+                if let Err(error) = recovery.write(&self.document.source) {
                     self.log.push(format!("[recuperación] {error}"));
                     self.set_notice(
                         "no se pudo conservar una recuperación; no se recargó el archivo externo",
                     );
                     return;
                 }
-                self.open_document_path(PathBuf::from(&self.path));
+                self.open_document_path(PathBuf::from(&self.document.path));
             }
             MessageDialogResult::No => self.save_as_current_document(),
             MessageDialogResult::Cancel
@@ -3987,7 +3995,7 @@ impl App {
     /// diálogo nativo pequeño y conserva una recuperación sin cifrar antes de
     /// permitir abandonar la ventana.
     fn request_close(&mut self) -> bool {
-        if !self.source_editor.is_dirty() {
+        if !self.document.source_editor.is_dirty() {
             if let Some(recovery) = &self.recovery {
                 let _ = recovery.clear();
             }
@@ -3997,7 +4005,7 @@ impl App {
             self.set_notice("no se cerró: no hay recuperación local disponible");
             return false;
         };
-        if let Err(error) = recovery.write(&self.source) {
+        if let Err(error) = recovery.write(&self.document.source) {
             self.log.push(format!("[recuperación] {error}"));
             self.set_notice("no se cerró: no se pudo conservar la recuperación local");
             return false;
@@ -4018,18 +4026,18 @@ impl App {
     }
 
     fn create_new_document(&mut self) {
-        if self.source_editor.is_dirty() {
+        if self.document.source_editor.is_dirty() {
             self.set_notice("guarda o descarta los cambios antes de crear otro documento");
             return;
         }
-        self.path = "sin título.md".to_string();
-        self.source.clear();
-        self.source_metadata = TextMetadata::default();
-        self.source_identity = None;
-        self.source_baseline_bytes = None;
-        self.source_editor = SourceEditor::new();
-        self.mode = DocumentMode::SourceEditing;
-        self.blocks.clear();
+        self.document.path = "sin título.md".to_string();
+        self.document.source.clear();
+        self.document.source_metadata = TextMetadata::default();
+        self.document.source_identity = None;
+        self.document.source_baseline_bytes = None;
+        self.document.source_editor = SourceEditor::new();
+        self.document.mode = DocumentMode::SourceEditing;
+        self.document.blocks.clear();
         self.slots.clear();
         self.live.clear();
         self.doc_height = 0.0;
@@ -4043,7 +4051,7 @@ impl App {
     }
 
     fn choose_document_to_open(&mut self) {
-        if self.source_editor.is_dirty() {
+        if self.document.source_editor.is_dirty() {
             self.set_notice("guarda o descarta los cambios antes de abrir otro documento");
             return;
         }
@@ -4116,20 +4124,20 @@ impl App {
     }
 
     fn restore_latest_recovery(&mut self) {
-        if self.source_editor.is_dirty() {
+        if self.document.source_editor.is_dirty() {
             self.set_notice("guarda o descarta los cambios antes de restaurar una recuperación");
             return;
         }
         match RecoverySession::latest_pending(DEFAULT_DOCUMENT_LIMIT_BYTES) {
             Ok(Some(source)) => {
-                self.path = "recuperación sin guardar.md".to_string();
-                self.source = source;
-                self.source_metadata = TextMetadata::default();
-                self.source_identity = None;
-                self.source_baseline_bytes = None;
-                self.source_editor = SourceEditor::new();
-                self.source_editor.mark_recovered();
-                self.mode = DocumentMode::SourceEditing;
+                self.document.path = "recuperación sin guardar.md".to_string();
+                self.document.source = source;
+                self.document.source_metadata = TextMetadata::default();
+                self.document.source_identity = None;
+                self.document.source_baseline_bytes = None;
+                self.document.source_editor = SourceEditor::new();
+                self.document.source_editor.mark_recovered();
+                self.document.mode = DocumentMode::SourceEditing;
                 if let Err(error) = self.refresh_source_blocks() {
                     self.set_notice(&format!("no se pudo mostrar la recuperación: {error}"));
                     return;
@@ -4192,35 +4200,40 @@ impl App {
     }
 
     fn source_block_cursor(&self, source_offset: usize) -> Option<BlockCursor> {
-        self.blocks.iter().enumerate().find_map(|(block, item)| {
-            let text_end = item.source.start + item.text.len();
-            (item.source.start <= source_offset && source_offset <= text_end).then_some(
-                BlockCursor {
-                    block,
-                    offset: source_offset - item.source.start,
-                },
-            )
-        })
+        self.document
+            .blocks
+            .iter()
+            .enumerate()
+            .find_map(|(block, item)| {
+                let text_end = item.source.start + item.text.len();
+                (item.source.start <= source_offset && source_offset <= text_end).then_some(
+                    BlockCursor {
+                        block,
+                        offset: source_offset - item.source.start,
+                    },
+                )
+            })
     }
 
     fn sync_source_selection(&mut self) {
-        let Some(anchor) = self.source_block_cursor(self.source_editor.anchor()) else {
+        let Some(anchor) = self.source_block_cursor(self.document.source_editor.anchor()) else {
             return;
         };
-        let Some(focus) = self.source_block_cursor(self.source_editor.cursor()) else {
+        let Some(focus) = self.source_block_cursor(self.document.source_editor.cursor()) else {
             return;
         };
         self.selection = Some(DocumentSelection { anchor, focus });
     }
 
     fn set_source_cursor_from_block(&mut self, cursor: BlockCursor, extend: bool) {
-        let Some(block) = self.blocks.get(cursor.block) else {
+        let Some(block) = self.document.blocks.get(cursor.block) else {
             return;
         };
         let source_offset = block.source.start + cursor.offset.min(block.text.len());
         if self
+            .document
             .source_editor
-            .set_cursor(&self.source, source_offset, extend)
+            .set_cursor(&self.document.source, source_offset, extend)
             .is_err()
         {
             return;
@@ -4238,9 +4251,9 @@ impl App {
     fn copy_selection(&mut self, source_markdown: bool) {
         let text = self.selection.and_then(|selection| {
             if source_markdown {
-                selection.source_blocks(&self.source, &self.blocks)
+                selection.source_blocks(&self.document.source, &self.document.blocks)
             } else {
-                selection.rendered_text(&self.blocks)
+                selection.rendered_text(&self.document.blocks)
             }
         });
         let Some(text) = text else {
@@ -4287,9 +4300,9 @@ impl App {
     fn refresh_title(&self) {
         if let Some(window) = &self.window {
             window.set_title(&window_title(
-                &self.path,
-                self.safe_mode,
-                self.source_editor.is_dirty(),
+                &self.document.path,
+                self.document.safe_mode,
+                self.document.source_editor.is_dirty(),
                 self.hover_destination
                     .as_deref()
                     .or(self.focus_destination.as_deref())
@@ -4299,30 +4312,32 @@ impl App {
     }
 
     fn move_link_focus(&mut self, backwards: bool) {
-        let links = link_targets_in_document_order(&self.blocks);
+        let links = link_targets_in_document_order(&self.document.blocks);
         let Some((block_index, target_index)) =
             next_link_target(&links, self.focused_link, backwards)
         else {
             self.set_notice("este documento no tiene enlaces");
             return;
         };
-        let Some(target) = self
+        let Some((target_kind, target_start, target_destination)) = self
+            .document
             .blocks
             .get(block_index)
             .and_then(|block| block.targets.get(target_index))
+            .map(|target| (target.kind, target.start, target.destination.clone()))
         else {
             return;
         };
         self.focused_link = Some((block_index, target_index));
         self.focus_destination = Some(format!(
             "{}: {}",
-            target_label(target.kind, &target.destination),
-            target.destination
+            target_label(target_kind, &target_destination),
+            target_destination
         ));
         self.notice = None;
         self.selection = Some(DocumentSelection::collapsed(BlockCursor {
             block: block_index,
-            offset: target.start,
+            offset: target_start,
         }));
         if let (Some(slot), Some(window)) = (self.slots.get(block_index), &self.window) {
             let viewport = window.inner_size().height as f32;
@@ -4343,6 +4358,7 @@ impl App {
             return;
         };
         let Some(destination) = self
+            .document
             .blocks
             .get(block_index)
             .and_then(|block| block.targets.get(target_index))
@@ -4356,7 +4372,7 @@ impl App {
         }
         match classify_link_destination(&destination.1) {
             LinkDestinationKind::RelativeFile => {
-                if self.source_editor.is_dirty() {
+                if self.document.source_editor.is_dirty() {
                     self.set_notice("guarda o descarta los cambios antes de abrir otro documento");
                     return;
                 }
@@ -4413,7 +4429,7 @@ impl App {
             }
             return;
         }
-        if self.source_editor.is_dirty() {
+        if self.document.source_editor.is_dirty() {
             self.set_notice("guarda o descarta los cambios antes de abrir otro documento");
             return;
         }
@@ -4454,7 +4470,7 @@ impl App {
             self.set_notice("abre una carpeta de trabajo para consultar backlinks");
             return;
         };
-        let Ok(current) = fs::canonicalize(&self.path) else {
+        let Ok(current) = fs::canonicalize(&self.document.path) else {
             self.set_notice("el documento abierto no se puede asociar al workspace");
             return;
         };
@@ -4486,7 +4502,7 @@ impl App {
     }
 
     fn open_backlink_match(&mut self) {
-        if self.source_editor.is_dirty() {
+        if self.document.source_editor.is_dirty() {
             self.set_notice("guarda o descarta los cambios antes de abrir otro documento");
             return;
         }
@@ -4538,7 +4554,7 @@ impl App {
     }
 
     fn show_document_outline(&mut self) {
-        let headings = document_outline(&self.blocks);
+        let headings = document_outline(&self.document.blocks);
         if headings.is_empty() {
             self.set_notice("el documento no contiene encabezados");
             return;
@@ -4600,7 +4616,7 @@ impl App {
 
     fn scroll_to_heading(&mut self, heading: &str) {
         let requested = heading_key(heading);
-        let Some((block_index, _)) = self.blocks.iter().enumerate().find(|(_, block)| {
+        let Some((block_index, _)) = self.document.blocks.iter().enumerate().find(|(_, block)| {
             matches!(block.kind, Kind::Heading(_)) && heading_key(&block.text) == requested
         }) else {
             self.set_notice("el documento no contiene el encabezado solicitado");
@@ -4681,7 +4697,7 @@ impl App {
     }
 
     fn open_workspace_search_match(&mut self) {
-        if self.source_editor.is_dirty() {
+        if self.document.source_editor.is_dirty() {
             self.set_notice("guarda o descarta los cambios antes de abrir otra nota");
             return;
         }
@@ -4762,7 +4778,7 @@ impl App {
         else {
             return Vec::new();
         };
-        matching_block_indices(&self.blocks, query)
+        matching_block_indices(&self.document.blocks, query)
     }
 
     fn focus_search_match(&mut self, direction: i8) {
@@ -4842,7 +4858,10 @@ impl App {
     fn task_at(&self, x: f32, y: f32) -> Option<usize> {
         self.slots.iter().enumerate().find_map(|(index, slot)| {
             let top = slot.y - self.scroll;
-            let is_task = matches!(self.blocks[index].marker, Some(Marker::Task { .. }));
+            let is_task = matches!(
+                self.document.blocks[index].marker,
+                Some(Marker::Task { .. })
+            );
             let marker_left = slot.x - 28.0 * self.scale_factor;
             (is_task
                 && (top..=top + slot.height).contains(&y)
@@ -4867,8 +4886,9 @@ impl App {
     }
 
     fn copy_code_block(&mut self, block: usize) {
-        let Some(source) = self.blocks.get(block).and_then(|block| {
-            self.source
+        let Some(source) = self.document.blocks.get(block).and_then(|block| {
+            self.document
+                .source
                 .get(block.source.start..block.source.end)
                 .map(str::to_owned)
         }) else {
@@ -4879,11 +4899,11 @@ impl App {
     }
 
     fn toggle_task(&mut self, block: usize) {
-        let Some(block) = self.blocks.get(block) else {
+        let Some(block) = self.document.blocks.get(block) else {
             return;
         };
         let source = block.source;
-        let Some(text) = self.source.get(source.start..source.end) else {
+        let Some(text) = self.document.source.get(source.start..source.end) else {
             self.set_notice("no se pudo localizar la tarea en la fuente");
             return;
         };
@@ -4903,7 +4923,8 @@ impl App {
 
     fn target_at(&self, x: f32, y: f32) -> Option<&InlineTarget> {
         let cursor = self.cursor_at(x, y)?;
-        self.blocks
+        self.document
+            .blocks
             .get(cursor.block)?
             .targets
             .iter()
@@ -4913,7 +4934,7 @@ impl App {
     }
 
     fn extend_selection_to(&mut self, x: f32, y: f32) {
-        if self.mode == DocumentMode::SourceEditing {
+        if self.document.mode == DocumentMode::SourceEditing {
             if let Some(cursor) = self.cursor_at(x, y) {
                 self.set_source_cursor_from_block(cursor, true);
             }
@@ -4937,14 +4958,14 @@ impl App {
         };
         let block = if document {
             if end {
-                self.blocks.len().saturating_sub(1)
+                self.document.blocks.len().saturating_sub(1)
             } else {
                 0
             }
         } else {
             selection.focus.block
         };
-        let Some(block_text) = self.blocks.get(block).map(|block| &block.text) else {
+        let Some(block_text) = self.document.blocks.get(block).map(|block| &block.text) else {
             return;
         };
         let cursor = BlockCursor {
@@ -5011,13 +5032,14 @@ impl App {
     }
 
     fn select_document(&mut self) {
-        let Some(last) = self.blocks.len().checked_sub(1) else {
+        let Some(last) = self.document.blocks.len().checked_sub(1) else {
             return;
         };
         debug_assert!(
-            self.blocks
+            self.document
+                .blocks
                 .iter()
-                .all(|block| block.source.is_valid_for(&self.source)),
+                .all(|block| block.source.is_valid_for(&self.document.source)),
             "el modelo no conserva rangos validos para la fuente de la sesion"
         );
         self.selection = Some(DocumentSelection {
@@ -5027,7 +5049,7 @@ impl App {
             },
             focus: BlockCursor {
                 block: last,
-                offset: self.blocks[last].text.len(),
+                offset: self.document.blocks[last].text.len(),
             },
         });
     }
@@ -5117,7 +5139,7 @@ impl App {
         if self.exact_after_edit || layout_width_is_stale(self.laid_for_width, size.width as f32) {
             let t = Instant::now();
             let (slots, height) = measure_all(
-                &self.blocks,
+                &self.document.blocks,
                 &mut self.font_cx,
                 &mut self.layout_cx,
                 size.width as f32,
@@ -5134,7 +5156,7 @@ impl App {
             self.live.clear();
             self.log.push(format!(
                 "[medicion] posicionar {} bloques ({}): {:.0} ms  (alto {:.0} px)",
-                self.blocks.len(),
+                self.document.blocks.len(),
                 if self.exact_measure {
                     "exacto"
                 } else {
@@ -5158,7 +5180,7 @@ impl App {
         self.live.retain(|i, _| visible.contains(i));
         for i in visible.clone() {
             if !self.live.contains_key(&i) {
-                let block = &self.blocks[i];
+                let block = &self.document.blocks[i];
                 let layout = if matches!(block.kind, Kind::TableRow { .. }) {
                     CachedBlockLayout::Table(build_table_layouts(
                         block,
@@ -5199,7 +5221,7 @@ impl App {
 
         let menu = self.context_menu;
         let menu_pointer = self.pointer;
-        let safe_banner = self.safe_mode.map(|reason| {
+        let safe_banner = self.document.safe_mode.map(|reason| {
             build_menu_layout(
                 &safe_mode_label(reason),
                 &mut self.font_cx,
@@ -5271,7 +5293,7 @@ impl App {
             ))
         });
         let menu_layouts = menu.map(|_| {
-            context_actions(self.mode)
+            context_actions(self.document.mode)
                 .iter()
                 .map(|action| {
                     build_menu_layout(
@@ -5304,6 +5326,7 @@ impl App {
         }
         // Se desarma `self` en campos sueltos para que el prestamo del pixmap
         // no choque con el de la cache de glifos ni con el de los bloques.
+        let context_mode = self.document.mode;
         let App {
             pixmap,
             slots,
@@ -5316,9 +5339,10 @@ impl App {
             selection,
             focused_link,
             scale_factor,
-            blocks,
+            document,
             ..
         } = self;
+        let blocks = &document.blocks;
         let pixmap = pixmap
             .as_mut()
             .ok_or_else(|| "el framebuffer no esta disponible".to_string())?;
@@ -5625,17 +5649,17 @@ impl App {
                 x,
                 y,
                 CONTEXT_MENU_WIDTH,
-                CONTEXT_MENU_ROW_HEIGHT * context_actions(self.mode).len() as f32,
+                CONTEXT_MENU_ROW_HEIGHT * context_actions(context_mode).len() as f32,
             ) {
                 pixmap.fill_rect(rect, &paint, Transform::identity(), None);
             }
-            for (row, (action, layout)) in context_actions(self.mode)
+            for (row, (action, layout)) in context_actions(context_mode)
                 .iter()
                 .copied()
                 .zip(layouts.iter())
                 .enumerate()
             {
-                if menu_pointer.and_then(|pointer| context_action_at((x, y), pointer, self.mode))
+                if menu_pointer.and_then(|pointer| context_action_at((x, y), pointer, context_mode))
                     == Some(action)
                 {
                     let ac = palette.accent;
@@ -5841,14 +5865,23 @@ fn main() {
         recovery.is_some() && RecoverySession::privacy_notice_needed().unwrap_or(false);
     let mut app = App {
         started,
-        path: opening_path
-            .clone()
-            .unwrap_or_else(|| "sin título.md".to_string()),
-        source: String::new(),
-        source_metadata: TextMetadata::default(),
-        source_identity: None,
-        source_baseline_bytes: None,
-        source_editor: SourceEditor::new(),
+        document: DocumentState {
+            path: opening_path
+                .clone()
+                .unwrap_or_else(|| "sin título.md".to_string()),
+            source: String::new(),
+            source_metadata: TextMetadata::default(),
+            source_identity: None,
+            source_baseline_bytes: None,
+            source_editor: SourceEditor::new(),
+            mode: if opening_path.is_some() {
+                DocumentMode::Reading
+            } else {
+                DocumentMode::SourceEditing
+            },
+            blocks: Vec::new(),
+            safe_mode: None,
+        },
         external_check_in_flight: false,
         recovery,
         recovery_privacy_notice_pending,
@@ -5858,13 +5891,7 @@ fn main() {
         workspace_cancel: None,
         document_request: initial_document_request,
         pending_workspace_heading: None,
-        mode: if opening_path.is_some() {
-            DocumentMode::Reading
-        } else {
-            DocumentMode::SourceEditing
-        },
         proxy: proxy.clone(),
-        blocks: Vec::new(),
         window: None,
         surface: None,
         font_cx,
@@ -5886,7 +5913,6 @@ fn main() {
         exact_after_edit: false,
         log,
         palette: NIGHT,
-        safe_mode: None,
         loading: opening_path.is_some(),
         pointer: None,
         selecting: false,

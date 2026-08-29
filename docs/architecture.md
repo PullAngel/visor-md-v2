@@ -233,6 +233,12 @@ y recuperación ya consumen esta capa. Su límite actual es que el buffer fuente
 sigue siendo una `String`: la migración a un buffer escalable se hará como un
 refactor documentado, sin cambiar el formato ni la semántica de guardado.
 
+`DocumentState` concentra la identidad, fuente, metadatos de preservación,
+editor, modo, bloques renderizables y degradación del documento activo. La
+caché de layout y render sigue perteneciendo a la ventana: se descarta o
+reconstruye al cambiar de documento, en vez de confundirse con datos que deban
+persistir. Esta separación prepara pestañas sin afirmar todavía que ya existan.
+
 Responsabilidades:
 
 - cursor y selección;
