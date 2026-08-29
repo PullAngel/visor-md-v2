@@ -3741,6 +3741,20 @@ impl App {
         }
         if !event.repeat
             && self.modifiers.control_key()
+            && matches!(event.physical_key, PhysicalKey::Code(KeyCode::PageUp))
+        {
+            self.switch_document_tab(true);
+            return;
+        }
+        if !event.repeat
+            && self.modifiers.control_key()
+            && matches!(event.physical_key, PhysicalKey::Code(KeyCode::PageDown))
+        {
+            self.switch_document_tab(false);
+            return;
+        }
+        if !event.repeat
+            && self.modifiers.control_key()
             && matches!(event.physical_key, PhysicalKey::Code(KeyCode::KeyF))
         {
             if self.modifiers.shift_key() {
