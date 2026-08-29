@@ -5470,6 +5470,28 @@ impl App {
             &mut self.layout_cx,
             self.palette,
         );
+        let document_mode_label = match self.document.mode {
+            DocumentMode::Reading => "Lectura",
+            DocumentMode::SourceEditing => "Edición",
+        };
+        let document_state_label = if self.document.source_editor.is_dirty() {
+            "sin guardar"
+        } else {
+            "guardado"
+        };
+        let workspace_state_label = if self.workspace_stale {
+            "carpeta por actualizar"
+        } else if self.workspace.is_some() {
+            "carpeta activa"
+        } else {
+            "sin carpeta"
+        };
+        let status_layout = build_menu_layout(
+            &format!("{document_mode_label} · {document_state_label} · {workspace_state_label}"),
+            &mut self.font_cx,
+            &mut self.layout_cx,
+            self.palette,
+        );
 
         // El pixmap se reusa entre cuadros: reservar 2,7 MB por cuadro y
         // ponerlos en cero es trabajo que no hace falta repetir.
@@ -5780,6 +5802,19 @@ impl App {
                         draw_run_background(pixmap, &run, MARGIN + 10.0, 15.0);
                         draw_glyph_run(pixmap, scale_cx, glyphs, &run, MARGIN + 10.0, 15.0);
                     }
+                }
+            }
+        }
+
+        let status_y = h.get() as f32 - 24.0;
+        if let Some(rect) = Rect::from_xywh(0.0, status_y, w.get() as f32, 24.0) {
+            pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+        }
+        for line in status_layout.lines() {
+            for entry in line.items() {
+                if let PositionedLayoutItem::GlyphRun(run) = entry {
+                    draw_run_background(pixmap, &run, MARGIN, status_y + 5.0);
+                    draw_glyph_run(pixmap, scale_cx, glyphs, &run, MARGIN, status_y + 5.0);
                 }
             }
         }

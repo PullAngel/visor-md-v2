@@ -63,6 +63,10 @@ Registrar antes de comenzar:
 
 ## Carpeta de trabajo
 
+- La barra inferior debe indicar Lectura o Edición, guardado o sin guardar, y
+  si hay carpeta activa. Tras un aviso de actualización de carpeta debe decir
+  que requiere actualización, sin tapar el contenido ni convertirse en panel.
+
 - Con `Ctrl+Shift+O`, elegir una carpeta de pruebas que tenga dos o más notas
   Markdown. `Ctrl+Shift+F` debe buscar solo dentro de esa carpeta; las flechas
   cambian la coincidencia y Enter abre la elegida.

@@ -72,6 +72,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Selección con mouse | Parcial | Selección visible con autoscroll y copia; falta QA visual completo |
 | Selección con teclado | Parcial | Flechas, Inicio/Fin, RePág/AvPág, Ctrl+A, Escape y extensiones con Shift; falta foco y atajos por línea reales |
 | Copiar bloque o documento | Parcial | `Ctrl+C` copia texto visible; `Ctrl+Shift+C` copia Markdown de bloques completos |
+| Barra de estado | Parcial | Muestra modo, cambios sin guardar y estado de carpeta sin ocupar herramientas permanentes |
 | Alto contraste | Planificado | Matriz Windows y Linux |
 | Reduce motion | Planificado | Todas las transiciones respetan preferencia |
 | IME | Planificado | Escritura de idiomas compatibles |
