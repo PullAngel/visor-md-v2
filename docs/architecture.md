@@ -236,12 +236,14 @@ refactor documentado, sin cambiar el formato ni la semántica de guardado.
 `DocumentState` concentra la identidad, fuente, metadatos de preservación,
 editor, modo, bloques renderizables y degradación de cada documento. La
 aplicación conserva varios estados documentales y rota con ellos una sesión de
-recuperación independiente. La caché de layout y render sigue perteneciendo a
+recuperación independiente dentro de una misma estructura, por lo que fuente y
+recuperación no pueden desalinearse. Cada estado conserva también su posición
+de scroll. La caché de layout y render sigue perteneciendo a
 la ventana: se descarta o reconstruye al cambiar de documento, en vez de
 confundirse con datos persistentes. El cambio de documento invalida resultados
 de render anteriores mediante una generación monotónica. Falta trasladar el
-estado visual, como scroll y foco, a cada pestaña y reemplazar el selector
-temporal por una barra visible.
+resto del estado visual, como foco y selección de lectura, a cada pestaña y
+reemplazar el selector temporal por una barra visible.
 
 Responsabilidades:
 

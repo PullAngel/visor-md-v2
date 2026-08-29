@@ -2421,6 +2421,9 @@ struct DocumentState {
     mode: DocumentMode,
     blocks: Vec<Block>,
     safe_mode: Option<Degradation>,
+    /// Posición visual propia de la pestaña. Se sincroniza antes de cambiar
+    /// de documento y se restaura al volver.
+    scroll: f32,
 }
 
 impl DocumentState {
@@ -2435,6 +2438,7 @@ impl DocumentState {
             mode: DocumentMode::SourceEditing,
             blocks: Vec::new(),
             safe_mode: None,
+            scroll: 0.0,
         }
     }
 
@@ -2443,11 +2447,16 @@ impl DocumentState {
     }
 }
 
-fn dirty_document_count(active: &DocumentState, inactive: &[DocumentState]) -> usize {
+struct InactiveDocument {
+    document: DocumentState,
+    recovery: Option<RecoverySession>,
+}
+
+fn dirty_document_count(active: &DocumentState, inactive: &[InactiveDocument]) -> usize {
     usize::from(active.is_dirty())
         + inactive
             .iter()
-            .filter(|document| document.is_dirty())
+            .filter(|tab| tab.document.is_dirty())
             .count()
 }
 
@@ -2456,9 +2465,12 @@ struct App {
     document: DocumentState,
     /// Documentos inactivos de la sesión. Cada uno conserva su fuente e
     /// historial; los caches de dibujo siguen perteneciendo a la ventana.
-    inactive_documents: Vec<DocumentState>,
-    inactive_recoveries: Vec<Option<RecoverySession>>,
+    inactive_documents: Vec<InactiveDocument>,
     external_check_in_flight: bool,
+    /// Evita cambiar de documento mientras un guardado asíncrono todavía
+    /// pertenece al documento activo. Es una frontera temporal hasta que las
+    /// tareas de guardado tengan identidad de pestaña propia.
+    save_in_flight: bool,
     recovery: Option<RecoverySession>,
     /// Solo la primera sesión informa que la recuperación es texto local sin
     /// cifrar. La decisión no depende del documento abierto.
@@ -2718,6 +2730,7 @@ impl ApplicationHandler<AppEvent> for App {
                 identity,
                 baseline_bytes,
             } => {
+                self.save_in_flight = false;
                 if revision == self.document.source_editor.revision() {
                     self.document.source_identity = Some(identity);
                     self.document.source_baseline_bytes = Some(baseline_bytes);
@@ -2737,6 +2750,7 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
             AppEvent::SaveFailed { error, conflict } => {
+                self.save_in_flight = false;
                 self.log.push(format!("[error] {error}"));
                 if conflict {
                     self.resolve_save_conflict();
@@ -2750,6 +2764,7 @@ impl ApplicationHandler<AppEvent> for App {
                 identity,
                 baseline_bytes,
             } => {
+                self.save_in_flight = false;
                 self.document.path = path.to_string_lossy().into_owned();
                 self.document.source_identity = Some(identity);
                 self.document.source_baseline_bytes = Some(baseline_bytes);
@@ -3620,7 +3635,7 @@ impl App {
         self.doc_height = 0.0;
         self.laid_for_width = -1.0;
         self.exact_after_edit = true;
-        self.scroll = 0.0;
+        self.scroll = self.document.scroll;
         self.selection = None;
         self.focused_link = None;
         self.focus_destination = None;
@@ -3629,18 +3644,30 @@ impl App {
         self.workspace_search_query = None;
         self.backlink_paths = None;
         self.outline_headings = None;
+        self.pending_workspace_heading = None;
     }
 
     fn open_document_in_tab(&mut self, document: DocumentState) {
+        if self.loading || self.save_in_flight {
+            self.set_notice("espera a que termine la operación actual");
+            return;
+        }
         self.document_request = self.document_request.wrapping_add(1);
+        self.document.scroll = self.scroll;
         let current = std::mem::replace(&mut self.document, document);
         let current_recovery = std::mem::replace(&mut self.recovery, RecoverySession::start().ok());
-        self.inactive_documents.push(current);
-        self.inactive_recoveries.push(current_recovery);
+        self.inactive_documents.push(InactiveDocument {
+            document: current,
+            recovery: current_recovery,
+        });
         self.reset_document_view();
     }
 
     fn switch_document_tab(&mut self, backwards: bool) {
+        if self.loading || self.save_in_flight {
+            self.set_notice("espera a que termine la operación actual antes de cambiar de pestaña");
+            return;
+        }
         if self.inactive_documents.is_empty() {
             self.set_notice("solo hay un documento abierto");
             return;
@@ -3652,11 +3679,13 @@ impl App {
         };
         let next = self.inactive_documents.remove(index);
         self.document_request = self.document_request.wrapping_add(1);
-        let next_recovery = self.inactive_recoveries.remove(index);
-        let current = std::mem::replace(&mut self.document, next);
-        let current_recovery = std::mem::replace(&mut self.recovery, next_recovery);
-        self.inactive_documents.push(current);
-        self.inactive_recoveries.push(current_recovery);
+        self.document.scroll = self.scroll;
+        let current = std::mem::replace(&mut self.document, next.document);
+        let current_recovery = std::mem::replace(&mut self.recovery, next.recovery);
+        self.inactive_documents.push(InactiveDocument {
+            document: current,
+            recovery: current_recovery,
+        });
         self.reset_document_view();
         self.refresh_title();
         if let Some(window) = &self.window {
@@ -3665,18 +3694,21 @@ impl App {
     }
 
     fn close_active_document_tab(&mut self) {
+        if self.loading || self.save_in_flight {
+            self.set_notice("espera a que termine la operación actual antes de cerrar la pestaña");
+            return;
+        }
         if !self.request_close_current() {
             return;
         }
         self.document_request = self.document_request.wrapping_add(1);
-        self.document = self
-            .inactive_documents
-            .pop()
-            .unwrap_or_else(DocumentState::untitled);
-        self.recovery = self
-            .inactive_recoveries
-            .pop()
-            .unwrap_or_else(|| RecoverySession::start().ok());
+        if let Some(next) = self.inactive_documents.pop() {
+            self.document = next.document;
+            self.recovery = next.recovery;
+        } else {
+            self.document = DocumentState::untitled();
+            self.recovery = RecoverySession::start().ok();
+        }
         self.reset_document_view();
         self.set_notice("pestaña cerrada");
         if let Some(window) = &self.window {
@@ -4030,6 +4062,7 @@ impl App {
         let metadata = self.document.source_metadata;
         let revision = self.document.source_editor.revision();
         let proxy = self.proxy.clone();
+        self.save_in_flight = true;
         self.set_notice("guardando de forma atómica");
         thread::spawn(move || {
             let event =
@@ -4061,6 +4094,7 @@ impl App {
         let metadata = self.document.source_metadata;
         let revision = self.document.source_editor.revision();
         let proxy = self.proxy.clone();
+        self.save_in_flight = true;
         self.set_notice("creando documento de forma atómica");
         thread::spawn(move || {
             let event = match save_new_primary(&path, &source, metadata) {
@@ -4244,19 +4278,24 @@ impl App {
     }
 
     fn request_close_all(&mut self) -> bool {
+        if self.loading || self.save_in_flight {
+            self.set_notice("espera a que termine la operación actual antes de cerrar");
+            return false;
+        }
         let dirty_inactive = self
             .inactive_documents
             .iter()
-            .zip(&self.inactive_recoveries)
-            .filter(|(document, _)| document.is_dirty())
+            .filter(|tab| tab.document.is_dirty())
             .collect::<Vec<_>>();
         let dirty_count = dirty_document_count(&self.document, &self.inactive_documents);
         if dirty_count == 0 {
             if let Some(recovery) = &self.recovery {
                 let _ = recovery.clear();
             }
-            for recovery in self.inactive_recoveries.iter().flatten() {
-                let _ = recovery.clear();
+            for tab in &self.inactive_documents {
+                if let Some(recovery) = &tab.recovery {
+                    let _ = recovery.clear();
+                }
             }
             return true;
         }
@@ -4273,18 +4312,16 @@ impl App {
         } else {
             Ok(())
         };
-        let inactive_result = dirty_inactive
-            .into_iter()
-            .try_for_each(|(document, recovery)| {
-                recovery
-                    .as_ref()
-                    .ok_or("recuperación no disponible")
-                    .and_then(|recovery| {
-                        recovery
-                            .write(&document.source)
-                            .map_err(|_| "falló la recuperación")
-                    })
-            });
+        let inactive_result = dirty_inactive.into_iter().try_for_each(|tab| {
+            tab.recovery
+                .as_ref()
+                .ok_or("recuperación no disponible")
+                .and_then(|recovery| {
+                    recovery
+                        .write(&tab.document.source)
+                        .map_err(|_| "falló la recuperación")
+                })
+        });
         if current_result.is_err() || inactive_result.is_err() {
             self.set_notice("no se cerró: no se pudieron conservar todas las recuperaciones");
             return false;
@@ -4306,6 +4343,10 @@ impl App {
     }
 
     fn create_new_document(&mut self) {
+        if self.loading || self.save_in_flight {
+            self.set_notice("espera a que termine la operación actual antes de crear una pestaña");
+            return;
+        }
         self.open_document_in_tab(DocumentState::untitled());
         self.set_notice("documento nuevo · Ctrl+Shift+S para elegir destino");
         if let Some(window) = &self.window {
@@ -4413,7 +4454,7 @@ impl App {
     }
 
     fn open_document_path(&mut self, path: PathBuf) {
-        if self.loading {
+        if self.loading || self.save_in_flight {
             self.set_notice("espera a que termine la apertura actual antes de abrir otra pestaña");
             return;
         }
@@ -6286,10 +6327,11 @@ fn main() {
             },
             blocks: Vec::new(),
             safe_mode: None,
+            scroll: 0.0,
         },
         inactive_documents: Vec::new(),
-        inactive_recoveries: Vec::new(),
         external_check_in_flight: false,
+        save_in_flight: false,
         recovery,
         recovery_privacy_notice_pending,
         last_recovery: Instant::now(),
@@ -6409,7 +6451,18 @@ mod pruebas {
         dirty.source_editor.mark_recovered();
         let clean = DocumentState::untitled();
 
-        assert_eq!(dirty_document_count(&active, &[dirty, clean]), 1);
+        let inactive = [
+            InactiveDocument {
+                document: dirty,
+                recovery: None,
+            },
+            InactiveDocument {
+                document: clean,
+                recovery: None,
+            },
+        ];
+
+        assert_eq!(dirty_document_count(&active, &inactive), 1);
     }
 
     fn aplanar(md: &str) -> Vec<Block> {
