@@ -433,6 +433,31 @@ mod tests {
     }
 
     #[test]
+    fn ediciones_repetidas_con_unicode_conservan_el_historial_y_los_limites() {
+        let mut source = "inicio áéí\nfinal".to_owned();
+        let mut editor = SourceEditor::new();
+        let insertion = source.find('á').expect("el carácter existe");
+        editor.set_cursor(&source, insertion, false).unwrap();
+
+        for _ in 0..64 {
+            assert!(editor.insert(&mut source, "🔐").unwrap());
+        }
+        assert!(source.is_char_boundary(editor.cursor()));
+        assert_eq!(source.matches('🔐').count(), 64);
+
+        for _ in 0..64 {
+            assert!(editor.undo(&mut source).unwrap());
+        }
+        assert_eq!(source, "inicio áéí\nfinal");
+        assert!(!editor.is_dirty());
+
+        for _ in 0..64 {
+            assert!(editor.redo(&mut source).unwrap());
+        }
+        assert_eq!(source.matches('🔐').count(), 64);
+    }
+
+    #[test]
     fn marcar_guardado_distingue_estado_sucio_de_historial() {
         let mut source = "nota".to_owned();
         let mut history = EditHistory::new();
