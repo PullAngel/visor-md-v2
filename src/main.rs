@@ -3191,7 +3191,39 @@ impl ApplicationHandler<AppEvent> for App {
                         ..
                     },
                 ..
+            } if self.mode == DocumentMode::Reading
+                && self.modifiers.control_key()
+                && self.modifiers.shift_key() =>
+            {
+                self.edit_source(|editor, source| editor.redo(source));
+                self.refresh_reading_async("rehaciendo cambio");
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::KeyY),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
             } if self.mode == DocumentMode::Reading && self.modifiers.control_key() => {
+                self.edit_source(|editor, source| editor.redo(source));
+                self.refresh_reading_async("rehaciendo cambio");
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::KeyZ),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } if self.mode == DocumentMode::Reading
+                && self.modifiers.control_key()
+                && !self.modifiers.shift_key() =>
+            {
                 self.edit_source(|editor, source| editor.undo(source));
                 self.refresh_reading_async("deshaciendo cambio");
             }

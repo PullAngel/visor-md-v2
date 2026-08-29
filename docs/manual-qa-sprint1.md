@@ -109,8 +109,8 @@ Registrar antes de comenzar:
   solamente después de un guardado confirmado.
 - Pulsar `F2` otra vez vuelve a lectura y muestra el contenido modificado, sin
   superponer bloques aunque se haya pegado o escrito una cantidad grande de
-  texto. `Ctrl+Z` desde lectura también actualiza la vista y conserva la
-  posibilidad de volver a entrar en edición.
+  texto. `Ctrl+Z`, `Ctrl+Y` y `Ctrl+Shift+Z` desde lectura actualizan la vista
+  y conservan la posibilidad de volver a entrar en edición.
 - Para comprobar un conflicto de guardado, abrir una copia de la fixture,
   editarla en Visor MD, modificarla también con un editor externo y pulsar
   `Ctrl+S`. Confirmar que el archivo externo no se sobrescribe y que el diálogo
