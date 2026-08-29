@@ -116,6 +116,11 @@ exacto del traspaso.
   elegir una copia o recargar solo después de escribir una recuperación local.
 - el título muestra `*` junto al nombre cuando hay cambios sin guardar. Es un
   indicador persistente, independiente de avisos temporales o del modo actual.
+- abrir o crear conserva el documento actual como otra pestaña lógica; se puede
+  recorrer con `Ctrl+PageUp` y `Ctrl+PageDown`, y `Ctrl+W` aplica cierre
+  protegido al documento activo. Cada pestaña conserva fuente, historial,
+  identidad y recuperación propios. El cierre de la ventana comprueba todos los
+  documentos modificados y solo continúa después de preservar cada recuperación.
 
 Evidencia actual en Windows:
 

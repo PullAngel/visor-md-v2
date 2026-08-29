@@ -2443,6 +2443,14 @@ impl DocumentState {
     }
 }
 
+fn dirty_document_count(active: &DocumentState, inactive: &[DocumentState]) -> usize {
+    usize::from(active.is_dirty())
+        + inactive
+            .iter()
+            .filter(|document| document.is_dirty())
+            .count()
+}
+
 struct App {
     started: Instant,
     document: DocumentState,
@@ -2897,7 +2905,7 @@ impl ApplicationHandler<AppEvent> for App {
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         match event {
             WindowEvent::CloseRequested => {
-                if self.request_close() {
+                if self.request_close_all() {
                     self.report();
                     event_loop.exit();
                 }
@@ -3007,7 +3015,7 @@ impl ApplicationHandler<AppEvent> for App {
                         }
                         return;
                     }
-                    if self.inactive_documents.len() > 0
+                    if !self.inactive_documents.is_empty()
                         && let (Some((_, y)), Some(window)) = (self.pointer, &self.window)
                         && y >= window.inner_size().height.saturating_sub(24) as f32
                     {
@@ -3624,6 +3632,7 @@ impl App {
     }
 
     fn open_document_in_tab(&mut self, document: DocumentState) {
+        self.document_request = self.document_request.wrapping_add(1);
         let current = std::mem::replace(&mut self.document, document);
         let current_recovery = std::mem::replace(&mut self.recovery, RecoverySession::start().ok());
         self.inactive_documents.push(current);
@@ -3642,6 +3651,7 @@ impl App {
             0
         };
         let next = self.inactive_documents.remove(index);
+        self.document_request = self.document_request.wrapping_add(1);
         let next_recovery = self.inactive_recoveries.remove(index);
         let current = std::mem::replace(&mut self.document, next);
         let current_recovery = std::mem::replace(&mut self.recovery, next_recovery);
@@ -3655,9 +3665,10 @@ impl App {
     }
 
     fn close_active_document_tab(&mut self) {
-        if !self.request_close() {
+        if !self.request_close_current() {
             return;
         }
+        self.document_request = self.document_request.wrapping_add(1);
         self.document = self
             .inactive_documents
             .pop()
@@ -4201,7 +4212,7 @@ impl App {
     /// Como todavía no existe el chrome de pestañas, la confirmación usa un
     /// diálogo nativo pequeño y conserva una recuperación sin cifrar antes de
     /// permitir abandonar la ventana.
-    fn request_close(&mut self) -> bool {
+    fn request_close_current(&mut self) -> bool {
         if !self.document.source_editor.is_dirty() {
             if let Some(recovery) = &self.recovery {
                 let _ = recovery.clear();
@@ -4223,6 +4234,68 @@ impl App {
             .set_description(
                 "Hay cambios sin guardar. Se conservó una recuperación local sin cifrar.\n\nSí: seguir editando.\nNo: cerrar y conservar la recuperación para restaurarla después.",
             )
+            .set_buttons(MessageButtons::YesNo);
+        let result = if let Some(window) = &self.window {
+            dialog.set_parent(window.as_ref()).show()
+        } else {
+            dialog.show()
+        };
+        matches!(result, MessageDialogResult::No)
+    }
+
+    fn request_close_all(&mut self) -> bool {
+        let dirty_inactive = self
+            .inactive_documents
+            .iter()
+            .zip(&self.inactive_recoveries)
+            .filter(|(document, _)| document.is_dirty())
+            .collect::<Vec<_>>();
+        let dirty_count = dirty_document_count(&self.document, &self.inactive_documents);
+        if dirty_count == 0 {
+            if let Some(recovery) = &self.recovery {
+                let _ = recovery.clear();
+            }
+            for recovery in self.inactive_recoveries.iter().flatten() {
+                let _ = recovery.clear();
+            }
+            return true;
+        }
+
+        let current_result = if self.document.is_dirty() {
+            self.recovery
+                .as_ref()
+                .ok_or("recuperación no disponible")
+                .and_then(|recovery| {
+                    recovery
+                        .write(&self.document.source)
+                        .map_err(|_| "falló la recuperación")
+                })
+        } else {
+            Ok(())
+        };
+        let inactive_result = dirty_inactive
+            .into_iter()
+            .try_for_each(|(document, recovery)| {
+                recovery
+                    .as_ref()
+                    .ok_or("recuperación no disponible")
+                    .and_then(|recovery| {
+                        recovery
+                            .write(&document.source)
+                            .map_err(|_| "falló la recuperación")
+                    })
+            });
+        if current_result.is_err() || inactive_result.is_err() {
+            self.set_notice("no se cerró: no se pudieron conservar todas las recuperaciones");
+            return false;
+        }
+
+        let dialog = MessageDialog::new()
+            .set_level(MessageLevel::Warning)
+            .set_title("Visor MD · documentos sin guardar")
+            .set_description(format!(
+                "Hay {dirty_count} documentos con cambios sin guardar. Se conservaron recuperaciones locales sin cifrar.\n\nSí: seguir editando.\nNo: cerrar y conservar las recuperaciones."
+            ))
             .set_buttons(MessageButtons::YesNo);
         let result = if let Some(window) = &self.window {
             dialog.set_parent(window.as_ref()).show()
@@ -6328,6 +6401,16 @@ fn main() {
 #[cfg(test)]
 mod pruebas {
     use super::*;
+
+    #[test]
+    fn el_cierre_global_cuenta_cambios_en_todas_las_pestanas() {
+        let active = DocumentState::untitled();
+        let mut dirty = DocumentState::untitled();
+        dirty.source_editor.mark_recovered();
+        let clean = DocumentState::untitled();
+
+        assert_eq!(dirty_document_count(&active, &[dirty, clean]), 1);
+    }
 
     fn aplanar(md: &str) -> Vec<Block> {
         parse_blocks(md)

@@ -139,6 +139,11 @@ Registrar antes de comenzar:
   aviso de cambios sin guardar. Elegir seguir editando y comprobar que nada se
   pierde; repetir, elegir cerrar y usar `Ctrl+Shift+R` tras reiniciar para abrir
   la recuperación como documento sin destino.
+- Abrir o crear tres documentos, modificar al menos dos y recorrerlos con
+  `Ctrl+PageUp` y `Ctrl+PageDown`. Confirmar que fuente, undo/redo, título y
+  estado sucio pertenecen al documento correcto. `Ctrl+W` debe proteger solo la
+  pestaña activa; cerrar la ventana debe informar el total de documentos con
+  cambios y no cerrar si alguna recuperación no puede escribirse.
 - Esta comprobación no autoriza guardar: cursor visible, selección por mouse,
   navegación vertical y guardado siguen fuera de esta etapa.
 

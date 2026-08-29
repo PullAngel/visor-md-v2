@@ -234,10 +234,14 @@ sigue siendo una `String`: la migración a un buffer escalable se hará como un
 refactor documentado, sin cambiar el formato ni la semántica de guardado.
 
 `DocumentState` concentra la identidad, fuente, metadatos de preservación,
-editor, modo, bloques renderizables y degradación del documento activo. La
-caché de layout y render sigue perteneciendo a la ventana: se descarta o
-reconstruye al cambiar de documento, en vez de confundirse con datos que deban
-persistir. Esta separación prepara pestañas sin afirmar todavía que ya existan.
+editor, modo, bloques renderizables y degradación de cada documento. La
+aplicación conserva varios estados documentales y rota con ellos una sesión de
+recuperación independiente. La caché de layout y render sigue perteneciendo a
+la ventana: se descarta o reconstruye al cambiar de documento, en vez de
+confundirse con datos persistentes. El cambio de documento invalida resultados
+de render anteriores mediante una generación monotónica. Falta trasladar el
+estado visual, como scroll y foco, a cada pestaña y reemplazar el selector
+temporal por una barra visible.
 
 Responsabilidades:
 
@@ -264,9 +268,10 @@ Es una operación separada y auditable:
 No hay autoguardado por defecto. La recuperación de sesión usa almacenamiento
 separado y nunca se presenta como guardado definitivo.
 
-La recuperación local actual escribe snapshots limitados de una sesión activa
-en el perfil del usuario, fuera de documentos y bóvedas. La restauración es una
-acción explícita que crea un documento sin destino y marcado como modificado.
+La recuperación local actual escribe snapshots limitados y separados por
+pestaña en el perfil del usuario, fuera de documentos y bóvedas. El cierre de
+la ventana no continúa si no puede preservar todos los documentos modificados.
+La restauración es una acción explícita que crea un documento sin destino y marcado como modificado.
 La primera sesión muestra un aviso claro de que esa copia es texto sin cifrar;
 las sesiones propias de más de catorce días se eliminan de forma limitada. Falta
 configuración persistente y QA de cierre inesperado.

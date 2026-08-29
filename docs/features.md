@@ -43,8 +43,8 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Guardado atómico | Parcial | Sin corrupción ante fallo y conflictos probados; falta QA multiplataforma |
 | Preservar sintaxis desconocida | Parcial | Fuente no se reserializa; falta property testing de round-trip |
 | Detectar cambios externos | Parcial | Conflicto visible al guardar y al recuperar foco; falta QA multiplataforma |
-| Crear documento | Parcial | Flujo simple y seguro; falta pestañas |
-| Varios documentos y pestañas | Planificado | Estados sucio, fijado y cierre seguro |
+| Crear documento | Parcial | Crea una pestaña nueva sin reemplazar el documento activo; falta diálogo visual de destino |
+| Varios documentos y pestañas | Parcial | Estado, historial y recuperación separados; cambio por teclado, cierre individual y cierre global protegido; falta barra visual y estado de vista propio |
 | Menú contextual | Parcial | Copia y pegado explícito según modo; faltan acciones de aplicación |
 | Paleta de comandos | Planificado | Descubrible y operable por teclado |
 | `.txt` y otros textos inertes | Parcial | Extensiones no Markdown se muestran como texto inerte; falta QA y reconocimiento UX |
