@@ -143,7 +143,8 @@ Registrar antes de comenzar:
   `Ctrl+PageUp` y `Ctrl+PageDown`. Confirmar que fuente, undo/redo, título y
   estado sucio pertenecen al documento correcto y que cada pestaña de la barra
   inferior abre el archivo indicado al hacer clic. Verificar también que el
-  scroll vuelve a su posición anterior. `Ctrl+W` debe proteger solo la
+  scroll vuelve a su posición anterior. La `x` de cada pestaña y `Ctrl+W` deben
+  proteger solo la
   pestaña activa; cerrar la ventana debe informar el total de documentos con
   cambios y no cerrar si alguna recuperación no puede escribirse.
 - Pulsar `Ctrl+Shift+P`, recorrer las acciones con flechas o Tab y ejecutar con

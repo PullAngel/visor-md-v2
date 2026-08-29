@@ -104,6 +104,19 @@ fn tab_index_at(
     (index < count).then_some(index)
 }
 
+fn tab_close_index_at(
+    x: f32,
+    y: f32,
+    window_width: f32,
+    window_height: f32,
+    count: usize,
+) -> Option<usize> {
+    let index = tab_index_at(x, y, window_width, window_height, count)?;
+    let width = tab_width(window_width, count);
+    let local_x = x - index as f32 * width;
+    (local_x >= (width - 26.0).max(0.0)).then_some(index)
+}
+
 fn adjacent_tab_id(order: &[u64], current: u64, backwards: bool) -> Option<u64> {
     if order.len() < 2 {
         return None;
@@ -3153,6 +3166,21 @@ impl ApplicationHandler<AppEvent> for App {
                     }
                     if let (Some((x, y)), Some(window)) = (self.pointer, &self.window) {
                         let size = window.inner_size();
+                        if let Some(index) = tab_close_index_at(
+                            x,
+                            y,
+                            size.width as f32,
+                            size.height as f32,
+                            self.tab_order.len(),
+                        ) && let Some(document_id) = self.tab_order.get(index).copied()
+                        {
+                            self.activate_document_tab(document_id);
+                            if self.document.id == document_id {
+                                self.close_active_document_tab();
+                            }
+                            self.selecting = false;
+                            return;
+                        }
                         if let Some(index) = tab_index_at(
                             x,
                             y,
@@ -5995,7 +6023,7 @@ impl App {
             "sin carpeta"
         };
         let tab_width = tab_width(w.get() as f32, self.tab_order.len());
-        let tab_label_chars = (tab_width / 7.5).floor().max(4.0) as usize;
+        let tab_label_chars = ((tab_width - 32.0).max(30.0) / 7.5).floor().max(4.0) as usize;
         let tab_descriptors = self
             .tab_order
             .iter()
@@ -6377,6 +6405,26 @@ impl App {
                         draw_glyph_run(pixmap, scale_cx, glyphs, &run, x + 10.0, status_y + 7.0);
                     }
                 }
+            }
+            let close_x = x + tab_width - 14.0;
+            let close_y = status_y + STATUS_HEIGHT / 2.0;
+            let mut close_path = tiny_skia::PathBuilder::new();
+            close_path.move_to(close_x - 4.0, close_y - 4.0);
+            close_path.line_to(close_x + 4.0, close_y + 4.0);
+            close_path.move_to(close_x + 4.0, close_y - 4.0);
+            close_path.line_to(close_x - 4.0, close_y + 4.0);
+            if let Some(close_path) = close_path.finish() {
+                let stroke = tiny_skia::Stroke {
+                    width: 1.4,
+                    ..Default::default()
+                };
+                pixmap.stroke_path(
+                    &close_path,
+                    &dim_paint,
+                    &stroke,
+                    Transform::identity(),
+                    None,
+                );
             }
         }
         let status_x = w.get() as f32 - status_layout.width() - 12.0;
@@ -6778,6 +6826,8 @@ mod pruebas {
         assert_eq!(tab_index_at(410.0, 580.0, 600.0, 600.0, 3), Some(2));
         assert_eq!(tab_index_at(10.0, 500.0, 600.0, 600.0, 3), None);
         assert_eq!(tab_index_at(590.0, 580.0, 600.0, 600.0, 2), None);
+        assert_eq!(tab_close_index_at(190.0, 580.0, 600.0, 600.0, 3), Some(0));
+        assert_eq!(tab_close_index_at(170.0, 580.0, 600.0, 600.0, 3), None);
     }
 
     #[test]
