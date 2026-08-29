@@ -100,12 +100,13 @@ autoridad de escritura.
 ### Orden inmediato
 
 El trabajo activo mantiene abiertos los gates humanos del Sprint A mientras
-avanza la frontera documental y el editor source-first del Sprint B. La
+construye la aplicación diaria en este orden: documento fiel primero; luego
+pestañas, acciones y cierre protegido; después paneles de carpeta y búsqueda;
+y finalmente la compatibilidad esencial de Obsidian y el pulido de lectura. La
 validación visual de tipografía y allowlist HTML se cierra antes de declarar A
-terminado; la carga de recursos secundarios sigue esperando VFS. El Sprint B ya
-inició sus contratos internos de guardado y VFS, sin esperar esa evidencia
-manual: los resultados se incorporan antes de declarar cualquier milestone
-cerrado.
+terminado, pero no paraliza estas tareas independientes. Los refactors internos
+solo se adelantan cuando desbloquean una de esas capacidades o reducen un riesgo
+concreto de integridad, seguridad o estabilidad.
 
 ## Sprint 0: viabilidad nativa
 

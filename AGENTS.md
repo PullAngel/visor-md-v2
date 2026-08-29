@@ -97,6 +97,30 @@ describan lo evidente. El README puede explicar el flujo profesional asistido
 por IA y la dirección humana del producto; evitar repetir ese metadiscurso en el
 resto del repositorio.
 
+Las actualizaciones al propietario se orientan al producto: qué puede hacer una
+persona mejor, qué riesgo se redujo o qué parte del plan quedó más cerca. No
+convertir commits, hashes, herramientas, dependencias o refactors internos en
+el tema central de una actualización. Mencionarlos solo cuando permitan
+recuperar un estado, expliquen un riesgo, una medición, una decisión difícil o
+un cambio relevante de presupuesto.
+
+## Brújula de ejecución
+
+Para elegir entre varias tareas aprobadas, priorizar el siguiente resultado de
+uso diario que aún no tenga una base segura y comprobable:
+
+1. abrir, leer, editar y guardar sin pérdida ni comportamiento implícito;
+2. trabajar con varios documentos, acciones descubribles y cierre protegido;
+3. recorrer, buscar y navegar una carpeta o bóveda existente sin modificarla;
+4. compatibilidad esencial de Obsidian que conserve la fuente y respete VFS;
+5. pulido de lectura, accesibilidad, rendimiento y distribución verificable.
+
+Las dependencias y los refactors son medios, no objetivos. Solo darles
+prioridad cuando desbloqueen directamente uno de estos resultados o corrijan un
+riesgo de seguridad, integridad o estabilidad. No presentar una prueba aislada
+o una preparación técnica como avance sustancial si todavía no cambia una
+capacidad real o una propiedad crítica demostrable.
+
 ## Invariantes permanentes
 
 ### Documento y producto
