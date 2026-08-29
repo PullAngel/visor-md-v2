@@ -2423,6 +2423,26 @@ struct DocumentState {
     safe_mode: Option<Degradation>,
 }
 
+impl DocumentState {
+    fn untitled() -> Self {
+        Self {
+            path: "sin título.md".to_string(),
+            source: String::new(),
+            source_metadata: TextMetadata::default(),
+            source_identity: None,
+            source_baseline_bytes: None,
+            source_editor: SourceEditor::new(),
+            mode: DocumentMode::SourceEditing,
+            blocks: Vec::new(),
+            safe_mode: None,
+        }
+    }
+
+    fn is_dirty(&self) -> bool {
+        self.source_editor.is_dirty()
+    }
+}
+
 struct App {
     started: Instant,
     document: DocumentState,
@@ -4084,18 +4104,11 @@ impl App {
     }
 
     fn create_new_document(&mut self) {
-        if self.document.source_editor.is_dirty() {
+        if self.document.is_dirty() {
             self.set_notice("guarda o descarta los cambios antes de crear otro documento");
             return;
         }
-        self.document.path = "sin título.md".to_string();
-        self.document.source.clear();
-        self.document.source_metadata = TextMetadata::default();
-        self.document.source_identity = None;
-        self.document.source_baseline_bytes = None;
-        self.document.source_editor = SourceEditor::new();
-        self.document.mode = DocumentMode::SourceEditing;
-        self.document.blocks.clear();
+        self.document = DocumentState::untitled();
         self.slots.clear();
         self.live.clear();
         self.doc_height = 0.0;
