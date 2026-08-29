@@ -167,6 +167,10 @@ Registrar antes de comenzar:
   debe inventar contenido si no hay selección; Pegar solo aparece en edición.
   Buscar, alternar modo, Guardar y Guardar como deben coincidir con la paleta y
   sus atajos.
+- Crear un documento vacío y pulsar `Ctrl+S`: debe abrir Guardar como. Con otra
+  pestaña modificada y sin guardar, abrir un wikilink, backlink o nota de la
+  carpeta; el destino debe aparecer en una pestaña nueva y la edición anterior
+  debe conservar su `*`, fuente e historial.
 - Esta comprobación no autoriza guardar: cursor visible, selección por mouse,
   navegación vertical y guardado siguen fuera de esta etapa.
 

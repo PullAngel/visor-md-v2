@@ -4477,17 +4477,17 @@ impl App {
     }
 
     fn save_current_document(&mut self) {
-        if !self.document.source_editor.is_dirty() {
-            self.set_notice("no hay cambios para guardar");
-            return;
-        }
         let (Some(identity), Some(baseline_bytes)) = (
             self.document.source_identity.clone(),
             self.document.source_baseline_bytes.clone(),
         ) else {
-            self.set_notice("este documento todavía no tiene un destino para guardar");
+            self.save_as_current_document();
             return;
         };
+        if !self.document.source_editor.is_dirty() {
+            self.set_notice("no hay cambios para guardar");
+            return;
+        }
         let path = self.document.path.clone();
         let source = self.document.source.clone();
         let metadata = self.document.source_metadata;
@@ -5123,10 +5123,6 @@ impl App {
         }
         match classify_link_destination(&destination.1) {
             LinkDestinationKind::RelativeFile => {
-                if self.document.source_editor.is_dirty() {
-                    self.set_notice("guarda o descarta los cambios antes de abrir otro documento");
-                    return;
-                }
                 let resolved = self
                     .workspace
                     .as_ref()
@@ -5178,10 +5174,6 @@ impl App {
             } else {
                 self.set_notice("el enlace de bóveda no declara una nota ni un encabezado");
             }
-            return;
-        }
-        if self.document.source_editor.is_dirty() {
-            self.set_notice("guarda o descarta los cambios antes de abrir otro documento");
             return;
         }
         let Some((root, index)) = self.workspace.as_ref() else {
@@ -5254,10 +5246,6 @@ impl App {
     }
 
     fn open_backlink_match(&mut self) {
-        if self.document.source_editor.is_dirty() {
-            self.set_notice("guarda o descarta los cambios antes de abrir otro documento");
-            return;
-        }
         let Some(paths) = &self.backlink_paths else {
             return;
         };
@@ -5452,10 +5440,6 @@ impl App {
     }
 
     fn open_workspace_path_match(&mut self) {
-        if self.document.source_editor.is_dirty() {
-            self.set_notice("guarda o descarta los cambios antes de abrir otra nota");
-            return;
-        }
         let Some(paths) = &self.workspace_paths else {
             return;
         };
@@ -5533,10 +5517,6 @@ impl App {
     }
 
     fn open_workspace_search_match(&mut self) {
-        if self.document.source_editor.is_dirty() {
-            self.set_notice("guarda o descarta los cambios antes de abrir otra nota");
-            return;
-        }
         let matches = self.workspace_search_matches();
         let Some(relative_path) = matches
             .get(self.workspace_search_match % matches.len().max(1))
