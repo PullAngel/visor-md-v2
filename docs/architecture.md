@@ -275,7 +275,9 @@ pestaña en el perfil del usuario, fuera de documentos y bóvedas. El cierre de
 la ventana no continúa si no puede preservar todos los documentos modificados.
 Las escrituras se serializan y versionan: una tarea anterior no puede reemplazar
 una recuperación más nueva ni recrearla después de un guardado que la eliminó.
-La restauración es una acción explícita que crea un documento sin destino y marcado como modificado.
+La restauración es una acción explícita que abre una pestaña nueva, sin destino
+y marcada como modificada; nunca reemplaza el documento activo para presentar
+una recuperación.
 La primera sesión muestra un aviso claro de que esa copia es texto sin cifrar;
 las sesiones propias de más de catorce días se eliminan de forma limitada. Falta
 configuración persistente y QA de cierre inesperado.

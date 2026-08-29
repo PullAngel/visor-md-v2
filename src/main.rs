@@ -2588,6 +2588,17 @@ impl DocumentState {
     }
 }
 
+fn recovered_document(source: String) -> Result<DocumentState, &'static str> {
+    let index = SourceIndex::new(&source);
+    let blocks = safe_source_blocks(&source, &index)?;
+    let mut recovered = DocumentState::untitled();
+    recovered.path = "recuperación sin guardar.md".to_string();
+    recovered.source = source;
+    recovered.source_editor.mark_recovered();
+    recovered.blocks = blocks;
+    Ok(recovered)
+}
+
 struct InactiveDocument {
     document: DocumentState,
     recovery: Option<RecoverySession>,
@@ -4712,24 +4723,20 @@ impl App {
     }
 
     fn restore_latest_recovery(&mut self) {
-        if self.document.source_editor.is_dirty() {
-            self.set_notice("guarda o descarta los cambios antes de restaurar una recuperación");
+        if self.loading || self.save_in_flight {
+            self.set_notice("espera a que termine la operación actual antes de recuperar");
             return;
         }
         match RecoverySession::latest_pending(DEFAULT_DOCUMENT_LIMIT_BYTES) {
             Ok(Some(source)) => {
-                self.document.path = "recuperación sin guardar.md".to_string();
-                self.document.source = source;
-                self.document.source_metadata = TextMetadata::default();
-                self.document.source_identity = None;
-                self.document.source_baseline_bytes = None;
-                self.document.source_editor = SourceEditor::new();
-                self.document.source_editor.mark_recovered();
-                self.document.mode = DocumentMode::SourceEditing;
-                if let Err(error) = self.refresh_source_blocks() {
-                    self.set_notice(&format!("no se pudo mostrar la recuperación: {error}"));
-                    return;
-                }
+                let recovered = match recovered_document(source) {
+                    Ok(recovered) => recovered,
+                    Err(error) => {
+                        self.set_notice(&format!("no se pudo mostrar la recuperación: {error}"));
+                        return;
+                    }
+                };
+                self.open_document_in_tab(recovered);
                 self.set_notice("recuperación abierta como documento sin guardar");
             }
             Ok(None) => self.set_notice("no hay recuperaciones locales disponibles"),
@@ -6930,6 +6937,17 @@ mod pruebas {
         ];
 
         assert_eq!(dirty_document_count(&active, &inactive), 1);
+    }
+
+    #[test]
+    fn una_recuperacion_se_prepara_como_documento_nuevo_y_modificado() {
+        let recovered = recovered_document("# recuperado\n\ntexto".to_string()).unwrap();
+
+        assert_eq!(recovered.path, "recuperación sin guardar.md");
+        assert!(recovered.is_dirty());
+        assert_eq!(recovered.mode, DocumentMode::SourceEditing);
+        assert!(!recovered.blocks.is_empty());
+        assert!(recovered.source_identity.is_none());
     }
 
     fn aplanar(md: &str) -> Vec<Block> {
