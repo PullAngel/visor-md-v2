@@ -161,7 +161,8 @@ Registrar antes de comenzar:
   afirmar que guardó una copia.
 - Abrir Índice, Notas y Backlinks desde la paleta. Confirmar que el panel muestra
   varias filas, que flechas conservan visible la elección en listas largas,
-  Enter navega al destino correcto y Escape devuelve todo el ancho a la lectura.
+  Enter o un clic navegan al destino correcto y Escape devuelve todo el ancho
+  a la lectura. Repetir un par de acciones de la paleta mediante clic.
 - Esta comprobación no autoriza guardar: cursor visible, selección por mouse,
   navegación vertical y guardado siguen fuera de esta etapa.
 

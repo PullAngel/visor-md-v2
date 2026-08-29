@@ -82,6 +82,11 @@ const MAX_SEARCH_QUERY_CHARS: usize = 256;
 const MAX_OVERLAY_LABEL_CHARS: usize = 180;
 const STATUS_HEIGHT: f32 = 28.0;
 const MAX_TAB_WIDTH: f32 = 220.0;
+const PANEL_X: f32 = MARGIN;
+const PANEL_Y: f32 = 44.0;
+const PANEL_WIDTH: f32 = 420.0;
+const PANEL_ROW_HEIGHT: f32 = 28.0;
+const PANEL_CAPACITY: usize = 9;
 static NEXT_DOCUMENT_ID: AtomicU64 = AtomicU64::new(1);
 
 fn tab_width(window_width: f32, tab_count: usize) -> f32 {
@@ -141,6 +146,16 @@ fn panel_window(total: usize, selected: usize, capacity: usize) -> std::ops::Ran
         .saturating_sub(capacity / 2)
         .min(total.saturating_sub(capacity));
     start..(start + capacity.min(total))
+}
+
+fn panel_item_at(x: f32, y: f32, total: usize, selected: usize) -> Option<usize> {
+    if x < PANEL_X || x >= PANEL_X + PANEL_WIDTH || y < PANEL_Y + PANEL_ROW_HEIGHT {
+        return None;
+    }
+    let range = panel_window(total, selected, PANEL_CAPACITY);
+    let visible_row = ((y - PANEL_Y) / PANEL_ROW_HEIGHT) as usize;
+    let item_offset = visible_row.checked_sub(1)?;
+    (item_offset < range.len()).then_some(range.start + item_offset)
 }
 
 fn tab_label(path: &str, dirty: bool, max_chars: usize) -> String {
@@ -3193,6 +3208,12 @@ impl ApplicationHandler<AppEvent> for App {
                         }
                         return;
                     }
+                    if let Some((x, y)) = self.pointer
+                        && self.activate_panel_at(x, y)
+                    {
+                        self.selecting = false;
+                        return;
+                    }
                     if let (Some((x, y)), Some(window)) = (self.pointer, &self.window) {
                         let size = window.inner_size();
                         if let Some(index) = tab_close_index_at(
@@ -3947,6 +3968,35 @@ impl App {
         if let Some(window) = &self.window {
             window.request_redraw();
         }
+    }
+
+    fn activate_panel_at(&mut self, x: f32, y: f32) -> bool {
+        if let Some(selected) = self.command_palette {
+            if let Some(index) = panel_item_at(x, y, APP_ACTIONS.len(), selected) {
+                self.command_palette = None;
+                self.perform_action(APP_ACTIONS[index]);
+                return true;
+            }
+        } else if let Some(paths) = &self.workspace_paths {
+            if let Some(index) = panel_item_at(x, y, paths.len(), self.workspace_path_match) {
+                self.workspace_path_match = index;
+                self.open_workspace_path_match();
+                return true;
+            }
+        } else if let Some(paths) = &self.backlink_paths {
+            if let Some(index) = panel_item_at(x, y, paths.len(), self.backlink_match) {
+                self.backlink_match = index;
+                self.open_backlink_match();
+                return true;
+            }
+        } else if let Some(headings) = &self.outline_headings
+            && let Some(index) = panel_item_at(x, y, headings.len(), self.outline_match)
+        {
+            self.outline_match = index;
+            self.open_outline_match();
+            return true;
+        }
+        false
     }
 
     fn reset_document_view(&mut self) {
@@ -5270,32 +5320,34 @@ impl App {
             PhysicalKey::Code(KeyCode::ArrowUp) if count > 0 => {
                 self.outline_match = (self.outline_match + count - 1) % count;
             }
-            PhysicalKey::Code(KeyCode::Enter) if count > 0 => {
-                let heading = self
-                    .outline_headings
-                    .as_ref()
-                    .and_then(|headings| headings.get(self.outline_match % headings.len()))
-                    .map(|(block, _)| *block);
-                if let Some(block) = heading
-                    && let (Some(slot), Some(window)) = (self.slots.get(block), &self.window)
-                {
-                    self.scroll = slot.y.min(max_scroll(
-                        self.doc_height,
-                        window.inner_size().height as f32,
-                    ));
-                    self.selection = Some(DocumentSelection::collapsed(BlockCursor {
-                        block,
-                        offset: 0,
-                    }));
-                }
-                self.outline_headings = None;
-                self.set_notice("encabezado enfocado");
-            }
+            PhysicalKey::Code(KeyCode::Enter) if count > 0 => self.open_outline_match(),
             _ => {}
         }
         if let Some(window) = &self.window {
             window.request_redraw();
         }
+    }
+
+    fn open_outline_match(&mut self) {
+        let heading = self
+            .outline_headings
+            .as_ref()
+            .and_then(|headings| headings.get(self.outline_match % headings.len()))
+            .map(|(block, _)| *block);
+        if let Some(block) = heading
+            && let (Some(slot), Some(window)) = (self.slots.get(block), &self.window)
+        {
+            self.scroll = slot.y.min(max_scroll(
+                self.doc_height,
+                window.inner_size().height as f32,
+            ));
+            self.selection = Some(DocumentSelection::collapsed(BlockCursor {
+                block,
+                offset: 0,
+            }));
+        }
+        self.outline_headings = None;
+        self.set_notice("encabezado enfocado");
     }
 
     fn scroll_to_heading(&mut self, heading: &str) {
@@ -6024,9 +6076,20 @@ impl App {
             let label = abbreviated_label(&label, MAX_OVERLAY_LABEL_CHARS);
             build_menu_layout(&label, &mut self.font_cx, &mut self.layout_cx, self.palette)
         });
-        let navigation_panel_rows = if let Some(paths) = self.workspace_paths.as_ref() {
+        let navigation_panel_rows = if let Some(selected) = self.command_palette {
+            let selected = selected % APP_ACTIONS.len();
+            let range = panel_window(APP_ACTIONS.len(), selected, PANEL_CAPACITY);
+            let mut rows = vec![(false, "Acciones".to_string())];
+            rows.extend(range.map(|index| {
+                (
+                    index == selected,
+                    abbreviated_label(APP_ACTIONS[index].label(), 48),
+                )
+            }));
+            Some(rows)
+        } else if let Some(paths) = self.workspace_paths.as_ref() {
             let selected = self.workspace_path_match % paths.len().max(1);
-            let range = panel_window(paths.len(), selected, 9);
+            let range = panel_window(paths.len(), selected, PANEL_CAPACITY);
             let mut rows = vec![(false, format!("Notas · {} resultados", paths.len()))];
             rows.extend(range.map(|index| {
                 (
@@ -6037,7 +6100,7 @@ impl App {
             Some(rows)
         } else if let Some(paths) = self.backlink_paths.as_ref() {
             let selected = self.backlink_match % paths.len().max(1);
-            let range = panel_window(paths.len(), selected, 9);
+            let range = panel_window(paths.len(), selected, PANEL_CAPACITY);
             let mut rows = vec![(false, format!("Backlinks · {} resultados", paths.len()))];
             rows.extend(range.map(|index| {
                 (
@@ -6048,7 +6111,7 @@ impl App {
             Some(rows)
         } else if let Some(headings) = self.outline_headings.as_ref() {
             let selected = self.outline_match % headings.len().max(1);
-            let range = panel_window(headings.len(), selected, 9);
+            let range = panel_window(headings.len(), selected, PANEL_CAPACITY);
             let mut rows = vec![(false, format!("Índice · {} encabezados", headings.len()))];
             rows.extend(
                 range.map(|index| (index == selected, abbreviated_label(&headings[index].1, 48))),
@@ -6063,21 +6126,6 @@ impl App {
                     build_menu_layout(label, &mut self.font_cx, &mut self.layout_cx, self.palette)
                 })
                 .collect::<Vec<_>>()
-        });
-        let command_palette_overlay = self.command_palette.map(|selected| {
-            let selected = selected % APP_ACTIONS.len();
-            let label = format!(
-                "Acciones: {}/{} · {}",
-                selected + 1,
-                APP_ACTIONS.len(),
-                APP_ACTIONS[selected].label()
-            );
-            build_menu_layout(
-                &abbreviated_label(&label, MAX_OVERLAY_LABEL_CHARS),
-                &mut self.font_cx,
-                &mut self.layout_cx,
-                self.palette,
-            )
         });
         let menu_layouts = menu.map(|_| {
             context_actions(self.document.mode)
@@ -6532,10 +6580,7 @@ impl App {
             }
         }
 
-        if let Some(layout) = command_palette_overlay
-            .or(search_overlay)
-            .or(workspace_search_overlay)
-        {
+        if let Some(layout) = search_overlay.or(workspace_search_overlay) {
             let overlay_width = (layout.width() + 24.0).min(w.get() as f32 - MARGIN * 2.0);
             if let Some(rect) = Rect::from_xywh(MARGIN, 44.0, overlay_width, 28.0) {
                 pixmap.fill_rect(rect, &paint, Transform::identity(), None);
@@ -6554,15 +6599,10 @@ impl App {
             navigation_panel_rows.as_ref(),
             navigation_panel_layouts.as_ref(),
         ) {
-            let panel_x = MARGIN;
-            let panel_y = 44.0;
-            let panel_width = layouts
-                .iter()
-                .map(Layout::width)
-                .fold(240.0_f32, f32::max)
-                .min((w.get() as f32 - MARGIN * 2.0).max(120.0))
-                + 24.0;
-            let row_height = 28.0;
+            let panel_x = PANEL_X;
+            let panel_y = PANEL_Y;
+            let panel_width = PANEL_WIDTH.min((w.get() as f32 - MARGIN * 2.0).max(120.0));
+            let row_height = PANEL_ROW_HEIGHT;
             let panel_height = row_height * rows.len() as f32 + 8.0;
             if let Some(rect) = Rect::from_xywh(panel_x, panel_y, panel_width, panel_height) {
                 pixmap.fill_rect(rect, &paint, Transform::identity(), None);
@@ -6995,6 +7035,10 @@ mod pruebas {
         assert_eq!(panel_window(30, 29, 9), 21..30);
         assert_eq!(panel_window(3, 2, 9), 0..3);
         assert_eq!(panel_window(0, 0, 9), 0..0);
+        assert_eq!(panel_item_at(60.0, 80.0, 30, 15), Some(11));
+        assert_eq!(panel_item_at(60.0, 108.0, 30, 15), Some(12));
+        assert_eq!(panel_item_at(20.0, 80.0, 30, 15), None);
+        assert_eq!(panel_item_at(60.0, 50.0, 30, 15), None);
     }
 
     #[test]
