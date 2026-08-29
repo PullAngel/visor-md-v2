@@ -5611,8 +5611,9 @@ impl App {
         };
         let status_layout = build_menu_layout(
             &format!(
-                "{document_mode_label} · {document_state_label} · {} pestañas · {workspace_state_label}",
-                self.inactive_documents.len() + 1
+                "{} · {document_mode_label} · {document_state_label} · {} pestañas · {workspace_state_label}",
+                abbreviated_label(&self.document.path, 36),
+                self.inactive_documents.len() + 1,
             ),
             &mut self.font_cx,
             &mut self.layout_cx,
