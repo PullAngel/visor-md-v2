@@ -1,8 +1,9 @@
 // Visor MD v2
 //
-// Nucleo nativo en recuperacion. Abre un .md, lo parsea con comrak, lo maqueta
-// con parley y lo dibuja con tiny-skia sobre una ventana winit + softbuffer.
-// Todavía no tiene edición ni chrome de aplicación completo.
+// Núcleo nativo. Abre un .md, lo parsea con comrak, lo maqueta con parley y lo
+// dibuja con tiny-skia sobre una ventana winit + softbuffer. Incluye edición
+// source-first, guardado fiel y workspace acotado; el chrome con pestañas y
+// paneles sigue pendiente.
 //
 // Lo que se mide con esto va a docs/budget.md. El criterio de salida del
 // Sprint 0 esta en docs/roadmap.md.
