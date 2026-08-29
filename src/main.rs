@@ -75,6 +75,26 @@ const CONTEXT_MENU_ROW_HEIGHT: f32 = 34.0;
 const CONTEXT_MENU_PADDING: f32 = 8.0;
 const CODE_COPY_WIDTH: f32 = 60.0;
 const CODE_COPY_HEIGHT: f32 = 22.0;
+const MAX_SEARCH_QUERY_CHARS: usize = 256;
+const MAX_OVERLAY_LABEL_CHARS: usize = 180;
+
+/// Los controles efímeros no necesitan retener texto ilimitado. El límite se
+/// aplica por caracteres para no cortar UTF-8 y solo reduce la entrada de la
+/// interfaz, nunca el documento ni el índice de workspace.
+fn append_limited_text(destination: &mut String, text: &str, limit: usize) {
+    let remaining = limit.saturating_sub(destination.chars().count());
+    destination.extend(text.chars().take(remaining));
+}
+
+fn abbreviated_label(text: &str, limit: usize) -> String {
+    let mut chars = text.chars();
+    let abbreviated: String = chars.by_ref().take(limit).collect();
+    if chars.next().is_some() {
+        format!("{abbreviated}…")
+    } else {
+        abbreviated
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ContextAction {
@@ -4514,7 +4534,7 @@ impl App {
             return;
         }
         if let Some(query) = &mut self.workspace_search_query {
-            query.push_str(text);
+            append_limited_text(query, text, MAX_SEARCH_QUERY_CHARS);
             self.workspace_search_match = 0;
         }
     }
@@ -4604,7 +4624,7 @@ impl App {
             return;
         }
         if let Some(query) = &mut self.search_query {
-            query.push_str(text);
+            append_limited_text(query, text, MAX_SEARCH_QUERY_CHARS);
             self.search_match = 0;
             self.focus_search_match(0);
         }
@@ -5071,6 +5091,7 @@ impl App {
             } else {
                 format!("Buscar: {query} · {matches} resultados")
             };
+            let label = abbreviated_label(&label, MAX_OVERLAY_LABEL_CHARS);
             build_menu_layout(&label, &mut self.font_cx, &mut self.layout_cx, self.palette)
         });
         let workspace_search_query = self.workspace_search_query.clone();
@@ -5089,6 +5110,7 @@ impl App {
                     selected.display()
                 )
             };
+            let label = abbreviated_label(&label, MAX_OVERLAY_LABEL_CHARS);
             build_menu_layout(&label, &mut self.font_cx, &mut self.layout_cx, self.palette)
         });
         let backlink_overlay = self.backlink_paths.as_ref().and_then(|paths| {
@@ -5099,6 +5121,7 @@ impl App {
                 paths.len(),
                 selected.display()
             );
+            let label = abbreviated_label(&label, MAX_OVERLAY_LABEL_CHARS);
             Some(build_menu_layout(
                 &label,
                 &mut self.font_cx,
@@ -6536,6 +6559,15 @@ con dos lineas
         assert!(is_current_view_result(7, 7, 12, 12));
         assert!(!is_current_view_result(6, 7, 12, 12));
         assert!(!is_current_view_result(7, 7, 11, 12));
+    }
+
+    #[test]
+    fn los_controles_efimeros_acotan_texto_sin_partir_unicode() {
+        let mut query = "á".to_string();
+        append_limited_text(&mut query, "éí", 2);
+        assert_eq!(query, "áé");
+        assert_eq!(abbreviated_label("áéí", 2), "áé…");
+        assert_eq!(abbreviated_label("áé", 2), "áé");
     }
 
     /// Casos pequeños y trazables que complementan la fixture de lectura. No
