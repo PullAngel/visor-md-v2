@@ -53,8 +53,8 @@ pub(crate) struct WikiLink {
 }
 
 #[derive(Clone, Debug)]
-// La UI de workspace todavía no expone búsqueda, encabezados ni backlinks.
-// Estos campos forman parte del índice ya validado y se usan en sus pruebas.
+// La UI usa este índice para búsqueda y backlinks por teclado. El árbol y los
+// paneles plegables todavía son una capa posterior sobre el mismo modelo.
 pub(crate) struct WorkspaceNote {
     pub(crate) relative_path: PathBuf,
     pub(crate) title: String,
@@ -133,9 +133,6 @@ impl WorkspaceIndex {
     /// Calcula backlinks hacia una nota concreta usando la misma resolución
     /// conservadora que la navegación. Un wikilink ambiguo no se atribuye a
     /// ninguna de sus posibles notas.
-    // El panel se conecta junto con la UI de workspace; las pruebas ejercitan
-    // esta consulta desde el modelo antes de que exista esa superficie.
-    #[allow(dead_code)]
     pub(crate) fn backlinks_to(&self, target: &WorkspaceNote) -> Vec<&WorkspaceNote> {
         self.notes
             .iter()
@@ -151,8 +148,6 @@ impl WorkspaceIndex {
             .collect()
     }
 
-    // La búsqueda se conecta junto con la UI de workspace.
-    #[allow(dead_code)]
     pub(crate) fn search(&self, query: &str) -> Vec<&WorkspaceNote> {
         let query = query.trim().to_lowercase();
         if query.is_empty() {
