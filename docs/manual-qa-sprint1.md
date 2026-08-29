@@ -73,6 +73,12 @@ Registrar antes de comenzar:
   `Ctrl+Shift+B`. Debe verse la ruta del backlink seleccionado; flechas cambia
   la selección, Escape no abre nada y Enter abre solo una nota dentro de la
   carpeta autorizada.
+
+## Índice del documento
+
+- Con un documento que tenga encabezados de varios niveles, `Ctrl+Shift+L`
+  muestra el encabezado actual de la lista; las flechas cambian la selección,
+  Enter desplaza la lectura al encabezado y Escape no cambia la posición.
 - Texto, enlaces, decoración y casillas conservan contraste suficiente.
 - La sensación de scroll es estable, sin saltos perceptibles.
 - Arrastrar cerca de un borde desplaza el documento de manera controlable y

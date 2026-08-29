@@ -29,7 +29,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Task list checkboxes | Parcial | Dibujo nativo, clic reversible y pruebas; falta QA de plataforma |
 | CommonMark aplicable | Parcial | Corpus versionado de sintaxis soportada y política HTML; falta suite oficial seleccionada |
 | GFM elegido | Parcial | Tablas, tachado, tareas, autolinks y notas al pie; falta corpus sistemático |
-| Índice de encabezados | Parcial | Encabezados indexados y anclas internas; falta panel filtrable y accesible |
+| Índice de encabezados | Parcial | `Ctrl+Shift+L` muestra y enfoca encabezados; falta panel filtrable y accesible |
 | Plegado de secciones | Planificado | Sin perder posición ni selección |
 | Búsqueda en documento | Parcial | `Ctrl+F` local, Unicode sin distinción de mayúsculas, resultados y navegación; faltan marcas de todas las coincidencias y QA visual |
 | Vista de texto segura | Parcial | Fallback por límites y HTML inerte; falta QA end to end completo |

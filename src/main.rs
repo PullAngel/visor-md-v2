@@ -2515,6 +2515,10 @@ struct App {
     /// se persisten ni se resuelven contra el disco hasta pulsar Enter.
     backlink_paths: Option<Vec<PathBuf>>,
     backlink_match: usize,
+    /// Índice efímero del documento abierto. Mantiene el número de bloque, no
+    /// una ruta ni una copia de contenido, y se descarta al navegar.
+    outline_headings: Option<Vec<(usize, String)>>,
+    outline_match: usize,
     /// Se crea solamente ante una copia explícita. Mantenerlo vivo respeta el
     /// modelo de propiedad de X11/Wayland, donde el proceso sirve el texto
     /// hasta que otra aplicación lo solicita.
@@ -3057,6 +3061,9 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::KeyboardInput { event, .. } if self.backlink_paths.is_some() => {
                 self.handle_backlink_key(&event);
             }
+            WindowEvent::KeyboardInput { event, .. } if self.outline_headings.is_some() => {
+                self.handle_outline_key(&event);
+            }
             WindowEvent::KeyboardInput { event, .. } if self.search_query.is_some() => {
                 self.handle_search_key(&event);
             }
@@ -3098,6 +3105,18 @@ impl ApplicationHandler<AppEvent> for App {
                 ..
             } if self.modifiers.control_key() && self.modifiers.shift_key() => {
                 self.restore_latest_recovery();
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::KeyL),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } if self.modifiers.control_key() && self.modifiers.shift_key() => {
+                self.show_document_outline();
             }
             WindowEvent::KeyboardInput {
                 event:
@@ -3619,6 +3638,14 @@ impl App {
             }
             return;
         }
+        if !event.repeat
+            && self.modifiers.control_key()
+            && self.modifiers.shift_key()
+            && matches!(event.physical_key, PhysicalKey::Code(KeyCode::KeyL))
+        {
+            self.show_document_outline();
+            return;
+        }
 
         // En Windows la escritura ordinaria llega en `KeyEvent::text`; IME
         // sigue entrando por `WindowEvent::Ime::Commit`. Las combinaciones de
@@ -4123,6 +4150,7 @@ impl App {
         self.search_query = None;
         self.workspace_search_query = None;
         self.backlink_paths = None;
+        self.outline_headings = None;
         self.document_request = self.document_request.wrapping_add(1);
         let request = self.document_request;
         self.loading = true;
@@ -4509,6 +4537,67 @@ impl App {
         }
     }
 
+    fn show_document_outline(&mut self) {
+        let headings = document_outline(&self.blocks);
+        if headings.is_empty() {
+            self.set_notice("el documento no contiene encabezados");
+            return;
+        }
+        self.search_query = None;
+        self.workspace_search_query = None;
+        self.backlink_paths = None;
+        self.outline_match = 0;
+        self.outline_headings = Some(headings);
+        self.set_notice("índice del documento · flechas eligen, Enter enfoca, Escape cierra");
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    fn handle_outline_key(&mut self, event: &KeyEvent) {
+        if event.state != ElementState::Pressed || event.repeat {
+            return;
+        }
+        let count = self.outline_headings.as_ref().map_or(0, Vec::len);
+        match event.physical_key {
+            PhysicalKey::Code(KeyCode::Escape) => {
+                self.outline_headings = None;
+                self.set_notice("índice del documento cerrado");
+            }
+            PhysicalKey::Code(KeyCode::ArrowDown) if count > 0 => {
+                self.outline_match = (self.outline_match + 1) % count;
+            }
+            PhysicalKey::Code(KeyCode::ArrowUp) if count > 0 => {
+                self.outline_match = (self.outline_match + count - 1) % count;
+            }
+            PhysicalKey::Code(KeyCode::Enter) if count > 0 => {
+                let heading = self
+                    .outline_headings
+                    .as_ref()
+                    .and_then(|headings| headings.get(self.outline_match % headings.len()))
+                    .map(|(block, _)| *block);
+                if let Some(block) = heading
+                    && let (Some(slot), Some(window)) = (self.slots.get(block), &self.window)
+                {
+                    self.scroll = slot.y.min(max_scroll(
+                        self.doc_height,
+                        window.inner_size().height as f32,
+                    ));
+                    self.selection = Some(DocumentSelection::collapsed(BlockCursor {
+                        block,
+                        offset: 0,
+                    }));
+                }
+                self.outline_headings = None;
+                self.set_notice("encabezado enfocado");
+            }
+            _ => {}
+        }
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
     fn scroll_to_heading(&mut self, heading: &str) {
         let requested = heading_key(heading);
         let Some((block_index, _)) = self.blocks.iter().enumerate().find(|(_, block)| {
@@ -4537,6 +4626,7 @@ impl App {
     fn open_document_search(&mut self) {
         self.workspace_search_query = None;
         self.backlink_paths = None;
+        self.outline_headings = None;
         self.search_query = Some(String::new());
         self.search_match = 0;
         self.set_notice("búsqueda local · escribe texto, Enter recorre resultados, Escape cierra");
@@ -4552,6 +4642,7 @@ impl App {
         }
         self.search_query = None;
         self.backlink_paths = None;
+        self.outline_headings = None;
         self.workspace_search_query = Some(String::new());
         self.workspace_search_match = 0;
         self.set_notice(
@@ -5162,6 +5253,23 @@ impl App {
                 self.palette,
             ))
         });
+        let outline_overlay = self.outline_headings.as_ref().and_then(|headings| {
+            let (_, selected) = headings.get(self.outline_match % headings.len().max(1))?;
+            let label = abbreviated_label(
+                &format!(
+                    "Índice: {}/{} · {selected}",
+                    self.outline_match % headings.len() + 1,
+                    headings.len()
+                ),
+                MAX_OVERLAY_LABEL_CHARS,
+            );
+            Some(build_menu_layout(
+                &label,
+                &mut self.font_cx,
+                &mut self.layout_cx,
+                self.palette,
+            ))
+        });
         let menu_layouts = menu.map(|_| {
             context_actions(self.mode)
                 .iter()
@@ -5496,6 +5604,7 @@ impl App {
         if let Some(layout) = search_overlay
             .or(workspace_search_overlay)
             .or(backlink_overlay)
+            .or(outline_overlay)
         {
             let overlay_width = (layout.width() + 24.0).min(w.get() as f32 - MARGIN * 2.0);
             if let Some(rect) = Rect::from_xywh(MARGIN, 44.0, overlay_width, 28.0) {
@@ -5661,6 +5770,24 @@ fn matching_block_indices(blocks: &[Block], query: &str) -> Vec<usize> {
         .collect()
 }
 
+fn document_outline(blocks: &[Block]) -> Vec<(usize, String)> {
+    blocks
+        .iter()
+        .enumerate()
+        .filter_map(|(index, block)| match block.kind {
+            Kind::Heading(level) => Some((
+                index,
+                format!(
+                    "{}{}",
+                    "  ".repeat(level.saturating_sub(1) as usize),
+                    block.text
+                ),
+            )),
+            _ => None,
+        })
+        .collect()
+}
+
 fn main() {
     let started = Instant::now();
 
@@ -5776,6 +5903,8 @@ fn main() {
         workspace_search_match: 0,
         backlink_paths: None,
         backlink_match: 0,
+        outline_headings: None,
+        outline_match: 0,
         clipboard: None,
         notice: Some(if opening_path.is_some() {
             "cargando documento".to_string()
@@ -6601,6 +6730,17 @@ con dos lineas
         assert_eq!(query, "áé");
         assert_eq!(abbreviated_label("áéí", 2), "áé…");
         assert_eq!(abbreviated_label("áé", 2), "áé");
+    }
+
+    #[test]
+    fn el_indice_del_documento_conserva_orden_y_profundidad() {
+        let blocks = parse_blocks("# Uno\n\nTexto\n\n### Tres")
+            .expect("la fixture debe parsearse")
+            .blocks;
+        assert_eq!(
+            document_outline(&blocks),
+            vec![(0, "Uno".to_string()), (2, "    Tres".to_string())]
+        );
     }
 
     /// Casos pequeños y trazables que complementan la fixture de lectura. No
