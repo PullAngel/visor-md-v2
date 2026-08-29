@@ -23,11 +23,29 @@ compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
 | **Conflictos de guardado explícitos** | **3.211.264 bytes, 3,062 MiB** |
 | **Workspace acotado y lector ampliado** | **3.222.016 bytes, 3,073 MiB** |
 | **Navegación y resaltado portable** | **3.231.744 bytes, 3,082 MiB** |
+| **Lista de notas y actualización de workspace** | **3.236.864 bytes, 3,087 MiB** |
 
 Superar 8 MB exige medición, explicación y aprobación. El límite no se usa para
 recortar seguridad, estabilidad, accesibilidad, Unicode o funciones esenciales.
 Mermaid, correctores y otros componentes pesados no tienen permiso automático
 para ampliar el núcleo.
+
+### Lista de notas y actualización de workspace del 29 de agosto de 2026
+
+El checkpoint incorpora el recorrido de notas que ya estaban en el índice y la
+señal de reindexado al recuperar foco. No añade dependencias, watchers, red ni
+lectura de rutas fuera de la raíz autorizada.
+
+| Medida | Resultado |
+| --- | --- |
+| Binario Windows | 3.236.864 bytes, 3,087 MiB |
+| SHA-256 | `0C31D0F7B092E9721B759160F1B0C56CAC7858BF51722B4F94D70CD972A7D972` |
+| Variación frente al checkpoint anterior | +5.120 bytes |
+| Margen frente al límite deseado | 4,913 MiB |
+
+El crecimiento corresponde a código propio y conserva un margen amplio frente
+al límite de 8 MB. La señal de cambio de carpeta no sustituye un watcher ni una
+revisión manual del comportamiento visual.
 
 ### Checkpoint de wikilinks y callouts del 27 de agosto de 2026
 

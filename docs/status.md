@@ -127,6 +127,10 @@ Evidencia actual en Windows:
   tras corregir el QA visual de tipografía, emoji, citas y copia;
 - `cargo test --offline`: 107 de 107 pruebas verdes tras la estabilización de
   reflow, tareas reversibles y presentación real por celdas de tabla;
+- `cargo test`: 121 de 121 pruebas verdes el 29 de agosto de 2026 tras el
+  recorrido de notas indexadas y la señal de reindexado de workspace;
+- release Windows del 29 de agosto de 2026: 3.236.864 bytes, 3,087 MiB,
+  SHA-256 `0C31D0F7B092E9721B759160F1B0C56CAC7858BF51722B4F94D70CD972A7D972`;
 - `scripts/check.ps1`: verde el 27 de agosto de 2026 tras el cierre parcial de
   Sprint A (formato, Clippy, 67 pruebas, SBOM, documentación y release);
 - `scripts/check.ps1`: verde el 27 de agosto de 2026;
