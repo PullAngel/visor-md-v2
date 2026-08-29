@@ -3299,6 +3299,16 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::KeyW),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } if self.modifiers.control_key() => self.close_active_document_tab(),
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
                         physical_key: PhysicalKey::Code(KeyCode::PageUp),
                         state: ElementState::Pressed,
                         repeat: false,
@@ -3629,6 +3639,21 @@ impl App {
             window.request_redraw();
         }
     }
+
+    fn close_active_document_tab(&mut self) {
+        if !self.request_close() {
+            return;
+        }
+        self.document = self
+            .inactive_documents
+            .pop()
+            .unwrap_or_else(DocumentState::untitled);
+        self.reset_document_view();
+        self.set_notice("pestaña cerrada");
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
     fn enter_source_mode(&mut self) {
         let index = SourceIndex::new(&self.document.source);
         match safe_source_blocks(&self.document.source, &index) {
@@ -3744,6 +3769,13 @@ impl App {
             && matches!(event.physical_key, PhysicalKey::Code(KeyCode::PageUp))
         {
             self.switch_document_tab(true);
+            return;
+        }
+        if !event.repeat
+            && self.modifiers.control_key()
+            && matches!(event.physical_key, PhysicalKey::Code(KeyCode::KeyW))
+        {
+            self.close_active_document_tab();
             return;
         }
         if !event.repeat
