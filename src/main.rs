@@ -2446,6 +2446,9 @@ impl DocumentState {
 struct App {
     started: Instant,
     document: DocumentState,
+    /// Documentos inactivos de la sesión. Cada uno conserva su fuente e
+    /// historial; los caches de dibujo siguen perteneciendo a la ventana.
+    inactive_documents: Vec<DocumentState>,
     external_check_in_flight: bool,
     recovery: Option<RecoverySession>,
     /// Solo la primera sesión informa que la recuperación es texto local sin
@@ -3296,6 +3299,26 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::PageUp),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } if self.modifiers.control_key() => self.switch_document_tab(true),
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::PageDown),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } if self.modifiers.control_key() => self.switch_document_tab(false),
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
                         physical_key: PhysicalKey::Code(KeyCode::F2),
                         state: ElementState::Pressed,
                         repeat: false,
@@ -3564,6 +3587,48 @@ impl ApplicationHandler<AppEvent> for App {
 }
 
 impl App {
+    fn reset_document_view(&mut self) {
+        self.slots.clear();
+        self.live.clear();
+        self.doc_height = 0.0;
+        self.laid_for_width = -1.0;
+        self.exact_after_edit = true;
+        self.scroll = 0.0;
+        self.selection = None;
+        self.focused_link = None;
+        self.focus_destination = None;
+        self.context_menu = None;
+        self.search_query = None;
+        self.workspace_search_query = None;
+        self.backlink_paths = None;
+        self.outline_headings = None;
+    }
+
+    fn open_document_in_tab(&mut self, document: DocumentState) {
+        let current = std::mem::replace(&mut self.document, document);
+        self.inactive_documents.push(current);
+        self.reset_document_view();
+    }
+
+    fn switch_document_tab(&mut self, backwards: bool) {
+        if self.inactive_documents.is_empty() {
+            self.set_notice("solo hay un documento abierto");
+            return;
+        }
+        let index = if backwards {
+            self.inactive_documents.len() - 1
+        } else {
+            0
+        };
+        let next = self.inactive_documents.remove(index);
+        let current = std::mem::replace(&mut self.document, next);
+        self.inactive_documents.push(current);
+        self.reset_document_view();
+        self.refresh_title();
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
     fn enter_source_mode(&mut self) {
         let index = SourceIndex::new(&self.document.source);
         match safe_source_blocks(&self.document.source, &index) {
@@ -4104,16 +4169,7 @@ impl App {
     }
 
     fn create_new_document(&mut self) {
-        if self.document.is_dirty() {
-            self.set_notice("guarda o descarta los cambios antes de crear otro documento");
-            return;
-        }
-        self.document = DocumentState::untitled();
-        self.slots.clear();
-        self.live.clear();
-        self.doc_height = 0.0;
-        self.laid_for_width = -1.0;
-        self.selection = None;
+        self.open_document_in_tab(DocumentState::untitled());
         self.set_notice("documento nuevo · Ctrl+Shift+S para elegir destino");
         if let Some(window) = &self.window {
             window.set_cursor(CursorIcon::Text);
@@ -4122,10 +4178,6 @@ impl App {
     }
 
     fn choose_document_to_open(&mut self) {
-        if self.document.source_editor.is_dirty() {
-            self.set_notice("guarda o descarta los cambios antes de abrir otro documento");
-            return;
-        }
         let Some(path) = FileDialog::new()
             .add_filter(
                 "Texto y Markdown",
@@ -4224,12 +4276,16 @@ impl App {
     }
 
     fn open_document_path(&mut self, path: PathBuf) {
+        if self.loading {
+            self.set_notice("espera a que termine la apertura actual antes de abrir otra pestaña");
+            return;
+        }
         // Los resultados de navegación pertenecen al documento anterior. No
         // deben quedar flotando sobre una apertura nueva aunque su hilo tarde.
-        self.search_query = None;
-        self.workspace_search_query = None;
-        self.backlink_paths = None;
-        self.outline_headings = None;
+        let mut pending = DocumentState::untitled();
+        pending.path = path.to_string_lossy().into_owned();
+        pending.mode = DocumentMode::Reading;
+        self.open_document_in_tab(pending);
         self.document_request = self.document_request.wrapping_add(1);
         let request = self.document_request;
         self.loading = true;
@@ -5487,7 +5543,7 @@ impl App {
             DocumentMode::Reading => "Lectura",
             DocumentMode::SourceEditing => "Edición",
         };
-        let document_state_label = if self.document.source_editor.is_dirty() {
+        let document_state_label = if self.document.is_dirty() {
             "sin guardar"
         } else {
             "guardado"
@@ -5500,7 +5556,10 @@ impl App {
             "sin carpeta"
         };
         let status_layout = build_menu_layout(
-            &format!("{document_mode_label} · {document_state_label} · {workspace_state_label}"),
+            &format!(
+                "{document_mode_label} · {document_state_label} · {} pestañas · {workspace_state_label}",
+                self.inactive_documents.len() + 1
+            ),
             &mut self.font_cx,
             &mut self.layout_cx,
             self.palette,
@@ -6090,6 +6149,7 @@ fn main() {
             blocks: Vec::new(),
             safe_mode: None,
         },
+        inactive_documents: Vec::new(),
         external_check_in_flight: false,
         recovery,
         recovery_privacy_notice_pending,
