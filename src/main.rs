@@ -2484,6 +2484,10 @@ struct App {
     /// toca el disco ni conserva la consulta fuera de esta ejecución.
     workspace_search_query: Option<String>,
     workspace_search_match: usize,
+    /// Backlinks del documento actual obtenidos del índice ya autorizado. No
+    /// se persisten ni se resuelven contra el disco hasta pulsar Enter.
+    backlink_paths: Option<Vec<PathBuf>>,
+    backlink_match: usize,
     /// Se crea solamente ante una copia explícita. Mantenerlo vivo respeta el
     /// modelo de propiedad de X11/Wayland, donde el proceso sirve el texto
     /// hasta que otra aplicación lo solicita.
@@ -3023,6 +3027,9 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::KeyboardInput { event, .. } if self.workspace_search_query.is_some() => {
                 self.handle_workspace_search_key(&event);
             }
+            WindowEvent::KeyboardInput { event, .. } if self.backlink_paths.is_some() => {
+                self.handle_backlink_key(&event);
+            }
             WindowEvent::KeyboardInput { event, .. } if self.search_query.is_some() => {
                 self.handle_search_key(&event);
             }
@@ -3099,7 +3106,7 @@ impl ApplicationHandler<AppEvent> for App {
                     },
                 ..
             } if self.modifiers.control_key() && self.modifiers.shift_key() => {
-                self.open_first_backlink();
+                self.show_backlinks();
             }
             WindowEvent::KeyboardInput {
                 event:
@@ -4052,6 +4059,11 @@ impl App {
     }
 
     fn open_document_path(&mut self, path: PathBuf) {
+        // Los resultados de navegación pertenecen al documento anterior. No
+        // deben quedar flotando sobre una apertura nueva aunque su hilo tarde.
+        self.search_query = None;
+        self.workspace_search_query = None;
+        self.backlink_paths = None;
         self.document_request = self.document_request.wrapping_add(1);
         let request = self.document_request;
         self.loading = true;
@@ -4347,14 +4359,10 @@ impl App {
         }
     }
 
-    /// Navega al primer backlink de la nota abierta. La selección se limita al
-    /// índice de la carpeta concedida y la apertura pasa otra vez por VFS; un
-    /// documento no puede usar esta acción para salir de la bóveda.
-    fn open_first_backlink(&mut self) {
-        if self.source_editor.is_dirty() {
-            self.set_notice("guarda o descarta los cambios antes de abrir otro documento");
-            return;
-        }
+    /// Muestra backlinks derivados únicamente del índice de la carpeta
+    /// concedida. La apertura posterior pasa otra vez por VFS; un documento no
+    /// puede usar esta acción para salir de la bóveda.
+    fn show_backlinks(&mut self) {
         let Some((root, index)) = self.workspace.as_ref() else {
             self.set_notice("abre una carpeta de trabajo para consultar backlinks");
             return;
@@ -4371,17 +4379,74 @@ impl App {
             self.set_notice("el documento abierto no está indexado como una nota Markdown");
             return;
         };
-        let backlinks = index.backlinks_to(note);
-        let Some(backlink) = backlinks.first() else {
+        let paths = index
+            .backlinks_to(note)
+            .into_iter()
+            .map(|backlink| backlink.relative_path.clone())
+            .collect::<Vec<_>>();
+        if paths.is_empty() {
             self.set_notice("ninguna nota de la carpeta apunta al documento actual");
             return;
+        }
+        self.search_query = None;
+        self.workspace_search_query = None;
+        self.backlink_match = 0;
+        self.backlink_paths = Some(paths);
+        self.set_notice("backlinks · flechas eligen, Enter abre, Escape cierra");
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    fn open_backlink_match(&mut self) {
+        if self.source_editor.is_dirty() {
+            self.set_notice("guarda o descarta los cambios antes de abrir otro documento");
+            return;
+        }
+        let Some(paths) = &self.backlink_paths else {
+            return;
         };
-        match root.resolve_existing(&backlink.relative_path) {
-            Ok(path) => self.open_document_path(path),
+        let Some(relative_path) = paths.get(self.backlink_match % paths.len().max(1)).cloned()
+        else {
+            return;
+        };
+        let Some((root, _)) = &self.workspace else {
+            self.set_notice("la carpeta de trabajo ya no está disponible");
+            return;
+        };
+        match root.resolve_existing(&relative_path) {
+            Ok(path) => {
+                self.backlink_paths = None;
+                self.open_document_path(path);
+            }
             Err(error) => {
                 self.log.push(format!("[vfs] {error}"));
                 self.set_notice("el backlink fue bloqueado por la política de archivos");
             }
+        }
+    }
+
+    fn handle_backlink_key(&mut self, event: &KeyEvent) {
+        if event.state != ElementState::Pressed || event.repeat {
+            return;
+        }
+        let count = self.backlink_paths.as_ref().map_or(0, Vec::len);
+        match event.physical_key {
+            PhysicalKey::Code(KeyCode::Escape) => {
+                self.backlink_paths = None;
+                self.set_notice("backlinks cerrados");
+            }
+            PhysicalKey::Code(KeyCode::ArrowDown) if count > 0 => {
+                self.backlink_match = (self.backlink_match + 1) % count;
+            }
+            PhysicalKey::Code(KeyCode::ArrowUp) if count > 0 => {
+                self.backlink_match = (self.backlink_match + count - 1) % count;
+            }
+            PhysicalKey::Code(KeyCode::Enter) => self.open_backlink_match(),
+            _ => {}
+        }
+        if let Some(window) = &self.window {
+            window.request_redraw();
         }
     }
 
@@ -4412,6 +4477,7 @@ impl App {
 
     fn open_document_search(&mut self) {
         self.workspace_search_query = None;
+        self.backlink_paths = None;
         self.search_query = Some(String::new());
         self.search_match = 0;
         self.set_notice("búsqueda local · escribe texto, Enter recorre resultados, Escape cierra");
@@ -4426,6 +4492,7 @@ impl App {
             return;
         }
         self.search_query = None;
+        self.backlink_paths = None;
         self.workspace_search_query = Some(String::new());
         self.workspace_search_match = 0;
         self.set_notice(
@@ -5018,6 +5085,21 @@ impl App {
             };
             build_menu_layout(&label, &mut self.font_cx, &mut self.layout_cx, self.palette)
         });
+        let backlink_overlay = self.backlink_paths.as_ref().and_then(|paths| {
+            let selected = paths.get(self.backlink_match % paths.len().max(1))?;
+            let label = format!(
+                "Backlinks: {}/{} · {}",
+                self.backlink_match % paths.len() + 1,
+                paths.len(),
+                selected.display()
+            );
+            Some(build_menu_layout(
+                &label,
+                &mut self.font_cx,
+                &mut self.layout_cx,
+                self.palette,
+            ))
+        });
         let menu_layouts = menu.map(|_| {
             context_actions(self.mode)
                 .iter()
@@ -5349,7 +5431,10 @@ impl App {
             }
         }
 
-        if let Some(layout) = search_overlay.or(workspace_search_overlay) {
+        if let Some(layout) = search_overlay
+            .or(workspace_search_overlay)
+            .or(backlink_overlay)
+        {
             let overlay_width = (layout.width() + 24.0).min(w.get() as f32 - MARGIN * 2.0);
             if let Some(rect) = Rect::from_xywh(MARGIN, 44.0, overlay_width, 28.0) {
                 pixmap.fill_rect(rect, &paint, Transform::identity(), None);
@@ -5627,6 +5712,8 @@ fn main() {
         search_match: 0,
         workspace_search_query: None,
         workspace_search_match: 0,
+        backlink_paths: None,
+        backlink_match: 0,
         clipboard: None,
         notice: Some(if opening_path.is_some() {
             "cargando documento".to_string()

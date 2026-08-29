@@ -98,7 +98,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Árbol de archivos | Planificado | Navegación y estado de disco |
 | Búsqueda de bóveda | Parcial | `Ctrl+Shift+F` consulta el índice en memoria y abre solo notas contenidas; faltan panel y resultados múltiples visibles |
 | Wikilinks | Parcial | Resolución contenida y explícita; falta panel de diagnóstico |
-| Backlinks | Parcial | Índice coherente y navegación inicial; falta panel visible e incrementalidad |
+| Backlinks | Parcial | `Ctrl+Shift+B` muestra y navega backlinks contenidos; faltan panel plegable e incrementalidad |
 | Callouts | Parcial | Sintaxis Obsidian elegida y render nativo; falta corpus de bóvedas |
 | Etiquetas y frontmatter | Planificado | Lectura sin reescritura |
 | Link peek | Planificado | Reusa renderer con límites |

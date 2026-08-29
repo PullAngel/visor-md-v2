@@ -228,8 +228,10 @@ corchetes y paréntesis.
 `editor::EditHistory` ya define parches reversibles de bytes UTF-8, undo/redo,
 revisiones y un presupuesto de 4 MiB para historial. `editor::SourceEditor`
 añade cursor y selección sin partir caracteres Unicode. No conservan snapshots
-completos de un documento de hasta 16 MiB. La interfaz de edición, IME y el
-guardado todavía no consumen esta capa.
+completos de un documento de hasta 16 MiB. La interfaz de edición, IME, guardado
+y recuperación ya consumen esta capa. Su límite actual es que el buffer fuente
+sigue siendo una `String`: la migración a un buffer escalable se hará como un
+refactor documentado, sin cambiar el formato ni la semántica de guardado.
 
 Responsabilidades:
 
@@ -284,8 +286,10 @@ nota. El recorrido del índice se cancela cooperativamente al elegir otra carpet
 y su versión evita publicar resultados tardíos. `Ctrl+Shift+F` consulta el
 índice local y solo abre la nota elegida después de resolver su ruta con la VFS.
 `Ctrl+Shift+I` vuelve a crear el índice de la raíz ya concedida y cancela el
-recorrido anterior si aún estaba activo. Todavía faltan paneles de resultados,
-backlinks visibles y detección de cambios externos del workspace.
+recorrido anterior si aún estaba activo. `Ctrl+Shift+B` presenta los backlinks
+del documento actual y solo abre una selección tras resolverla de nuevo con la
+VFS. Todavía faltan paneles plegables y detección de cambios externos del
+workspace.
 
 Los callouts conocidos de Obsidian dentro de una cita (`NOTE`, `INFO`, `TIP`,
 `WARNING`, `CAUTION`, `DANGER` e `IMPORTANT`) reciben una presentación nativa

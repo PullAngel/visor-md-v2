@@ -69,6 +69,10 @@ Registrar antes de comenzar:
 - Crear o modificar una nota desde otro editor y pulsar `Ctrl+Shift+I`. La
   actualización debe ser visible en la búsqueda posterior, sin crear archivos
   auxiliares en la carpeta ni tocar `.obsidian`.
+- Abrir una nota que reciba enlaces desde dos o más notas de prueba y pulsar
+  `Ctrl+Shift+B`. Debe verse la ruta del backlink seleccionado; flechas cambia
+  la selección, Escape no abre nada y Enter abre solo una nota dentro de la
+  carpeta autorizada.
 - Texto, enlaces, decoración y casillas conservan contraste suficiente.
 - La sensación de scroll es estable, sin saltos perceptibles.
 - Arrastrar cerca de un borde desplaza el documento de manera controlable y
