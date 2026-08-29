@@ -154,6 +154,11 @@ Registrar antes de comenzar:
 - Con un documento abierto, usar `Ctrl+Shift+R` cuando exista una recuperación.
   Debe aparecer en una pestaña nueva, marcada sin guardar y sin reemplazar ni
   modificar el documento que estaba activo.
+- Desde la paleta elegir activar o desactivar recuperación. Al desactivar debe
+  aparecer una advertencia y la opción segura debe mantenerla activa. Si se
+  confirma desactivar, reiniciar y comprobar que la preferencia persiste; el
+  cierre con cambios debe advertir que no existe recuperación, no bloquearse ni
+  afirmar que guardó una copia.
 - Abrir Índice, Notas y Backlinks desde la paleta. Confirmar que el panel muestra
   varias filas, que flechas conservan visible la elección en listas largas,
   Enter navega al destino correcto y Escape devuelve todo el ancho a la lectura.

@@ -280,7 +280,9 @@ y marcada como modificada; nunca reemplaza el documento activo para presentar
 una recuperación.
 La primera sesión muestra un aviso claro de que esa copia es texto sin cifrar;
 las sesiones propias de más de catorce días se eliminan de forma limitada. Falta
-configuración persistente y QA de cierre inesperado.
+QA de cierre inesperado. Una preferencia local versionada permite desactivar la
+recuperación sin guardar rutas ni contenido; el valor ausente o inválido vuelve
+al valor seguro de activarla.
 
 ### Chrome y comandos
 

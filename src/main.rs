@@ -18,6 +18,7 @@ mod files;
 mod fonts;
 mod limits;
 mod recovery;
+mod settings;
 mod theme;
 mod vfs;
 mod workspace;
@@ -63,6 +64,7 @@ use fonts::{FONT_CODE, FONT_DOC, FONT_UI, register_embedded_fonts};
 use limits::{Degradation, MAX_BLOCKS, MAX_INDENT_DEPTH, MAX_NEST, MAX_SAFE_LINE_BYTES};
 use recovery::RecoverySession;
 use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
+use settings::Settings;
 use theme::{DAY, NIGHT, Palette, Role};
 use vfs::WorkspaceRoot;
 use workspace::{WikiResolution, WorkspaceIndex, WorkspaceLimits, index_workspace_cancellable};
@@ -203,9 +205,10 @@ enum AppAction {
     WorkspaceFiles,
     Backlinks,
     RestoreRecovery,
+    ToggleRecovery,
 }
 
-const APP_ACTIONS: [AppAction; 13] = [
+const APP_ACTIONS: [AppAction; 14] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -219,6 +222,7 @@ const APP_ACTIONS: [AppAction; 13] = [
     AppAction::WorkspaceFiles,
     AppAction::Backlinks,
     AppAction::RestoreRecovery,
+    AppAction::ToggleRecovery,
 ];
 
 impl AppAction {
@@ -237,6 +241,7 @@ impl AppAction {
             Self::WorkspaceFiles => "Notas de la carpeta · Ctrl+Shift+T",
             Self::Backlinks => "Backlinks · Ctrl+Shift+B",
             Self::RestoreRecovery => "Abrir recuperación · Ctrl+Shift+R",
+            Self::ToggleRecovery => "Activar o desactivar recuperación local",
         }
     }
 }
@@ -2626,6 +2631,7 @@ struct App {
     /// pertenece al documento activo. Es una frontera temporal hasta que las
     /// tareas de guardado tengan identidad de pestaña propia.
     save_in_flight: bool,
+    recovery_enabled: bool,
     recovery: Option<RecoverySession>,
     /// Solo la primera sesión informa que la recuperación es texto local sin
     /// cifrar. La decisión no depende del documento abierto.
@@ -3844,6 +3850,63 @@ impl App {
             AppAction::WorkspaceFiles => self.show_workspace_files(),
             AppAction::Backlinks => self.show_backlinks(),
             AppAction::RestoreRecovery => self.restore_latest_recovery(),
+            AppAction::ToggleRecovery => self.toggle_recovery(),
+        }
+    }
+
+    fn new_recovery_session(&self) -> Option<RecoverySession> {
+        self.recovery_enabled
+            .then(RecoverySession::start)
+            .and_then(Result::ok)
+    }
+
+    fn toggle_recovery(&mut self) {
+        if self.recovery_enabled {
+            let dialog = MessageDialog::new()
+                .set_level(MessageLevel::Warning)
+                .set_title("Visor MD · desactivar recuperación")
+                .set_description(
+                    "La recuperación conserva copias temporales locales sin cifrar de documentos modificados. Si la desactivas, un cierre inesperado puede perder cambios.\n\nSí: mantenerla activa.\nNo: desactivarla y eliminar las copias de esta sesión.",
+                )
+                .set_buttons(MessageButtons::YesNo);
+            let result = if let Some(window) = &self.window {
+                dialog.set_parent(window.as_ref()).show()
+            } else {
+                dialog.show()
+            };
+            if !matches!(result, MessageDialogResult::No) {
+                self.set_notice("la recuperación local sigue activa");
+                return;
+            }
+        }
+        self.recovery_enabled = !self.recovery_enabled;
+        if self.recovery_enabled {
+            self.recovery = RecoverySession::start().ok();
+            for tab in &mut self.inactive_documents {
+                tab.recovery = RecoverySession::start().ok();
+            }
+            self.recovery_privacy_notice_pending =
+                RecoverySession::privacy_notice_needed().unwrap_or(false);
+            self.set_notice("recuperación local activada");
+        } else {
+            if let Some(recovery) = self.recovery.take() {
+                let _ = recovery.clear();
+            }
+            for tab in &mut self.inactive_documents {
+                if let Some(recovery) = tab.recovery.take() {
+                    let _ = recovery.clear();
+                }
+            }
+            self.recovery_privacy_notice_pending = false;
+            self.set_notice("recuperación local desactivada");
+        }
+        if (Settings {
+            recovery_enabled: self.recovery_enabled,
+        })
+        .store()
+        .is_err()
+        {
+            self.set_notice("la preferencia de recuperación no pudo guardarse");
         }
     }
 
@@ -3914,7 +3977,8 @@ impl App {
         self.document_request = self.document_request.wrapping_add(1);
         self.document.scroll = self.scroll;
         let current = std::mem::replace(&mut self.document, document);
-        let current_recovery = std::mem::replace(&mut self.recovery, RecoverySession::start().ok());
+        let next_recovery = self.new_recovery_session();
+        let current_recovery = std::mem::replace(&mut self.recovery, next_recovery);
         self.inactive_documents.push(InactiveDocument {
             document: current,
             recovery: current_recovery,
@@ -4003,7 +4067,7 @@ impl App {
             self.recovery = next.recovery;
         } else {
             self.document = DocumentState::untitled();
-            self.recovery = RecoverySession::start().ok();
+            self.recovery = self.new_recovery_session();
             self.tab_order.push(self.document.id);
         }
         self.reset_document_view();
@@ -4551,21 +4615,29 @@ impl App {
             }
             return true;
         }
-        let Some(recovery) = &self.recovery else {
-            self.set_notice("no se cerró: no hay recuperación local disponible");
-            return false;
+        let recovery_preserved = if self.recovery_enabled {
+            let Some(recovery) = &self.recovery else {
+                self.set_notice("no se cerró: no hay recuperación local disponible");
+                return false;
+            };
+            if let Err(error) = recovery.write(&self.document.source) {
+                self.log.push(format!("[recuperación] {error}"));
+                self.set_notice("no se cerró: no se pudo conservar la recuperación local");
+                return false;
+            }
+            true
+        } else {
+            false
         };
-        if let Err(error) = recovery.write(&self.document.source) {
-            self.log.push(format!("[recuperación] {error}"));
-            self.set_notice("no se cerró: no se pudo conservar la recuperación local");
-            return false;
-        }
+        let description = if recovery_preserved {
+            "Hay cambios sin guardar. Se conservó una recuperación local sin cifrar.\n\nSí: seguir editando.\nNo: cerrar y conservar la recuperación para restaurarla después."
+        } else {
+            "Hay cambios sin guardar y la recuperación local está desactivada. Si cierras, estos cambios se perderán.\n\nSí: seguir editando.\nNo: cerrar sin recuperación."
+        };
         let dialog = MessageDialog::new()
             .set_level(MessageLevel::Warning)
             .set_title("Visor MD · cambios sin guardar")
-            .set_description(
-                "Hay cambios sin guardar. Se conservó una recuperación local sin cifrar.\n\nSí: seguir editando.\nNo: cerrar y conservar la recuperación para restaurarla después.",
-            )
+            .set_description(description)
             .set_buttons(MessageButtons::YesNo);
         let result = if let Some(window) = &self.window {
             dialog.set_parent(window.as_ref()).show()
@@ -4598,7 +4670,7 @@ impl App {
             return true;
         }
 
-        let current_result = if self.document.is_dirty() {
+        let current_result = if self.recovery_enabled && self.document.is_dirty() {
             self.recovery
                 .as_ref()
                 .ok_or("recuperación no disponible")
@@ -4610,27 +4682,38 @@ impl App {
         } else {
             Ok(())
         };
-        let inactive_result = dirty_inactive.into_iter().try_for_each(|tab| {
-            tab.recovery
-                .as_ref()
-                .ok_or("recuperación no disponible")
-                .and_then(|recovery| {
-                    recovery
-                        .write(&tab.document.source)
-                        .map_err(|_| "falló la recuperación")
-                })
-        });
+        let inactive_result = if self.recovery_enabled {
+            dirty_inactive.into_iter().try_for_each(|tab| {
+                tab.recovery
+                    .as_ref()
+                    .ok_or("recuperación no disponible")
+                    .and_then(|recovery| {
+                        recovery
+                            .write(&tab.document.source)
+                            .map_err(|_| "falló la recuperación")
+                    })
+            })
+        } else {
+            Ok(())
+        };
         if current_result.is_err() || inactive_result.is_err() {
             self.set_notice("no se cerró: no se pudieron conservar todas las recuperaciones");
             return false;
         }
 
+        let description = if self.recovery_enabled {
+            format!(
+                "Hay {dirty_count} documentos con cambios sin guardar. Se conservaron recuperaciones locales sin cifrar.\n\nSí: seguir editando.\nNo: cerrar y conservar las recuperaciones."
+            )
+        } else {
+            format!(
+                "Hay {dirty_count} documentos con cambios sin guardar y la recuperación local está desactivada. Si cierras, esos cambios se perderán.\n\nSí: seguir editando.\nNo: cerrar sin recuperación."
+            )
+        };
         let dialog = MessageDialog::new()
             .set_level(MessageLevel::Warning)
             .set_title("Visor MD · documentos sin guardar")
-            .set_description(format!(
-                "Hay {dirty_count} documentos con cambios sin guardar. Se conservaron recuperaciones locales sin cifrar.\n\nSí: seguir editando.\nNo: cerrar y conservar las recuperaciones."
-            ))
+            .set_description(description)
             .set_buttons(MessageButtons::YesNo);
         let result = if let Some(window) = &self.window {
             dialog.set_parent(window.as_ref()).show()
@@ -6723,7 +6806,11 @@ fn main() {
         t.elapsed().as_secs_f64() * 1000.0
     ));
 
-    let recovery = RecoverySession::start().ok();
+    let settings = Settings::load();
+    let recovery = settings
+        .recovery_enabled
+        .then(RecoverySession::start)
+        .and_then(Result::ok);
     let recovery_privacy_notice_pending =
         recovery.is_some() && RecoverySession::privacy_notice_needed().unwrap_or(false);
     let initial_document_id = NEXT_DOCUMENT_ID.fetch_add(1, Ordering::Relaxed);
@@ -6753,6 +6840,7 @@ fn main() {
         tab_order: vec![initial_document_id],
         external_check_in_flight: false,
         save_in_flight: false,
+        recovery_enabled: settings.recovery_enabled,
         recovery,
         recovery_privacy_notice_pending,
         workspace: None,
@@ -6896,7 +6984,7 @@ mod pruebas {
         labels.sort_unstable();
         labels.dedup();
 
-        assert_eq!(original_len, 13);
+        assert_eq!(original_len, 14);
         assert_eq!(labels.len(), original_len);
     }
 

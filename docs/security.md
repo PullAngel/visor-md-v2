@@ -356,6 +356,12 @@ versión monotónica. Una solicitud vieja se descarta antes del reemplazo; guard
 o limpiar la recuperación invalida tareas pendientes para que no reaparezca una
 copia que la persona ya había eliminado mediante una acción correcta.
 
+La recuperación está activa por defecto y su preferencia local no contiene
+rutas ni texto de documentos. Desactivarla exige una acción explícita y una
+advertencia que distingue conservar la protección de asumir el riesgo. Con la
+protección desactivada, cerrar cambios sigue requiriendo confirmación clara y
+no finge que existe una copia recuperable.
+
 Al pedir cerrar con cambios pendientes, Visor MD fuerza una escritura de esa
 recuperación antes de ofrecer el cierre. Si falla, mantiene la ventana abierta.
 El diálogo explica que la copia no está cifrada y que la restauración posterior

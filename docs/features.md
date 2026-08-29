@@ -43,6 +43,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Guardado atómico | Parcial | Sin corrupción ante fallo y conflictos probados; falta QA multiplataforma |
 | Preservar sintaxis desconocida | Parcial | Fuente no se reserializa; falta property testing de round-trip |
 | Detectar cambios externos | Parcial | Conflicto visible al guardar y al recuperar foco; falta QA multiplataforma |
+| Recuperación de sesión | Parcial | Activa por defecto, separada por pestaña, versionada y desactivable con advertencia; falta QA de cierre inesperado |
 | Crear documento | Parcial | Crea una pestaña nueva sin reemplazar el documento activo; falta diálogo visual de destino |
 | Varios documentos y pestañas | Parcial | Barra visible con orden estable, cambio y cierre individual por mouse/teclado, estado, historial, scroll y recuperación separados y cierre global protegido; falta accesibilidad completa |
 | Menú contextual | Parcial | Copia y pegado explícito según modo; faltan acciones de aplicación |
