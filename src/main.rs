@@ -2449,6 +2449,7 @@ struct App {
     /// Documentos inactivos de la sesión. Cada uno conserva su fuente e
     /// historial; los caches de dibujo siguen perteneciendo a la ventana.
     inactive_documents: Vec<DocumentState>,
+    inactive_recoveries: Vec<Option<RecoverySession>>,
     external_check_in_flight: bool,
     recovery: Option<RecoverySession>,
     /// Solo la primera sesión informa que la recuperación es texto local sin
@@ -3624,7 +3625,9 @@ impl App {
 
     fn open_document_in_tab(&mut self, document: DocumentState) {
         let current = std::mem::replace(&mut self.document, document);
+        let current_recovery = std::mem::replace(&mut self.recovery, RecoverySession::start().ok());
         self.inactive_documents.push(current);
+        self.inactive_recoveries.push(current_recovery);
         self.reset_document_view();
     }
 
@@ -3639,8 +3642,11 @@ impl App {
             0
         };
         let next = self.inactive_documents.remove(index);
+        let next_recovery = self.inactive_recoveries.remove(index);
         let current = std::mem::replace(&mut self.document, next);
+        let current_recovery = std::mem::replace(&mut self.recovery, next_recovery);
         self.inactive_documents.push(current);
+        self.inactive_recoveries.push(current_recovery);
         self.reset_document_view();
         self.refresh_title();
         if let Some(window) = &self.window {
@@ -3656,6 +3662,10 @@ impl App {
             .inactive_documents
             .pop()
             .unwrap_or_else(DocumentState::untitled);
+        self.recovery = self
+            .inactive_recoveries
+            .pop()
+            .unwrap_or_else(|| RecoverySession::start().ok());
         self.reset_document_view();
         self.set_notice("pestaña cerrada");
         if let Some(window) = &self.window {
@@ -6205,6 +6215,7 @@ fn main() {
             safe_mode: None,
         },
         inactive_documents: Vec::new(),
+        inactive_recoveries: Vec::new(),
         external_check_in_flight: false,
         recovery,
         recovery_privacy_notice_pending,
