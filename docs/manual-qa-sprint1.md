@@ -68,7 +68,8 @@ Registrar antes de comenzar:
   cambian la coincidencia y Enter abre la elegida.
 - Con esa misma carpeta, `Ctrl+Shift+T` debe recorrer las rutas indexadas en
   orden estable. Escape no abre nada; Enter abre únicamente la nota elegida y
-  los cambios sin guardar impiden la navegación.
+  los cambios sin guardar impiden la navegación. Repetirlo desde modo edición:
+  el atajo debe estar disponible y conservar esa misma protección.
 - Crear o modificar una nota desde otro editor y pulsar `Ctrl+Shift+I`. La
   actualización debe ser visible en la búsqueda posterior, sin crear archivos
   auxiliares en la carpeta ni tocar `.obsidian`.
