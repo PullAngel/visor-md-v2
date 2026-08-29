@@ -271,10 +271,11 @@ sin autorización explícita.
 No integrar como producto snapshots de recuperación, backups, artifacts de
 diseño, binarios de medición ni temporales. Los commits deben ser pequeños,
 coherentes y compilables; no mezclar recuperación, refactor, función nueva y
-actualización masiva de dependencias. En una rama de trabajo aprobada, crear y
-publicar commits coherentes al cerrar cada bloque técnico; hacerlo no cierra la
-tarea ni exige informar cada hash de inmediato. Comunicar hashes agrupados al
-cerrar un hito, ante una revisión o si ayudan a recuperar un estado.
+actualización masiva de dependencias. En el workspace aprobado, actualmente
+`main`, crear y publicar commits coherentes al cerrar cada bloque técnico;
+hacerlo no cierra la tarea ni exige informar cada hash de inmediato. Comunicar
+hashes agrupados al cerrar un hito, ante una revisión o si ayudan a recuperar un
+estado.
 
 ## Documentación y cierre
 
