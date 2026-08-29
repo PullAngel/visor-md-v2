@@ -181,6 +181,10 @@ del working tree actual.
 
 ## Checkpoint de recuperación
 
+La suite cubre que una escritura de recuperación atrasada no sustituya la más
+nueva y que una tarea pendiente no pueda recrear un snapshot después de
+limpiarlo.
+
 El 25 de agosto de 2026 el working tree de recuperación alcanzó:
 
 - 40 pruebas unitarias y adversariales verdes en Windows MSVC;

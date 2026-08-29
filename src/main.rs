@@ -2562,6 +2562,7 @@ struct DocumentState {
     /// Posición visual propia de la pestaña. Se sincroniza antes de cambiar
     /// de documento y se restaura al volver.
     scroll: f32,
+    last_recovery: Instant,
 }
 
 impl DocumentState {
@@ -2578,6 +2579,7 @@ impl DocumentState {
             blocks: Vec::new(),
             safe_mode: None,
             scroll: 0.0,
+            last_recovery: Instant::now(),
         }
     }
 
@@ -2617,7 +2619,6 @@ struct App {
     /// Solo la primera sesión informa que la recuperación es texto local sin
     /// cifrar. La decisión no depende del documento abierto.
     recovery_privacy_notice_pending: bool,
-    last_recovery: Instant,
     workspace: Option<(WorkspaceRoot, WorkspaceIndex)>,
     /// Cambiar de carpeta cancela cooperativamente el recorrido anterior. El
     /// contador descarta además cualquier resultado tardío del hilo anterior.
@@ -2962,10 +2963,10 @@ impl ApplicationHandler<AppEvent> for App {
                 self.set_notice("no se pudo abrir la carpeta de trabajo");
             }
             AppEvent::ExternalChangeChecked { request, result } => {
+                self.external_check_in_flight = false;
                 if request != self.document_request {
                     return;
                 }
-                self.external_check_in_flight = false;
                 match result {
                     Ok(true) => self.resolve_external_change(),
                     Ok(false) => {}
@@ -4052,16 +4053,17 @@ impl App {
     }
 
     fn schedule_recovery(&mut self) {
-        if self.last_recovery.elapsed().as_secs() < 3 {
+        if self.document.last_recovery.elapsed().as_secs() < 3 {
             return;
         }
         let Some(recovery) = self.recovery.clone() else {
             return;
         };
-        self.last_recovery = Instant::now();
+        self.document.last_recovery = Instant::now();
         let source = self.document.source.clone();
+        let request = recovery.next_write_request();
         thread::spawn(move || {
-            let _ = recovery.write(&source);
+            let _ = recovery.write_if_current(&source, request);
         });
     }
 
@@ -6738,6 +6740,7 @@ fn main() {
             blocks: Vec::new(),
             safe_mode: None,
             scroll: 0.0,
+            last_recovery: Instant::now(),
         },
         inactive_documents: Vec::new(),
         tab_order: vec![initial_document_id],
@@ -6745,7 +6748,6 @@ fn main() {
         save_in_flight: false,
         recovery,
         recovery_privacy_notice_pending,
-        last_recovery: Instant::now(),
         workspace: None,
         workspace_request: 0,
         workspace_cancel: None,

@@ -8,6 +8,8 @@ use atomicwrites::{AllowOverwrite, AtomicFile};
 use std::fs;
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 const RETENTION: Duration = Duration::from_secs(14 * 24 * 60 * 60);
@@ -16,6 +18,8 @@ const PRIVACY_NOTICE_FILE: &str = "privacy-notice-v1";
 #[derive(Clone, Debug)]
 pub(crate) struct RecoverySession {
     path: PathBuf,
+    latest_request: Arc<AtomicU64>,
+    write_lock: Arc<Mutex<()>>,
 }
 
 impl RecoverySession {
@@ -26,10 +30,38 @@ impl RecoverySession {
         let id = format!("session-{}-{}.md", std::process::id(), unique_suffix());
         Ok(Self {
             path: root.join(id),
+            latest_request: Arc::new(AtomicU64::new(0)),
+            write_lock: Arc::new(Mutex::new(())),
         })
     }
 
     pub(crate) fn write(&self, source: &str) -> Result<(), std::io::Error> {
+        self.latest_request.fetch_add(1, Ordering::AcqRel);
+        let _guard = self.lock_writes()?;
+        self.write_unlocked(source)
+    }
+
+    pub(crate) fn next_write_request(&self) -> u64 {
+        self.latest_request.fetch_add(1, Ordering::AcqRel) + 1
+    }
+
+    /// Una tarea antigua nunca puede reemplazar una recuperación solicitada
+    /// después. El lock serializa el reemplazo; el contador decide cuál es la
+    /// versión vigente sin retener el contenido en memoria compartida.
+    pub(crate) fn write_if_current(
+        &self,
+        source: &str,
+        request: u64,
+    ) -> Result<bool, std::io::Error> {
+        let _guard = self.lock_writes()?;
+        if self.latest_request.load(Ordering::Acquire) != request {
+            return Ok(false);
+        }
+        self.write_unlocked(source)?;
+        Ok(true)
+    }
+
+    fn write_unlocked(&self, source: &str) -> Result<(), std::io::Error> {
         AtomicFile::new(&self.path, AllowOverwrite)
             .write(|file| {
                 file.write_all(source.as_bytes())?;
@@ -39,11 +71,19 @@ impl RecoverySession {
     }
 
     pub(crate) fn clear(&self) -> Result<(), std::io::Error> {
+        self.latest_request.fetch_add(1, Ordering::AcqRel);
+        let _guard = self.lock_writes()?;
         match fs::remove_file(&self.path) {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
             Err(error) => Err(error),
         }
+    }
+
+    fn lock_writes(&self) -> Result<std::sync::MutexGuard<'_, ()>, std::io::Error> {
+        self.write_lock
+            .lock()
+            .map_err(|_| std::io::Error::other("el lock de recuperación quedó invalidado"))
     }
 
     /// Lee una recuperación anterior solo tras una acción explícita. Ignora
@@ -88,6 +128,8 @@ impl RecoverySession {
     fn at(path: impl AsRef<Path>) -> Self {
         Self {
             path: path.as_ref().to_path_buf(),
+            latest_request: Arc::new(AtomicU64::new(0)),
+            write_lock: Arc::new(Mutex::new(())),
         }
     }
 }
@@ -150,6 +192,39 @@ mod tests {
         recovery.write("cambios sin guardar").unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "cambios sin guardar");
         recovery.clear().unwrap();
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn una_tarea_antigua_no_reemplaza_la_recuperacion_mas_nueva() {
+        let path = std::env::temp_dir().join(format!("visor-md-recovery-{}.md", unique_suffix()));
+        let recovery = RecoverySession::at(&path);
+        let old = recovery.next_write_request();
+        let current = recovery.next_write_request();
+
+        assert!(!recovery.write_if_current("versión vieja", old).unwrap());
+        assert!(
+            recovery
+                .write_if_current("versión vigente", current)
+                .unwrap()
+        );
+        assert_eq!(fs::read_to_string(&path).unwrap(), "versión vigente");
+        recovery.clear().unwrap();
+    }
+
+    #[test]
+    fn limpiar_invalida_una_escritura_pendiente() {
+        let path = std::env::temp_dir().join(format!("visor-md-recovery-{}.md", unique_suffix()));
+        let recovery = RecoverySession::at(&path);
+        let pending = recovery.next_write_request();
+
+        recovery.clear().unwrap();
+
+        assert!(
+            !recovery
+                .write_if_current("no debe reaparecer", pending)
+                .unwrap()
+        );
         assert!(!path.exists());
     }
 

@@ -351,6 +351,11 @@ configuración persistente. Los snapshots propios de más de catorce días se
 limpian al iniciar; el proceso no elimina enlaces simbólicos ni archivos ajenos
 dentro de ese directorio.
 
+Las escrituras asíncronas de una misma pestaña se serializan y llevan una
+versión monotónica. Una solicitud vieja se descarta antes del reemplazo; guardar
+o limpiar la recuperación invalida tareas pendientes para que no reaparezca una
+copia que la persona ya había eliminado mediante una acción correcta.
+
 Al pedir cerrar con cambios pendientes, Visor MD fuerza una escritura de esa
 recuperación antes de ofrecer el cierre. Si falla, mantiene la ventana abierta.
 El diálogo explica que la copia no está cifrada y que la restauración posterior
