@@ -46,7 +46,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Recuperación de sesión | Parcial | Activa por defecto, separada por pestaña, versionada y desactivable con advertencia; falta QA de cierre inesperado |
 | Crear documento | Parcial | Crea una pestaña nueva sin reemplazar el documento activo; falta diálogo visual de destino |
 | Varios documentos y pestañas | Parcial | Barra visible con orden estable, cambio y cierre individual por mouse/teclado, estado, historial, scroll y recuperación separados y cierre global protegido; falta accesibilidad completa |
-| Menú contextual | Parcial | Copia y pegado explícito según modo; faltan acciones de aplicación |
+| Menú contextual | Parcial | Copia y pegado explícito según modo, búsqueda, cambio de vista y guardado; faltan acciones de workspace y estados deshabilitados visibles |
 | Paleta de comandos | Parcial | `Ctrl+Shift+P` muestra el catálogo compartido y permite ejecutar por teclado o mouse; falta búsqueda por nombre |
 | Paneles plegables | Parcial | Índice, notas y backlinks muestran listas acotadas con selección visible, navegación por teclado o mouse y cierre con Escape; falta panel de búsqueda múltiple |
 | `.txt` y otros textos inertes | Parcial | Extensiones no Markdown se muestran como texto inerte; falta QA y reconocimiento UX |

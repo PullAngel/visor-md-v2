@@ -163,6 +163,10 @@ Registrar antes de comenzar:
   varias filas, que flechas conservan visible la elección en listas largas,
   Enter o un clic navegan al destino correcto y Escape devuelve todo el ancho
   a la lectura. Repetir un par de acciones de la paleta mediante clic.
+- Abrir el menú contextual con y sin selección en lectura y edición. Copiar no
+  debe inventar contenido si no hay selección; Pegar solo aparece en edición.
+  Buscar, alternar modo, Guardar y Guardar como deben coincidir con la paleta y
+  sus atajos.
 - Esta comprobación no autoriza guardar: cursor visible, selección por mouse,
   navegación vertical y guardado siguen fuera de esta etapa.
 

@@ -203,6 +203,10 @@ enum ContextAction {
     Paste,
     CopyText,
     CopyMarkdown,
+    Search,
+    ToggleMode,
+    Save,
+    SaveAs,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -267,6 +271,10 @@ impl ContextAction {
             Self::Paste => "Pegar",
             Self::CopyText => "Copiar texto",
             Self::CopyMarkdown => "Copiar Markdown original",
+            Self::Search => "Buscar en documento",
+            Self::ToggleMode => "Alternar lectura y edición",
+            Self::Save => "Guardar",
+            Self::SaveAs => "Guardar como",
         }
     }
 
@@ -277,11 +285,22 @@ impl ContextAction {
 
 fn context_actions(mode: DocumentMode) -> &'static [ContextAction] {
     match mode {
-        DocumentMode::Reading => &[ContextAction::CopyText, ContextAction::CopyMarkdown],
+        DocumentMode::Reading => &[
+            ContextAction::CopyText,
+            ContextAction::CopyMarkdown,
+            ContextAction::Search,
+            ContextAction::ToggleMode,
+            ContextAction::Save,
+            ContextAction::SaveAs,
+        ],
         DocumentMode::SourceEditing => &[
             ContextAction::Paste,
             ContextAction::CopyText,
             ContextAction::CopyMarkdown,
+            ContextAction::Search,
+            ContextAction::ToggleMode,
+            ContextAction::Save,
+            ContextAction::SaveAs,
         ],
     }
 }
@@ -3201,6 +3220,14 @@ impl ApplicationHandler<AppEvent> for App {
                                 ContextAction::CopyText | ContextAction::CopyMarkdown => {
                                     self.copy_selection(action.source_markdown());
                                 }
+                                ContextAction::Search => {
+                                    self.perform_action(AppAction::SearchDocument)
+                                }
+                                ContextAction::ToggleMode => {
+                                    self.perform_action(AppAction::ToggleMode)
+                                }
+                                ContextAction::Save => self.perform_action(AppAction::Save),
+                                ContextAction::SaveAs => self.perform_action(AppAction::SaveAs),
                             }
                         }
                         if let Some(w) = &self.window {
@@ -3285,14 +3312,6 @@ impl ApplicationHandler<AppEvent> for App {
                 button: MouseButton::Right,
                 ..
             } => {
-                let has_selection = self
-                    .selection
-                    .and_then(|selection| selection.rendered_text(&self.document.blocks))
-                    .is_some();
-                if !has_selection && self.document.mode != DocumentMode::SourceEditing {
-                    self.set_notice("selecciona texto para copiar");
-                    return;
-                }
                 let Some((x, y)) = self.pointer else {
                     return;
                 };
