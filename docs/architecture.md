@@ -350,7 +350,10 @@ Cada tarea lleva:
 - resultado inmutable o mensaje de error.
 
 Un resultado antiguo no reemplaza un documento más nuevo. Cerrar una pestaña o
-editar mientras se parsea cancela o invalida trabajo anterior.
+editar mientras se parsea cancela o invalida trabajo anterior. El workspace no
+instala un watcher: al recuperar foco compara una marca barata de su raíz con
+la del último índice y, si cambió, avisa para reindexar explícitamente. Es una
+señal de actualización, no una garantía de detección de cada cambio interno.
 
 ## Virtualización
 

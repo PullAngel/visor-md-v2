@@ -174,6 +174,9 @@ causa porque todavía no se controlan caché, carga y planificación del sistema
 - lista efímera de notas indexadas con `Ctrl+Shift+T`: no recorre el disco ni
   acepta rutas del documento y vuelve a resolver la elección dentro de VFS;
   falta el panel plegable de árbol y backlinks;
+- al volver a enfocar la ventana, una marca distinta de la raíz avisa que el
+  índice puede estar desactualizado y ofrece la reconstrucción explícita con
+  `Ctrl+Shift+I`; no instala un watcher ni afirma detectar todo cambio interno;
 - panel visible de resultados múltiples sobre el índice de ruta, encabezados y
   contenido acotado a 8 MiB de memoria; `Ctrl+Shift+F` ya permite buscar y abrir
   de forma contenida la coincidencia elegida;

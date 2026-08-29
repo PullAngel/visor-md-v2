@@ -10,6 +10,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::SystemTime;
 
 pub(crate) const DEFAULT_MAX_WORKSPACE_FILES: usize = 10_000;
 pub(crate) const DEFAULT_MAX_WORKSPACE_NOTE_BYTES: u64 = 512 * 1024;
@@ -85,9 +86,19 @@ pub(crate) struct WorkspaceIndex {
     /// El recorrido se interrumpió por una acción posterior de la persona.
     /// Un resultado cancelado nunca debe sustituir el índice activo.
     pub(crate) cancelled: bool,
+    /// Marca de la raíz observada al comenzar el recorrido. Es una señal
+    /// barata, no un watcher: si cambia, la UI pide reindexado explícito.
+    root_modified: Option<SystemTime>,
 }
 
 impl WorkspaceIndex {
+    pub(crate) fn root_may_have_changed(&self, root: &WorkspaceRoot) -> bool {
+        let current = fs::metadata(root.root())
+            .ok()
+            .and_then(|metadata| metadata.modified().ok());
+        self.root_modified.is_some() && current.is_some() && current != self.root_modified
+    }
+
     /// Devuelve únicamente rutas relativas que ya pasaron por el recorrido
     /// contenido. La interfaz debe resolverlas otra vez antes de abrirlas.
     pub(crate) fn note_paths(&self) -> Vec<PathBuf> {
@@ -196,7 +207,12 @@ pub(crate) fn index_workspace_cancellable(
     limits: WorkspaceLimits,
     cancelled: &AtomicBool,
 ) -> WorkspaceIndex {
-    let mut index = WorkspaceIndex::default();
+    let mut index = WorkspaceIndex {
+        root_modified: fs::metadata(root.root())
+            .ok()
+            .and_then(|metadata| metadata.modified().ok()),
+        ..WorkspaceIndex::default()
+    };
     let mut pending = vec![root.root().to_path_buf()];
     let mut visited_directories = HashSet::new();
 
@@ -484,6 +500,18 @@ mod tests {
 
         assert!(index.cancelled);
         assert!(index.notes.is_empty());
+    }
+
+    #[test]
+    fn una_marca_de_raiz_distinta_pide_reindexado_explicito() {
+        let root = fixture_root();
+        let vfs = WorkspaceRoot::open(&root).expect("la raíz es válida");
+        let index = WorkspaceIndex {
+            root_modified: Some(SystemTime::UNIX_EPOCH),
+            ..WorkspaceIndex::default()
+        };
+
+        assert!(index.root_may_have_changed(&vfs));
     }
 
     #[test]

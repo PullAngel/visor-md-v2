@@ -2437,6 +2437,9 @@ struct App {
     /// contador descarta además cualquier resultado tardío del hilo anterior.
     workspace_request: u64,
     workspace_cancel: Option<Arc<AtomicBool>>,
+    /// La raíz cambió desde el último índice conocido. No se usa un watcher:
+    /// la persona decide cuándo reconstruir el índice con Ctrl+Shift+I.
+    workspace_stale: bool,
     /// Versión de apertura solicitada. Una tarea terminada tarde no puede
     /// reemplazar el documento que la persona pidió después.
     document_request: u64,
@@ -2745,6 +2748,7 @@ impl ApplicationHandler<AppEvent> for App {
                 let scan_truncated = index.scan_truncated;
                 self.workspace = Some((root, index));
                 self.workspace_paths = None;
+                self.workspace_stale = false;
                 let suffix = match (truncated, content_truncated, scan_truncated) {
                     (_, _, true) => "; límite de lectura de carpeta alcanzado",
                     (true, true, false) => "; límite de notas y contenido alcanzado",
@@ -2953,7 +2957,10 @@ impl ApplicationHandler<AppEvent> for App {
                 self.selecting = false;
                 self.modifiers = ModifiersState::empty();
             }
-            WindowEvent::Focused(true) => self.check_external_change(),
+            WindowEvent::Focused(true) => {
+                self.check_external_change();
+                self.check_workspace_change();
+            }
             WindowEvent::MouseInput {
                 state,
                 button: MouseButton::Left,
@@ -3919,6 +3926,21 @@ impl App {
             let result = changed_on_disk(&path, &baseline_bytes).map_err(|error| error.to_string());
             let _ = proxy.send_event(AppEvent::ExternalChangeChecked { request, result });
         });
+    }
+
+    /// La marca de directorio no es una fuente de verdad: algunos sistemas de
+    /// archivos pueden no actualizarla para todo cambio interno. Sirve como
+    /// señal barata y visible para que una persona reconstruya el índice, sin
+    /// instalar un watcher ni observar rutas fuera de la raíz concedida.
+    fn check_workspace_change(&mut self) {
+        let changed = self
+            .workspace
+            .as_ref()
+            .is_some_and(|(root, index)| index.root_may_have_changed(root));
+        if changed && !self.workspace_stale {
+            self.workspace_stale = true;
+            self.set_notice("la carpeta de trabajo pudo cambiar; Ctrl+Shift+I actualiza el índice");
+        }
     }
 
     /// Detectar un cambio no modifica nada por sí mismo. Recargar conserva una
@@ -6011,6 +6033,7 @@ fn main() {
         workspace: None,
         workspace_request: 0,
         workspace_cancel: None,
+        workspace_stale: false,
         document_request: initial_document_request,
         pending_workspace_heading: None,
         proxy: proxy.clone(),

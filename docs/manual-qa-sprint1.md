@@ -72,6 +72,10 @@ Registrar antes de comenzar:
 - Crear o modificar una nota desde otro editor y pulsar `Ctrl+Shift+I`. La
   actualización debe ser visible en la búsqueda posterior, sin crear archivos
   auxiliares en la carpeta ni tocar `.obsidian`.
+- Después de modificar el contenido de la carpeta desde otro programa, volver
+  a enfocar Visor MD. Si la marca del directorio cambió, debe avisar de forma
+  discreta que `Ctrl+Shift+I` actualiza el índice. Es una ayuda visible, no un
+  watcher ni una promesa de detectar todos los cambios de cada filesystem.
 - Abrir una nota que reciba enlaces desde dos o más notas de prueba y pulsar
   `Ctrl+Shift+B`. Debe verse la ruta del backlink seleccionado; flechas cambia
   la selección, Escape no abre nada y Enter abre solo una nota dentro de la
