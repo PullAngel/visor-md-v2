@@ -24,11 +24,24 @@ compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
 | **Workspace acotado y lector ampliado** | **3.222.016 bytes, 3,073 MiB** |
 | **Navegación y resaltado portable** | **3.231.744 bytes, 3,082 MiB** |
 | **Lista de notas y actualización de workspace** | **3.236.864 bytes, 3,087 MiB** |
+| **Pestañas, paneles y recuperación configurable** | **3.264.512 bytes, 3,11 MiB** |
 
 Superar 8 MB exige medición, explicación y aprobación. El límite no se usa para
 recortar seguridad, estabilidad, accesibilidad, Unicode o funciones esenciales.
 Mermaid, correctores y otros componentes pesados no tienen permiso automático
 para ampliar el núcleo.
+
+### Aplicación diaria del 29 de agosto de 2026
+
+El checkpoint incorpora pestañas visibles, paneles, paleta de acciones y
+recuperación configurable y versionada.
+
+| Medida | Resultado |
+| --- | --- |
+| Binario Windows | 3.264.512 bytes, 3,11 MiB |
+| SHA-256 | `FAB3EE9393FC556C4BED52138055B191D867D6A27D9E44B7BFD97B154152AAB3` |
+| Variación frente al checkpoint anterior | +27.648 bytes |
+| Margen frente al límite deseado | 4,89 MiB |
 
 ### Lista de notas y actualización de workspace del 29 de agosto de 2026
 

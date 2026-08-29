@@ -132,6 +132,10 @@ exacto del traspaso.
 
 Evidencia actual en Windows:
 
+- `cargo test`: 133 de 133 pruebas verdes el 29 de agosto de 2026 tras
+  pestañas, paneles, catálogo de acciones y recuperación configurable;
+- release Windows del mismo checkpoint: 3.264.512 bytes, 3,11 MiB, SHA-256
+  `FAB3EE9393FC556C4BED52138055B191D867D6A27D9E44B7BFD97B154152AAB3`;
 - `cargo check`: verde;
 - `cargo fmt -- --check`: verde;
 - `cargo clippy --all-targets -- -D warnings`: verde;
