@@ -28,7 +28,7 @@ use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
 use std::time::Instant;
 
@@ -78,6 +78,66 @@ const CODE_COPY_WIDTH: f32 = 60.0;
 const CODE_COPY_HEIGHT: f32 = 22.0;
 const MAX_SEARCH_QUERY_CHARS: usize = 256;
 const MAX_OVERLAY_LABEL_CHARS: usize = 180;
+const STATUS_HEIGHT: f32 = 28.0;
+const MAX_TAB_WIDTH: f32 = 220.0;
+static NEXT_DOCUMENT_ID: AtomicU64 = AtomicU64::new(1);
+
+fn tab_width(window_width: f32, tab_count: usize) -> f32 {
+    if tab_count == 0 {
+        return 0.0;
+    }
+    (window_width / tab_count as f32).min(MAX_TAB_WIDTH)
+}
+
+fn tab_index_at(
+    x: f32,
+    y: f32,
+    window_width: f32,
+    window_height: f32,
+    count: usize,
+) -> Option<usize> {
+    if count == 0 || y < window_height - STATUS_HEIGHT || x < 0.0 {
+        return None;
+    }
+    let width = tab_width(window_width, count);
+    let index = (x / width) as usize;
+    (index < count).then_some(index)
+}
+
+fn adjacent_tab_id(order: &[u64], current: u64, backwards: bool) -> Option<u64> {
+    if order.len() < 2 {
+        return None;
+    }
+    let position = order.iter().position(|id| *id == current)?;
+    let target = if backwards {
+        (position + order.len() - 1) % order.len()
+    } else {
+        (position + 1) % order.len()
+    };
+    order.get(target).copied()
+}
+
+fn tab_label(path: &str, dirty: bool, max_chars: usize) -> String {
+    let path_buf = PathBuf::from(path);
+    let name = path_buf
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(path);
+    let max_chars = max_chars.max(4);
+    let suffix = if dirty { " *" } else { "" };
+    let available = max_chars.saturating_sub(suffix.chars().count());
+    let shortened = if name.chars().count() > available {
+        format!(
+            "{}…",
+            name.chars()
+                .take(available.saturating_sub(1))
+                .collect::<String>()
+        )
+    } else {
+        name.to_string()
+    };
+    format!("{shortened}{suffix}")
+}
 
 /// Los controles efímeros no necesitan retener texto ilimitado. El límite se
 /// aplica por caracteres para no cortar UTF-8 y solo reduce la entrada de la
@@ -2412,6 +2472,7 @@ fn blit_color(pixmap: &mut Pixmap, g: &CachedGlyph, gx: f32, gy: f32, width: i32
 // ---------------------------------------------------------------- app
 
 struct DocumentState {
+    id: u64,
     path: String,
     source: String,
     source_metadata: TextMetadata,
@@ -2429,6 +2490,7 @@ struct DocumentState {
 impl DocumentState {
     fn untitled() -> Self {
         Self {
+            id: NEXT_DOCUMENT_ID.fetch_add(1, Ordering::Relaxed),
             path: "sin título.md".to_string(),
             source: String::new(),
             source_metadata: TextMetadata::default(),
@@ -2466,6 +2528,9 @@ struct App {
     /// Documentos inactivos de la sesión. Cada uno conserva su fuente e
     /// historial; los caches de dibujo siguen perteneciendo a la ventana.
     inactive_documents: Vec<InactiveDocument>,
+    /// Orden visible estable de las pestañas, independiente de cuál esté
+    /// activa. Los identificadores existen solo durante la sesión.
+    tab_order: Vec<u64>,
     external_check_in_flight: bool,
     /// Evita cambiar de documento mientras un guardado asíncrono todavía
     /// pertenece al documento activo. Es una frontera temporal hasta que las
@@ -3030,13 +3095,20 @@ impl ApplicationHandler<AppEvent> for App {
                         }
                         return;
                     }
-                    if !self.inactive_documents.is_empty()
-                        && let (Some((_, y)), Some(window)) = (self.pointer, &self.window)
-                        && y >= window.inner_size().height.saturating_sub(24) as f32
-                    {
-                        self.switch_document_tab(false);
-                        self.selecting = false;
-                        return;
+                    if let (Some((x, y)), Some(window)) = (self.pointer, &self.window) {
+                        let size = window.inner_size();
+                        if let Some(index) = tab_index_at(
+                            x,
+                            y,
+                            size.width as f32,
+                            size.height as f32,
+                            self.tab_order.len(),
+                        ) && let Some(document_id) = self.tab_order.get(index).copied()
+                        {
+                            self.activate_document_tab(document_id);
+                            self.selecting = false;
+                            return;
+                        }
                     }
                     if self.document.mode == DocumentMode::Reading
                         && let Some((x, y)) = self.pointer
@@ -3652,6 +3724,7 @@ impl App {
             self.set_notice("espera a que termine la operación actual");
             return;
         }
+        let new_id = document.id;
         self.document_request = self.document_request.wrapping_add(1);
         self.document.scroll = self.scroll;
         let current = std::mem::replace(&mut self.document, document);
@@ -3660,6 +3733,7 @@ impl App {
             document: current,
             recovery: current_recovery,
         });
+        self.tab_order.push(new_id);
         self.reset_document_view();
     }
 
@@ -3672,10 +3746,29 @@ impl App {
             self.set_notice("solo hay un documento abierto");
             return;
         }
-        let index = if backwards {
-            self.inactive_documents.len() - 1
-        } else {
-            0
+        let Some(document_id) = adjacent_tab_id(&self.tab_order, self.document.id, backwards)
+        else {
+            self.set_notice("no se pudo identificar la pestaña activa");
+            return;
+        };
+        self.activate_document_tab(document_id);
+    }
+
+    fn activate_document_tab(&mut self, document_id: u64) {
+        if document_id == self.document.id {
+            return;
+        }
+        if self.loading || self.save_in_flight {
+            self.set_notice("espera a que termine la operación actual antes de cambiar de pestaña");
+            return;
+        }
+        let Some(index) = self
+            .inactive_documents
+            .iter()
+            .position(|tab| tab.document.id == document_id)
+        else {
+            self.set_notice("la pestaña seleccionada ya no está disponible");
+            return;
         };
         let next = self.inactive_documents.remove(index);
         self.document_request = self.document_request.wrapping_add(1);
@@ -3702,12 +3795,30 @@ impl App {
             return;
         }
         self.document_request = self.document_request.wrapping_add(1);
-        if let Some(next) = self.inactive_documents.pop() {
+        let active_position = self
+            .tab_order
+            .iter()
+            .position(|id| *id == self.document.id)
+            .unwrap_or(0);
+        self.tab_order.retain(|id| *id != self.document.id);
+        let next_id = self
+            .tab_order
+            .get(active_position.min(self.tab_order.len().saturating_sub(1)))
+            .copied();
+        let next = next_id.and_then(|id| {
+            let index = self
+                .inactive_documents
+                .iter()
+                .position(|tab| tab.document.id == id)?;
+            Some(self.inactive_documents.remove(index))
+        });
+        if let Some(next) = next {
             self.document = next.document;
             self.recovery = next.recovery;
         } else {
             self.document = DocumentState::untitled();
             self.recovery = RecoverySession::start().ok();
+            self.tab_order.push(self.document.id);
         }
         self.reset_document_view();
         self.set_notice("pestaña cerrada");
@@ -5733,12 +5844,46 @@ impl App {
         } else {
             "sin carpeta"
         };
+        let tab_width = tab_width(w.get() as f32, self.tab_order.len());
+        let tab_label_chars = (tab_width / 7.5).floor().max(4.0) as usize;
+        let tab_descriptors = self
+            .tab_order
+            .iter()
+            .filter_map(|id| {
+                if *id == self.document.id {
+                    Some((
+                        true,
+                        tab_label(
+                            &self.document.path,
+                            self.document.is_dirty(),
+                            tab_label_chars,
+                        ),
+                    ))
+                } else {
+                    self.inactive_documents
+                        .iter()
+                        .find(|tab| tab.document.id == *id)
+                        .map(|tab| {
+                            (
+                                false,
+                                tab_label(
+                                    &tab.document.path,
+                                    tab.document.is_dirty(),
+                                    tab_label_chars,
+                                ),
+                            )
+                        })
+                }
+            })
+            .collect::<Vec<_>>();
+        let tab_layouts = tab_descriptors
+            .iter()
+            .map(|(_, label)| {
+                build_menu_layout(label, &mut self.font_cx, &mut self.layout_cx, self.palette)
+            })
+            .collect::<Vec<_>>();
         let status_layout = build_menu_layout(
-            &format!(
-                "{} · {document_mode_label} · {document_state_label} · {} pestañas · {workspace_state_label}",
-                abbreviated_label(&self.document.path, 36),
-                self.inactive_documents.len() + 1,
-            ),
+            &format!("{document_mode_label} · {document_state_label} · {workspace_state_label}"),
             &mut self.font_cx,
             &mut self.layout_cx,
             self.palette,
@@ -6057,15 +6202,40 @@ impl App {
             }
         }
 
-        let status_y = h.get() as f32 - 24.0;
-        if let Some(rect) = Rect::from_xywh(0.0, status_y, w.get() as f32, 24.0) {
+        let status_y = h.get() as f32 - STATUS_HEIGHT;
+        if let Some(rect) = Rect::from_xywh(0.0, status_y, w.get() as f32, STATUS_HEIGHT) {
             pixmap.fill_rect(rect, &paint, Transform::identity(), None);
         }
-        for line in status_layout.lines() {
-            for entry in line.items() {
-                if let PositionedLayoutItem::GlyphRun(run) = entry {
-                    draw_run_background(pixmap, &run, MARGIN, status_y + 5.0);
-                    draw_glyph_run(pixmap, scale_cx, glyphs, &run, MARGIN, status_y + 5.0);
+        for (index, ((active, _), layout)) in
+            tab_descriptors.iter().zip(tab_layouts.iter()).enumerate()
+        {
+            let x = index as f32 * tab_width;
+            if *active && let Some(rect) = Rect::from_xywh(x, status_y, tab_width, 3.0) {
+                pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
+            }
+            if index > 0
+                && let Some(rect) = Rect::from_xywh(x, status_y + 6.0, 1.0, 16.0)
+            {
+                pixmap.fill_rect(rect, &dim_paint, Transform::identity(), None);
+            }
+            for line in layout.lines() {
+                for entry in line.items() {
+                    if let PositionedLayoutItem::GlyphRun(run) = entry {
+                        draw_run_background(pixmap, &run, x + 10.0, status_y + 7.0);
+                        draw_glyph_run(pixmap, scale_cx, glyphs, &run, x + 10.0, status_y + 7.0);
+                    }
+                }
+            }
+        }
+        let status_x = w.get() as f32 - status_layout.width() - 12.0;
+        let tabs_end = tab_width * tab_layouts.len() as f32;
+        if status_x > tabs_end + 12.0 {
+            for line in status_layout.lines() {
+                for entry in line.items() {
+                    if let PositionedLayoutItem::GlyphRun(run) = entry {
+                        draw_run_background(pixmap, &run, status_x, status_y + 7.0);
+                        draw_glyph_run(pixmap, scale_cx, glyphs, &run, status_x, status_y + 7.0);
+                    }
                 }
             }
         }
@@ -6309,9 +6479,11 @@ fn main() {
     let recovery = RecoverySession::start().ok();
     let recovery_privacy_notice_pending =
         recovery.is_some() && RecoverySession::privacy_notice_needed().unwrap_or(false);
+    let initial_document_id = NEXT_DOCUMENT_ID.fetch_add(1, Ordering::Relaxed);
     let mut app = App {
         started,
         document: DocumentState {
+            id: initial_document_id,
             path: opening_path
                 .clone()
                 .unwrap_or_else(|| "sin título.md".to_string()),
@@ -6330,6 +6502,7 @@ fn main() {
             scroll: 0.0,
         },
         inactive_documents: Vec::new(),
+        tab_order: vec![initial_document_id],
         external_check_in_flight: false,
         save_in_flight: false,
         recovery,
@@ -6443,6 +6616,34 @@ fn main() {
 #[cfg(test)]
 mod pruebas {
     use super::*;
+
+    #[test]
+    fn la_barra_de_pestanas_resuelve_cada_destino_sin_salir_de_su_area() {
+        assert_eq!(tab_index_at(10.0, 580.0, 600.0, 600.0, 3), Some(0));
+        assert_eq!(tab_index_at(210.0, 580.0, 600.0, 600.0, 3), Some(1));
+        assert_eq!(tab_index_at(410.0, 580.0, 600.0, 600.0, 3), Some(2));
+        assert_eq!(tab_index_at(10.0, 500.0, 600.0, 600.0, 3), None);
+        assert_eq!(tab_index_at(590.0, 580.0, 600.0, 600.0, 2), None);
+    }
+
+    #[test]
+    fn recorrer_pestanas_respeta_el_orden_y_envuelve_los_extremos() {
+        let order = [11, 22, 33];
+
+        assert_eq!(adjacent_tab_id(&order, 22, false), Some(33));
+        assert_eq!(adjacent_tab_id(&order, 33, false), Some(11));
+        assert_eq!(adjacent_tab_id(&order, 11, true), Some(33));
+        assert_eq!(adjacent_tab_id(&order, 99, false), None);
+    }
+
+    #[test]
+    fn la_etiqueta_de_pestana_conserva_unicode_y_marca_cambios() {
+        let label = tab_label(r"C:\notas\日本語 y ciberseguridad.md", true, 18);
+
+        assert!(label.ends_with('*'));
+        assert!(label.chars().count() <= 18);
+        assert!(label.is_char_boundary(label.len()));
+    }
 
     #[test]
     fn el_cierre_global_cuenta_cambios_en_todas_las_pestanas() {

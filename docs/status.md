@@ -121,6 +121,10 @@ exacto del traspaso.
   protegido al documento activo. Cada pestaña conserva fuente, historial,
   identidad y recuperación propios. El cierre de la ventana comprueba todos los
   documentos modificados y solo continúa después de preservar cada recuperación.
+- la barra inferior presenta las pestañas en un orden estable, marca cambios
+  con `*` y permite elegir cada documento con mouse. La posición de lectura se
+  conserva al cambiar; una apertura o guardado pendiente impide temporalmente
+  cambiar de pestaña para no atribuir el resultado al documento equivocado.
 
 Evidencia actual en Windows:
 

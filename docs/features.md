@@ -44,7 +44,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Preservar sintaxis desconocida | Parcial | Fuente no se reserializa; falta property testing de round-trip |
 | Detectar cambios externos | Parcial | Conflicto visible al guardar y al recuperar foco; falta QA multiplataforma |
 | Crear documento | Parcial | Crea una pestaña nueva sin reemplazar el documento activo; falta diálogo visual de destino |
-| Varios documentos y pestañas | Parcial | Estado, historial y recuperación separados; cambio por teclado, cierre individual y cierre global protegido; falta barra visual y estado de vista propio |
+| Varios documentos y pestañas | Parcial | Barra visible con orden estable, cambio por mouse/teclado, estado, historial, scroll y recuperación separados, cierre individual y global protegido; falta botón de cierre y accesibilidad completa |
 | Menú contextual | Parcial | Copia y pegado explícito según modo; faltan acciones de aplicación |
 | Paleta de comandos | Planificado | Descubrible y operable por teclado |
 | `.txt` y otros textos inertes | Parcial | Extensiones no Markdown se muestran como texto inerte; falta QA y reconocimiento UX |
