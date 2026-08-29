@@ -3006,6 +3006,14 @@ impl ApplicationHandler<AppEvent> for App {
                         }
                         return;
                     }
+                    if self.inactive_documents.len() > 0
+                        && let (Some((_, y)), Some(window)) = (self.pointer, &self.window)
+                        && y >= window.inner_size().height.saturating_sub(24) as f32
+                    {
+                        self.switch_document_tab(false);
+                        self.selecting = false;
+                        return;
+                    }
                     if self.document.mode == DocumentMode::Reading
                         && let Some((x, y)) = self.pointer
                         && let Some(block) = self.code_copy_at(x, y)
