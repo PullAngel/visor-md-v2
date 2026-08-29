@@ -164,6 +164,59 @@ enum ContextAction {
     CopyMarkdown,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AppAction {
+    NewDocument,
+    OpenDocument,
+    Save,
+    SaveAs,
+    CloseDocument,
+    ToggleMode,
+    SearchDocument,
+    ChooseWorkspace,
+    SearchWorkspace,
+    DocumentOutline,
+    WorkspaceFiles,
+    Backlinks,
+    RestoreRecovery,
+}
+
+const APP_ACTIONS: [AppAction; 13] = [
+    AppAction::NewDocument,
+    AppAction::OpenDocument,
+    AppAction::Save,
+    AppAction::SaveAs,
+    AppAction::CloseDocument,
+    AppAction::ToggleMode,
+    AppAction::SearchDocument,
+    AppAction::ChooseWorkspace,
+    AppAction::SearchWorkspace,
+    AppAction::DocumentOutline,
+    AppAction::WorkspaceFiles,
+    AppAction::Backlinks,
+    AppAction::RestoreRecovery,
+];
+
+impl AppAction {
+    fn label(self) -> &'static str {
+        match self {
+            Self::NewDocument => "Nuevo documento · Ctrl+N",
+            Self::OpenDocument => "Abrir documento · Ctrl+O",
+            Self::Save => "Guardar · Ctrl+S",
+            Self::SaveAs => "Guardar como · Ctrl+Shift+S",
+            Self::CloseDocument => "Cerrar pestaña · Ctrl+W",
+            Self::ToggleMode => "Alternar lectura y edición · F2",
+            Self::SearchDocument => "Buscar en documento · Ctrl+F",
+            Self::ChooseWorkspace => "Abrir carpeta · Ctrl+Shift+O",
+            Self::SearchWorkspace => "Buscar en carpeta · Ctrl+Shift+F",
+            Self::DocumentOutline => "Índice del documento · Ctrl+Shift+L",
+            Self::WorkspaceFiles => "Notas de la carpeta · Ctrl+Shift+T",
+            Self::Backlinks => "Backlinks · Ctrl+Shift+B",
+            Self::RestoreRecovery => "Abrir recuperación · Ctrl+Shift+R",
+        }
+    }
+}
+
 impl ContextAction {
     fn label(self) -> &'static str {
         match self {
@@ -2628,6 +2681,9 @@ struct App {
     /// una ruta ni una copia de contenido, y se descarta al navegar.
     outline_headings: Option<Vec<(usize, String)>>,
     outline_match: usize,
+    /// Selector efímero de acciones. No guarda consultas ni contenido y usa el
+    /// mismo catálogo que pueden consumir controles visibles posteriores.
+    command_palette: Option<usize>,
     /// Se crea solamente ante una copia explícita. Mantenerlo vivo respeta el
     /// modelo de propiedad de X11/Wayland, donde el proceso sirve el texto
     /// hasta que otra aplicación lo solicita.
@@ -3188,10 +3244,14 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::Ime(Ime::Commit(text)) if self.search_query.is_some() => {
                 self.append_search_text(&text);
             }
+            WindowEvent::Ime(Ime::Commit(_)) if self.command_palette.is_some() => {}
             WindowEvent::Ime(Ime::Commit(text))
                 if self.document.mode == DocumentMode::SourceEditing =>
             {
                 self.edit_source(|editor, source| editor.insert(source, text.as_str()));
+            }
+            WindowEvent::KeyboardInput { event, .. } if self.command_palette.is_some() => {
+                self.handle_command_palette_key(&event);
             }
             WindowEvent::KeyboardInput { event, .. } if self.workspace_search_query.is_some() => {
                 self.handle_workspace_search_key(&event);
@@ -3208,6 +3268,18 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::KeyboardInput { event, .. } if self.search_query.is_some() => {
                 self.handle_search_key(&event);
             }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::KeyP),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } if self.modifiers.control_key() && self.modifiers.shift_key() => {
+                self.open_command_palette();
+            }
             WindowEvent::KeyboardInput { event, .. }
                 if self.document.mode == DocumentMode::SourceEditing =>
             {
@@ -3223,7 +3295,7 @@ impl ApplicationHandler<AppEvent> for App {
                     },
                 ..
             } if self.modifiers.control_key() && self.modifiers.shift_key() => {
-                self.open_workspace_search()
+                self.perform_action(AppAction::SearchWorkspace)
             }
             WindowEvent::KeyboardInput {
                 event:
@@ -3234,7 +3306,7 @@ impl ApplicationHandler<AppEvent> for App {
                         ..
                     },
                 ..
-            } if self.modifiers.control_key() => self.open_document_search(),
+            } if self.modifiers.control_key() => self.perform_action(AppAction::SearchDocument),
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
@@ -3245,7 +3317,7 @@ impl ApplicationHandler<AppEvent> for App {
                     },
                 ..
             } if self.modifiers.control_key() && self.modifiers.shift_key() => {
-                self.restore_latest_recovery();
+                self.perform_action(AppAction::RestoreRecovery);
             }
             WindowEvent::KeyboardInput {
                 event:
@@ -3257,7 +3329,7 @@ impl ApplicationHandler<AppEvent> for App {
                     },
                 ..
             } if self.modifiers.control_key() && self.modifiers.shift_key() => {
-                self.show_document_outline();
+                self.perform_action(AppAction::DocumentOutline);
             }
             WindowEvent::KeyboardInput {
                 event:
@@ -3281,7 +3353,7 @@ impl ApplicationHandler<AppEvent> for App {
                     },
                 ..
             } if self.modifiers.control_key() && self.modifiers.shift_key() => {
-                self.choose_workspace();
+                self.perform_action(AppAction::ChooseWorkspace);
             }
             WindowEvent::KeyboardInput {
                 event:
@@ -3293,7 +3365,7 @@ impl ApplicationHandler<AppEvent> for App {
                     },
                 ..
             } if self.modifiers.control_key() && self.modifiers.shift_key() => {
-                self.show_backlinks();
+                self.perform_action(AppAction::Backlinks);
             }
             WindowEvent::KeyboardInput {
                 event:
@@ -3305,7 +3377,7 @@ impl ApplicationHandler<AppEvent> for App {
                     },
                 ..
             } if self.modifiers.control_key() && self.modifiers.shift_key() => {
-                self.show_workspace_files();
+                self.perform_action(AppAction::WorkspaceFiles);
             }
             WindowEvent::KeyboardInput {
                 event:
@@ -3317,7 +3389,7 @@ impl ApplicationHandler<AppEvent> for App {
                     },
                 ..
             } if self.modifiers.control_key() => {
-                self.choose_document_to_open();
+                self.perform_action(AppAction::OpenDocument);
             }
             WindowEvent::KeyboardInput {
                 event:
@@ -3329,7 +3401,7 @@ impl ApplicationHandler<AppEvent> for App {
                     },
                 ..
             } if self.modifiers.control_key() => {
-                self.create_new_document();
+                self.perform_action(AppAction::NewDocument);
             }
             WindowEvent::KeyboardInput {
                 event:
@@ -3341,7 +3413,7 @@ impl ApplicationHandler<AppEvent> for App {
                     },
                 ..
             } if self.modifiers.control_key() && self.modifiers.shift_key() => {
-                self.save_as_current_document();
+                self.perform_action(AppAction::SaveAs);
             }
             WindowEvent::KeyboardInput {
                 event:
@@ -3353,7 +3425,7 @@ impl ApplicationHandler<AppEvent> for App {
                     },
                 ..
             } if self.modifiers.control_key() => {
-                self.save_current_document();
+                self.perform_action(AppAction::Save);
             }
             WindowEvent::KeyboardInput {
                 event:
@@ -3409,7 +3481,7 @@ impl ApplicationHandler<AppEvent> for App {
                         ..
                     },
                 ..
-            } if self.modifiers.control_key() => self.close_active_document_tab(),
+            } if self.modifiers.control_key() => self.perform_action(AppAction::CloseDocument),
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
@@ -3440,7 +3512,7 @@ impl ApplicationHandler<AppEvent> for App {
                     },
                 ..
             } => {
-                self.enter_source_mode();
+                self.perform_action(AppAction::ToggleMode);
             }
             WindowEvent::KeyboardInput {
                 event:
@@ -3701,6 +3773,68 @@ impl ApplicationHandler<AppEvent> for App {
 }
 
 impl App {
+    fn perform_action(&mut self, action: AppAction) {
+        match action {
+            AppAction::NewDocument => self.create_new_document(),
+            AppAction::OpenDocument => self.choose_document_to_open(),
+            AppAction::Save => self.save_current_document(),
+            AppAction::SaveAs => self.save_as_current_document(),
+            AppAction::CloseDocument => self.close_active_document_tab(),
+            AppAction::ToggleMode => match self.document.mode {
+                DocumentMode::Reading => self.enter_source_mode(),
+                DocumentMode::SourceEditing => {
+                    self.refresh_reading_async("actualizando vista de lectura")
+                }
+            },
+            AppAction::SearchDocument => self.open_document_search(),
+            AppAction::ChooseWorkspace => self.choose_workspace(),
+            AppAction::SearchWorkspace => self.open_workspace_search(),
+            AppAction::DocumentOutline => self.show_document_outline(),
+            AppAction::WorkspaceFiles => self.show_workspace_files(),
+            AppAction::Backlinks => self.show_backlinks(),
+            AppAction::RestoreRecovery => self.restore_latest_recovery(),
+        }
+    }
+
+    fn open_command_palette(&mut self) {
+        self.context_menu = None;
+        self.search_query = None;
+        self.workspace_search_query = None;
+        self.workspace_paths = None;
+        self.backlink_paths = None;
+        self.outline_headings = None;
+        self.command_palette = Some(0);
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    fn handle_command_palette_key(&mut self, event: &KeyEvent) {
+        if event.state != ElementState::Pressed || event.repeat {
+            return;
+        }
+        let Some(selected) = self.command_palette else {
+            return;
+        };
+        match event.physical_key {
+            PhysicalKey::Code(KeyCode::Escape) => self.command_palette = None,
+            PhysicalKey::Code(KeyCode::ArrowDown | KeyCode::Tab) => {
+                self.command_palette = Some((selected + 1) % APP_ACTIONS.len());
+            }
+            PhysicalKey::Code(KeyCode::ArrowUp) => {
+                self.command_palette = Some((selected + APP_ACTIONS.len() - 1) % APP_ACTIONS.len());
+            }
+            PhysicalKey::Code(KeyCode::Enter) => {
+                self.command_palette = None;
+                self.perform_action(APP_ACTIONS[selected % APP_ACTIONS.len()]);
+            }
+            _ => return,
+        }
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
     fn reset_document_view(&mut self) {
         self.slots.clear();
         self.live.clear();
@@ -3716,6 +3850,7 @@ impl App {
         self.workspace_search_query = None;
         self.backlink_paths = None;
         self.outline_headings = None;
+        self.command_palette = None;
         self.pending_workspace_heading = None;
     }
 
@@ -3947,7 +4082,7 @@ impl App {
             && self.modifiers.control_key()
             && matches!(event.physical_key, PhysicalKey::Code(KeyCode::KeyW))
         {
-            self.close_active_document_tab();
+            self.perform_action(AppAction::CloseDocument);
             return;
         }
         if !event.repeat
@@ -3962,9 +4097,9 @@ impl App {
             && matches!(event.physical_key, PhysicalKey::Code(KeyCode::KeyF))
         {
             if self.modifiers.shift_key() {
-                self.open_workspace_search();
+                self.perform_action(AppAction::SearchWorkspace);
             } else {
-                self.open_document_search();
+                self.perform_action(AppAction::SearchDocument);
             }
             return;
         }
@@ -3973,7 +4108,7 @@ impl App {
             && self.modifiers.shift_key()
             && matches!(event.physical_key, PhysicalKey::Code(KeyCode::KeyL))
         {
-            self.show_document_outline();
+            self.perform_action(AppAction::DocumentOutline);
             return;
         }
         if !event.repeat
@@ -3981,7 +4116,7 @@ impl App {
             && self.modifiers.shift_key()
             && matches!(event.physical_key, PhysicalKey::Code(KeyCode::KeyB))
         {
-            self.show_backlinks();
+            self.perform_action(AppAction::Backlinks);
             return;
         }
         if !event.repeat
@@ -3989,7 +4124,7 @@ impl App {
             && self.modifiers.shift_key()
             && matches!(event.physical_key, PhysicalKey::Code(KeyCode::KeyT))
         {
-            self.show_workspace_files();
+            self.perform_action(AppAction::WorkspaceFiles);
             return;
         }
 
@@ -4011,7 +4146,7 @@ impl App {
         }
         match event.physical_key {
             PhysicalKey::Code(KeyCode::F2) => {
-                self.refresh_reading_async("actualizando vista de lectura");
+                self.perform_action(AppAction::ToggleMode);
             }
             PhysicalKey::Code(KeyCode::Backspace) => {
                 self.edit_source(|editor, source| editor.backspace(source));
@@ -4084,19 +4219,19 @@ impl App {
             PhysicalKey::Code(KeyCode::KeyS)
                 if self.modifiers.control_key() && self.modifiers.shift_key() =>
             {
-                self.save_as_current_document();
+                self.perform_action(AppAction::SaveAs);
             }
             PhysicalKey::Code(KeyCode::KeyS) if self.modifiers.control_key() => {
-                self.save_current_document();
+                self.perform_action(AppAction::Save);
             }
             PhysicalKey::Code(KeyCode::KeyN) if self.modifiers.control_key() => {
-                self.create_new_document();
+                self.perform_action(AppAction::NewDocument);
             }
             PhysicalKey::Code(KeyCode::KeyO) if self.modifiers.control_key() => {
                 if self.modifiers.shift_key() {
-                    self.choose_workspace();
+                    self.perform_action(AppAction::ChooseWorkspace);
                 } else {
-                    self.choose_document_to_open();
+                    self.perform_action(AppAction::OpenDocument);
                 }
             }
             PhysicalKey::Code(KeyCode::KeyI)
@@ -4107,7 +4242,7 @@ impl App {
             PhysicalKey::Code(KeyCode::KeyR)
                 if self.modifiers.control_key() && self.modifiers.shift_key() =>
             {
-                self.restore_latest_recovery();
+                self.perform_action(AppAction::RestoreRecovery);
             }
             PhysicalKey::Code(KeyCode::KeyZ) if self.modifiers.control_key() => {
                 self.edit_source(|editor, source| editor.undo(source));
@@ -5809,6 +5944,21 @@ impl App {
                 self.palette,
             ))
         });
+        let command_palette_overlay = self.command_palette.map(|selected| {
+            let selected = selected % APP_ACTIONS.len();
+            let label = format!(
+                "Acciones: {}/{} · {}",
+                selected + 1,
+                APP_ACTIONS.len(),
+                APP_ACTIONS[selected].label()
+            );
+            build_menu_layout(
+                &abbreviated_label(&label, MAX_OVERLAY_LABEL_CHARS),
+                &mut self.font_cx,
+                &mut self.layout_cx,
+                self.palette,
+            )
+        });
         let menu_layouts = menu.map(|_| {
             context_actions(self.document.mode)
                 .iter()
@@ -5883,7 +6033,9 @@ impl App {
             })
             .collect::<Vec<_>>();
         let status_layout = build_menu_layout(
-            &format!("{document_mode_label} · {document_state_label} · {workspace_state_label}"),
+            &format!(
+                "{document_mode_label} · {document_state_label} · {workspace_state_label} · Ctrl+Shift+P acciones"
+            ),
             &mut self.font_cx,
             &mut self.layout_cx,
             self.palette,
@@ -6240,7 +6392,8 @@ impl App {
             }
         }
 
-        if let Some(layout) = search_overlay
+        if let Some(layout) = command_palette_overlay
+            .or(search_overlay)
             .or(workspace_search_overlay)
             .or(workspace_paths_overlay)
             .or(backlink_overlay)
@@ -6556,6 +6709,7 @@ fn main() {
         backlink_match: 0,
         outline_headings: None,
         outline_match: 0,
+        command_palette: None,
         clipboard: None,
         notice: Some(if opening_path.is_some() {
             "cargando documento".to_string()
@@ -6634,6 +6788,20 @@ mod pruebas {
         assert_eq!(adjacent_tab_id(&order, 33, false), Some(11));
         assert_eq!(adjacent_tab_id(&order, 11, true), Some(33));
         assert_eq!(adjacent_tab_id(&order, 99, false), None);
+    }
+
+    #[test]
+    fn el_catalogo_de_acciones_es_pequeno_y_no_duplica_etiquetas() {
+        let mut labels = APP_ACTIONS
+            .iter()
+            .map(|action| action.label())
+            .collect::<Vec<_>>();
+        let original_len = labels.len();
+        labels.sort_unstable();
+        labels.dedup();
+
+        assert_eq!(original_len, 13);
+        assert_eq!(labels.len(), original_len);
     }
 
     #[test]

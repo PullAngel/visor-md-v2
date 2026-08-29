@@ -46,7 +46,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Crear documento | Parcial | Crea una pestaña nueva sin reemplazar el documento activo; falta diálogo visual de destino |
 | Varios documentos y pestañas | Parcial | Barra visible con orden estable, cambio por mouse/teclado, estado, historial, scroll y recuperación separados, cierre individual y global protegido; falta botón de cierre y accesibilidad completa |
 | Menú contextual | Parcial | Copia y pegado explícito según modo; faltan acciones de aplicación |
-| Paleta de comandos | Planificado | Descubrible y operable por teclado |
+| Paleta de comandos | Parcial | `Ctrl+Shift+P` recorre por teclado el catálogo compartido de acciones esenciales; falta búsqueda por nombre y mouse |
 | `.txt` y otros textos inertes | Parcial | Extensiones no Markdown se muestran como texto inerte; falta QA y reconocimiento UX |
 | Edición en vivo | Futuro | Solo tras editor y modelo estables |
 

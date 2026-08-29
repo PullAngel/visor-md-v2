@@ -282,7 +282,9 @@ configuración persistente y QA de cierre inesperado.
 
 Ventana, pestañas, menús, paneles y paleta de comandos consumen un catálogo de
 acciones. Una acción debe poder invocarse desde mouse o teclado y declarar cuándo
-está disponible.
+está disponible. El catálogo inicial ya unifica las acciones esenciales entre
+los atajos del lector, los atajos del editor y `Ctrl+Shift+P`; la disponibilidad
+contextual y los controles de mouse todavía se completan de forma incremental.
 
 ### Workspace e índice
 

@@ -146,6 +146,10 @@ Registrar antes de comenzar:
   scroll vuelve a su posición anterior. `Ctrl+W` debe proteger solo la
   pestaña activa; cerrar la ventana debe informar el total de documentos con
   cambios y no cerrar si alguna recuperación no puede escribirse.
+- Pulsar `Ctrl+Shift+P`, recorrer las acciones con flechas o Tab y ejecutar con
+  Enter. Confirmar que Nuevo, Abrir, Guardar, alternar modo, búsqueda, carpeta e
+  índice producen el mismo resultado que sus atajos indicados; Escape debe
+  cerrar la paleta sin ejecutar nada ni insertar texto en modo edición.
 - Esta comprobación no autoriza guardar: cursor visible, selección por mouse,
   navegación vertical y guardado siguen fuera de esta etapa.
 
