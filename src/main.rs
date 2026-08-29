@@ -3673,6 +3673,22 @@ impl App {
             self.show_document_outline();
             return;
         }
+        if !event.repeat
+            && self.modifiers.control_key()
+            && self.modifiers.shift_key()
+            && matches!(event.physical_key, PhysicalKey::Code(KeyCode::KeyB))
+        {
+            self.show_backlinks();
+            return;
+        }
+        if !event.repeat
+            && self.modifiers.control_key()
+            && self.modifiers.shift_key()
+            && matches!(event.physical_key, PhysicalKey::Code(KeyCode::KeyT))
+        {
+            self.show_workspace_files();
+            return;
+        }
 
         // En Windows la escritura ordinaria llega en `KeyEvent::text`; IME
         // sigue entrando por `WindowEvent::Ime::Commit`. Las combinaciones de
