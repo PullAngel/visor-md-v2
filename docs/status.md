@@ -125,6 +125,10 @@ exacto del traspaso.
   con `*` y permite elegir cada documento con mouse. La posición de lectura se
   conserva al cambiar; una apertura o guardado pendiente impide temporalmente
   cambiar de pestaña para no atribuir el resultado al documento equivocado.
+- índice del documento, lista de notas y backlinks se presentan como paneles
+  plegables de varias filas. Las listas largas mantienen visible la selección
+  sin construir layouts para todos los resultados y conservan navegación por
+  teclado contenida en el índice autorizado.
 
 Evidencia actual en Windows:
 

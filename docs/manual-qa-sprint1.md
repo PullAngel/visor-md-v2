@@ -151,6 +151,9 @@ Registrar antes de comenzar:
   Enter. Confirmar que Nuevo, Abrir, Guardar, alternar modo, búsqueda, carpeta e
   índice producen el mismo resultado que sus atajos indicados; Escape debe
   cerrar la paleta sin ejecutar nada ni insertar texto en modo edición.
+- Abrir Índice, Notas y Backlinks desde la paleta. Confirmar que el panel muestra
+  varias filas, que flechas conservan visible la elección en listas largas,
+  Enter navega al destino correcto y Escape devuelve todo el ancho a la lectura.
 - Esta comprobación no autoriza guardar: cursor visible, selección por mouse,
   navegación vertical y guardado siguen fuera de esta etapa.
 

@@ -47,6 +47,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Varios documentos y pestañas | Parcial | Barra visible con orden estable, cambio y cierre individual por mouse/teclado, estado, historial, scroll y recuperación separados y cierre global protegido; falta accesibilidad completa |
 | Menú contextual | Parcial | Copia y pegado explícito según modo; faltan acciones de aplicación |
 | Paleta de comandos | Parcial | `Ctrl+Shift+P` recorre por teclado el catálogo compartido de acciones esenciales; falta búsqueda por nombre y mouse |
+| Paneles plegables | Parcial | Índice, notas y backlinks muestran listas acotadas con selección visible y se cierran con Escape; falta mouse y panel de búsqueda múltiple |
 | `.txt` y otros textos inertes | Parcial | Extensiones no Markdown se muestran como texto inerte; falta QA y reconocimiento UX |
 | Edición en vivo | Futuro | Solo tras editor y modelo estables |
 

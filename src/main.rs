@@ -130,6 +130,17 @@ fn adjacent_tab_id(order: &[u64], current: u64, backwards: bool) -> Option<u64> 
     order.get(target).copied()
 }
 
+fn panel_window(total: usize, selected: usize, capacity: usize) -> std::ops::Range<usize> {
+    if total == 0 || capacity == 0 {
+        return 0..0;
+    }
+    let selected = selected.min(total - 1);
+    let start = selected
+        .saturating_sub(capacity / 2)
+        .min(total.saturating_sub(capacity));
+    start..(start + capacity.min(total))
+}
+
 fn tab_label(path: &str, dirty: bool, max_chars: usize) -> String {
     let path_buf = PathBuf::from(path);
     let name = path_buf
@@ -5921,56 +5932,45 @@ impl App {
             let label = abbreviated_label(&label, MAX_OVERLAY_LABEL_CHARS);
             build_menu_layout(&label, &mut self.font_cx, &mut self.layout_cx, self.palette)
         });
-        let workspace_paths_overlay = self.workspace_paths.as_ref().and_then(|paths| {
-            let selected = paths.get(self.workspace_path_match % paths.len().max(1))?;
-            let label = abbreviated_label(
-                &format!(
-                    "Notas: {}/{} · {}",
-                    self.workspace_path_match % paths.len() + 1,
-                    paths.len(),
-                    selected.display()
-                ),
-                MAX_OVERLAY_LABEL_CHARS,
+        let navigation_panel_rows = if let Some(paths) = self.workspace_paths.as_ref() {
+            let selected = self.workspace_path_match % paths.len().max(1);
+            let range = panel_window(paths.len(), selected, 9);
+            let mut rows = vec![(false, format!("Notas · {} resultados", paths.len()))];
+            rows.extend(range.map(|index| {
+                (
+                    index == selected,
+                    abbreviated_label(&paths[index].display().to_string(), 48),
+                )
+            }));
+            Some(rows)
+        } else if let Some(paths) = self.backlink_paths.as_ref() {
+            let selected = self.backlink_match % paths.len().max(1);
+            let range = panel_window(paths.len(), selected, 9);
+            let mut rows = vec![(false, format!("Backlinks · {} resultados", paths.len()))];
+            rows.extend(range.map(|index| {
+                (
+                    index == selected,
+                    abbreviated_label(&paths[index].display().to_string(), 48),
+                )
+            }));
+            Some(rows)
+        } else if let Some(headings) = self.outline_headings.as_ref() {
+            let selected = self.outline_match % headings.len().max(1);
+            let range = panel_window(headings.len(), selected, 9);
+            let mut rows = vec![(false, format!("Índice · {} encabezados", headings.len()))];
+            rows.extend(
+                range.map(|index| (index == selected, abbreviated_label(&headings[index].1, 48))),
             );
-            Some(build_menu_layout(
-                &label,
-                &mut self.font_cx,
-                &mut self.layout_cx,
-                self.palette,
-            ))
-        });
-        let backlink_overlay = self.backlink_paths.as_ref().and_then(|paths| {
-            let selected = paths.get(self.backlink_match % paths.len().max(1))?;
-            let label = format!(
-                "Backlinks: {}/{} · {}",
-                self.backlink_match % paths.len() + 1,
-                paths.len(),
-                selected.display()
-            );
-            let label = abbreviated_label(&label, MAX_OVERLAY_LABEL_CHARS);
-            Some(build_menu_layout(
-                &label,
-                &mut self.font_cx,
-                &mut self.layout_cx,
-                self.palette,
-            ))
-        });
-        let outline_overlay = self.outline_headings.as_ref().and_then(|headings| {
-            let (_, selected) = headings.get(self.outline_match % headings.len().max(1))?;
-            let label = abbreviated_label(
-                &format!(
-                    "Índice: {}/{} · {selected}",
-                    self.outline_match % headings.len() + 1,
-                    headings.len()
-                ),
-                MAX_OVERLAY_LABEL_CHARS,
-            );
-            Some(build_menu_layout(
-                &label,
-                &mut self.font_cx,
-                &mut self.layout_cx,
-                self.palette,
-            ))
+            Some(rows)
+        } else {
+            None
+        };
+        let navigation_panel_layouts = navigation_panel_rows.as_ref().map(|rows| {
+            rows.iter()
+                .map(|(_, label)| {
+                    build_menu_layout(label, &mut self.font_cx, &mut self.layout_cx, self.palette)
+                })
+                .collect::<Vec<_>>()
         });
         let command_palette_overlay = self.command_palette.map(|selected| {
             let selected = selected % APP_ACTIONS.len();
@@ -6443,9 +6443,6 @@ impl App {
         if let Some(layout) = command_palette_overlay
             .or(search_overlay)
             .or(workspace_search_overlay)
-            .or(workspace_paths_overlay)
-            .or(backlink_overlay)
-            .or(outline_overlay)
         {
             let overlay_width = (layout.width() + 24.0).min(w.get() as f32 - MARGIN * 2.0);
             if let Some(rect) = Rect::from_xywh(MARGIN, 44.0, overlay_width, 28.0) {
@@ -6456,6 +6453,46 @@ impl App {
                     if let PositionedLayoutItem::GlyphRun(run) = entry {
                         draw_run_background(pixmap, &run, MARGIN + 10.0, 49.0);
                         draw_glyph_run(pixmap, scale_cx, glyphs, &run, MARGIN + 10.0, 49.0);
+                    }
+                }
+            }
+        }
+
+        if let (Some(rows), Some(layouts)) = (
+            navigation_panel_rows.as_ref(),
+            navigation_panel_layouts.as_ref(),
+        ) {
+            let panel_x = MARGIN;
+            let panel_y = 44.0;
+            let panel_width = layouts
+                .iter()
+                .map(Layout::width)
+                .fold(240.0_f32, f32::max)
+                .min((w.get() as f32 - MARGIN * 2.0).max(120.0))
+                + 24.0;
+            let row_height = 28.0;
+            let panel_height = row_height * rows.len() as f32 + 8.0;
+            if let Some(rect) = Rect::from_xywh(panel_x, panel_y, panel_width, panel_height) {
+                pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+            }
+            for (row, ((selected, _), layout)) in rows.iter().zip(layouts).enumerate() {
+                let y = panel_y + 4.0 + row as f32 * row_height;
+                if *selected {
+                    let ac = palette.accent;
+                    let mut selected_paint = Paint::default();
+                    selected_paint.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 44));
+                    if let Some(rect) =
+                        Rect::from_xywh(panel_x + 4.0, y, panel_width - 8.0, row_height)
+                    {
+                        pixmap.fill_rect(rect, &selected_paint, Transform::identity(), None);
+                    }
+                }
+                for line in layout.lines() {
+                    for entry in line.items() {
+                        if let PositionedLayoutItem::GlyphRun(run) = entry {
+                            draw_run_background(pixmap, &run, panel_x + 12.0, y + 7.0);
+                            draw_glyph_run(pixmap, scale_cx, glyphs, &run, panel_x + 12.0, y + 7.0);
+                        }
                     }
                 }
             }
@@ -6852,6 +6889,15 @@ mod pruebas {
 
         assert_eq!(original_len, 13);
         assert_eq!(labels.len(), original_len);
+    }
+
+    #[test]
+    fn un_panel_largo_mantiene_visible_la_fila_elegida() {
+        assert_eq!(panel_window(30, 0, 9), 0..9);
+        assert_eq!(panel_window(30, 15, 9), 11..20);
+        assert_eq!(panel_window(30, 29, 9), 21..30);
+        assert_eq!(panel_window(3, 2, 9), 0..3);
+        assert_eq!(panel_window(0, 0, 9), 0..0);
     }
 
     #[test]
