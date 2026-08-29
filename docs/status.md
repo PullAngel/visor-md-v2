@@ -177,6 +177,8 @@ causa porque todavía no se controlan caché, carga y planificación del sistema
   de forma contenida la coincidencia elegida;
 - búsqueda local del documento con `Ctrl+F`, sin persistir ni transmitir la
   consulta, y búsqueda de carpeta con `Ctrl+Shift+F` sobre el índice en memoria;
+- índice del documento con `Ctrl+Shift+L`, derivado de los bloques ya abiertos
+  y sin reparsear ni acceder a archivos;
 - presupuestos de recorrido para una carpeta grande: 10.000 notas, 512 KiB por
   nota y 64 MiB de lectura acumulada;
 - QA manual del aviso inicial y recuperación tras cierre inesperado;
