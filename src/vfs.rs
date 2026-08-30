@@ -83,6 +83,41 @@ impl WorkspaceRoot {
         }
         Ok(resolved)
     }
+
+    /// Resuelve una referencia como lo hace Markdown: relativa a la carpeta
+    /// del documento que la contiene. El documento base también debe estar
+    /// dentro de la capacidad concedida; abrir otro archivo manualmente no le
+    /// da acceso lateral a la bóveda seleccionada.
+    pub(crate) fn resolve_existing_from(
+        &self,
+        base_file: impl AsRef<Path>,
+        reference: impl AsRef<Path>,
+    ) -> Result<PathBuf, VfsError> {
+        let reference = reference.as_ref();
+        validate_relative_reference(reference)?;
+        let base = fs::canonicalize(base_file).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                VfsError::Missing
+            } else {
+                VfsError::Io(error.kind())
+            }
+        })?;
+        if !base.starts_with(&self.canonical_root) {
+            return Err(VfsError::OutsideRoot);
+        }
+        let parent = base.parent().ok_or(VfsError::OutsideRoot)?;
+        let resolved = fs::canonicalize(parent.join(reference)).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                VfsError::Missing
+            } else {
+                VfsError::Io(error.kind())
+            }
+        })?;
+        if !resolved.starts_with(&self.canonical_root) {
+            return Err(VfsError::OutsideRoot);
+        }
+        Ok(resolved)
+    }
 }
 
 fn validate_relative_reference(reference: &Path) -> Result<(), VfsError> {
@@ -157,5 +192,50 @@ mod tests {
             vfs.resolve_existing(Path::new("apuntes/ausente.md")),
             Err(VfsError::Missing)
         );
+    }
+
+    #[test]
+    fn resuelve_desde_la_carpeta_del_documento_no_desde_la_raiz() {
+        let root = fixture_root();
+        fs::create_dir_all(root.join("apuntes").join("media")).unwrap();
+        fs::write(
+            root.join("apuntes").join("media").join("diagrama.png"),
+            b"png",
+        )
+        .unwrap();
+        let vfs = WorkspaceRoot::open(&root).expect("la raíz es válida");
+
+        let resolved = vfs
+            .resolve_existing_from(
+                root.join("apuntes").join("redes.md"),
+                Path::new("media/diagrama.png"),
+            )
+            .expect("la referencia usa la carpeta de la nota");
+
+        assert_eq!(
+            resolved,
+            fs::canonicalize(root.join("apuntes").join("media").join("diagrama.png")).unwrap()
+        );
+    }
+
+    #[test]
+    fn un_documento_fuera_de_la_raiz_no_obtiene_acceso_a_la_boveda() {
+        let root = fixture_root();
+        let outside = std::env::temp_dir().join(format!(
+            "visor-md-outside-{}-{}.md",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::write(&outside, "# fuera").unwrap();
+        let vfs = WorkspaceRoot::open(&root).expect("la raíz es válida");
+
+        assert_eq!(
+            vfs.resolve_existing_from(&outside, Path::new("apuntes/redes.md")),
+            Err(VfsError::OutsideRoot)
+        );
+        let _ = fs::remove_file(outside);
     }
 }

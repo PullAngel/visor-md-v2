@@ -160,6 +160,10 @@ exacto del traspaso.
   backlink o resultado del workspace abre otra pestaña y ya no obliga a guardar
   primero: los cambios del documento anterior permanecen protegidos en su
   propio estado y recuperación.
+- los enlaces Markdown relativos se resuelven desde la carpeta de la nota que
+  los declara y no desde la raíz global. La nota base y el destino deben estar
+  contenidos por la VFS; las anclas `nota.md#encabezado` viajan con la pestaña
+  que se abre y `#encabezado` navega solo dentro del documento actual.
 
 Evidencia actual en Windows:
 

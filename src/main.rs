@@ -784,6 +784,14 @@ fn classify_link_destination(destination: &str) -> LinkDestinationKind {
     }
 }
 
+fn relative_destination_parts(destination: &str) -> (&str, Option<&str>) {
+    destination
+        .split_once('#')
+        .map_or((destination, None), |(path, heading)| {
+            (path, (!heading.trim().is_empty()).then_some(heading.trim()))
+        })
+}
+
 fn target_label(kind: InlineTargetKind, destination: &str) -> &'static str {
     match kind {
         InlineTargetKind::WikiLink => "enlace de bóveda",
@@ -5823,14 +5831,30 @@ impl App {
         }
         match classify_link_destination(&destination.1) {
             LinkDestinationKind::RelativeFile => {
-                let resolved = self
-                    .workspace
-                    .as_ref()
-                    .map(|(root, _)| root.resolve_existing(std::path::Path::new(&destination.1)));
+                let (relative_path, heading) = relative_destination_parts(&destination.1);
+                if relative_path.trim().is_empty() {
+                    if let Some(heading) = heading {
+                        self.scroll_to_heading(heading);
+                    } else {
+                        self.set_notice("el enlace local no declara un destino");
+                    }
+                    return;
+                }
+                let resolved = self.workspace.as_ref().map(|(root, _)| {
+                    if self.document.source_identity.is_none() {
+                        Err(vfs::VfsError::OutsideRoot)
+                    } else {
+                        root.resolve_existing_from(
+                            std::path::Path::new(&self.document.path),
+                            std::path::Path::new(relative_path),
+                        )
+                    }
+                });
                 match resolved {
                     Some(Ok(path)) => {
-                        self.document.pending_heading = None;
-                        self.open_document_path(path);
+                        if self.open_document_path(path) {
+                            self.document.pending_heading = heading.map(str::to_owned);
+                        }
                     }
                     Some(Err(error)) => {
                         self.log.push(format!("[vfs] {error}"));
@@ -8534,6 +8558,19 @@ mod pruebas {
                 LinkDestinationKind::Blocked
             );
         }
+    }
+
+    #[test]
+    fn un_destino_relativo_separa_el_ancla_sin_perder_la_ruta() {
+        assert_eq!(
+            relative_destination_parts("clases/redes.md#Modelo OSI"),
+            ("clases/redes.md", Some("Modelo OSI"))
+        );
+        assert_eq!(
+            relative_destination_parts("#Resumen"),
+            ("", Some("Resumen"))
+        );
+        assert_eq!(relative_destination_parts("nota.md"), ("nota.md", None));
     }
 
     #[test]

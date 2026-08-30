@@ -62,7 +62,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Sin WebView ni JavaScript | Estable | Grafo de dependencias y runtime |
 | Sin red durante uso normal | Parcial | Falta prueba automatizada de sockets |
 | Límites de anidamiento | Recuperación | Tiempo, memoria y fallback |
-| VFS central | Parcial | Workspace contenido y archivo principal limitado; recursos secundarios todavía no se abren |
+| VFS central | Parcial | Workspace contenido, archivo principal limitado y enlaces relativos resueltos desde su nota; imágenes secundarias todavía no se abren |
 | Política de rutas | Parcial | UNC, traversal, symlinks y junctions cubiertos para workspace; faltan recursos secundarios |
 | Allowlist HTML semántica | Recuperación | `br`, `kbd`, `mark`, `sub` y `sup` nativos sin atributos; falta corpus sistemático y QA visual |
 | Límites de imágenes | Planificado | Tipo, bytes, dimensiones y memoria |
@@ -101,8 +101,8 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Función | Estado | Criterio mínimo |
 | --- | --- | --- |
 | Abrir carpeta o bóveda | Parcial | Sin migración ni cambios implícitos; al recuperar foco compara fuera de UI hasta 1.024 rutas ya indexadas y sugiere `Ctrl+Shift+I` si cambiaron |
-| Lista de notas | Parcial | `Ctrl+Shift+T` recorre rutas ya indexadas y abre solo tras resolverlas dentro de VFS; falta panel plegable y estado de disco |
-| Búsqueda de bóveda | Parcial | `Ctrl+Shift+F` consulta el índice en memoria y abre solo notas contenidas; faltan panel y resultados múltiples visibles |
+| Lista de notas | Parcial | Panel plegable con árbol del índice; abre solo tras resolver dentro de VFS y señala cambios externos limitados |
+| Búsqueda de bóveda | Parcial | Panel con resultados múltiples del índice en memoria; falta actualización incremental |
 | Wikilinks | Parcial | Resolución contenida y explícita; falta panel de diagnóstico |
 | Backlinks | Parcial | `Ctrl+Shift+B` muestra y navega backlinks contenidos; faltan panel plegable e incrementalidad |
 | Callouts | Parcial | Sintaxis Obsidian elegida y render nativo; falta corpus de bóvedas |
