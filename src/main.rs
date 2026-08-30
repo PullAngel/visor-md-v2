@@ -2651,6 +2651,25 @@ fn dirty_document_count(active: &DocumentState, inactive: &[InactiveDocument]) -
             .count()
 }
 
+fn paths_refer_to_same_file(left: &std::path::Path, right: &std::path::Path) -> bool {
+    if left == right {
+        return true;
+    }
+    let is_unc = |path: &std::path::Path| {
+        let path = path.to_string_lossy();
+        path.starts_with("\\\\") || path.starts_with("//")
+    };
+    // La deduplicación es una comodidad, no permiso para tocar una ubicación
+    // de red. Una UNC solo coincide textualmente; nunca se canonicaliza aquí.
+    if is_unc(left) || is_unc(right) {
+        return false;
+    }
+    match (fs::canonicalize(left), fs::canonicalize(right)) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => false,
+    }
+}
+
 struct App {
     started: Instant,
     document: DocumentState,
@@ -4899,10 +4918,24 @@ impl App {
         }
     }
 
-    fn open_document_path(&mut self, path: PathBuf) {
+    fn open_document_path(&mut self, path: PathBuf) -> bool {
         if self.loading || self.save_in_flight {
             self.set_notice("espera a que termine la apertura actual antes de abrir otra pestaña");
-            return;
+            return false;
+        }
+        if paths_refer_to_same_file(std::path::Path::new(&self.document.path), &path) {
+            self.set_notice("el documento ya está abierto en la pestaña activa");
+            return true;
+        }
+        if let Some(document_id) = self
+            .inactive_documents
+            .iter()
+            .find(|tab| paths_refer_to_same_file(std::path::Path::new(&tab.document.path), &path))
+            .map(|tab| tab.document.id)
+        {
+            self.activate_document_tab(document_id);
+            self.set_notice("se activó la pestaña que ya contenía el documento");
+            return true;
         }
         // Los resultados de navegación pertenecen al documento anterior. No
         // deben quedar flotando sobre una apertura nueva aunque su hilo tarde.
@@ -4948,6 +4981,7 @@ impl App {
             };
             let _ = proxy.send_event(event);
         });
+        true
     }
 
     fn source_block_cursor(&self, source_offset: usize) -> Option<BlockCursor> {
@@ -5195,8 +5229,12 @@ impl App {
         };
         match path {
             Ok(path) => {
-                self.pending_workspace_heading = heading;
-                self.open_document_path(path);
+                if self.open_document_path(path) {
+                    self.pending_workspace_heading = heading;
+                    if let Some(window) = &self.window {
+                        window.request_redraw();
+                    }
+                }
             }
             Err(error) => {
                 self.log.push(format!("[vfs] {error}"));
@@ -7079,6 +7117,27 @@ mod pruebas {
         assert_eq!(recovered.mode, DocumentMode::SourceEditing);
         assert!(!recovered.blocks.is_empty());
         assert!(recovered.source_identity.is_none());
+    }
+
+    #[test]
+    fn dos_rutas_equivalentes_no_crean_pestanas_duplicadas() {
+        let root = std::env::temp_dir().join(format!(
+            "visor-md-tabs-{}-{}",
+            std::process::id(),
+            NEXT_DOCUMENT_ID.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("nota.md");
+        fs::write(&path, "# nota").unwrap();
+        let alternate = root.join("sub").join("..").join("nota.md");
+        fs::create_dir_all(root.join("sub")).unwrap();
+
+        assert!(paths_refer_to_same_file(&path, &alternate));
+        assert!(paths_refer_to_same_file(
+            std::path::Path::new(r"\\servidor\notas\nota.md"),
+            std::path::Path::new(r"\\servidor\notas\.\nota.md")
+        ));
+        let _ = fs::remove_dir_all(root);
     }
 
     fn aplanar(md: &str) -> Vec<Block> {

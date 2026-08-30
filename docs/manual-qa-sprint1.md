@@ -171,6 +171,9 @@ Registrar antes de comenzar:
   pestaña modificada y sin guardar, abrir un wikilink, backlink o nota de la
   carpeta; el destino debe aparecer en una pestaña nueva y la edición anterior
   debe conservar su `*`, fuente e historial.
+- Abrir una nota que ya está en otra pestaña mediante diálogo, wikilink o panel.
+  Debe activar la pestaña existente, conservar su lugar en la barra y aplicar
+  el encabezado solicitado sin crear una copia duplicada.
 - Esta comprobación no autoriza guardar: cursor visible, selección por mouse,
   navegación vertical y guardado siguen fuera de esta etapa.
 
