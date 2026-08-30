@@ -214,3 +214,6 @@ contenido permanece inerte y la fuente se conserva sin activar recursos.
    asterisco de cambios permanece asociado al documento correcto.
 4. Reducir el ancho de la ventana y confirmar que las acciones que ya no caben
    se omiten sin texto cortado ni controles parcialmente clicables.
+5. Con una carpeta abierta, usar Buscar en carpeta y escribir una consulta con
+   varios resultados. Recorrerlos con flechas y abrir uno con mouse; la nota
+   debe abrirse en su pestaña sin modificar la carpeta ni salir de su raíz.

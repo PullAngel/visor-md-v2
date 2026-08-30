@@ -129,10 +129,10 @@ exacto del traspaso.
   lectura y edición, la búsqueda y el acceso al catálogo completo. Usa las
   mismas acciones que los atajos y la paleta, para evitar comportamientos
   distintos según cómo se invoque una operación.
-- índice del documento, lista de notas y backlinks se presentan como paneles
-  plegables de varias filas. Las listas largas mantienen visible la selección
-  sin construir layouts para todos los resultados y conservan navegación por
-  teclado contenida en el índice autorizado.
+- índice del documento, lista de notas, búsqueda de carpeta y backlinks se
+  presentan como paneles plegables de varias filas. Las listas largas mantienen
+  visible la selección sin construir layouts para todos los resultados y
+  conservan navegación por teclado o mouse contenida en el índice autorizado.
 - Guardar un documento nuevo, incluso vacío, abre Guardar como. Seguir un enlace,
   backlink o resultado del workspace abre otra pestaña y ya no obliga a guardar
   primero: los cambios del documento anterior permanecen protegidos en su

@@ -49,7 +49,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Menú contextual | Parcial | Copia y pegado explícito según modo, búsqueda, cambio de vista y guardado; faltan acciones de workspace y estados deshabilitados visibles |
 | Paleta de comandos | Parcial | `Ctrl+Shift+P` muestra el catálogo compartido y permite ejecutar por teclado o mouse; falta búsqueda por nombre |
 | Barra de acciones | Parcial | Nuevo, abrir, guardar, cambiar vista, buscar y el catálogo completo son operables con mouse; falta accesibilidad de foco y adaptación para ventanas estrechas |
-| Paneles plegables | Parcial | Índice, notas y backlinks muestran listas acotadas con selección visible, navegación por teclado o mouse y cierre con Escape; falta panel de búsqueda múltiple |
+| Paneles plegables | Parcial | Índice, notas, búsqueda de carpeta y backlinks muestran listas acotadas con selección visible, navegación por teclado o mouse y cierre con Escape; falta jerarquía del árbol y accesibilidad completa |
 | `.txt` y otros textos inertes | Parcial | Extensiones no Markdown se muestran como texto inerte; falta QA y reconocimiento UX |
 | Edición en vivo | Futuro | Solo tras editor y modelo estables |
 

@@ -4056,6 +4056,13 @@ impl App {
                 self.perform_action(APP_ACTIONS[index]);
                 return true;
             }
+        } else if self.workspace_search_query.is_some() {
+            let count = self.workspace_search_matches().len();
+            if let Some(index) = panel_item_at(x, y, count, self.workspace_search_match) {
+                self.workspace_search_match = index;
+                self.open_workspace_search_match();
+                return true;
+            }
         } else if let Some(paths) = &self.workspace_paths {
             if let Some(index) = panel_item_at(x, y, paths.len(), self.workspace_path_match) {
                 self.workspace_path_match = index;
@@ -6136,24 +6143,9 @@ impl App {
             build_menu_layout(&label, &mut self.font_cx, &mut self.layout_cx, self.palette)
         });
         let workspace_search_query = self.workspace_search_query.clone();
-        let workspace_search_overlay = workspace_search_query.as_ref().map(|query| {
-            let matches = self.workspace_search_matches();
-            let label = if query.is_empty() {
-                "Buscar en carpeta…".to_string()
-            } else if matches.is_empty() {
-                format!("Carpeta: {query} · sin resultados")
-            } else {
-                let selected = &matches[self.workspace_search_match % matches.len()];
-                format!(
-                    "Carpeta: {query} · {}/{} · {}",
-                    self.workspace_search_match % matches.len() + 1,
-                    matches.len(),
-                    selected.display()
-                )
-            };
-            let label = abbreviated_label(&label, MAX_OVERLAY_LABEL_CHARS);
-            build_menu_layout(&label, &mut self.font_cx, &mut self.layout_cx, self.palette)
-        });
+        let workspace_search_results = workspace_search_query
+            .as_ref()
+            .map(|_| self.workspace_search_matches());
         let navigation_panel_rows = if let Some(selected) = self.command_palette {
             let selected = selected % APP_ACTIONS.len();
             let range = panel_window(APP_ACTIONS.len(), selected, PANEL_CAPACITY);
@@ -6162,6 +6154,25 @@ impl App {
                 (
                     index == selected,
                     abbreviated_label(APP_ACTIONS[index].label(), 48),
+                )
+            }));
+            Some(rows)
+        } else if let (Some(query), Some(paths)) = (
+            workspace_search_query.as_ref(),
+            workspace_search_results.as_ref(),
+        ) {
+            let selected = self.workspace_search_match % paths.len().max(1);
+            let range = panel_window(paths.len(), selected, PANEL_CAPACITY);
+            let title = if query.is_empty() {
+                "Buscar en carpeta…".to_string()
+            } else {
+                format!("Buscar: {query} · {} resultados", paths.len())
+            };
+            let mut rows = vec![(false, abbreviated_label(&title, 48))];
+            rows.extend(range.map(|index| {
+                (
+                    index == selected,
+                    abbreviated_label(&paths[index].display().to_string(), 48),
                 )
             }));
             Some(rows)
@@ -6693,7 +6704,7 @@ impl App {
             }
         }
 
-        if let Some(layout) = search_overlay.or(workspace_search_overlay) {
+        if let Some(layout) = search_overlay {
             let overlay_width = (layout.width() + 24.0).min(w.get() as f32 - MARGIN * 2.0);
             if let Some(rect) = Rect::from_xywh(MARGIN, 80.0, overlay_width, 28.0) {
                 pixmap.fill_rect(rect, &paint, Transform::identity(), None);
