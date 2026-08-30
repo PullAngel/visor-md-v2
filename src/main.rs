@@ -6770,10 +6770,25 @@ impl App {
             if x + width > w.get() as f32 - MARGIN {
                 break;
             }
-            if let Some(rect) = Rect::from_xywh(x, TOOLBAR_Y, width, TOOLBAR_HEIGHT) {
-                pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+            let hovered = menu_pointer.is_some_and(|(pointer_x, pointer_y)| {
+                pointer_x >= x
+                    && pointer_x < x + width
+                    && (TOOLBAR_Y..TOOLBAR_Y + TOOLBAR_HEIGHT).contains(&pointer_y)
+            });
+            let active = TOOLBAR_ACTIONS[index] == AppAction::ToggleMode;
+            if (hovered || active)
+                && let Some(rect) = Rect::from_xywh(x, TOOLBAR_Y, width, TOOLBAR_HEIGHT)
+            {
+                if active {
+                    let ac = palette.accent;
+                    let mut active_paint = Paint::default();
+                    active_paint.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 36));
+                    pixmap.fill_rect(rect, &active_paint, Transform::identity(), None);
+                } else {
+                    pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+                }
             }
-            if TOOLBAR_ACTIONS[index] == AppAction::ToggleMode
+            if active
                 && let Some(rect) = Rect::from_xywh(x, TOOLBAR_Y + TOOLBAR_HEIGHT - 2.0, width, 2.0)
             {
                 pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
