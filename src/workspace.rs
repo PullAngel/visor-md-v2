@@ -19,6 +19,42 @@ pub(crate) const DEFAULT_MAX_WORKSPACE_SCAN_BYTES: u64 = 64 * 1024 * 1024;
 /// persiste y debe poder descartarse sin dejar una copia completa de la bóveda.
 pub(crate) const DEFAULT_MAX_INDEXED_CONTENT_BYTES: usize = 8 * 1024 * 1024;
 const MAX_INDEXED_BYTES_PER_NOTE: usize = 8 * 1024;
+const MAX_CHANGE_MARKS: usize = 1_024;
+
+#[derive(Clone, Debug)]
+struct ChangeMark {
+    relative_path: PathBuf,
+    byte_len: u64,
+    modified: Option<SystemTime>,
+    directory: bool,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct WorkspaceChangeSnapshot {
+    marks: Vec<ChangeMark>,
+    pub(crate) truncated: bool,
+}
+
+impl WorkspaceChangeSnapshot {
+    pub(crate) fn may_have_changed(&self, root: &WorkspaceRoot) -> bool {
+        self.marks.iter().any(|mark| {
+            let resolved = if mark.relative_path == Path::new(".") {
+                Ok(root.root().to_path_buf())
+            } else {
+                root.resolve_existing(&mark.relative_path)
+            };
+            let Ok(resolved) = resolved else {
+                return true;
+            };
+            let Ok(metadata) = fs::metadata(resolved) else {
+                return true;
+            };
+            metadata.is_dir() != mark.directory
+                || metadata.len() != mark.byte_len
+                || metadata.modified().ok() != mark.modified
+        })
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct WorkspaceLimits {
@@ -54,8 +90,8 @@ pub(crate) struct WikiLink {
 }
 
 #[derive(Clone, Debug)]
-// La UI usa este índice para búsqueda y backlinks por teclado. El árbol y los
-// paneles plegables todavía son una capa posterior sobre el mismo modelo.
+// La UI deriva de este índice búsqueda, backlinks y un árbol efímero por
+// teclado. El índice no necesita persistir estado visual ni contenido extra.
 pub(crate) struct WorkspaceNote {
     pub(crate) relative_path: PathBuf,
     pub(crate) title: String,
@@ -86,17 +122,16 @@ pub(crate) struct WorkspaceIndex {
     /// El recorrido se interrumpió por una acción posterior de la persona.
     /// Un resultado cancelado nunca debe sustituir el índice activo.
     pub(crate) cancelled: bool,
-    /// Marca de la raíz observada al comenzar el recorrido. Es una señal
-    /// barata, no un watcher: si cambia, la UI pide reindexado explícito.
-    root_modified: Option<SystemTime>,
+    change_marks: Vec<ChangeMark>,
+    change_marks_truncated: bool,
 }
 
 impl WorkspaceIndex {
-    pub(crate) fn root_may_have_changed(&self, root: &WorkspaceRoot) -> bool {
-        let current = fs::metadata(root.root())
-            .ok()
-            .and_then(|metadata| metadata.modified().ok());
-        self.root_modified.is_some() && current.is_some() && current != self.root_modified
+    pub(crate) fn change_snapshot(&self) -> WorkspaceChangeSnapshot {
+        WorkspaceChangeSnapshot {
+            marks: self.change_marks.clone(),
+            truncated: self.change_marks_truncated,
+        }
     }
 
     /// Devuelve únicamente rutas relativas que ya pasaron por el recorrido
@@ -207,12 +242,7 @@ pub(crate) fn index_workspace_cancellable(
     limits: WorkspaceLimits,
     cancelled: &AtomicBool,
 ) -> WorkspaceIndex {
-    let mut index = WorkspaceIndex {
-        root_modified: fs::metadata(root.root())
-            .ok()
-            .and_then(|metadata| metadata.modified().ok()),
-        ..WorkspaceIndex::default()
-    };
+    let mut index = WorkspaceIndex::default();
     let mut pending = vec![root.root().to_path_buf()];
     let mut visited_directories = HashSet::new();
 
@@ -224,6 +254,7 @@ pub(crate) fn index_workspace_cancellable(
         if !visited_directories.insert(directory.clone()) {
             continue;
         }
+        record_change_mark(&mut index, root, &directory, true);
         let Ok(entries) = fs::read_dir(&directory) else {
             index.skipped += 1;
             continue;
@@ -288,6 +319,7 @@ pub(crate) fn index_workspace_cancellable(
                         index.indexed_content_bytes.saturating_add(indexed_bytes);
                     index.content_truncated |= content_truncated;
                     index.notes.push(note);
+                    record_change_mark(&mut index, root, &canonical, false);
                 }
                 Err(_) => index.skipped += 1,
             }
@@ -297,6 +329,32 @@ pub(crate) fn index_workspace_cancellable(
         .notes
         .sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
     index
+}
+
+fn record_change_mark(
+    index: &mut WorkspaceIndex,
+    root: &WorkspaceRoot,
+    path: &Path,
+    directory: bool,
+) {
+    if index.change_marks.len() >= MAX_CHANGE_MARKS {
+        index.change_marks_truncated = true;
+        return;
+    }
+    let relative_path = path
+        .strip_prefix(root.root())
+        .ok()
+        .filter(|path| !path.as_os_str().is_empty())
+        .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
+    let Ok(metadata) = fs::metadata(path) else {
+        return;
+    };
+    index.change_marks.push(ChangeMark {
+        relative_path,
+        byte_len: metadata.len(),
+        modified: metadata.modified().ok(),
+        directory,
+    });
 }
 
 fn is_markdown_path(path: &Path) -> bool {
@@ -503,15 +561,30 @@ mod tests {
     }
 
     #[test]
-    fn una_marca_de_raiz_distinta_pide_reindexado_explicito() {
+    fn la_fotografia_detecta_cambios_dentro_de_subcarpetas() {
         let root = fixture_root();
         let vfs = WorkspaceRoot::open(&root).expect("la raíz es válida");
-        let index = WorkspaceIndex {
-            root_modified: Some(SystemTime::UNIX_EPOCH),
-            ..WorkspaceIndex::default()
-        };
+        let index = index_workspace(&vfs, WorkspaceLimits::default());
+        let snapshot = index.change_snapshot();
 
-        assert!(index.root_may_have_changed(&vfs));
+        assert!(!snapshot.may_have_changed(&vfs));
+        fs::write(
+            root.join("clases").join("redes.md"),
+            "# Redes modificadas con más contenido",
+        )
+        .expect("se modifica una nota interna");
+        assert!(snapshot.may_have_changed(&vfs));
+    }
+
+    #[test]
+    fn la_fotografia_detecta_una_nota_eliminada_sin_buscar_fuera_de_la_raiz() {
+        let root = fixture_root();
+        let vfs = WorkspaceRoot::open(&root).expect("la raíz es válida");
+        let index = index_workspace(&vfs, WorkspaceLimits::default());
+        let snapshot = index.change_snapshot();
+
+        fs::remove_file(root.join("seguridad.md")).expect("se elimina la nota de la fixture");
+        assert!(snapshot.may_have_changed(&vfs));
     }
 
     #[test]

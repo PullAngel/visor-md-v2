@@ -23,7 +23,7 @@ mod theme;
 mod vfs;
 mod workspace;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::num::NonZeroU32;
 use std::path::PathBuf;
@@ -168,6 +168,108 @@ fn panel_item_at(x: f32, y: f32, total: usize, selected: usize) -> Option<usize>
     let visible_row = ((y - PANEL_Y) / PANEL_ROW_HEIGHT) as usize;
     let item_offset = visible_row.checked_sub(1)?;
     (item_offset < range.len()).then_some(range.start + item_offset)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum WorkspaceTreeKind {
+    Directory,
+    Note,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct WorkspaceTreeRow {
+    relative_path: PathBuf,
+    depth: usize,
+    kind: WorkspaceTreeKind,
+    collapsed: bool,
+}
+
+impl WorkspaceTreeRow {
+    fn label(&self) -> String {
+        let name = self
+            .relative_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("?");
+        let indent = "  ".repeat(self.depth.min(12));
+        match self.kind {
+            WorkspaceTreeKind::Directory => {
+                format!("{indent}{} {name}/", if self.collapsed { "+" } else { "-" })
+            }
+            WorkspaceTreeKind::Note => format!("{indent}{name}"),
+        }
+    }
+
+    fn note_path(&self) -> Option<&std::path::Path> {
+        matches!(self.kind, WorkspaceTreeKind::Note).then_some(&self.relative_path)
+    }
+}
+
+fn workspace_tree_rows(paths: &[PathBuf]) -> Vec<WorkspaceTreeRow> {
+    let mut directories = BTreeSet::new();
+    for path in paths {
+        let mut parent = path.parent();
+        while let Some(directory) = parent {
+            if directory.as_os_str().is_empty() {
+                break;
+            }
+            directories.insert(directory.to_path_buf());
+            parent = directory.parent();
+        }
+    }
+    let mut rows = directories
+        .into_iter()
+        .map(|relative_path| WorkspaceTreeRow {
+            depth: relative_path.components().count().saturating_sub(1),
+            relative_path,
+            kind: WorkspaceTreeKind::Directory,
+            collapsed: false,
+        })
+        .chain(paths.iter().cloned().map(|relative_path| WorkspaceTreeRow {
+            depth: relative_path.components().count().saturating_sub(1),
+            relative_path,
+            kind: WorkspaceTreeKind::Note,
+            collapsed: false,
+        }))
+        .collect::<Vec<_>>();
+    rows.sort_by(|left, right| {
+        left.relative_path
+            .cmp(&right.relative_path)
+            .then_with(|| match (&left.kind, &right.kind) {
+                (WorkspaceTreeKind::Directory, WorkspaceTreeKind::Note) => std::cmp::Ordering::Less,
+                (WorkspaceTreeKind::Note, WorkspaceTreeKind::Directory) => {
+                    std::cmp::Ordering::Greater
+                }
+                _ => std::cmp::Ordering::Equal,
+            })
+    });
+    rows
+}
+
+fn visible_workspace_tree_rows(
+    paths: &[PathBuf],
+    collapsed: &HashSet<PathBuf>,
+) -> Vec<WorkspaceTreeRow> {
+    workspace_tree_rows(paths)
+        .into_iter()
+        .filter(|row| {
+            let mut parent = row.relative_path.parent();
+            while let Some(directory) = parent {
+                if directory.as_os_str().is_empty() {
+                    break;
+                }
+                if collapsed.contains(directory) {
+                    return false;
+                }
+                parent = directory.parent();
+            }
+            true
+        })
+        .map(|mut row| {
+            row.collapsed = collapsed.contains(&row.relative_path);
+            row
+        })
+        .collect()
 }
 
 fn toolbar_action_at(x: f32, y: f32, window_width: f32) -> Option<AppAction> {
@@ -472,6 +574,11 @@ enum AppEvent {
     WorkspaceFailed {
         request: u64,
         error: String,
+    },
+    WorkspaceChangeChecked {
+        request: u64,
+        changed: bool,
+        truncated: bool,
     },
     ExternalChangeChecked {
         document_id: u64,
@@ -2903,6 +3010,7 @@ struct App {
     /// contador descarta además cualquier resultado tardío del hilo anterior.
     workspace_request: u64,
     workspace_cancel: Option<Arc<AtomicBool>>,
+    workspace_check_in_flight: Option<u64>,
     /// La raíz cambió desde el último índice conocido. No se usa un watcher:
     /// la persona decide cuándo reconstruir el índice con Ctrl+Shift+I.
     workspace_stale: bool,
@@ -2981,8 +3089,9 @@ struct App {
     workspace_search_match: usize,
     /// Rutas relativas del índice ya autorizado para recorrer una carpeta sin
     /// repetir el recorrido de disco ni aceptar una ruta desde el documento.
-    workspace_paths: Option<Vec<PathBuf>>,
+    workspace_paths: Option<Vec<WorkspaceTreeRow>>,
     workspace_path_match: usize,
+    collapsed_workspace_dirs: HashSet<PathBuf>,
     /// Backlinks del documento actual obtenidos del índice ya autorizado. No
     /// se persisten ni se resuelven contra el disco hasta pulsar Enter.
     backlink_paths: Option<Vec<PathBuf>>,
@@ -3349,6 +3458,8 @@ impl ApplicationHandler<AppEvent> for App {
                 let scan_truncated = index.scan_truncated;
                 self.workspace = Some((root, index));
                 self.workspace_paths = None;
+                self.collapsed_workspace_dirs.clear();
+                self.workspace_check_in_flight = None;
                 self.workspace_stale = false;
                 let suffix = match (truncated, content_truncated, scan_truncated) {
                     (_, _, true) => "; límite de lectura de carpeta alcanzado",
@@ -3369,6 +3480,28 @@ impl ApplicationHandler<AppEvent> for App {
                 }
                 self.log.push(format!("[workspace] {error}"));
                 self.set_notice("no se pudo abrir la carpeta de trabajo");
+            }
+            AppEvent::WorkspaceChangeChecked {
+                request,
+                changed,
+                truncated,
+            } => {
+                if self.workspace_check_in_flight != Some(request)
+                    || request != self.workspace_request
+                {
+                    return;
+                }
+                self.workspace_check_in_flight = None;
+                if changed && !self.workspace_stale {
+                    self.workspace_stale = true;
+                    self.set_notice(
+                        "la carpeta de trabajo cambió; Ctrl+Shift+I actualiza el índice",
+                    );
+                } else if truncated {
+                    self.log.push(
+                        "[workspace] detección externa acotada a 1024 rutas indexadas".to_string(),
+                    );
+                }
             }
             AppEvent::ExternalChangeChecked {
                 document_id,
@@ -5091,19 +5224,29 @@ impl App {
         });
     }
 
-    /// La marca de directorio no es una fuente de verdad: algunos sistemas de
-    /// archivos pueden no actualizarla para todo cambio interno. Sirve como
-    /// señal barata y visible para que una persona reconstruya el índice, sin
-    /// instalar un watcher ni observar rutas fuera de la raíz concedida.
+    /// Compara fuera de la UI una fotografía acotada de rutas que el índice ya
+    /// autorizó. No instala un watcher, no descubre rutas nuevas y una marca
+    /// tardía no puede afectar otro workspace.
     fn check_workspace_change(&mut self) {
-        let changed = self
-            .workspace
-            .as_ref()
-            .is_some_and(|(root, index)| index.root_may_have_changed(root));
-        if changed && !self.workspace_stale {
-            self.workspace_stale = true;
-            self.set_notice("la carpeta de trabajo pudo cambiar; Ctrl+Shift+I actualiza el índice");
+        if self.workspace_check_in_flight.is_some() {
+            return;
         }
+        let Some((root, index)) = self.workspace.as_ref() else {
+            return;
+        };
+        let root = root.clone();
+        let snapshot = index.change_snapshot();
+        let request = self.workspace_request;
+        let proxy = self.proxy.clone();
+        self.workspace_check_in_flight = Some(request);
+        thread::spawn(move || {
+            let changed = snapshot.may_have_changed(&root);
+            let _ = proxy.send_event(AppEvent::WorkspaceChangeChecked {
+                request,
+                changed,
+                truncated: snapshot.truncated,
+            });
+        });
     }
 
     /// Detectar un cambio no modifica nada por sí mismo. Recargar conserva una
@@ -5369,6 +5512,7 @@ impl App {
             cancel.store(true, Ordering::Relaxed);
         }
         self.workspace_request = self.workspace_request.saturating_add(1);
+        self.workspace_check_in_flight = None;
         let request = self.workspace_request;
         let cancel = Arc::new(AtomicBool::new(false));
         self.workspace_cancel = Some(cancel.clone());
@@ -5974,8 +6118,11 @@ impl App {
         self.backlink_paths = None;
         self.outline_headings = None;
         self.workspace_path_match = 0;
-        self.workspace_paths = Some(paths);
-        self.set_notice("notas de la carpeta · flechas eligen, Enter abre, Escape cierra");
+        self.workspace_paths = Some(visible_workspace_tree_rows(
+            &paths,
+            &self.collapsed_workspace_dirs,
+        ));
+        self.set_notice("árbol de notas · flechas eligen, Enter abre una nota, Escape cierra");
         if let Some(window) = &self.window {
             window.request_redraw();
         }
@@ -5985,10 +6132,28 @@ impl App {
         let Some(paths) = &self.workspace_paths else {
             return;
         };
-        let Some(relative_path) = paths
+        let Some(row) = paths
             .get(self.workspace_path_match % paths.len().max(1))
             .cloned()
         else {
+            return;
+        };
+        let Some(relative_path) = row.note_path().map(std::path::Path::to_path_buf) else {
+            let directory = row.relative_path.clone();
+            if !self.collapsed_workspace_dirs.remove(&directory) {
+                self.collapsed_workspace_dirs.insert(directory.clone());
+            }
+            let Some((_, index)) = self.workspace.as_ref() else {
+                return;
+            };
+            let visible =
+                visible_workspace_tree_rows(&index.note_paths(), &self.collapsed_workspace_dirs);
+            self.workspace_path_match = visible
+                .iter()
+                .position(|candidate| candidate.relative_path == directory)
+                .unwrap_or(0);
+            self.workspace_paths = Some(visible);
+            self.set_notice("carpeta del árbol actualizada");
             return;
         };
         let Some((root, _)) = &self.workspace else {
@@ -6727,11 +6892,15 @@ impl App {
         } else if let Some(paths) = self.workspace_paths.as_ref() {
             let selected = self.workspace_path_match % paths.len().max(1);
             let range = panel_window(paths.len(), selected, PANEL_CAPACITY);
-            let mut rows = vec![(false, format!("Notas · {} resultados", paths.len()))];
+            let note_count = paths
+                .iter()
+                .filter(|row| matches!(row.kind, WorkspaceTreeKind::Note))
+                .count();
+            let mut rows = vec![(false, format!("Notas · {note_count} archivos"))];
             rows.extend(range.map(|index| {
                 (
                     index == selected,
-                    abbreviated_label(&paths[index].display().to_string(), 48),
+                    abbreviated_label(&paths[index].label(), 48),
                 )
             }));
             Some(rows)
@@ -7706,6 +7875,7 @@ fn main() {
         workspace: None,
         workspace_request: 0,
         workspace_cancel: None,
+        workspace_check_in_flight: None,
         workspace_stale: false,
         document_request: initial_document_request,
         open_requests: if opening_path.is_some() {
@@ -7755,6 +7925,7 @@ fn main() {
         workspace_search_match: 0,
         workspace_paths: None,
         workspace_path_match: 0,
+        collapsed_workspace_dirs: HashSet::new(),
         backlink_paths: None,
         backlink_match: 0,
         outline_headings: None,
@@ -7926,6 +8097,39 @@ mod pruebas {
             None
         );
         assert_eq!(panel_item_at(60.0, PANEL_Y, 30, 15), None);
+    }
+
+    #[test]
+    fn el_arbol_del_workspace_muestra_jerarquia_sin_inventar_destinos() {
+        let paths = vec![
+            PathBuf::from("universidad/redes/uno.md"),
+            PathBuf::from("universidad/seguridad.md"),
+            PathBuf::from("raiz.md"),
+        ];
+
+        let rows = workspace_tree_rows(&paths);
+
+        assert_eq!(rows.len(), 5);
+        assert_eq!(rows[0].note_path(), Some(std::path::Path::new("raiz.md")));
+        assert_eq!(rows[1].label(), "- universidad/");
+        assert!(rows[1].note_path().is_none());
+        assert_eq!(rows[2].label(), "  - redes/");
+        assert_eq!(rows[3].label(), "    uno.md");
+        assert_eq!(
+            rows[3].note_path(),
+            Some(std::path::Path::new("universidad/redes/uno.md"))
+        );
+        assert_eq!(rows[4].label(), "  seguridad.md");
+
+        let collapsed = HashSet::from([PathBuf::from("universidad/redes")]);
+        let visible = visible_workspace_tree_rows(&paths, &collapsed);
+        assert_eq!(visible.len(), 4);
+        assert_eq!(visible[2].label(), "  + redes/");
+        assert!(
+            visible
+                .iter()
+                .all(|row| row.relative_path != std::path::Path::new("universidad/redes/uno.md"))
+        );
     }
 
     #[test]

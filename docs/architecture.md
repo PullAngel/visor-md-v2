@@ -325,9 +325,10 @@ y su versión evita publicar resultados tardíos. `Ctrl+Shift+F` consulta el
 `Ctrl+Shift+I` vuelve a crear el índice de la raíz ya concedida y cancela el
 recorrido anterior si aún estaba activo. `Ctrl+Shift+B` presenta los backlinks
 del documento actual y solo abre una selección tras resolverla de nuevo con la
-VFS. Índice, notas, búsqueda y backlinks ya usan paneles plegables; faltan la
-jerarquía visual del árbol y una detección más precisa de cambios externos del
-workspace.
+VFS. Índice, árbol de notas, búsqueda y backlinks ya usan paneles plegables. El
+árbol deriva carpetas únicamente desde rutas indexadas y permite plegarlas sin
+volver a tocar el disco. Al recuperar foco, una tarea separada compara una
+fotografía acotada de rutas ya indexadas; no descubre rutas ni bloquea la UI.
 
 Los callouts conocidos de Obsidian dentro de una cita (`NOTE`, `INFO`, `TIP`,
 `WARNING`, `CAUTION`, `DANGER` e `IMPORTANT`) reciben una presentación nativa
@@ -384,9 +385,10 @@ Cada tarea lleva:
 
 Un resultado antiguo no reemplaza un documento más nuevo. Cerrar una pestaña o
 editar mientras se parsea cancela o invalida trabajo anterior. El workspace no
-instala un watcher: al recuperar foco compara una marca barata de su raíz con
-la del último índice y, si cambió, avisa para reindexar explícitamente. Es una
-señal de actualización, no una garantía de detección de cada cambio interno.
+instala un watcher: al recuperar foco compara fuera de la UI metadatos de hasta
+1.024 archivos y directorios ya contenidos por VFS y, si cambiaron, avisa para
+reindexar explícitamente. El límite queda visible; es una señal de actualización
+y no vigilancia total.
 
 ## Virtualización
 

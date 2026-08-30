@@ -134,6 +134,7 @@ no puede invalidarla.
 | Parser o Markdown | formatter, lint, tests y corpus afectado | patologías, rangos, property test o fuzzing |
 | Rendering o fuentes | layout y tests cercanos | regresión visual, Unicode, rendimiento |
 | VFS, rutas o guardado | unitarios e integración | traversal, symlinks, fallos, round-trip |
+| Workspace e índice | unitarios e integración | cambios y borrados en subcarpetas, límites y resultados tardíos |
 | Red, HTML, enlaces o imágenes | casos positivos y negativos | ausencia de red, evasiones y phishing |
 | Dependencias | build, tests y SBOM vigente | audit, deny, licencias, transitivas y tamaño |
 | Release o milestone | gate local completo | auditoría, benchmark, matriz manual y riesgos |

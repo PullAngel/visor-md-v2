@@ -148,7 +148,7 @@ exacto del traspaso.
 - actualizar el índice de la carpeta forma parte del mismo catálogo de acciones,
   además de `Ctrl+Shift+I`. La reconstrucción sigue siendo explícita, cancelable
   y reemplaza resultados viejos sin instalar vigilancia permanente del disco.
-- índice del documento, lista de notas, búsqueda de carpeta y backlinks se
+- índice del documento, árbol plegable de notas, búsqueda de carpeta y backlinks se
   presentan como paneles plegables de varias filas. Las listas largas mantienen
   visible la selección sin construir layouts para todos los resultados y
   conservan navegación por teclado o mouse contenida en el índice autorizado.
@@ -225,10 +225,11 @@ causa porque todavía no se controlan caché, carga y planificación del sistema
   bóvedas ya cubren navegación e índice;
 - lista efímera de notas indexadas con `Ctrl+Shift+T`: no recorre el disco ni
   acepta rutas del documento y vuelve a resolver la elección dentro de VFS;
-  falta jerarquía de árbol; el panel de backlinks ya está conectado;
-- al volver a enfocar la ventana, una marca distinta de la raíz avisa que el
-  índice puede estar desactualizado y ofrece la reconstrucción explícita con
-  `Ctrl+Shift+I`; no instala un watcher ni afirma detectar todo cambio interno;
+  el árbol deriva directorios solo de rutas contenidas y permite plegarlos; el
+  panel de backlinks ya está conectado;
+- al volver a enfocar la ventana, una tarea compara metadatos de hasta 1.024
+  rutas ya contenidas e indexadas. Si cambiaron, avisa y ofrece reconstrucción
+  explícita con `Ctrl+Shift+I`; no instala un watcher ni descubre rutas nuevas;
 - panel visible de resultados múltiples sobre el índice de ruta, encabezados y
   contenido acotado a 8 MiB de memoria; `Ctrl+Shift+F` ya permite buscar y abrir
   de forma contenida la coincidencia elegida;

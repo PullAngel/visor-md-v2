@@ -49,7 +49,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Menú contextual | Parcial | Copia y pegado explícito según modo, búsqueda, cambio de vista y guardado; faltan acciones de workspace y estados deshabilitados visibles |
 | Paleta de comandos | Parcial | `Ctrl+Shift+P` muestra el catálogo compartido, filtra por nombre y ejecuta por teclado o mouse; falta accesibilidad semántica completa |
 | Barra de acciones | Parcial | Nuevo, abrir, guardar, cambiar vista, buscar y el catálogo completo son operables con mouse o foco visible desde F6; falta semántica de lector de pantalla y adaptación para ventanas estrechas |
-| Paneles plegables | Parcial | Índice, notas, búsqueda de carpeta y backlinks muestran listas acotadas con selección visible, navegación por teclado o mouse y cierre con Escape; falta jerarquía del árbol y accesibilidad completa |
+| Paneles plegables | Parcial | Índice, árbol plegable de notas, búsqueda de carpeta y backlinks muestran listas acotadas con selección visible, navegación por teclado o mouse y cierre con Escape; falta accesibilidad completa |
 | Actualizar workspace | Parcial | El catálogo y `Ctrl+Shift+I` reconstruyen de forma explícita el índice cancelable cuando la carpeta cambió; falta invalidación más precisa por archivo |
 | `.txt` y otros textos inertes | Parcial | Extensiones no Markdown se muestran como texto inerte; falta QA y reconocimiento UX |
 | Edición en vivo | Futuro | Solo tras editor y modelo estables |
@@ -99,7 +99,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 
 | Función | Estado | Criterio mínimo |
 | --- | --- | --- |
-| Abrir carpeta o bóveda | Parcial | Sin migración ni cambios implícitos; una marca de cambio al recuperar foco sugiere `Ctrl+Shift+I` para volver a indexar la raíz elegida |
+| Abrir carpeta o bóveda | Parcial | Sin migración ni cambios implícitos; al recuperar foco compara fuera de UI hasta 1.024 rutas ya indexadas y sugiere `Ctrl+Shift+I` si cambiaron |
 | Lista de notas | Parcial | `Ctrl+Shift+T` recorre rutas ya indexadas y abre solo tras resolverlas dentro de VFS; falta panel plegable y estado de disco |
 | Búsqueda de bóveda | Parcial | `Ctrl+Shift+F` consulta el índice en memoria y abre solo notas contenidas; faltan panel y resultados múltiples visibles |
 | Wikilinks | Parcial | Resolución contenida y explícita; falta panel de diagnóstico |
