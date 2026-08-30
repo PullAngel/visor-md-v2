@@ -38,7 +38,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 
 | Función | Estado | Criterio mínimo |
 | --- | --- | --- |
-| Modo fuente | Parcial | Selección, IME, undo y atajos; falta buffer escalable y split |
+| Modo fuente | Parcial | Buffer Rope, selección, IME, undo y atajos; falta actualización incremental de la vista fuente y split |
 | Vista dividida | Planificado | Correspondencia estable fuente y render |
 | Guardado atómico | Parcial | Sin corrupción ante fallo y conflictos probados; falta QA multiplataforma |
 | Preservar sintaxis desconocida | Parcial | Fuente no se reserializa; falta property testing de round-trip |

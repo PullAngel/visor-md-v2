@@ -104,6 +104,11 @@ exacto del traspaso.
   primera vista posterior a una edición mide los bloques de forma exacta para
   impedir solapamientos; después vuelve la virtualización estimada. `Ctrl+Z`
   desde lectura también actualiza la vista sin perder el historial.
+- la fuente editable vive en un Rope por pestaña. Inserción, borrado, navegación
+  y undo/redo convierten los offsets de bytes solamente después de comprobar un
+  límite UTF-8 exacto. La serialización para parser, guardado y recuperación
+  conserva el texto, BOM y EOL; la representación visible de todas las líneas
+  aún se reconstruye tras cada cambio y queda como optimización pendiente.
 - las task lists se dibujan sin depender de glifos de fuente y permiten cambiar
   `[ ]` por `[x]` con clic sobre la casilla. La mutación toca un solo byte de la
   fuente y entra al mismo historial reversible que el editor.

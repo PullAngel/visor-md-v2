@@ -15,7 +15,8 @@ La separación empezó de forma incremental y con la suite verde:
 
 - `src/main.rs`: aplicación, parser y modelo provisionales, layout y dibujo;
 - `src/fonts.rs`: familias embebidas y registro tipográfico;
-- `src/editor.rs`: cursor, selección e historial reversible con límites;
+- `src/editor.rs`: buffer Rope, cursor, selección e historial reversible con
+  límites y offsets públicos en bytes UTF-8;
 - `src/files.rs`: apertura fiel, identidad, conflictos y guardado atómico;
 - `src/limits.rs`: límites defensivos y causas de degradación;
 - `src/recovery.rs`: recuperaciones locales versionadas y serializadas;
@@ -24,8 +25,8 @@ La separación empezó de forma incremental y con la suite verde:
 - `src/vfs.rs` y `src/workspace.rs`: raíz concedida, contención e índice en
   memoria acotado y cancelable.
 
-La aplicación retiene durante la sesión el texto UTF-8 que abrió, sus rangos de
-modelo y metadatos de entrada: presencia de BOM UTF-8 y estilo observado de EOL
+La aplicación retiene durante la sesión el texto UTF-8 que abrió en un buffer
+Rope, sus rangos de modelo y metadatos de entrada: presencia de BOM UTF-8 y estilo observado de EOL
 (`LF`, `CRLF` o mixto). El BOM no se presenta como contenido y los saltos no se
 normalizan. La identidad portátil, los parches reversibles, el conflicto
 externo y el guardado atómico ya están conectados. UTF-8 inválido y otras
@@ -429,7 +430,7 @@ nativas reales. macOS permanece como posibilidad futura, no gate actual.
 | Layout | Visible con estimaciones | Geometría para render e interacción |
 | Rendering | Software nativo funcional | Display list validada y accesible |
 | UI | Ventana, tema, menú contextual y avisos | Chrome, pestañas, comandos y paneles |
-| Edición | Fuente alternable, undo/redo, portapapeles explícito, guardado fiel y recuperación local | Buffer escalable, split y accesibilidad completa |
+| Edición | Buffer Rope, fuente alternable, undo/redo, portapapeles explícito, guardado fiel y recuperación local | Vista dividida, actualización incremental de la representación fuente y accesibilidad completa |
 | Workspace | Raíz explícita, VFS, índice acotado, wikilinks, callouts y navegación inicial de backlinks | Paneles, búsqueda, cancelación y detección de cambios |
 | Seguridad | Límites, HTML inerte, VFS, guardado y recuperación con pruebas | Controles de recursos secundarios, campaña de fuzzing y validación de release |
 

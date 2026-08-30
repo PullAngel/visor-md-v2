@@ -12,9 +12,10 @@ validación de cadena de suministro y presupuesto release:
   y lo reemplaza atómicamente. Visor MD además compara los bytes completos de
   la versión abierta antes de invocarlo; por tanto un conflicto externo no se
   sobrescribe por accidente.
-- `ropey 1.6.1` será el buffer UTF-8 del editor. Sus operaciones se expresan
-  en límites de caracteres y están diseñadas para ediciones no contiguas sin
-  desplazar un documento completo en cada pulsación.
+- `ropey 1.6.1` es el buffer UTF-8 del editor. La frontera pública continúa
+  usando offsets de bytes para coincidir con parser, rangos y guardado, pero
+  valida cada conversión contra límites exactos de carácter. Inserciones,
+  borrados y navegación ya no dependen de desplazar una `String` completa.
 - `rfd 0.17.2` se reserva para los diálogos nativos de abrir, guardar y elegir
   carpeta. No recibe contenido de documentos ni otorga permisos secundarios.
 

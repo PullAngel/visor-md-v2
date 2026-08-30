@@ -27,6 +27,10 @@ El modelo de historial prueba además que un parche no parte UTF-8, que undo/red
 reconstruyen exactamente el texto, que una edición nueva invalida redo y que el
 presupuesto de historial sacrifica únicamente pasos antiguos de undo.
 
+El buffer escalable se prueba también con una edición en el centro de un texto
+Unicode de cientos de KiB, vecinos multibyte, CRLF, línea final vacía y
+reconstrucción exacta después de undo.
+
 Son útiles para localizar un fallo, pero no demuestran por sí solas que la
 aplicación completa funciona.
 

@@ -54,7 +54,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy}
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 use winit::window::{CursorIcon, Theme, Window, WindowId};
 
-use editor::SourceEditor;
+use editor::{SourceEditor, TextBuffer};
 use files::{
     DEFAULT_DOCUMENT_LIMIT_BYTES, FileIdentity, FileSaveError, LineEndings, TextMetadata,
     changed_on_disk, is_markdown_path, open_explicit_primary, save_explicit_primary,
@@ -546,6 +546,13 @@ impl SourceRange {
     fn is_valid_for(self, source: &str) -> bool {
         self.start <= self.end
             && self.end <= source.len()
+            && source.is_char_boundary(self.start)
+            && source.is_char_boundary(self.end)
+    }
+
+    fn is_valid_for_buffer(self, source: &TextBuffer) -> bool {
+        self.start <= self.end
+            && self.end <= source.len_bytes()
             && source.is_char_boundary(self.start)
             && source.is_char_boundary(self.end)
     }
@@ -1878,10 +1885,67 @@ fn safe_source_blocks(
     Ok(blocks)
 }
 
+fn safe_buffer_blocks(source: &TextBuffer) -> Result<Vec<Block>, &'static str> {
+    if source.is_empty() {
+        return Ok(vec![Block::new(
+            String::new(),
+            Vec::new(),
+            Kind::Code,
+            SourceRange::default(),
+            Vec::new(),
+        )]);
+    }
+
+    let mut blocks = Vec::new();
+    let mut start = 0;
+    for line in source.lines() {
+        let raw = line.to_string();
+        let end = start + raw.len();
+        let without_lf = raw.strip_suffix('\n').unwrap_or(&raw);
+        let text = without_lf.strip_suffix('\r').unwrap_or(without_lf);
+        let mut chunk_start = 0;
+        while chunk_start < text.len() || (text.is_empty() && chunk_start == 0) {
+            if blocks.len() >= MAX_BLOCKS {
+                return Err("demasiadas lineas para la vista segura");
+            }
+            let mut chunk_end = (chunk_start + MAX_SAFE_LINE_BYTES).min(text.len());
+            while chunk_end > chunk_start && !text.is_char_boundary(chunk_end) {
+                chunk_end -= 1;
+            }
+            if chunk_end == chunk_start && chunk_start < text.len() {
+                chunk_end = text[chunk_start..]
+                    .char_indices()
+                    .nth(1)
+                    .map_or(text.len(), |(offset, _)| chunk_start + offset);
+            }
+            let is_last = chunk_end == text.len();
+            let range = SourceRange {
+                start: start + chunk_start,
+                end: if is_last { end } else { start + chunk_end },
+            };
+            debug_assert!(range.is_valid_for_buffer(source));
+            blocks.push(Block::new(
+                text[chunk_start..chunk_end].to_string(),
+                Vec::new(),
+                Kind::Code,
+                range,
+                Vec::new(),
+            ));
+            if is_last {
+                break;
+            }
+            chunk_start = chunk_end;
+        }
+        start = end;
+    }
+    debug_assert_eq!(start, source.len_bytes());
+    Ok(blocks)
+}
+
 /// Contenido mínimo de una sesión cuya apertura falló. No incorpora el error
 /// del sistema: puede contener una ruta, un permiso o información que no hace
 /// falta mostrar en el lienzo. El detalle queda en el registro de sesión.
-fn opening_failure_blocks() -> (String, Vec<Block>) {
+fn opening_failure_blocks() -> (TextBuffer, Vec<Block>) {
     let source = "No se pudo abrir este documento. Revisa que exista, que sea legible y que no supere el límite de apertura.".to_string();
     let block = Block::new(
         source.clone(),
@@ -1893,7 +1957,7 @@ fn opening_failure_blocks() -> (String, Vec<Block>) {
         },
         Vec::new(),
     );
-    (source, vec![block])
+    (TextBuffer::from_text(&source), vec![block])
 }
 
 fn parse_blocks(source: &str) -> Result<ParseOutcome, &'static str> {
@@ -2650,7 +2714,7 @@ fn blit_color(pixmap: &mut Pixmap, g: &CachedGlyph, gx: f32, gy: f32, width: i32
 struct DocumentState {
     id: u64,
     path: String,
-    source: String,
+    source: TextBuffer,
     source_metadata: TextMetadata,
     source_identity: Option<FileIdentity>,
     source_baseline_bytes: Option<Vec<u8>>,
@@ -2672,7 +2736,7 @@ impl DocumentState {
         Self {
             id: NEXT_DOCUMENT_ID.fetch_add(1, Ordering::Relaxed),
             path: "sin título.md".to_string(),
-            source: String::new(),
+            source: TextBuffer::new(),
             source_metadata: TextMetadata::default(),
             source_identity: None,
             source_baseline_bytes: None,
@@ -2696,7 +2760,7 @@ fn recovered_document(source: String) -> Result<DocumentState, &'static str> {
     let blocks = safe_source_blocks(&source, &index)?;
     let mut recovered = DocumentState::untitled();
     recovered.path = "recuperación sin guardar.md".to_string();
-    recovered.source = source;
+    recovered.source = TextBuffer::from_text(&source);
     recovered.source_editor.mark_recovered();
     recovered.blocks = blocks;
     Ok(recovered)
@@ -2924,7 +2988,7 @@ impl ApplicationHandler<AppEvent> for App {
                     return;
                 };
                 document.path = path.to_string_lossy().into_owned();
-                document.source = source;
+                document.source = TextBuffer::from_text(&source);
                 document.source_metadata = metadata;
                 document.source_identity = Some(identity);
                 document.source_baseline_bytes = Some(baseline_bytes);
@@ -4428,8 +4492,7 @@ impl App {
         }
     }
     fn enter_source_mode(&mut self) {
-        let index = SourceIndex::new(&self.document.source);
-        match safe_source_blocks(&self.document.source, &index) {
+        match safe_buffer_blocks(&self.document.source) {
             Ok(blocks) => {
                 self.document.mode = DocumentMode::SourceEditing;
                 self.document.blocks = blocks;
@@ -4448,8 +4511,7 @@ impl App {
     }
 
     fn refresh_source_blocks(&mut self) -> Result<(), &'static str> {
-        let index = SourceIndex::new(&self.document.source);
-        self.document.blocks = safe_source_blocks(&self.document.source, &index)?;
+        self.document.blocks = safe_buffer_blocks(&self.document.source)?;
         self.slots.clear();
         self.live.clear();
         self.laid_for_width = -1.0;
@@ -4458,7 +4520,7 @@ impl App {
 
     fn edit_source(
         &mut self,
-        operation: impl FnOnce(&mut SourceEditor, &mut String) -> Result<bool, editor::EditError>,
+        operation: impl FnOnce(&mut SourceEditor, &mut TextBuffer) -> Result<bool, editor::EditError>,
     ) {
         let document = &mut self.document;
         match operation(&mut document.source_editor, &mut document.source) {
@@ -4486,7 +4548,7 @@ impl App {
             return;
         };
         self.document.last_recovery = Instant::now();
-        let source = self.document.source.clone();
+        let source = self.document.source.to_string();
         let request = recovery.next_write_request();
         thread::spawn(move || {
             let _ = recovery.write_if_current(&source, request);
@@ -4510,7 +4572,7 @@ impl App {
     fn refresh_reading_async(&mut self, notice: &str) {
         self.document.mode = DocumentMode::Reading;
         self.set_notice(notice);
-        let source = self.document.source.clone();
+        let source = self.document.source.to_string();
         let document_id = self.document.id;
         let revision = self.document.source_editor.revision();
         self.view_requests.insert(document_id, revision);
@@ -4771,7 +4833,7 @@ impl App {
             return;
         }
         let path = self.document.path.clone();
-        let source = self.document.source.clone();
+        let source = self.document.source.to_string();
         let metadata = self.document.source_metadata;
         let revision = self.document.source_editor.revision();
         let proxy = self.proxy.clone();
@@ -4809,7 +4871,7 @@ impl App {
             self.set_notice("guardar como cancelado");
             return;
         };
-        let source = self.document.source.clone();
+        let source = self.document.source.to_string();
         let metadata = self.document.source_metadata;
         let revision = self.document.source_editor.revision();
         let proxy = self.proxy.clone();
@@ -4911,7 +4973,7 @@ impl App {
                         );
                         return;
                     };
-                    if let Err(error) = recovery.write(&self.document.source) {
+                    if let Err(error) = recovery.write(&self.document.source.to_string()) {
                         self.log.push(format!("[recuperación] {error}"));
                         self.set_notice(
                             "no se pudo conservar una recuperación; no se recargó el archivo externo",
@@ -4954,7 +5016,7 @@ impl App {
                     );
                     return;
                 };
-                if let Err(error) = recovery.write(&self.document.source) {
+                if let Err(error) = recovery.write(&self.document.source.to_string()) {
                     self.log.push(format!("[recuperación] {error}"));
                     self.set_notice(
                         "no se pudo conservar una recuperación; no se recargó el archivo externo",
@@ -4987,7 +5049,7 @@ impl App {
                 self.set_notice("no se cerró: no hay recuperación local disponible");
                 return false;
             };
-            if let Err(error) = recovery.write(&self.document.source) {
+            if let Err(error) = recovery.write(&self.document.source.to_string()) {
                 self.log.push(format!("[recuperación] {error}"));
                 self.set_notice("no se cerró: no se pudo conservar la recuperación local");
                 return false;
@@ -5046,7 +5108,7 @@ impl App {
                 .ok_or("recuperación no disponible")
                 .and_then(|recovery| {
                     recovery
-                        .write(&self.document.source)
+                        .write(&self.document.source.to_string())
                         .map_err(|_| "falló la recuperación")
                 })
         } else {
@@ -5059,7 +5121,7 @@ impl App {
                     .ok_or("recuperación no disponible")
                     .and_then(|recovery| {
                         recovery
-                            .write(&tab.document.source)
+                            .write(&tab.document.source.to_string())
                             .map_err(|_| "falló la recuperación")
                     })
             })
@@ -5308,9 +5370,10 @@ impl App {
     }
 
     fn copy_selection(&mut self, source_markdown: bool) {
+        let source_snapshot = source_markdown.then(|| self.document.source.to_string());
         let text = self.selection.and_then(|selection| {
             if source_markdown {
-                selection.source_blocks(&self.document.source, &self.document.blocks)
+                selection.source_blocks(source_snapshot.as_deref()?, &self.document.blocks)
             } else {
                 selection.rendered_text(&self.document.blocks)
             }
@@ -6017,8 +6080,8 @@ impl App {
         let Some(source) = self.document.blocks.get(block).and_then(|block| {
             self.document
                 .source
-                .get(block.source.start..block.source.end)
-                .map(str::to_owned)
+                .slice_bytes(block.source.start..block.source.end)
+                .ok()
         }) else {
             self.set_notice("no se pudo localizar el bloque de código en la fuente");
             return;
@@ -6031,11 +6094,11 @@ impl App {
             return;
         };
         let source = block.source;
-        let Some(text) = self.document.source.get(source.start..source.end) else {
+        let Ok(text) = self.document.source.slice_bytes(source.start..source.end) else {
             self.set_notice("no se pudo localizar la tarea en la fuente");
             return;
         };
-        let Some((offset, replacement)) = task_marker_replacement(text) else {
+        let Some((offset, replacement)) = task_marker_replacement(&text) else {
             self.set_notice("la tarea no conserva un marcador editable");
             return;
         };
@@ -6167,7 +6230,7 @@ impl App {
             self.document
                 .blocks
                 .iter()
-                .all(|block| block.source.is_valid_for(&self.document.source)),
+                .all(|block| block.source.is_valid_for_buffer(&self.document.source)),
             "el modelo no conserva rangos validos para la fuente de la sesion"
         );
         self.selection = Some(DocumentSelection {
@@ -7246,7 +7309,7 @@ fn main() {
             path: opening_path
                 .clone()
                 .unwrap_or_else(|| "sin título.md".to_string()),
-            source: String::new(),
+            source: TextBuffer::new(),
             source_metadata: TextMetadata::default(),
             source_identity: None,
             source_baseline_bytes: None,
@@ -7768,12 +7831,13 @@ mod pruebas {
     #[test]
     fn un_fallo_de_apertura_deja_un_mensaje_renderizable_sin_detalles() {
         let (source, blocks) = opening_failure_blocks();
+        let source_text = source.to_string();
         assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].text, source);
-        assert!(blocks[0].source.is_valid_for(&source));
+        assert_eq!(blocks[0].text, source_text);
+        assert!(blocks[0].source.is_valid_for_buffer(&source));
         assert!(blocks[0].targets.is_empty());
-        assert!(!source.contains("C:\\"));
-        assert!(!source.contains("permission"));
+        assert!(!source_text.contains("C:\\"));
+        assert!(!source_text.contains("permission"));
     }
 
     #[test]
