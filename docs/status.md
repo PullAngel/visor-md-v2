@@ -131,6 +131,9 @@ exacto del traspaso.
   lectura y edición, la búsqueda y el acceso al catálogo completo. Usa las
   mismas acciones que los atajos y la paleta, para evitar comportamientos
   distintos según cómo se invoque una operación.
+- la paleta permite filtrar ese catálogo por nombre y mantiene una selección
+  acotada para teclado y mouse. La consulta es efímera y nunca se persiste ni se
+  mezcla con búsquedas del documento o de la carpeta.
 - índice del documento, lista de notas, búsqueda de carpeta y backlinks se
   presentan como paneles plegables de varias filas. Las listas largas mantienen
   visible la selección sin construir layouts para todos los resultados y

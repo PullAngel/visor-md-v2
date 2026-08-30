@@ -300,6 +300,15 @@ impl AppAction {
     }
 }
 
+fn filtered_actions(query: &str) -> Vec<AppAction> {
+    let query = query.trim().to_lowercase();
+    APP_ACTIONS
+        .iter()
+        .copied()
+        .filter(|action| query.is_empty() || action.label().to_lowercase().contains(&query))
+        .collect()
+}
+
 impl ContextAction {
     fn label(self) -> &'static str {
         match self {
@@ -2843,9 +2852,10 @@ struct App {
     /// una ruta ni una copia de contenido, y se descarta al navegar.
     outline_headings: Option<Vec<(usize, String)>>,
     outline_match: usize,
-    /// Selector efímero de acciones. No guarda consultas ni contenido y usa el
-    /// mismo catálogo que pueden consumir controles visibles posteriores.
+    /// Selector efímero de acciones y su filtro local. No se persiste ni
+    /// contiene datos del documento.
     command_palette: Option<usize>,
+    command_palette_query: String,
     /// Se crea solamente ante una copia explícita. Mantenerlo vivo respeta el
     /// modelo de propiedad de X11/Wayland, donde el proceso sirve el texto
     /// hasta que otra aplicación lo solicita.
@@ -3482,7 +3492,9 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::Ime(Ime::Commit(text)) if self.search_query.is_some() => {
                 self.append_search_text(&text);
             }
-            WindowEvent::Ime(Ime::Commit(_)) if self.command_palette.is_some() => {}
+            WindowEvent::Ime(Ime::Commit(text)) if self.command_palette.is_some() => {
+                self.append_command_palette_text(&text);
+            }
             WindowEvent::Ime(Ime::Commit(text))
                 if self.document.mode == DocumentMode::SourceEditing =>
             {
@@ -4100,6 +4112,7 @@ impl App {
         self.backlink_paths = None;
         self.outline_headings = None;
         self.command_palette = Some(0);
+        self.command_palette_query.clear();
         if let Some(window) = &self.window {
             window.request_redraw();
         }
@@ -4112,30 +4125,66 @@ impl App {
         let Some(selected) = self.command_palette else {
             return;
         };
+        let actions = self.command_palette_actions();
         match event.physical_key {
-            PhysicalKey::Code(KeyCode::Escape) => self.command_palette = None,
-            PhysicalKey::Code(KeyCode::ArrowDown | KeyCode::Tab) => {
-                self.command_palette = Some((selected + 1) % APP_ACTIONS.len());
-            }
-            PhysicalKey::Code(KeyCode::ArrowUp) => {
-                self.command_palette = Some((selected + APP_ACTIONS.len() - 1) % APP_ACTIONS.len());
-            }
-            PhysicalKey::Code(KeyCode::Enter) => {
+            PhysicalKey::Code(KeyCode::Escape) => {
                 self.command_palette = None;
-                self.perform_action(APP_ACTIONS[selected % APP_ACTIONS.len()]);
+                self.command_palette_query.clear();
             }
-            _ => return,
+            PhysicalKey::Code(KeyCode::Backspace) => {
+                self.command_palette_query.pop();
+                self.command_palette = Some(0);
+            }
+            PhysicalKey::Code(KeyCode::ArrowDown | KeyCode::Tab) if !actions.is_empty() => {
+                self.command_palette = Some((selected + 1) % actions.len());
+            }
+            PhysicalKey::Code(KeyCode::ArrowUp) if !actions.is_empty() => {
+                self.command_palette = Some((selected + actions.len() - 1) % actions.len());
+            }
+            PhysicalKey::Code(KeyCode::Enter) if !actions.is_empty() => {
+                self.command_palette = None;
+                self.command_palette_query.clear();
+                self.perform_action(actions[selected % actions.len()]);
+            }
+            _ => {
+                if !self.modifiers.control_key()
+                    && !self.modifiers.alt_key()
+                    && let Some(text) = event.text.as_deref()
+                {
+                    self.append_command_palette_text(text);
+                } else {
+                    return;
+                }
+            }
         }
         if let Some(window) = &self.window {
             window.request_redraw();
         }
     }
 
+    fn append_command_palette_text(&mut self, text: &str) {
+        if text.chars().any(char::is_control) {
+            return;
+        }
+        append_limited_text(
+            &mut self.command_palette_query,
+            text,
+            MAX_SEARCH_QUERY_CHARS,
+        );
+        self.command_palette = Some(0);
+    }
+
+    fn command_palette_actions(&self) -> Vec<AppAction> {
+        filtered_actions(&self.command_palette_query)
+    }
+
     fn activate_panel_at(&mut self, x: f32, y: f32) -> bool {
         if let Some(selected) = self.command_palette {
-            if let Some(index) = panel_item_at(x, y, APP_ACTIONS.len(), selected) {
+            let actions = self.command_palette_actions();
+            if let Some(index) = panel_item_at(x, y, actions.len(), selected) {
                 self.command_palette = None;
-                self.perform_action(APP_ACTIONS[index]);
+                self.command_palette_query.clear();
+                self.perform_action(actions[index]);
                 return true;
             }
         } else if self.workspace_search_query.is_some() {
@@ -4183,6 +4232,7 @@ impl App {
         self.backlink_paths = None;
         self.outline_headings = None;
         self.command_palette = None;
+        self.command_palette_query.clear();
         self.pending_workspace_heading = None;
     }
 
@@ -6240,14 +6290,26 @@ impl App {
         let workspace_search_results = workspace_search_query
             .as_ref()
             .map(|_| self.workspace_search_matches());
-        let navigation_panel_rows = if let Some(selected) = self.command_palette {
-            let selected = selected % APP_ACTIONS.len();
-            let range = panel_window(APP_ACTIONS.len(), selected, PANEL_CAPACITY);
-            let mut rows = vec![(false, "Acciones".to_string())];
+        let palette_actions = self.command_palette.map(|_| self.command_palette_actions());
+        let navigation_panel_rows = if let (Some(selected), Some(actions)) =
+            (self.command_palette, palette_actions.as_ref())
+        {
+            let selected = selected % actions.len().max(1);
+            let range = panel_window(actions.len(), selected, PANEL_CAPACITY);
+            let title = if self.command_palette_query.is_empty() {
+                "Acciones · escribe para filtrar".to_string()
+            } else {
+                format!(
+                    "Acciones: {} · {} resultados",
+                    self.command_palette_query,
+                    actions.len()
+                )
+            };
+            let mut rows = vec![(false, abbreviated_label(&title, 48))];
             rows.extend(range.map(|index| {
                 (
                     index == selected,
-                    abbreviated_label(APP_ACTIONS[index].label(), 48),
+                    abbreviated_label(actions[index].label(), 48),
                 )
             }));
             Some(rows)
@@ -7150,6 +7212,7 @@ fn main() {
         outline_headings: None,
         outline_match: 0,
         command_palette: None,
+        command_palette_query: String::new(),
         clipboard: None,
         notice: Some(if opening_path.is_some() {
             "cargando documento".to_string()
@@ -7262,6 +7325,15 @@ mod pruebas {
 
         assert_eq!(original_len, 14);
         assert_eq!(labels.len(), original_len);
+    }
+
+    #[test]
+    fn la_paleta_filtra_acciones_sin_inventar_comandos() {
+        assert_eq!(filtered_actions("").len(), APP_ACTIONS.len());
+        assert_eq!(filtered_actions("backlinks"), vec![AppAction::Backlinks]);
+        assert!(filtered_actions("GUARDAR").contains(&AppAction::Save));
+        assert!(filtered_actions("GUARDAR").contains(&AppAction::SaveAs));
+        assert!(filtered_actions("acción inexistente").is_empty());
     }
 
     #[test]

@@ -220,3 +220,6 @@ contenido permanece inerte y la fuente se conserva sin activar recursos.
 6. Modificar y guardar una nota grande; antes de que termine, cambiar a otra
    pestaña. La segunda debe seguir operable y no debe perder su asterisco ni
    aparecer como guardada cuando termine la escritura de la primera.
+7. Abrir Más o pulsar `Ctrl+Shift+P`, escribir `guardar` y verificar que solo
+   aparezcan las acciones relacionadas. Borrar la consulta debe restaurar el
+   catálogo completo; una consulta inexistente no debe ejecutar nada.
