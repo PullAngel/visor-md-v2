@@ -2870,6 +2870,7 @@ struct DocumentState {
     /// edición se conserva separado de la representación inerte de la fuente
     /// para que la vista dividida nunca se convierta en autoridad de guardado.
     rendered_blocks: Vec<Block>,
+    metrics: DocumentMetrics,
     blocks: Vec<Block>,
     safe_mode: Option<Degradation>,
     /// Posición visual propia de la pestaña. Se sincroniza antes de cambiar
@@ -2893,6 +2894,7 @@ impl DocumentState {
             source_editor: SourceEditor::new(),
             mode: DocumentMode::SourceEditing,
             rendered_blocks: Vec::new(),
+            metrics: DocumentMetrics::default(),
             blocks: Vec::new(),
             safe_mode: None,
             scroll: 0.0,
@@ -2961,10 +2963,31 @@ fn apply_save_result(
 
 fn apply_view_outcome(document: &mut DocumentState, outcome: ParseOutcome) {
     document.rendered_blocks = outcome.blocks;
+    document.metrics = DocumentMetrics::from_blocks(&document.rendered_blocks);
     if document.mode == DocumentMode::Reading {
         document.blocks = document.rendered_blocks.clone();
     }
     document.safe_mode = outcome.degradation;
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct DocumentMetrics {
+    words: usize,
+    reading_minutes: usize,
+}
+
+impl DocumentMetrics {
+    fn from_blocks(blocks: &[Block]) -> Self {
+        let words = blocks
+            .iter()
+            .flat_map(|block| block.text.split_whitespace())
+            .filter(|word| word.chars().any(char::is_alphanumeric))
+            .count();
+        Self {
+            words,
+            reading_minutes: words.div_ceil(200),
+        }
+    }
 }
 
 fn paths_refer_to_same_file(left: &std::path::Path, right: &std::path::Path) -> bool {
@@ -3199,9 +3222,7 @@ impl ApplicationHandler<AppEvent> for App {
                 document.source_baseline_bytes = Some(baseline_bytes);
                 document.source_editor = SourceEditor::new();
                 document.mode = DocumentMode::Reading;
-                document.rendered_blocks = outcome.blocks;
-                document.blocks = document.rendered_blocks.clone();
-                document.safe_mode = safe_mode;
+                apply_view_outcome(document, outcome);
                 document.scroll = 0.0;
                 self.log.push(format!(
                     "[medicion] preparar documento de {:.1} KB fuera de UI: {elapsed_ms:.0} ms  ({} bloques)",
@@ -6987,6 +7008,14 @@ impl App {
         } else {
             "sin carpeta"
         };
+        let metrics_label = if self.document.metrics.words == 0 {
+            "sin palabras".to_string()
+        } else {
+            format!(
+                "{} palabras · ~{} min",
+                self.document.metrics.words, self.document.metrics.reading_minutes
+            )
+        };
         let tab_width = tab_width(w.get() as f32, self.tab_order.len());
         let tab_label_chars = ((tab_width - 32.0).max(30.0) / 7.5).floor().max(4.0) as usize;
         let tab_descriptors = self
@@ -7027,7 +7056,7 @@ impl App {
             .collect::<Vec<_>>();
         let status_layout = build_menu_layout(
             &format!(
-                "{document_mode_label} · {document_state_label} · {workspace_state_label} · Ctrl+Shift+P acciones"
+                "{document_mode_label} · {document_state_label} · {metrics_label} · {workspace_state_label} · Ctrl+Shift+P acciones"
             ),
             &mut self.font_cx,
             &mut self.layout_cx,
@@ -7859,6 +7888,7 @@ fn main() {
                 DocumentMode::SourceEditing
             },
             rendered_blocks: Vec::new(),
+            metrics: DocumentMetrics::default(),
             blocks: Vec::new(),
             safe_mode: None,
             scroll: 0.0,
@@ -8209,6 +8239,27 @@ mod pruebas {
 
         assert_eq!(document.blocks[0].text, "lectura");
         assert_eq!(document.rendered_blocks[0].text, "lectura");
+    }
+
+    #[test]
+    fn las_metricas_cuentan_texto_visible_y_redondean_tiempo_de_lectura() {
+        let words = (0..201)
+            .map(|index| format!("palabra{index}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let outcome = parse_blocks(&format!("# Título\n\n{words}\n\n---")).unwrap();
+        let metrics = DocumentMetrics::from_blocks(&outcome.blocks);
+
+        assert_eq!(metrics.words, 202);
+        assert_eq!(metrics.reading_minutes, 2);
+    }
+
+    #[test]
+    fn las_metricas_vacias_no_inventan_un_minuto() {
+        assert_eq!(
+            DocumentMetrics::from_blocks(&[]),
+            DocumentMetrics::default()
+        );
     }
 
     #[test]

@@ -36,6 +36,10 @@ reemplazar los bloques fuente editables, conserva el modo y reserva una
 geometría independiente. La percepción durante escritura rápida, DPI y ventanas
 estrechas permanece como QA manual.
 
+Las métricas de lectura cuentan solamente bloques visibles del modelo, ignoran
+separadores sin texto y redondean hacia arriba sin inventar un minuto para un
+documento vacío.
+
 Son útiles para localizar un fallo, pero no demuestran por sí solas que la
 aplicación completa funciona.
 

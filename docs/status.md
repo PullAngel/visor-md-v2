@@ -142,6 +142,10 @@ exacto del traspaso.
   lectura y edición, la búsqueda y el acceso al catálogo completo. Usa las
   mismas acciones que los atajos y la paleta, para evitar comportamientos
   distintos según cómo se invoque una operación.
+- la barra de estado cuenta palabras del texto visible del último render y
+  muestra una estimación conservadora de lectura a 200 palabras por minuto. No
+  tokeniza, no usa red y no promete precisión lingüística para idiomas sin
+  separación por espacios.
 - la paleta permite filtrar ese catálogo por nombre y mantiene una selección
   acotada para teclado y mouse. La consulta es efímera y nunca se persiste ni se
   mezcla con búsquedas del documento o de la carpeta.
