@@ -92,6 +92,11 @@ el mouse y reserva el acento para la acción de modo activa. Sus rótulos se
 reemplazarán por iconos accesibles cuando el sistema definitivo de iconos esté
 integrado.
 
+`F6` lleva el foco visible a esa barra; flechas o Tab lo recorren, Enter o
+Espacio ejecutan y Escape vuelve al documento. Este foco no se presenta como
+prueba de lector de pantalla: la semántica accesible del canvas sigue siendo un
+trabajo separado.
+
 ## Tipografía: Contraste editorial
 
 - **Interfaz:** Sora

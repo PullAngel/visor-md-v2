@@ -223,3 +223,6 @@ contenido permanece inerte y la fuente se conserva sin activar recursos.
 7. Abrir Más o pulsar `Ctrl+Shift+P`, escribir `guardar` y verificar que solo
    aparezcan las acciones relacionadas. Borrar la consulta debe restaurar el
    catálogo completo; una consulta inexistente no debe ejecutar nada.
+8. Pulsar `F6`, recorrer la barra con flechas y Tab y comprobar que el foco sea
+   visible. Enter o Espacio deben ejecutar la acción enfocada y Escape debe
+   devolver el teclado al documento.

@@ -178,6 +178,14 @@ fn toolbar_action_at(x: f32, y: f32, window_width: f32) -> Option<AppAction> {
     TOOLBAR_ACTIONS.get(index).copied()
 }
 
+fn adjacent_toolbar_index(current: usize, backwards: bool) -> usize {
+    if backwards {
+        (current + TOOLBAR_ACTIONS.len() - 1) % TOOLBAR_ACTIONS.len()
+    } else {
+        (current + 1) % TOOLBAR_ACTIONS.len()
+    }
+}
+
 fn tab_label(path: &str, dirty: bool, max_chars: usize) -> String {
     let path_buf = PathBuf::from(path);
     let name = path_buf
@@ -2859,6 +2867,9 @@ struct App {
     /// contiene datos del documento.
     command_palette: Option<usize>,
     command_palette_query: String,
+    /// Foco visible de la barra superior. F6 lo activa; no sustituye los
+    /// atajos directos ni simula semántica de lector de pantalla.
+    toolbar_focus: Option<usize>,
     /// Se crea solamente ante una copia explícita. Mantenerlo vivo respeta el
     /// modelo de propiedad de X11/Wayland, donde el proceso sirve el texto
     /// hasta que otra aplicación lo solicita.
@@ -3393,6 +3404,7 @@ impl ApplicationHandler<AppEvent> for App {
                     if let (Some((x, y)), Some(window)) = (self.pointer, &self.window) {
                         let size = window.inner_size();
                         if let Some(action) = toolbar_action_at(x, y, size.width as f32) {
+                            self.toolbar_focus = None;
                             self.perform_action(action);
                             self.selecting = false;
                             return;
@@ -3520,6 +3532,24 @@ impl ApplicationHandler<AppEvent> for App {
             }
             WindowEvent::KeyboardInput { event, .. } if self.search_query.is_some() => {
                 self.handle_search_key(&event);
+            }
+            WindowEvent::KeyboardInput { event, .. } if self.toolbar_focus.is_some() => {
+                self.handle_toolbar_key(&event);
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::F6),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } => {
+                self.toolbar_focus = Some(0);
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
             }
             WindowEvent::KeyboardInput {
                 event:
@@ -4117,6 +4147,33 @@ impl App {
         self.outline_headings = None;
         self.command_palette = Some(0);
         self.command_palette_query.clear();
+        self.toolbar_focus = None;
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    fn handle_toolbar_key(&mut self, event: &KeyEvent) {
+        if event.state != ElementState::Pressed || event.repeat {
+            return;
+        }
+        let Some(index) = self.toolbar_focus else {
+            return;
+        };
+        match event.physical_key {
+            PhysicalKey::Code(KeyCode::Escape | KeyCode::F6) => self.toolbar_focus = None,
+            PhysicalKey::Code(KeyCode::ArrowLeft) => {
+                self.toolbar_focus = Some(adjacent_toolbar_index(index, true));
+            }
+            PhysicalKey::Code(KeyCode::ArrowRight | KeyCode::Tab) => {
+                self.toolbar_focus = Some(adjacent_toolbar_index(index, false));
+            }
+            PhysicalKey::Code(KeyCode::Enter | KeyCode::Space) => {
+                self.toolbar_focus = None;
+                self.perform_action(TOOLBAR_ACTIONS[index % TOOLBAR_ACTIONS.len()]);
+            }
+            _ => return,
+        }
         if let Some(window) = &self.window {
             window.request_redraw();
         }
@@ -4237,6 +4294,7 @@ impl App {
         self.outline_headings = None;
         self.command_palette = None;
         self.command_palette_query.clear();
+        self.toolbar_focus = None;
         self.pending_workspace_heading = None;
     }
 
@@ -6406,6 +6464,7 @@ impl App {
                 )
             })
             .collect::<Vec<_>>();
+        let toolbar_focus = self.toolbar_focus;
         let document_mode_label = match self.document.mode {
             DocumentMode::Reading => "Lectura",
             DocumentMode::SourceEditing => "Edición",
@@ -6775,8 +6834,9 @@ impl App {
                     && pointer_x < x + width
                     && (TOOLBAR_Y..TOOLBAR_Y + TOOLBAR_HEIGHT).contains(&pointer_y)
             });
+            let focused = toolbar_focus == Some(index);
             let active = TOOLBAR_ACTIONS[index] == AppAction::ToggleMode;
-            if (hovered || active)
+            if (hovered || focused || active)
                 && let Some(rect) = Rect::from_xywh(x, TOOLBAR_Y, width, TOOLBAR_HEIGHT)
             {
                 if active {
@@ -6788,7 +6848,7 @@ impl App {
                     pixmap.fill_rect(rect, &paint, Transform::identity(), None);
                 }
             }
-            if active
+            if (active || focused)
                 && let Some(rect) = Rect::from_xywh(x, TOOLBAR_Y + TOOLBAR_HEIGHT - 2.0, width, 2.0)
             {
                 pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
@@ -7232,6 +7292,7 @@ fn main() {
         outline_match: 0,
         command_palette: None,
         command_palette_query: String::new(),
+        toolbar_focus: None,
         clipboard: None,
         notice: Some(if opening_path.is_some() {
             "cargando documento".to_string()
@@ -7330,6 +7391,8 @@ mod pruebas {
         );
         assert_eq!(toolbar_action_at(50.0, 50.0, 900.0), None);
         assert_eq!(toolbar_action_at(900.0, 12.0, 900.0), None);
+        assert_eq!(adjacent_toolbar_index(0, true), TOOLBAR_ACTIONS.len() - 1);
+        assert_eq!(adjacent_toolbar_index(TOOLBAR_ACTIONS.len() - 1, false), 0);
     }
 
     #[test]
