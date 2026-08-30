@@ -239,6 +239,7 @@ enum AppAction {
     ToggleMode,
     SearchDocument,
     ChooseWorkspace,
+    RefreshWorkspace,
     SearchWorkspace,
     DocumentOutline,
     WorkspaceFiles,
@@ -248,7 +249,7 @@ enum AppAction {
     CommandPalette,
 }
 
-const APP_ACTIONS: [AppAction; 14] = [
+const APP_ACTIONS: [AppAction; 15] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -257,6 +258,7 @@ const APP_ACTIONS: [AppAction; 14] = [
     AppAction::ToggleMode,
     AppAction::SearchDocument,
     AppAction::ChooseWorkspace,
+    AppAction::RefreshWorkspace,
     AppAction::SearchWorkspace,
     AppAction::DocumentOutline,
     AppAction::WorkspaceFiles,
@@ -276,6 +278,7 @@ impl AppAction {
             Self::ToggleMode => "Alternar lectura y edición · F2",
             Self::SearchDocument => "Buscar en documento · Ctrl+F",
             Self::ChooseWorkspace => "Abrir carpeta · Ctrl+Shift+O",
+            Self::RefreshWorkspace => "Actualizar índice de carpeta · Ctrl+Shift+I",
             Self::SearchWorkspace => "Buscar en carpeta · Ctrl+Shift+F",
             Self::DocumentOutline => "Índice del documento · Ctrl+Shift+L",
             Self::WorkspaceFiles => "Notas de la carpeta · Ctrl+Shift+T",
@@ -3591,7 +3594,7 @@ impl ApplicationHandler<AppEvent> for App {
                     },
                 ..
             } if self.modifiers.control_key() && self.modifiers.shift_key() => {
-                self.reindex_workspace()
+                self.perform_action(AppAction::RefreshWorkspace)
             }
             WindowEvent::KeyboardInput {
                 event:
@@ -4038,6 +4041,7 @@ impl App {
             },
             AppAction::SearchDocument => self.open_document_search(),
             AppAction::ChooseWorkspace => self.choose_workspace(),
+            AppAction::RefreshWorkspace => self.reindex_workspace(),
             AppAction::SearchWorkspace => self.open_workspace_search(),
             AppAction::DocumentOutline => self.show_document_outline(),
             AppAction::WorkspaceFiles => self.show_workspace_files(),
@@ -4621,7 +4625,7 @@ impl App {
             PhysicalKey::Code(KeyCode::KeyI)
                 if self.modifiers.control_key() && self.modifiers.shift_key() =>
             {
-                self.reindex_workspace();
+                self.perform_action(AppAction::RefreshWorkspace);
             }
             PhysicalKey::Code(KeyCode::KeyR)
                 if self.modifiers.control_key() && self.modifiers.shift_key() =>
@@ -7323,7 +7327,7 @@ mod pruebas {
         labels.sort_unstable();
         labels.dedup();
 
-        assert_eq!(original_len, 14);
+        assert_eq!(original_len, 15);
         assert_eq!(labels.len(), original_len);
     }
 
@@ -7333,6 +7337,10 @@ mod pruebas {
         assert_eq!(filtered_actions("backlinks"), vec![AppAction::Backlinks]);
         assert!(filtered_actions("GUARDAR").contains(&AppAction::Save));
         assert!(filtered_actions("GUARDAR").contains(&AppAction::SaveAs));
+        assert_eq!(
+            filtered_actions("actualizar índice"),
+            vec![AppAction::RefreshWorkspace]
+        );
         assert!(filtered_actions("acción inexistente").is_empty());
     }
 

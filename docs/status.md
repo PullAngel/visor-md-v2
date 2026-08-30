@@ -134,6 +134,9 @@ exacto del traspaso.
 - la paleta permite filtrar ese catálogo por nombre y mantiene una selección
   acotada para teclado y mouse. La consulta es efímera y nunca se persiste ni se
   mezcla con búsquedas del documento o de la carpeta.
+- actualizar el índice de la carpeta forma parte del mismo catálogo de acciones,
+  además de `Ctrl+Shift+I`. La reconstrucción sigue siendo explícita, cancelable
+  y reemplaza resultados viejos sin instalar vigilancia permanente del disco.
 - índice del documento, lista de notas, búsqueda de carpeta y backlinks se
   presentan como paneles plegables de varias filas. Las listas largas mantienen
   visible la selección sin construir layouts para todos los resultados y
