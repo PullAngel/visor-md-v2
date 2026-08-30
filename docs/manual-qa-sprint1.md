@@ -217,3 +217,6 @@ contenido permanece inerte y la fuente se conserva sin activar recursos.
 5. Con una carpeta abierta, usar Buscar en carpeta y escribir una consulta con
    varios resultados. Recorrerlos con flechas y abrir uno con mouse; la nota
    debe abrirse en su pestaña sin modificar la carpeta ni salir de su raíz.
+6. Modificar y guardar una nota grande; antes de que termine, cambiar a otra
+   pestaña. La segunda debe seguir operable y no debe perder su asterisco ni
+   aparecer como guardada cuando termine la escritura de la primera.

@@ -222,3 +222,8 @@ El recorrido y los datos que deben registrarse están en
 La recuperación ya portó dos regresiones conceptuales de v1: HTML hostil y
 Markdown defectuoso de conversores. Se adaptaron a la arquitectura nativa; no se
 copiaron sus aserciones sobre DOM o WebView, que ya no existen en v2.
+
+La regresión de concurrencia dirige cada resultado de guardado por identidad de
+documento. La prueba fija que una respuesta destinada a una pestaña inactiva no
+puede mutar la activa; las revisiones siguen determinando si el resultado
+guardado representa también la edición más reciente.

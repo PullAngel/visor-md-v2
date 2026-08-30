@@ -360,6 +360,12 @@ versión monotónica. Una solicitud vieja se descarta antes del reemplazo; guard
 o limpiar la recuperación invalida tareas pendientes para que no reaparezca una
 copia que la persona ya había eliminado mediante una acción correcta.
 
+Los resultados de guardado definitivo llevan además la identidad efímera de la
+pestaña que los originó. Cambiar a otro documento mientras se completa la
+escritura no puede marcar ese otro documento como guardado, cambiar su baseline
+ni borrar su recuperación. Solo se impide cerrar la pestaña que todavía tiene
+una escritura pendiente; el cierre global espera a que terminen todas.
+
 La recuperación está activa por defecto y su preferencia local no contiene
 rutas ni texto de documentos. Desactivarla exige una acción explícita y una
 advertencia que distingue conservar la protección de asumir el riesgo. Con la

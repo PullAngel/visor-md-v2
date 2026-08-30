@@ -23,7 +23,7 @@ mod theme;
 mod vfs;
 mod workspace;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::num::NonZeroU32;
 use std::path::PathBuf;
@@ -402,15 +402,18 @@ enum AppEvent {
         error: String,
     },
     SaveReady {
+        document_id: u64,
         revision: u64,
         identity: FileIdentity,
         baseline_bytes: Vec<u8>,
     },
     SaveFailed {
+        document_id: u64,
         error: String,
         conflict: bool,
     },
     SaveAsReady {
+        document_id: u64,
         path: PathBuf,
         revision: u64,
         identity: FileIdentity,
@@ -2686,6 +2689,35 @@ fn dirty_document_count(active: &DocumentState, inactive: &[InactiveDocument]) -
             .count()
 }
 
+fn document_by_id_mut<'a>(
+    active: &'a mut DocumentState,
+    inactive: &'a mut [InactiveDocument],
+    document_id: u64,
+) -> Option<&'a mut DocumentState> {
+    if active.id == document_id {
+        return Some(active);
+    }
+    inactive
+        .iter_mut()
+        .find(|tab| tab.document.id == document_id)
+        .map(|tab| &mut tab.document)
+}
+
+fn apply_save_result(
+    document: &mut DocumentState,
+    revision: u64,
+    identity: FileIdentity,
+    baseline_bytes: Vec<u8>,
+) -> bool {
+    document.source_identity = Some(identity);
+    document.source_baseline_bytes = Some(baseline_bytes);
+    let is_current = revision == document.source_editor.revision();
+    if is_current {
+        document.source_editor.mark_saved();
+    }
+    is_current
+}
+
 fn paths_refer_to_same_file(left: &std::path::Path, right: &std::path::Path) -> bool {
     if left == right {
         return true;
@@ -2715,10 +2747,10 @@ struct App {
     /// activa. Los identificadores existen solo durante la sesión.
     tab_order: Vec<u64>,
     external_check_in_flight: bool,
-    /// Evita cambiar de documento mientras un guardado asíncrono todavía
-    /// pertenece al documento activo. Es una frontera temporal hasta que las
-    /// tareas de guardado tengan identidad de pestaña propia.
-    save_in_flight: bool,
+    /// Identifica las pestañas con una escritura atómica pendiente. El resto
+    /// de la sesión puede seguir usándose sin atribuir el resultado a otro
+    /// documento.
+    saves_in_flight: HashSet<u64>,
     recovery_enabled: bool,
     recovery: Option<RecoverySession>,
     /// Solo la primera sesión informa que la recuperación es texto local sin
@@ -2977,56 +3009,106 @@ impl ApplicationHandler<AppEvent> for App {
                 self.set_notice("no se pudo actualizar la vista; la fuente sigue intacta");
             }
             AppEvent::SaveReady {
+                document_id,
                 revision,
                 identity,
                 baseline_bytes,
             } => {
-                self.save_in_flight = false;
-                if revision == self.document.source_editor.revision() {
-                    self.document.source_identity = Some(identity);
-                    self.document.source_baseline_bytes = Some(baseline_bytes);
-                    self.document.source_editor.mark_saved();
-                    if let Some(recovery) = &self.recovery {
-                        let _ = recovery.clear();
+                self.saves_in_flight.remove(&document_id);
+                let active = document_id == self.document.id;
+                let saved_current = document_by_id_mut(
+                    &mut self.document,
+                    &mut self.inactive_documents,
+                    document_id,
+                )
+                .map(|document| apply_save_result(document, revision, identity, baseline_bytes));
+                if saved_current == Some(true) {
+                    if active {
+                        if let Some(recovery) = &self.recovery {
+                            let _ = recovery.clear();
+                        }
+                        self.set_notice("documento guardado de forma atómica");
+                    } else {
+                        if let Some(tab) = self
+                            .inactive_documents
+                            .iter()
+                            .find(|tab| tab.document.id == document_id)
+                            && let Some(recovery) = &tab.recovery
+                        {
+                            let _ = recovery.clear();
+                        }
+                        self.set_notice("otra pestaña terminó de guardarse");
                     }
-                    self.set_notice("documento guardado de forma atómica");
+                } else if saved_current == Some(false) {
+                    self.set_notice(if active {
+                        "se guardó una versión anterior; hay cambios nuevos"
+                    } else {
+                        "otra pestaña guardó una versión anterior"
+                    });
                 } else {
-                    // El archivo sí llegó a disco, pero la persona siguió
-                    // escribiendo durante el guardado. La nueva edición queda
-                    // marcada como pendiente y usa la versión guardada como
-                    // próximo baseline para no perder su conflicto.
-                    self.document.source_identity = Some(identity);
-                    self.document.source_baseline_bytes = Some(baseline_bytes);
-                    self.set_notice("se guardó una versión anterior; hay cambios nuevos");
+                    self.log.push(
+                        "[guardado] terminó una escritura para una pestaña ya cerrada".to_string(),
+                    );
                 }
             }
-            AppEvent::SaveFailed { error, conflict } => {
-                self.save_in_flight = false;
+            AppEvent::SaveFailed {
+                document_id,
+                error,
+                conflict,
+            } => {
+                self.saves_in_flight.remove(&document_id);
                 self.log.push(format!("[error] {error}"));
-                if conflict {
+                if conflict && document_id == self.document.id {
                     self.resolve_save_conflict();
+                } else if document_id != self.document.id {
+                    self.set_notice(
+                        "falló el guardado de otra pestaña; sus cambios siguen intactos",
+                    );
                 } else {
                     self.set_notice(&error);
                 }
             }
             AppEvent::SaveAsReady {
+                document_id,
                 path,
                 revision,
                 identity,
                 baseline_bytes,
             } => {
-                self.save_in_flight = false;
-                self.document.path = path.to_string_lossy().into_owned();
-                self.document.source_identity = Some(identity);
-                self.document.source_baseline_bytes = Some(baseline_bytes);
-                if revision == self.document.source_editor.revision() {
-                    self.document.source_editor.mark_saved();
-                    if let Some(recovery) = &self.recovery {
-                        let _ = recovery.clear();
+                self.saves_in_flight.remove(&document_id);
+                let active = document_id == self.document.id;
+                let saved_current = document_by_id_mut(
+                    &mut self.document,
+                    &mut self.inactive_documents,
+                    document_id,
+                )
+                .map(|document| {
+                    document.path = path.to_string_lossy().into_owned();
+                    apply_save_result(document, revision, identity, baseline_bytes)
+                });
+                if saved_current == Some(true) {
+                    if active {
+                        if let Some(recovery) = &self.recovery {
+                            let _ = recovery.clear();
+                        }
+                        self.set_notice("documento creado y guardado de forma atómica");
+                    } else {
+                        if let Some(tab) = self
+                            .inactive_documents
+                            .iter()
+                            .find(|tab| tab.document.id == document_id)
+                            && let Some(recovery) = &tab.recovery
+                        {
+                            let _ = recovery.clear();
+                        }
+                        self.set_notice("otra pestaña terminó de guardarse");
                     }
-                    self.set_notice("documento creado y guardado de forma atómica");
-                } else {
-                    self.set_notice("se creó una versión anterior; hay cambios nuevos");
+                } else if saved_current == Some(false) {
+                    self.set_notice(if active {
+                        "se creó una versión anterior; hay cambios nuevos"
+                    } else {
+                        "otra pestaña guardó una versión anterior"
+                    });
                 }
             }
             AppEvent::WorkspaceReady {
@@ -4105,7 +4187,7 @@ impl App {
     }
 
     fn open_document_in_tab(&mut self, document: DocumentState) {
-        if self.loading || self.save_in_flight {
+        if self.loading {
             self.set_notice("espera a que termine la operación actual");
             return;
         }
@@ -4124,7 +4206,7 @@ impl App {
     }
 
     fn switch_document_tab(&mut self, backwards: bool) {
-        if self.loading || self.save_in_flight {
+        if self.loading {
             self.set_notice("espera a que termine la operación actual antes de cambiar de pestaña");
             return;
         }
@@ -4144,7 +4226,7 @@ impl App {
         if document_id == self.document.id {
             return;
         }
-        if self.loading || self.save_in_flight {
+        if self.loading {
             self.set_notice("espera a que termine la operación actual antes de cambiar de pestaña");
             return;
         }
@@ -4173,8 +4255,8 @@ impl App {
     }
 
     fn close_active_document_tab(&mut self) {
-        if self.loading || self.save_in_flight {
-            self.set_notice("espera a que termine la operación actual antes de cerrar la pestaña");
+        if self.loading || self.saves_in_flight.contains(&self.document.id) {
+            self.set_notice("espera a que termine la operación de esta pestaña antes de cerrarla");
             return;
         }
         if !self.request_close_current() {
@@ -4560,17 +4642,23 @@ impl App {
         let metadata = self.document.source_metadata;
         let revision = self.document.source_editor.revision();
         let proxy = self.proxy.clone();
-        self.save_in_flight = true;
+        let document_id = self.document.id;
+        if !self.saves_in_flight.insert(document_id) {
+            self.set_notice("esta pestaña ya se está guardando");
+            return;
+        }
         self.set_notice("guardando de forma atómica");
         thread::spawn(move || {
             let event =
                 match save_explicit_primary(&path, &source, metadata, &identity, &baseline_bytes) {
                     Ok(saved) => AppEvent::SaveReady {
+                        document_id,
                         revision,
                         identity: saved.identity,
                         baseline_bytes: saved.baseline_bytes,
                     },
                     Err(error) => AppEvent::SaveFailed {
+                        document_id,
                         conflict: matches!(&error, FileSaveError::Conflict),
                         error: format!("no se pudo guardar: {error}"),
                     },
@@ -4592,17 +4680,23 @@ impl App {
         let metadata = self.document.source_metadata;
         let revision = self.document.source_editor.revision();
         let proxy = self.proxy.clone();
-        self.save_in_flight = true;
+        let document_id = self.document.id;
+        if !self.saves_in_flight.insert(document_id) {
+            self.set_notice("esta pestaña ya se está guardando");
+            return;
+        }
         self.set_notice("creando documento de forma atómica");
         thread::spawn(move || {
             let event = match save_new_primary(&path, &source, metadata) {
                 Ok(saved) => AppEvent::SaveAsReady {
+                    document_id,
                     path,
                     revision,
                     identity: saved.identity,
                     baseline_bytes: saved.baseline_bytes,
                 },
                 Err(error) => AppEvent::SaveFailed {
+                    document_id,
                     // Guardar como nunca reemplaza destinos existentes. Ese
                     // rechazo no es un conflicto de la fuente abierta y no
                     // debe ofrecer recargar el documento actual.
@@ -4784,7 +4878,7 @@ impl App {
     }
 
     fn request_close_all(&mut self) -> bool {
-        if self.loading || self.save_in_flight {
+        if self.loading || !self.saves_in_flight.is_empty() {
             self.set_notice("espera a que termine la operación actual antes de cerrar");
             return false;
         }
@@ -4860,7 +4954,7 @@ impl App {
     }
 
     fn create_new_document(&mut self) {
-        if self.loading || self.save_in_flight {
+        if self.loading {
             self.set_notice("espera a que termine la operación actual antes de crear una pestaña");
             return;
         }
@@ -4942,7 +5036,7 @@ impl App {
     }
 
     fn restore_latest_recovery(&mut self) {
-        if self.loading || self.save_in_flight {
+        if self.loading {
             self.set_notice("espera a que termine la operación actual antes de recuperar");
             return;
         }
@@ -4967,7 +5061,7 @@ impl App {
     }
 
     fn open_document_path(&mut self, path: PathBuf) -> bool {
-        if self.loading || self.save_in_flight {
+        if self.loading {
             self.set_notice("espera a que termine la apertura actual antes de abrir otra pestaña");
             return false;
         }
@@ -7003,7 +7097,7 @@ fn main() {
         inactive_documents: Vec::new(),
         tab_order: vec![initial_document_id],
         external_check_in_flight: false,
-        save_in_flight: false,
+        saves_in_flight: HashSet::new(),
         recovery_enabled: settings.recovery_enabled,
         recovery,
         recovery_privacy_notice_pending,
@@ -7220,6 +7314,28 @@ mod pruebas {
         ];
 
         assert_eq!(dirty_document_count(&active, &inactive), 1);
+    }
+
+    #[test]
+    fn un_resultado_asincrono_se_dirige_por_identidad_de_documento() {
+        let mut active = DocumentState::untitled();
+        active.path = "activa.md".to_string();
+        let active_id = active.id;
+        let mut inactive_document = DocumentState::untitled();
+        inactive_document.path = "inactiva.md".to_string();
+        let inactive_id = inactive_document.id;
+        let mut inactive = [InactiveDocument {
+            document: inactive_document,
+            recovery: None,
+        }];
+
+        let selected = document_by_id_mut(&mut active, &mut inactive, inactive_id).unwrap();
+        selected.path = "guardada.md".to_string();
+
+        assert_eq!(active.id, active_id);
+        assert_eq!(active.path, "activa.md");
+        assert_eq!(inactive[0].document.path, "guardada.md");
+        assert!(document_by_id_mut(&mut active, &mut inactive, u64::MAX).is_none());
     }
 
     #[test]

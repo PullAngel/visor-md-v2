@@ -123,8 +123,10 @@ exacto del traspaso.
   documentos modificados y solo continúa después de preservar cada recuperación.
 - la barra inferior presenta las pestañas en un orden estable, marca cambios
   con `*` y permite elegir cada documento con mouse. La posición de lectura se
-  conserva al cambiar; una apertura o guardado pendiente impide temporalmente
-  cambiar de pestaña para no atribuir el resultado al documento equivocado.
+  conserva al cambiar. Cada guardado asíncrono lleva la identidad de su pestaña,
+  por lo que se puede continuar en otra nota sin atribuirle el resultado, el
+  baseline o la limpieza de recuperación. Una apertura o render pendiente aún
+  impide temporalmente cambiar de pestaña.
 - una barra superior sobria hace visibles Nuevo, Abrir, Guardar, el cambio entre
   lectura y edición, la búsqueda y el acceso al catálogo completo. Usa las
   mismas acciones que los atajos y la paleta, para evitar comportamientos
@@ -140,8 +142,9 @@ exacto del traspaso.
 
 Evidencia actual en Windows:
 
-- `cargo test`: 133 de 133 pruebas verdes el 29 de agosto de 2026 tras
-  pestañas, paneles, catálogo de acciones y recuperación configurable;
+- `cargo test`: 136 de 136 pruebas verdes el 29 de agosto de 2026 tras
+  pestañas, paneles, acciones visibles, recuperación configurable y guardados
+  dirigidos por identidad de documento;
 - release Windows del mismo checkpoint: 3.264.512 bytes, 3,11 MiB, SHA-256
   `FAB3EE9393FC556C4BED52138055B191D867D6A27D9E44B7BFD97B154152AAB3`;
 - `cargo check`: verde;

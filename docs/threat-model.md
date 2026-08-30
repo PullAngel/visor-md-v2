@@ -150,14 +150,16 @@ correctas.
 
 ## Riesgos abiertos durante la recuperación
 
-- VFS interno implementado pero aún no conectado a la navegación e indexado de UI;
-- límite absoluto de archivo y cancelación todavía no implementados;
+- VFS conectado a navegación e indexado, con QA adversarial de junctions y
+  diferencias de plataforma todavía pendiente;
+- los límites absolutos están implementados; falta evidencia sostenida bajo
+  presión de memoria y cancelación cooperativa del parseo de un solo documento;
 - round-trip y rangos finos todavía no demostrados para toda sintaxis;
 - modo seguro sin validación visual end to end;
 - red no verificada mediante monitor;
 - renderer sin accesibilidad demostrada;
-- cancelación y reemplazo de parsing asíncrono todavía pendientes si el
-  documento cambia durante la preparación;
+- los resultados de parseo viejos se descartan por identidad y revisión; falta
+  cancelación cooperativa para ahorrar el trabajo de una tarea ya obsoleta;
 - dependencia transitiva no mantenida;
 - Linux sin evidencia equivalente a Windows.
 
