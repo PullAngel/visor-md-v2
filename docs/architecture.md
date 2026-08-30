@@ -3,9 +3,9 @@
 ## Estado de este documento
 
 Describe la arquitectura objetivo y separa explícitamente lo que existe de lo
-que falta. El prototipo de Sprint 0 demostró la viabilidad de la pila gráfica,
-pero la mayoría de las capas de seguridad y edición todavía no están
-implementadas.
+que falta. El prototipo de Sprint 0 demostró la pila gráfica; la base diaria ya
+incorpora edición, guardado, recuperación, pestañas y workspace, aunque varias
+capas siguen parciales y parte del núcleo continúa concentrada en `main.rs`.
 
 Ver [`status.md`](status.md) para la fotografía actual.
 
@@ -15,14 +15,21 @@ La separación empezó de forma incremental y con la suite verde:
 
 - `src/main.rs`: aplicación, parser y modelo provisionales, layout y dibujo;
 - `src/fonts.rs`: familias embebidas y registro tipográfico;
+- `src/editor.rs`: cursor, selección e historial reversible con límites;
+- `src/files.rs`: apertura fiel, identidad, conflictos y guardado atómico;
 - `src/limits.rs`: límites defensivos y causas de degradación;
-- `src/theme.rs`: paletas Papel y tinta y roles de color.
+- `src/recovery.rs`: recuperaciones locales versionadas y serializadas;
+- `src/settings.rs`: preferencias locales pequeñas y versionadas;
+- `src/theme.rs`: paletas Papel y tinta y roles de color;
+- `src/vfs.rs` y `src/workspace.rs`: raíz concedida, contención e índice en
+  memoria acotado y cancelable.
 
-El prototipo retiene durante la sesión el texto UTF-8 que abrió, sus rangos de
+La aplicación retiene durante la sesión el texto UTF-8 que abrió, sus rangos de
 modelo y metadatos de entrada: presencia de BOM UTF-8 y estilo observado de EOL
 (`LF`, `CRLF` o mixto). El BOM no se presenta como contenido y los saltos no se
-normalizan. Aún falta la identidad del archivo, la codificación fuera de UTF-8,
-los parches y el guardado atómico antes de declarar edición fiel.
+normalizan. La identidad portátil, los parches reversibles, el conflicto
+externo y el guardado atómico ya están conectados. UTF-8 inválido y otras
+codificaciones se rechazan en vez de sustituirse silenciosamente.
 
 Parser, modelo, layout y aplicación todavía comparten `main.rs`. Se extraerán en
 commits separados; esta lista describe el estado real y no la arquitectura final.
@@ -241,9 +248,9 @@ recuperación no pueden desalinearse. Cada estado conserva también su posición
 de scroll. La caché de layout y render sigue perteneciendo a
 la ventana: se descarta o reconstruye al cambiar de documento, en vez de
 confundirse con datos persistentes. El cambio de documento invalida resultados
-de render anteriores mediante una generación monotónica. Falta trasladar el
-resto del estado visual, como foco y selección de lectura, a cada pestaña y
-reemplazar el selector temporal por una barra visible.
+de render anteriores mediante una generación monotónica. La barra visible ya
+permite elegir y cerrar pestañas; falta trasladar el resto del estado visual,
+como foco y selección de lectura, a cada documento.
 
 Responsabilidades:
 
@@ -309,7 +316,8 @@ y su versión evita publicar resultados tardíos. `Ctrl+Shift+F` consulta el
 `Ctrl+Shift+I` vuelve a crear el índice de la raíz ya concedida y cancela el
 recorrido anterior si aún estaba activo. `Ctrl+Shift+B` presenta los backlinks
 del documento actual y solo abre una selección tras resolverla de nuevo con la
-VFS. Todavía faltan paneles plegables y detección de cambios externos del
+VFS. Índice, notas, búsqueda y backlinks ya usan paneles plegables; faltan la
+jerarquía visual del árbol y una detección más precisa de cambios externos del
 workspace.
 
 Los callouts conocidos de Obsidian dentro de una cita (`NOTE`, `INFO`, `TIP`,

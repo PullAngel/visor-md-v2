@@ -2,8 +2,8 @@
 //
 // Núcleo nativo. Abre un .md, lo parsea con comrak, lo maqueta con parley y lo
 // dibuja con tiny-skia sobre una ventana winit + softbuffer. Incluye edición
-// source-first, guardado fiel y workspace acotado; el chrome con pestañas y
-// paneles sigue pendiente.
+// source-first, guardado fiel, pestañas y workspace acotado. El chrome y la
+// separación modular continúan evolucionando sobre esta base.
 //
 // Lo que se mide con esto va a docs/budget.md. El criterio de salida del
 // Sprint 0 esta en docs/roadmap.md.
@@ -4947,9 +4947,8 @@ impl App {
     }
 
     /// El cierre no puede transformar una edición activa en pérdida silenciosa.
-    /// Como todavía no existe el chrome de pestañas, la confirmación usa un
-    /// diálogo nativo pequeño y conserva una recuperación sin cifrar antes de
-    /// permitir abandonar la ventana.
+    /// La pestaña muestra el estado sucio y el diálogo nativo conserva una
+    /// recuperación sin cifrar antes de permitir abandonarla.
     fn request_close_current(&mut self) -> bool {
         if !self.document.source_editor.is_dirty() {
             if let Some(recovery) = &self.recovery {

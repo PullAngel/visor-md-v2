@@ -208,10 +208,11 @@ causa porque todavía no se controlan caché, carga y planificación del sistema
   vuelta lectura-edición-lectura tras una edición grande;
 - selección de ejemplos de la suite oficial CommonMark y ampliación GFM sistemática;
 - separación incompleta de `main.rs`; fuentes y tema ya tienen módulos propios;
-- VFS de recursos secundarios, contención de rutas y política de bóvedas;
+- VFS de recursos secundarios como imágenes; la contención y política de
+  bóvedas ya cubren navegación e índice;
 - lista efímera de notas indexadas con `Ctrl+Shift+T`: no recorre el disco ni
   acepta rutas del documento y vuelve a resolver la elección dentro de VFS;
-  falta el panel plegable de árbol y backlinks;
+  falta jerarquía de árbol; el panel de backlinks ya está conectado;
 - al volver a enfocar la ventana, una marca distinta de la raíz avisa que el
   índice puede estar desactualizado y ofrece la reconstrucción explícita con
   `Ctrl+Shift+I`; no instala un watcher ni afirma detectar todo cambio interno;
