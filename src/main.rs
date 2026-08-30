@@ -31,7 +31,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use arboard::Clipboard;
 use comrak::nodes::{AstNode, NodeValue};
@@ -233,6 +233,7 @@ enum ContextAction {
     CopyMarkdown,
     Search,
     ToggleMode,
+    ToggleSplit,
     Save,
     SaveAs,
 }
@@ -245,6 +246,7 @@ enum AppAction {
     SaveAs,
     CloseDocument,
     ToggleMode,
+    ToggleSplit,
     SearchDocument,
     ChooseWorkspace,
     RefreshWorkspace,
@@ -257,13 +259,14 @@ enum AppAction {
     CommandPalette,
 }
 
-const APP_ACTIONS: [AppAction; 15] = [
+const APP_ACTIONS: [AppAction; 16] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
     AppAction::SaveAs,
     AppAction::CloseDocument,
     AppAction::ToggleMode,
+    AppAction::ToggleSplit,
     AppAction::SearchDocument,
     AppAction::ChooseWorkspace,
     AppAction::RefreshWorkspace,
@@ -284,6 +287,7 @@ impl AppAction {
             Self::SaveAs => "Guardar como · Ctrl+Shift+S",
             Self::CloseDocument => "Cerrar pestaña · Ctrl+W",
             Self::ToggleMode => "Alternar lectura y edición · F2",
+            Self::ToggleSplit => "Comparar fuente y vista · F3",
             Self::SearchDocument => "Buscar en documento · Ctrl+F",
             Self::ChooseWorkspace => "Abrir carpeta · Ctrl+Shift+O",
             Self::RefreshWorkspace => "Actualizar índice de carpeta · Ctrl+Shift+I",
@@ -304,6 +308,8 @@ impl AppAction {
             Self::Save => "Guardar",
             Self::ToggleMode if mode == DocumentMode::Reading => "Editar",
             Self::ToggleMode => "Leer",
+            Self::ToggleSplit if mode == DocumentMode::Split => "Cerrar comparación",
+            Self::ToggleSplit => "Comparar",
             Self::SearchDocument => "Buscar",
             Self::CommandPalette => "Más",
             _ => self.label(),
@@ -328,6 +334,7 @@ impl ContextAction {
             Self::CopyMarkdown => "Copiar Markdown original",
             Self::Search => "Buscar en documento",
             Self::ToggleMode => "Alternar lectura y edición",
+            Self::ToggleSplit => "Comparar fuente y vista",
             Self::Save => "Guardar",
             Self::SaveAs => "Guardar como",
         }
@@ -345,6 +352,7 @@ fn context_actions(mode: DocumentMode) -> &'static [ContextAction] {
             ContextAction::CopyMarkdown,
             ContextAction::Search,
             ContextAction::ToggleMode,
+            ContextAction::ToggleSplit,
             ContextAction::Save,
             ContextAction::SaveAs,
         ],
@@ -354,6 +362,17 @@ fn context_actions(mode: DocumentMode) -> &'static [ContextAction] {
             ContextAction::CopyMarkdown,
             ContextAction::Search,
             ContextAction::ToggleMode,
+            ContextAction::ToggleSplit,
+            ContextAction::Save,
+            ContextAction::SaveAs,
+        ],
+        DocumentMode::Split => &[
+            ContextAction::Paste,
+            ContextAction::CopyText,
+            ContextAction::CopyMarkdown,
+            ContextAction::Search,
+            ContextAction::ToggleMode,
+            ContextAction::ToggleSplit,
             ContextAction::Save,
             ContextAction::SaveAs,
         ],
@@ -418,6 +437,10 @@ enum AppEvent {
         outcome: ParseOutcome,
         elapsed_ms: f64,
     },
+    ViewRequested {
+        document_id: u64,
+        revision: u64,
+    },
     ViewFailed {
         document_id: u64,
         revision: u64,
@@ -460,6 +483,13 @@ enum AppEvent {
 enum DocumentMode {
     Reading,
     SourceEditing,
+    Split,
+}
+
+impl DocumentMode {
+    fn is_editable(self) -> bool {
+        matches!(self, Self::SourceEditing | Self::Split)
+    }
 }
 
 fn is_current_view_result(
@@ -794,6 +824,7 @@ enum Kind {
     Rule,
 }
 
+#[derive(Clone)]
 struct Block {
     text: String,
     /// Tramos con enfasis. Vacio en el caso comun (texto sin formato), que es
@@ -2035,6 +2066,14 @@ fn layout_width_is_stale(laid_for_width: f32, viewport_width: f32) -> bool {
     (laid_for_width - viewport_width).abs() > 0.5
 }
 
+fn content_layout_width(viewport_width: f32, mode: DocumentMode) -> f32 {
+    if mode == DocumentMode::Split {
+        (viewport_width / 2.0).max(1.0)
+    } else {
+        viewport_width.max(1.0)
+    }
+}
+
 fn selection_scroll_delta(pointer_y: f32, viewport_height: f32) -> f32 {
     if viewport_height <= SELECTION_SCROLL_EDGE * 2.0 {
         return 0.0;
@@ -2720,6 +2759,10 @@ struct DocumentState {
     source_baseline_bytes: Option<Vec<u8>>,
     source_editor: SourceEditor,
     mode: DocumentMode,
+    /// Último modelo Markdown correspondiente a la revisión aceptada. En
+    /// edición se conserva separado de la representación inerte de la fuente
+    /// para que la vista dividida nunca se convierta en autoridad de guardado.
+    rendered_blocks: Vec<Block>,
     blocks: Vec<Block>,
     safe_mode: Option<Degradation>,
     /// Posición visual propia de la pestaña. Se sincroniza antes de cambiar
@@ -2742,6 +2785,7 @@ impl DocumentState {
             source_baseline_bytes: None,
             source_editor: SourceEditor::new(),
             mode: DocumentMode::SourceEditing,
+            rendered_blocks: Vec::new(),
             blocks: Vec::new(),
             safe_mode: None,
             scroll: 0.0,
@@ -2806,6 +2850,14 @@ fn apply_save_result(
         document.source_editor.mark_saved();
     }
     is_current
+}
+
+fn apply_view_outcome(document: &mut DocumentState, outcome: ParseOutcome) {
+    document.rendered_blocks = outcome.blocks;
+    if document.mode == DocumentMode::Reading {
+        document.blocks = document.rendered_blocks.clone();
+    }
+    document.safe_mode = outcome.degradation;
 }
 
 fn paths_refer_to_same_file(left: &std::path::Path, right: &std::path::Path) -> bool {
@@ -2874,6 +2926,12 @@ struct App {
     live: HashMap<usize, (CachedBlockLayout, Option<CachedMarker>)>,
     doc_height: f32,
     laid_for_width: f32,
+    /// Cache independiente de la mitad renderizada. Comparar ambas vistas no
+    /// mezcla cursores ni rangos de la fuente con el modelo Markdown.
+    preview_slots: Vec<Slot>,
+    preview_live: HashMap<usize, (CachedBlockLayout, Option<CachedMarker>)>,
+    preview_height: f32,
+    preview_laid_for_width: f32,
     scale_factor: f32,
     scroll: f32,
     first_paint_done: bool,
@@ -2955,6 +3013,44 @@ struct App {
 impl ApplicationHandler<AppEvent> for App {
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: AppEvent) {
         match event {
+            AppEvent::ViewRequested {
+                document_id,
+                revision,
+            } => {
+                if self.view_requests.get(&document_id) != Some(&revision) {
+                    return;
+                }
+                let Some(document) = document_by_id_mut(
+                    &mut self.document,
+                    &mut self.inactive_documents,
+                    document_id,
+                ) else {
+                    self.view_requests.remove(&document_id);
+                    return;
+                };
+                if document.source_editor.revision() != revision {
+                    return;
+                }
+                let source = document.source.to_string();
+                let proxy = self.proxy.clone();
+                thread::spawn(move || {
+                    let started = Instant::now();
+                    let event = match parse_blocks(&source) {
+                        Ok(outcome) => AppEvent::ViewReady {
+                            document_id,
+                            revision,
+                            outcome,
+                            elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
+                        },
+                        Err(error) => AppEvent::ViewFailed {
+                            document_id,
+                            revision,
+                            error: format!("no se pudo actualizar la vista: {error}"),
+                        },
+                    };
+                    let _ = proxy.send_event(event);
+                });
+            }
             AppEvent::DocumentReady {
                 document_id,
                 request,
@@ -2994,7 +3090,8 @@ impl ApplicationHandler<AppEvent> for App {
                 document.source_baseline_bytes = Some(baseline_bytes);
                 document.source_editor = SourceEditor::new();
                 document.mode = DocumentMode::Reading;
-                document.blocks = outcome.blocks;
+                document.rendered_blocks = outcome.blocks;
+                document.blocks = document.rendered_blocks.clone();
                 document.safe_mode = safe_mode;
                 document.scroll = 0.0;
                 self.log.push(format!(
@@ -3090,15 +3187,23 @@ impl ApplicationHandler<AppEvent> for App {
                         .push("[edición] se descartó una vista desactualizada".to_string());
                     return;
                 }
-                document.blocks = outcome.blocks;
-                document.safe_mode = outcome.degradation;
+                apply_view_outcome(document, outcome);
                 self.view_requests.remove(&document_id);
                 self.log.push(format!(
                     "[medicion] actualizar vista fuera de UI: {elapsed_ms:.0} ms"
                 ));
                 if document_id == self.document.id {
-                    self.reset_document_view();
-                    self.set_notice("vista de lectura actualizada");
+                    if self.document.mode == DocumentMode::Split {
+                        self.invalidate_document_layout();
+                        self.sync_source_selection();
+                    } else {
+                        self.reset_document_view();
+                    }
+                    self.set_notice(if self.document.mode == DocumentMode::Split {
+                        "vista dividida actualizada"
+                    } else {
+                        "vista de lectura actualizada"
+                    });
                     if let Some(window) = &self.window {
                         window.request_redraw();
                     }
@@ -3384,6 +3489,7 @@ impl ApplicationHandler<AppEvent> for App {
                     NIGHT
                 };
                 self.live.clear();
+                self.preview_live.clear();
                 if let Some(w) = &self.window {
                     w.request_redraw();
                 }
@@ -3396,7 +3502,9 @@ impl ApplicationHandler<AppEvent> for App {
                     self.scale_factor = window.scale_factor() as f32;
                 }
                 self.live.clear();
+                self.preview_live.clear();
                 self.laid_for_width = -1.0;
+                self.preview_laid_for_width = -1.0;
                 if let Some(w) = &self.window {
                     w.request_redraw();
                 }
@@ -3481,6 +3589,9 @@ impl ApplicationHandler<AppEvent> for App {
                                 ContextAction::ToggleMode => {
                                     self.perform_action(AppAction::ToggleMode)
                                 }
+                                ContextAction::ToggleSplit => {
+                                    self.perform_action(AppAction::ToggleSplit)
+                                }
                                 ContextAction::Save => self.perform_action(AppAction::Save),
                                 ContextAction::SaveAs => self.perform_action(AppAction::SaveAs),
                             }
@@ -3551,7 +3662,7 @@ impl ApplicationHandler<AppEvent> for App {
                     self.focused_link = None;
                     self.focus_destination = None;
                     self.refresh_title();
-                    if self.document.mode == DocumentMode::SourceEditing {
+                    if self.document.mode.is_editable() {
                         if let Some(cursor) = self.pointer.and_then(|(x, y)| self.cursor_at(x, y)) {
                             self.set_source_cursor_from_block(cursor, false);
                         }
@@ -3576,6 +3687,17 @@ impl ApplicationHandler<AppEvent> for App {
                 let Some((x, y)) = self.pointer else {
                     return;
                 };
+                if self.document.mode == DocumentMode::Split
+                    && self
+                        .window
+                        .as_ref()
+                        .is_some_and(|window| x >= window.inner_size().width as f32 / 2.0)
+                {
+                    self.set_notice(
+                        "la vista derecha es de lectura; edita la fuente a la izquierda",
+                    );
+                    return;
+                }
                 let (x, y) = if let Some(window) = &self.window {
                     let size = window.inner_size();
                     (
@@ -3605,9 +3727,7 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::Ime(Ime::Commit(text)) if self.command_palette.is_some() => {
                 self.append_command_palette_text(&text);
             }
-            WindowEvent::Ime(Ime::Commit(text))
-                if self.document.mode == DocumentMode::SourceEditing =>
-            {
+            WindowEvent::Ime(Ime::Commit(text)) if self.document.mode.is_editable() => {
                 self.edit_source(|editor, source| editor.insert(source, text.as_str()));
             }
             WindowEvent::KeyboardInput { event, .. } if self.command_palette.is_some() => {
@@ -3658,9 +3778,7 @@ impl ApplicationHandler<AppEvent> for App {
             } if self.modifiers.control_key() && self.modifiers.shift_key() => {
                 self.open_command_palette();
             }
-            WindowEvent::KeyboardInput { event, .. }
-                if self.document.mode == DocumentMode::SourceEditing =>
-            {
+            WindowEvent::KeyboardInput { event, .. } if self.document.mode.is_editable() => {
                 self.handle_source_key(&event);
             }
             WindowEvent::KeyboardInput {
@@ -3895,6 +4013,18 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::F3),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } => {
+                self.perform_action(AppAction::ToggleSplit);
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
                         physical_key: PhysicalKey::Code(KeyCode::Escape),
                         state: ElementState::Pressed,
                         repeat: false,
@@ -4096,6 +4226,7 @@ impl ApplicationHandler<AppEvent> for App {
                 let is_night = self.palette.bg == NIGHT.bg;
                 self.palette = if is_night { DAY } else { NIGHT };
                 self.live.clear();
+                self.preview_live.clear();
                 if let Some(w) = &self.window {
                     w.request_redraw();
                 }
@@ -4110,7 +4241,7 @@ impl ApplicationHandler<AppEvent> for App {
                     .as_ref()
                     .map(|window| window.inner_size().height as f32)
                     .unwrap_or(0.0);
-                let max = max_scroll(self.doc_height, viewport_height);
+                let max = max_scroll(self.doc_height.max(self.preview_height), viewport_height);
                 self.scroll = (self.scroll - dy).clamp(0.0, max);
                 if let Some(w) = &self.window {
                     w.request_redraw();
@@ -4137,7 +4268,9 @@ impl ApplicationHandler<AppEvent> for App {
                             .as_ref()
                             .map(|window| window.inner_size().height as f32)
                             .unwrap_or(0.0);
-                        let max = max_scroll(self.doc_height, viewport_height).max(1.0);
+                        let max =
+                            max_scroll(self.doc_height.max(self.preview_height), viewport_height)
+                                .max(1.0);
                         self.scroll = (self.scroll + max / total as f32) % max;
                         if let Some(w) = &self.window {
                             w.request_redraw();
@@ -4160,9 +4293,13 @@ impl App {
             AppAction::CloseDocument => self.close_active_document_tab(),
             AppAction::ToggleMode => match self.document.mode {
                 DocumentMode::Reading => self.enter_source_mode(),
-                DocumentMode::SourceEditing => {
+                DocumentMode::SourceEditing | DocumentMode::Split => {
                     self.refresh_reading_async("actualizando vista de lectura")
                 }
+            },
+            AppAction::ToggleSplit => match self.document.mode {
+                DocumentMode::Split => self.refresh_reading_async("cerrando vista dividida"),
+                DocumentMode::Reading | DocumentMode::SourceEditing => self.enter_split_mode(),
             },
             AppAction::SearchDocument => self.open_document_search(),
             AppAction::ChooseWorkspace => self.choose_workspace(),
@@ -4373,11 +4510,7 @@ impl App {
     }
 
     fn reset_document_view(&mut self) {
-        self.slots.clear();
-        self.live.clear();
-        self.doc_height = 0.0;
-        self.laid_for_width = -1.0;
-        self.exact_after_edit = true;
+        self.invalidate_document_layout();
         self.scroll = self.document.scroll;
         self.selection = None;
         self.focused_link = None;
@@ -4390,6 +4523,18 @@ impl App {
         self.command_palette = None;
         self.command_palette_query.clear();
         self.toolbar_focus = None;
+    }
+
+    fn invalidate_document_layout(&mut self) {
+        self.slots.clear();
+        self.live.clear();
+        self.doc_height = 0.0;
+        self.laid_for_width = -1.0;
+        self.preview_slots.clear();
+        self.preview_live.clear();
+        self.preview_height = 0.0;
+        self.preview_laid_for_width = -1.0;
+        self.exact_after_edit = true;
     }
 
     fn document_busy(&self, document_id: u64) -> bool {
@@ -4518,6 +4663,23 @@ impl App {
         Ok(())
     }
 
+    fn enter_split_mode(&mut self) {
+        match safe_buffer_blocks(&self.document.source) {
+            Ok(blocks) => {
+                self.document.mode = DocumentMode::Split;
+                self.document.blocks = blocks;
+                self.reset_document_view();
+                self.request_render_async();
+                self.set_notice("vista dividida · fuente editable y lectura sincronizada");
+                if let Some(window) = &self.window {
+                    window.set_cursor(CursorIcon::Text);
+                    window.request_redraw();
+                }
+            }
+            Err(error) => self.set_notice(&format!("no se pudo preparar la fuente: {error}")),
+        }
+    }
+
     fn edit_source(
         &mut self,
         operation: impl FnOnce(&mut SourceEditor, &mut TextBuffer) -> Result<bool, editor::EditError>,
@@ -4529,6 +4691,9 @@ impl App {
                     self.notice = None;
                     self.refresh_title();
                     self.schedule_recovery();
+                    if self.document.mode == DocumentMode::Split {
+                        self.request_render_async();
+                    }
                     if let Some(window) = &self.window {
                         window.request_redraw();
                     }
@@ -4572,27 +4737,20 @@ impl App {
     fn refresh_reading_async(&mut self, notice: &str) {
         self.document.mode = DocumentMode::Reading;
         self.set_notice(notice);
-        let source = self.document.source.to_string();
+        self.request_render_async();
+    }
+
+    fn request_render_async(&mut self) {
         let document_id = self.document.id;
         let revision = self.document.source_editor.revision();
         self.view_requests.insert(document_id, revision);
         let proxy = self.proxy.clone();
         thread::spawn(move || {
-            let started = Instant::now();
-            let event = match parse_blocks(&source) {
-                Ok(outcome) => AppEvent::ViewReady {
-                    document_id,
-                    revision,
-                    outcome,
-                    elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
-                },
-                Err(error) => AppEvent::ViewFailed {
-                    document_id,
-                    revision,
-                    error: format!("no se pudo actualizar la vista: {error}"),
-                },
-            };
-            let _ = proxy.send_event(event);
+            thread::sleep(Duration::from_millis(120));
+            let _ = proxy.send_event(AppEvent::ViewRequested {
+                document_id,
+                revision,
+            });
         });
     }
 
@@ -4676,6 +4834,9 @@ impl App {
         match event.physical_key {
             PhysicalKey::Code(KeyCode::F2) => {
                 self.perform_action(AppAction::ToggleMode);
+            }
+            PhysicalKey::Code(KeyCode::F3) => {
+                self.perform_action(AppAction::ToggleSplit);
             }
             PhysicalKey::Code(KeyCode::Backspace) => {
                 self.edit_source(|editor, source| editor.backspace(source));
@@ -4788,7 +4949,7 @@ impl App {
             }
             _ => {}
         }
-        if self.document.mode == DocumentMode::SourceEditing {
+        if self.document.mode.is_editable() {
             self.sync_source_selection();
             if let Some(window) = &self.window {
                 window.request_redraw();
@@ -5468,7 +5629,10 @@ impl App {
             } else if slot.y + slot.height > self.scroll + viewport {
                 self.scroll = (slot.y + slot.height - viewport).max(0.0);
             }
-            self.scroll = self.scroll.min(max_scroll(self.doc_height, viewport));
+            self.scroll = self.scroll.min(max_scroll(
+                self.doc_height.max(self.preview_height),
+                viewport,
+            ));
             window.request_redraw();
         }
         self.refresh_title();
@@ -5749,7 +5913,10 @@ impl App {
             .window
             .as_ref()
             .map_or(0.0, |window| window.inner_size().height as f32);
-        self.scroll = slot.y.min(max_scroll(self.doc_height, viewport));
+        self.scroll = slot.y.min(max_scroll(
+            self.doc_height.max(self.preview_height),
+            viewport,
+        ));
         self.selection = Some(DocumentSelection::collapsed(BlockCursor {
             block: block_index,
             offset: 0,
@@ -6027,6 +6194,14 @@ impl App {
     }
 
     fn cursor_at(&self, x: f32, y: f32) -> Option<BlockCursor> {
+        if self.document.mode == DocumentMode::Split
+            && self
+                .window
+                .as_ref()
+                .is_some_and(|window| x >= window.inner_size().width as f32 / 2.0)
+        {
+            return None;
+        }
         self.slots.iter().enumerate().find_map(|(block, slot)| {
             let top = slot.y - self.scroll;
             if y < top || y > top + slot.height {
@@ -6125,7 +6300,7 @@ impl App {
     }
 
     fn extend_selection_to(&mut self, x: f32, y: f32) {
-        if self.document.mode == DocumentMode::SourceEditing {
+        if self.document.mode.is_editable() {
             if let Some(cursor) = self.cursor_at(x, y) {
                 self.set_source_cursor_from_block(cursor, true);
             }
@@ -6180,7 +6355,10 @@ impl App {
         let viewport = window.inner_size().height as f32;
         let step = (viewport * 0.88).max(1.0);
         let delta = if down { step } else { -step };
-        self.scroll = (self.scroll + delta).clamp(0.0, max_scroll(self.doc_height, viewport));
+        self.scroll = (self.scroll + delta).clamp(
+            0.0,
+            max_scroll(self.doc_height.max(self.preview_height), viewport),
+        );
         window.request_redraw();
     }
 
@@ -6306,7 +6484,10 @@ impl App {
         if delta == 0.0 {
             return false;
         }
-        let next = (self.scroll + delta).clamp(0.0, max_scroll(self.doc_height, viewport_height));
+        let next = (self.scroll + delta).clamp(
+            0.0,
+            max_scroll(self.doc_height.max(self.preview_height), viewport_height),
+        );
         if (next - self.scroll).abs() < f32::EPSILON {
             return false;
         }
@@ -6325,25 +6506,28 @@ impl App {
         };
 
         let frame_start = Instant::now();
+        let split = self.document.mode == DocumentMode::Split;
+        let layout_width = content_layout_width(size.width as f32, self.document.mode);
 
         // Re-medir solo si cambio el ancho.
-        if self.exact_after_edit || layout_width_is_stale(self.laid_for_width, size.width as f32) {
+        if self.exact_after_edit || layout_width_is_stale(self.laid_for_width, layout_width) {
             let t = Instant::now();
             let (slots, height) = measure_all(
                 &self.document.blocks,
                 &mut self.font_cx,
                 &mut self.layout_cx,
-                size.width as f32,
+                layout_width,
                 self.scale_factor,
                 self.exact_measure || self.exact_after_edit,
             );
             self.slots = slots;
             self.doc_height = height;
-            self.laid_for_width = size.width as f32;
+            self.laid_for_width = layout_width;
             self.exact_after_edit = false;
-            self.scroll = self
-                .scroll
-                .min(max_scroll(self.doc_height, size.height as f32));
+            self.scroll = self.scroll.min(max_scroll(
+                self.doc_height.max(self.preview_height),
+                size.height as f32,
+            ));
             self.live.clear();
             self.log.push(format!(
                 "[medicion] posicionar {} bloques ({}): {:.0} ms  (alto {:.0} px)",
@@ -6358,6 +6542,25 @@ impl App {
             ));
         }
 
+        if split && layout_width_is_stale(self.preview_laid_for_width, layout_width) {
+            let (slots, height) = measure_all(
+                &self.document.rendered_blocks,
+                &mut self.font_cx,
+                &mut self.layout_cx,
+                layout_width,
+                self.scale_factor,
+                false,
+            );
+            self.preview_slots = slots;
+            self.preview_height = height;
+            self.preview_laid_for_width = layout_width;
+            self.preview_live.clear();
+            self.scroll = self.scroll.min(max_scroll(
+                self.doc_height.max(self.preview_height),
+                size.height as f32,
+            ));
+        }
+
         if let Some(heading) = self.document.pending_heading.take() {
             self.scroll_to_heading(&heading);
         }
@@ -6366,6 +6569,11 @@ impl App {
         let view_top = self.scroll;
         let view_bottom = self.scroll + size.height as f32;
         let visible = visible_range(&self.slots, view_top, view_bottom);
+        let preview_visible = if split {
+            visible_range(&self.preview_slots, view_top, view_bottom)
+        } else {
+            0..0
+        };
 
         // Solo los visibles conservan su layout vivo.
         self.live.retain(|i, _| visible.contains(i));
@@ -6377,7 +6585,7 @@ impl App {
                         block,
                         &mut self.font_cx,
                         &mut self.layout_cx,
-                        size.width as f32,
+                        layout_width,
                         self.scale_factor,
                         self.palette,
                     ))
@@ -6386,7 +6594,7 @@ impl App {
                         block,
                         &mut self.font_cx,
                         &mut self.layout_cx,
-                        size.width as f32,
+                        layout_width,
                         self.scale_factor,
                         self.palette,
                     )))
@@ -6403,6 +6611,45 @@ impl App {
                     Marker::Task { done } => CachedMarker::Task { done: *done },
                 });
                 self.live.insert(i, (layout, marker));
+            }
+        }
+
+        self.preview_live
+            .retain(|index, _| preview_visible.contains(index));
+        for index in preview_visible.clone() {
+            if !self.preview_live.contains_key(&index) {
+                let block = &self.document.rendered_blocks[index];
+                let layout = if matches!(block.kind, Kind::TableRow { .. }) {
+                    CachedBlockLayout::Table(build_table_layouts(
+                        block,
+                        &mut self.font_cx,
+                        &mut self.layout_cx,
+                        layout_width,
+                        self.scale_factor,
+                        self.palette,
+                    ))
+                } else {
+                    CachedBlockLayout::Text(Box::new(build_layout(
+                        block,
+                        &mut self.font_cx,
+                        &mut self.layout_cx,
+                        layout_width,
+                        self.scale_factor,
+                        self.palette,
+                    )))
+                };
+                let marker = block.marker.as_ref().map(|marker| match marker {
+                    Marker::Text(text) => CachedMarker::Text(Box::new(build_marker_layout(
+                        text,
+                        block.kind,
+                        &mut self.font_cx,
+                        &mut self.layout_cx,
+                        self.scale_factor,
+                        self.palette,
+                    ))),
+                    Marker::Task { done } => CachedMarker::Task { done: *done },
+                });
+                self.preview_live.insert(index, (layout, marker));
             }
         }
 
@@ -6551,6 +6798,7 @@ impl App {
         let document_mode_label = match self.document.mode {
             DocumentMode::Reading => "Lectura",
             DocumentMode::SourceEditing => "Edición",
+            DocumentMode::Split => "Fuente + lectura",
         };
         let document_state_label = if self.open_requests.contains_key(&self.document.id) {
             "abriendo"
@@ -6636,6 +6884,8 @@ impl App {
             pixmap,
             slots,
             live,
+            preview_slots,
+            preview_live,
             scale_cx,
             glyphs,
             scroll,
@@ -6672,7 +6922,7 @@ impl App {
         dim_paint.set_color(Color::from_rgba8(dc.0, dc.1, dc.2, 160));
 
         let ancho_texto =
-            (w.get() as f32 - MARGIN * *scale_factor * 2.0).min(MAX_MEASURE * *scale_factor);
+            (layout_width - MARGIN * *scale_factor * 2.0).min(MAX_MEASURE * *scale_factor);
 
         for i in visible {
             let slot = &slots[i];
@@ -6745,19 +6995,28 @@ impl App {
                     ) {
                         pixmap.fill_rect(rect, &paint, Transform::identity(), None);
                     }
-                    let (x, y, width, height) =
-                        code_copy_bounds(slot, ancho_texto, *scroll, *scale_factor);
-                    let ac = palette.accent;
-                    let mut button = Paint::default();
-                    button.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 42));
-                    if let Some(rect) = Rect::from_xywh(x, y, width, height) {
-                        pixmap.fill_rect(rect, &button, Transform::identity(), None);
-                    }
-                    for line in code_copy_layout.lines() {
-                        for entry in line.items() {
-                            if let PositionedLayoutItem::GlyphRun(run) = entry {
-                                draw_run_background(pixmap, &run, x + 8.0, y + 4.0);
-                                draw_glyph_run(pixmap, scale_cx, glyphs, &run, x + 8.0, y + 4.0);
+                    if context_mode == DocumentMode::Reading {
+                        let (x, y, width, height) =
+                            code_copy_bounds(slot, ancho_texto, *scroll, *scale_factor);
+                        let ac = palette.accent;
+                        let mut button = Paint::default();
+                        button.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 42));
+                        if let Some(rect) = Rect::from_xywh(x, y, width, height) {
+                            pixmap.fill_rect(rect, &button, Transform::identity(), None);
+                        }
+                        for line in code_copy_layout.lines() {
+                            for entry in line.items() {
+                                if let PositionedLayoutItem::GlyphRun(run) = entry {
+                                    draw_run_background(pixmap, &run, x + 8.0, y + 4.0);
+                                    draw_glyph_run(
+                                        pixmap,
+                                        scale_cx,
+                                        glyphs,
+                                        &run,
+                                        x + 8.0,
+                                        y + 4.0,
+                                    );
+                                }
                             }
                         }
                     }
@@ -6907,6 +7166,117 @@ impl App {
                         draw_run_background(pixmap, &run, slot.x, top);
                         draw_decorations(pixmap, &run, slot.x, top);
                         draw_glyph_run(pixmap, scale_cx, glyphs, &run, slot.x, top);
+                    }
+                }
+            }
+        }
+
+        if split {
+            let pane_x = layout_width;
+            if let Some(rect) = Rect::from_xywh(pane_x - 1.0, 0.0, 1.0, h.get() as f32) {
+                pixmap.fill_rect(rect, &dim_paint, Transform::identity(), None);
+            }
+            for index in preview_visible {
+                let slot = &preview_slots[index];
+                let Some((cached_layout, marker)) = preview_live.get(&index) else {
+                    continue;
+                };
+                let top = slot.y - *scroll;
+                if let CachedBlockLayout::Table(cells) = cached_layout {
+                    let columns = cells.len().max(1) as f32;
+                    let left = pane_x + slot.x - 6.0;
+                    let table_width = ancho_texto + 12.0;
+                    let mut line_paint = Paint::default();
+                    let dim = palette.dim;
+                    line_paint.set_color(Color::from_rgba8(dim.0, dim.1, dim.2, 112));
+                    for (x, y, width, height) in [
+                        (left, top - 1.0, table_width, 1.0),
+                        (left, top + slot.height, table_width, 1.0),
+                        (left, top - 1.0, 1.0, slot.height + 2.0),
+                        (left + table_width - 1.0, top - 1.0, 1.0, slot.height + 2.0),
+                    ] {
+                        if let Some(rect) = Rect::from_xywh(x, y, width, height) {
+                            pixmap.fill_rect(rect, &line_paint, Transform::identity(), None);
+                        }
+                    }
+                    for column in 1..columns as usize {
+                        let x = left + table_width * column as f32 / columns;
+                        if let Some(rect) = Rect::from_xywh(x, top - 1.0, 1.0, slot.height + 2.0) {
+                            pixmap.fill_rect(rect, &line_paint, Transform::identity(), None);
+                        }
+                    }
+                    let column_width = ancho_texto / columns;
+                    for (column, layout) in cells.iter().enumerate() {
+                        let x = pane_x + slot.x + column as f32 * column_width + TABLE_CELL_PADDING;
+                        let y = top + (slot.height - layout.height()).max(0.0) * 0.5;
+                        for line in layout.lines() {
+                            for entry in line.items() {
+                                if let PositionedLayoutItem::GlyphRun(run) = entry {
+                                    draw_run_background(pixmap, &run, x, y);
+                                    draw_decorations(pixmap, &run, x, y);
+                                    draw_glyph_run(pixmap, scale_cx, glyphs, &run, x, y);
+                                }
+                            }
+                        }
+                    }
+                    continue;
+                }
+                let CachedBlockLayout::Text(layout) = cached_layout else {
+                    continue;
+                };
+                let x = pane_x + slot.x;
+                match slot.kind {
+                    Kind::Code | Kind::Callout => {
+                        if let Some(rect) = Rect::from_xywh(
+                            x - 12.0,
+                            top - 2.0,
+                            ancho_texto + 24.0,
+                            slot.height + 4.0,
+                        ) {
+                            pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+                        }
+                    }
+                    Kind::Quote => {
+                        if let Some(rect) = Rect::from_xywh(x - 20.0, top, 3.0, slot.height) {
+                            pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
+                        }
+                    }
+                    Kind::Rule => {
+                        if let Some(rect) = Rect::from_xywh(x, top, ancho_texto, 1.0) {
+                            pixmap.fill_rect(rect, &dim_paint, Transform::identity(), None);
+                        }
+                        continue;
+                    }
+                    _ => {}
+                }
+                if let Some(marker) = marker {
+                    match marker {
+                        CachedMarker::Text(marker) => {
+                            let marker_x = x - marker.width() - 8.0;
+                            for line in marker.lines() {
+                                for entry in line.items() {
+                                    if let PositionedLayoutItem::GlyphRun(run) = entry {
+                                        draw_glyph_run(
+                                            pixmap, scale_cx, glyphs, &run, marker_x, top,
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        CachedMarker::Task { done } => {
+                            let (font_size, _, _, _) = slot.kind.style();
+                            let size = (font_size * *scale_factor * 0.82).max(12.0 * *scale_factor);
+                            draw_checkbox(pixmap, x - size - 8.0, top, size, *done, *palette);
+                        }
+                    }
+                }
+                for line in layout.lines() {
+                    for entry in line.items() {
+                        if let PositionedLayoutItem::GlyphRun(run) = entry {
+                            draw_run_background(pixmap, &run, x, top);
+                            draw_decorations(pixmap, &run, x, top);
+                            draw_glyph_run(pixmap, scale_cx, glyphs, &run, x, top);
+                        }
                     }
                 }
             }
@@ -7319,6 +7689,7 @@ fn main() {
             } else {
                 DocumentMode::SourceEditing
             },
+            rendered_blocks: Vec::new(),
             blocks: Vec::new(),
             safe_mode: None,
             scroll: 0.0,
@@ -7355,6 +7726,10 @@ fn main() {
         live: HashMap::new(),
         doc_height: 0.0,
         laid_for_width: -1.0,
+        preview_slots: Vec::new(),
+        preview_live: HashMap::new(),
+        preview_height: 0.0,
+        preview_laid_for_width: -1.0,
         scale_factor: 1.0,
         scroll: 0.0,
         first_paint_done: false,
@@ -7502,8 +7877,20 @@ mod pruebas {
         labels.sort_unstable();
         labels.dedup();
 
-        assert_eq!(original_len, 15);
+        assert_eq!(original_len, 16);
         assert_eq!(labels.len(), original_len);
+    }
+
+    #[test]
+    fn la_vista_dividida_reserva_la_mitad_sin_cambiar_otros_modos() {
+        assert_eq!(content_layout_width(1200.0, DocumentMode::Split), 600.0);
+        assert_eq!(content_layout_width(1200.0, DocumentMode::Reading), 1200.0);
+        assert_eq!(
+            content_layout_width(1200.0, DocumentMode::SourceEditing),
+            1200.0
+        );
+        assert!(DocumentMode::Split.is_editable());
+        assert!(!DocumentMode::Reading.is_editable());
     }
 
     #[test]
@@ -7591,6 +7978,33 @@ mod pruebas {
         assert_eq!(active.path, "activa.md");
         assert_eq!(inactive[0].document.path, "guardada.md");
         assert!(document_by_id_mut(&mut active, &mut inactive, u64::MAX).is_none());
+    }
+
+    #[test]
+    fn el_resultado_renderizado_no_reemplaza_la_fuente_visible_en_split() {
+        let source = "# Fuente\n";
+        let mut document = DocumentState::untitled();
+        document.source = TextBuffer::from_text(source);
+        document.mode = DocumentMode::Split;
+        document.blocks = safe_buffer_blocks(&document.source).unwrap();
+        let source_text = document.blocks[0].text.clone();
+
+        apply_view_outcome(&mut document, parse_blocks(source).unwrap());
+
+        assert_eq!(document.blocks[0].text, source_text);
+        assert_eq!(document.rendered_blocks[0].text, "Fuente");
+        assert_eq!(document.mode, DocumentMode::Split);
+    }
+
+    #[test]
+    fn el_resultado_renderizado_si_actualiza_el_modo_lectura() {
+        let mut document = DocumentState::untitled();
+        document.mode = DocumentMode::Reading;
+
+        apply_view_outcome(&mut document, parse_blocks("**lectura**").unwrap());
+
+        assert_eq!(document.blocks[0].text, "lectura");
+        assert_eq!(document.rendered_blocks[0].text, "lectura");
     }
 
     #[test]

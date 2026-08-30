@@ -109,6 +109,11 @@ exacto del traspaso.
   límite UTF-8 exacto. La serialización para parser, guardado y recuperación
   conserva el texto, BOM y EOL; la representación visible de todas las líneas
   aún se reconstruye tras cada cambio y queda como optimización pendiente.
+- `F3` abre una comparación lado a lado: fuente editable a la izquierda y
+  lectura derivada a la derecha. Un retraso corto agrupa la escritura antes de
+  parsear y los resultados conservan identidad de pestaña y revisión. La mitad
+  derecha no acepta pegado ni se usa para guardar. Queda QA manual de escritura
+  prolongada, ventanas estrechas, DPI y correspondencia de desplazamiento.
 - las task lists se dibujan sin depender de glifos de fuente y permiten cambiar
   `[ ]` por `[x]` con clic sobre la casilla. La mutación toca un solo byte de la
   fuente y entra al mismo historial reversible que el editor.
@@ -154,7 +159,7 @@ exacto del traspaso.
 
 Evidencia actual en Windows:
 
-- `cargo test`: 137 de 137 pruebas verdes el 29 de agosto de 2026 tras
+- `cargo test`: 142 de 142 pruebas verdes el 30 de agosto de 2026 tras
   pestañas, paneles, acciones visibles, recuperación configurable y guardados
   dirigidos por identidad de documento, incluida la navegación visible de la
   barra con teclado;

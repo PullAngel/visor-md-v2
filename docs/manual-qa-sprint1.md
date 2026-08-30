@@ -229,3 +229,16 @@ contenido permanece inerte y la fuente se conserva sin activar recursos.
 9. Abrir un documento grande y cambiar inmediatamente a otra pestaña. La barra
    de estado debe indicar la operación solo al volver a la pestaña que carga;
    al terminar, su contenido debe aparecer allí y no en la pestaña activa.
+
+## Vista dividida del editor
+
+1. Abrir `tests/fixtures/sprint1-visual.md` y pulsar `F3`.
+2. Confirmar que la fuente aparece a la izquierda sin botones repetidos sobre
+   cada línea y que la lectura aparece a la derecha con estilos Markdown.
+3. Escribir varias palabras seguidas en la mitad izquierda. La derecha puede
+   tardar una fracción de segundo, pero debe terminar mostrando la última
+   revisión, sin volver atrás ni mover el cursor de edición.
+4. Desplazar el documento y alternar `F3`, `F2` y pestañas. No debe mezclarse el
+   contenido de dos documentos ni perderse el indicador de cambios.
+5. Repetir con ventana estrecha y, si está disponible, otro DPI. Registrar
+   recortes, superposición o texto ilegible; este gate visual sigue pendiente.

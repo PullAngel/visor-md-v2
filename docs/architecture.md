@@ -235,11 +235,19 @@ corchetes y paréntesis.
 
 `editor::EditHistory` ya define parches reversibles de bytes UTF-8, undo/redo,
 revisiones y un presupuesto de 4 MiB para historial. `editor::SourceEditor`
-añade cursor y selección sin partir caracteres Unicode. No conservan snapshots
-completos de un documento de hasta 16 MiB. La interfaz de edición, IME, guardado
-y recuperación ya consumen esta capa. Su límite actual es que el buffer fuente
-sigue siendo una `String`: la migración a un buffer escalable se hará como un
-refactor documentado, sin cambiar el formato ni la semántica de guardado.
+añade cursor y selección sin partir caracteres Unicode. `TextBuffer` encapsula
+un Rope y conserva offsets públicos en bytes para que parser, rangos y guardado
+mantengan el mismo contrato. No conserva snapshots completos para el historial;
+solo materializa una `String` en fronteras que necesitan una fotografía estable,
+como parsing, guardado y recuperación. La representación visual de las líneas
+fuente aún se reconstruye completa tras cada cambio.
+
+La vista dividida conserva dos derivados simultáneos: bloques inertes de fuente
+editables y el último modelo Markdown de la misma revisión. Ambos tienen caches
+de layout independientes y comparten desplazamiento, pero solo `TextBuffer` se
+guarda. El parsing se difiere brevemente durante escritura continua y cada
+resultado lleva documento y revisión, por lo que una respuesta vieja no puede
+reemplazar otra pestaña ni una edición más nueva.
 
 `DocumentState` concentra la identidad, fuente, metadatos de preservación,
 editor, modo, bloques renderizables y degradación de cada documento. La
@@ -430,7 +438,7 @@ nativas reales. macOS permanece como posibilidad futura, no gate actual.
 | Layout | Visible con estimaciones | Geometría para render e interacción |
 | Rendering | Software nativo funcional | Display list validada y accesible |
 | UI | Ventana, tema, menú contextual y avisos | Chrome, pestañas, comandos y paneles |
-| Edición | Buffer Rope, fuente alternable, undo/redo, portapapeles explícito, guardado fiel y recuperación local | Vista dividida, actualización incremental de la representación fuente y accesibilidad completa |
+| Edición | Buffer Rope, fuente alternable, vista dividida, undo/redo, portapapeles explícito, guardado fiel y recuperación local | Actualización incremental de la representación fuente y accesibilidad completa |
 | Workspace | Raíz explícita, VFS, índice acotado, wikilinks, callouts y navegación inicial de backlinks | Paneles, búsqueda, cancelación y detección de cambios |
 | Seguridad | Límites, HTML inerte, VFS, guardado y recuperación con pruebas | Controles de recursos secundarios, campaña de fuzzing y validación de release |
 
