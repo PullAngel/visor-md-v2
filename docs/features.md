@@ -42,6 +42,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | --- | --- | --- |
 | Modo fuente | Parcial | Buffer Rope, selección, IME, undo y atajos; falta actualización incremental de la vista fuente |
 | Vista dividida | Parcial | `F3` compara fuente editable y render de la misma revisión; falta QA de edición prolongada, DPI y accesibilidad |
+| Modo por documento | Parcial | Recuerda lectura, edición o vista dividida mediante hasta 128 claves hash locales; falta QA de reinicio |
 | Guardado atómico | Parcial | Sin corrupción ante fallo y conflictos probados; falta QA multiplataforma |
 | Preservar sintaxis desconocida | Parcial | Fuente no se reserializa; falta property testing de round-trip |
 | Detectar cambios externos | Parcial | Conflicto visible al guardar y al recuperar foco; falta QA multiplataforma |

@@ -365,6 +365,13 @@ configuración persistente. Los snapshots propios de más de catorce días se
 limpian al iniciar; el proceso no elimina enlaces simbólicos ni archivos ajenos
 dentro de ese directorio.
 
+Las preferencias de modo por archivo no almacenan rutas en claro: guardan como
+máximo 128 hashes estables y uno de tres valores de presentación. Ese hash no es
+un control criptográfico y podría probarse por diccionario si un atacante ya
+conoce rutas candidatas; su objetivo es evitar un historial casualmente legible,
+no proteger un perfil local comprometido. El documento nunca puede escribir ni
+elegir estas preferencias.
+
 Las escrituras asíncronas de una misma pestaña se serializan y llevan una
 versión monotónica. Una solicitud vieja se descarta antes del reemplazo; guardar
 o limpiar la recuperación invalida tareas pendientes para que no reaparezca una

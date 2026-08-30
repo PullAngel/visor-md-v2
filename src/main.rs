@@ -67,7 +67,7 @@ use fonts::{FONT_CODE, FONT_DOC, FONT_UI, register_embedded_fonts};
 use limits::{Degradation, MAX_BLOCKS, MAX_INDENT_DEPTH, MAX_NEST, MAX_SAFE_LINE_BYTES};
 use recovery::RecoverySession;
 use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
-use settings::Settings;
+use settings::{DocumentModePreference, Settings};
 use theme::{DAY, NIGHT, Palette, Role};
 use vfs::WorkspaceRoot;
 use workspace::{WikiResolution, WorkspaceIndex, WorkspaceLimits, index_workspace_cancellable};
@@ -617,6 +617,26 @@ enum DocumentMode {
 impl DocumentMode {
     fn is_editable(self) -> bool {
         matches!(self, Self::SourceEditing | Self::Split)
+    }
+}
+
+impl From<DocumentModePreference> for DocumentMode {
+    fn from(value: DocumentModePreference) -> Self {
+        match value {
+            DocumentModePreference::Reading => Self::Reading,
+            DocumentModePreference::Editing => Self::SourceEditing,
+            DocumentModePreference::Split => Self::Split,
+        }
+    }
+}
+
+impl From<DocumentMode> for DocumentModePreference {
+    fn from(value: DocumentMode) -> Self {
+        match value {
+            DocumentMode::Reading => Self::Reading,
+            DocumentMode::SourceEditing => Self::Editing,
+            DocumentMode::Split => Self::Split,
+        }
     }
 }
 
@@ -3115,6 +3135,7 @@ struct App {
     /// de la sesión puede seguir usándose sin atribuir el resultado a otro
     /// documento.
     saves_in_flight: HashSet<u64>,
+    settings: Settings,
     recovery_enabled: bool,
     recovery: Option<RecoverySession>,
     /// Solo la primera sesión informa que la recuperación es texto local sin
@@ -3301,6 +3322,11 @@ impl ApplicationHandler<AppEvent> for App {
                 let block_len = outcome.blocks.len();
                 let safe_mode = outcome.degradation;
                 let byte_len = identity.byte_len;
+                let remembered_mode = self
+                    .settings
+                    .document_mode(&path)
+                    .unwrap_or(DocumentModePreference::Reading)
+                    .into();
                 let Some(document) = document_by_id_mut(
                     &mut self.document,
                     &mut self.inactive_documents,
@@ -3317,8 +3343,12 @@ impl ApplicationHandler<AppEvent> for App {
                 document.source_identity = Some(identity);
                 document.source_baseline_bytes = Some(baseline_bytes);
                 document.source_editor = SourceEditor::new();
-                document.mode = DocumentMode::Reading;
+                document.mode = remembered_mode;
                 apply_view_outcome(document, outcome);
+                if document.mode.is_editable() {
+                    document.blocks = safe_buffer_blocks(&document.source)
+                        .unwrap_or_else(|_| document.rendered_blocks.clone());
+                }
                 document.scroll = 0.0;
                 self.log.push(format!(
                     "[medicion] preparar documento de {:.1} KB fuera de UI: {elapsed_ms:.0} ms  ({} bloques)",
@@ -4670,12 +4700,8 @@ impl App {
             self.recovery_privacy_notice_pending = false;
             self.set_notice("recuperación local desactivada");
         }
-        if (Settings {
-            recovery_enabled: self.recovery_enabled,
-        })
-        .store()
-        .is_err()
-        {
+        self.settings.recovery_enabled = self.recovery_enabled;
+        if self.settings.store().is_err() {
             self.set_notice("la preferencia de recuperación no pudo guardarse");
         }
     }
@@ -4952,6 +4978,7 @@ impl App {
         match safe_buffer_blocks(&self.document.source) {
             Ok(blocks) => {
                 self.document.mode = DocumentMode::SourceEditing;
+                self.remember_current_document_mode();
                 self.document.blocks = blocks;
                 self.slots.clear();
                 self.live.clear();
@@ -4979,6 +5006,7 @@ impl App {
         match safe_buffer_blocks(&self.document.source) {
             Ok(blocks) => {
                 self.document.mode = DocumentMode::Split;
+                self.remember_current_document_mode();
                 self.document.blocks = blocks;
                 self.reset_document_view();
                 self.request_render_async();
@@ -5048,8 +5076,24 @@ impl App {
 
     fn refresh_reading_async(&mut self, notice: &str) {
         self.document.mode = DocumentMode::Reading;
+        self.remember_current_document_mode();
         self.set_notice(notice);
         self.request_render_async();
+    }
+
+    fn remember_current_document_mode(&mut self) {
+        if self.document.source_identity.is_none() {
+            return;
+        }
+        self.settings.remember_document_mode(
+            std::path::Path::new(&self.document.path),
+            self.document.mode.into(),
+        );
+        if let Err(error) = self.settings.store() {
+            self.log.push(format!(
+                "[preferencias] no se guardó el modo del documento: {error}"
+            ));
+        }
     }
 
     fn request_render_async(&mut self) {
@@ -8171,6 +8215,7 @@ fn main() {
     ));
 
     let settings = Settings::load();
+    let recovery_enabled = settings.recovery_enabled;
     let recovery = settings
         .recovery_enabled
         .then(RecoverySession::start)
@@ -8207,7 +8252,8 @@ fn main() {
         tab_order: vec![initial_document_id],
         external_checks_in_flight: HashSet::new(),
         saves_in_flight: HashSet::new(),
-        recovery_enabled: settings.recovery_enabled,
+        settings,
+        recovery_enabled,
         recovery,
         recovery_privacy_notice_pending,
         workspace: None,

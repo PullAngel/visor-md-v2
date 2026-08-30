@@ -243,6 +243,10 @@ contenido permanece inerte y la fuente se conserva sin activar recursos.
    contenido de dos documentos ni perderse el indicador de cambios.
 5. Repetir con ventana estrecha y, si está disponible, otro DPI. Registrar
    recortes, superposición o texto ilegible; este gate visual sigue pendiente.
+6. Cerrar y volver a abrir el mismo archivo después de dejarlo en lectura,
+   edición y vista dividida. Debe recuperar cada modo. Un archivo que nunca se
+   abrió debe iniciar en lectura y el archivo de preferencias no debe contener
+   la ruta ni el nombre del documento en claro.
 
 ## PNG local con confirmación
 

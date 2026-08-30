@@ -173,10 +173,14 @@ exacto del traspaso.
   contextual o la paleta. Se usan las celdas del modelo, no los separadores
   visibles ni una reserialización del Markdown; saltos y tabuladores internos
   se vuelven espacios para no romper filas o columnas al pegar.
+- lectura, edición y vista dividida se recuerdan por documento en una
+  configuración local versionada. Se conservan hasta 128 identificadores hash,
+  nunca rutas, nombres, contenido o permisos; una ruta no conocida abre en
+  lectura y un formato de configuración desconocido vuelve al valor seguro.
 
 Evidencia actual en Windows:
 
-- formato, Clippy estricto y 156 pruebas verdes el 30 de agosto de 2026 después
+- formato, Clippy estricto y 159 pruebas verdes el 30 de agosto de 2026 después
   de incorporar navegación relativa y PNG local acotado; el gate completo de
   146 pruebas inmediatamente anterior también verificó SBOM, 40 documentos y
   build release;

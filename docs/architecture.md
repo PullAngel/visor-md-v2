@@ -300,6 +300,12 @@ QA de cierre inesperado. Una preferencia local versionada permite desactivar la
 recuperación sin guardar rutas ni contenido; el valor ausente o inválido vuelve
 al valor seguro de activarla.
 
+La misma configuración conserva hasta 128 modos recientes por documento. La
+clave es un hash estable de la ruta canonicalizada, no la ruta, el nombre ni el
+contenido. La versión 2 migra el valor de recuperación de la versión 1 y descarta
+de forma segura formatos desconocidos. El hash reduce exposición casual, pero
+no se considera anonimización frente a alguien que ya controla el perfil local.
+
 ### Chrome y comandos
 
 Ventana, pestañas, menús, paneles y paleta de comandos consumen un catálogo de
