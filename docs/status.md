@@ -76,7 +76,7 @@ exacto del traspaso.
   destinos bloqueados en tono tenue, sin concederles capacidad alguna.
 - Tab y Shift+Tab recorren enlaces sin abrirlos; el foco tiene resalte y muestra
   el destino antes de cualquier acción futura.
-- Enter sobre un enlace enfocado delega solo `http`, `https` y `mailto:` al
+- un clic o Enter sobre un enlace enfocado delega solo `http`, `https` y `mailto:` al
   sistema, sin shell ni prefetch; destinos locales esperan VFS y los bloqueados
   permanecen inactivos.
 - resize y cambio de escala del sistema invalidan los layouts visibles antes de

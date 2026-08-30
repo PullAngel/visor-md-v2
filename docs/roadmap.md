@@ -44,7 +44,7 @@ final de cada hito.
 | Editor básico | En curso | Abrir, crear, buffer escalable, edición fuente y dividida, guardado atómico, conflictos explícitos y recuperación local configurable; faltan actualización incremental del modelo fuente y QA manual de edición y diálogos nativos |
 | Chrome | En curso | Pestañas, acciones esenciales y paneles visibles con cierre protegido; faltan accesibilidad completa y ventana sin borde |
 | Workspace | En curso | Carpeta explícita, VFS, índice acotado/cancelable, árbol plegable, búsqueda y detección externa limitada; faltan actualización incremental y QA con bóvedas grandes |
-| Obsidian | En curso | Wikilinks, callouts y panel de backlinks contenidos; faltan actualización incremental, imágenes locales confirmadas y corpus ampliado |
+| Obsidian | En curso | Wikilinks, callouts, panel de backlinks y PNG local confirmado contenidos; faltan actualización incremental y corpus ampliado |
 | Estudio | En curso | Resaltado portable inicial; faltan herramientas portables |
 | Exportación | Pendiente | PDF, DOCX y copias preparadas |
 | Distribución | Pendiente | Windows y Linux profesionales |

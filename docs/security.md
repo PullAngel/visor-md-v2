@@ -248,9 +248,9 @@ convierte en autoridad sobre el filesystem.
 ## Enlaces y phishing
 
 Una acción explícita sobre `http`, `https` o `mailto:` puede delegarse al
-sistema sin una confirmación repetitiva. El lector actual usa Enter sobre un
-enlace enfocado con Tab. La delegación no usa shell y solo recibe el destino ya
-clasificado; no hay prefetch ni navegación embebida.
+sistema sin una confirmación repetitiva. El lector actual acepta un clic o Enter
+sobre un enlace enfocado con Tab. La delegación no usa shell y solo recibe el
+destino ya clasificado; no hay prefetch ni navegación embebida.
 
 Controles:
 

@@ -67,10 +67,10 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | VFS central | Parcial | Workspace contenido, archivo principal limitado y enlaces relativos resueltos desde su nota; imágenes secundarias todavía no se abren |
 | Política de rutas | Parcial | UNC, traversal, symlinks y junctions cubiertos para workspace; faltan recursos secundarios |
 | Allowlist HTML semántica | Recuperación | `br`, `kbd`, `mark`, `sub` y `sup` nativos sin atributos; falta corpus sistemático y QA visual |
-| Límites de imágenes | Planificado | Tipo, bytes, dimensiones y memoria |
+| Límites de imágenes | Parcial | PNG local: firma, 8 MiB, 8192 por lado y 16 millones de píxeles; falta corpus hostil ampliado |
 | Consentimiento remoto | Planificado | Aislado, explícito y revocable |
 | Confianza temporal de bóveda | Planificado | Solo amplía acceso local delimitado |
-| Auditoría de dependencias | Parcial | Audit realizado, deny y SBOM pendientes |
+| Auditoría de dependencias | Parcial | Audit y SBOM reproducible realizados; faltan deny, notices y CI por target |
 
 ## Selección y accesibilidad
 
@@ -82,8 +82,8 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Barra de estado | Parcial | Muestra modo, cambios sin guardar y estado de carpeta sin ocupar herramientas permanentes |
 | Alto contraste | Planificado | Matriz Windows y Linux |
 | Reduce motion | Planificado | Todas las transiciones respetan preferencia |
-| IME | Planificado | Escritura de idiomas compatibles |
-| Unicode y fallback | Planificado | Corpus multilingüe |
+| IME | Parcial | Commits de IME insertan en el buffer Unicode; falta QA multilingüe por plataforma |
+| Unicode y fallback | Parcial | Corpus multilingüe y fallback de glifos presentes; falta QA visual sistemático |
 | Lector de pantalla | Planificado | Semántica accesible demostrada |
 
 ## Trabajo con IA
@@ -106,7 +106,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Lista de notas | Parcial | Panel plegable con árbol del índice; abre solo tras resolver dentro de VFS y señala cambios externos limitados |
 | Búsqueda de bóveda | Parcial | Panel con resultados múltiples del índice en memoria; falta actualización incremental |
 | Wikilinks | Parcial | Resolución contenida y explícita; falta panel de diagnóstico |
-| Backlinks | Parcial | `Ctrl+Shift+B` muestra y navega backlinks contenidos; faltan panel plegable e incrementalidad |
+| Backlinks | Parcial | Panel plegable muestra y navega backlinks contenidos; falta incrementalidad |
 | Callouts | Parcial | Sintaxis Obsidian elegida y render nativo; falta corpus de bóvedas |
 | Etiquetas y frontmatter | Planificado | Lectura sin reescritura |
 | Link peek | Planificado | Reusa renderer con límites |
