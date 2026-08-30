@@ -397,6 +397,7 @@ struct ParseOutcome {
 
 enum AppEvent {
     DocumentReady {
+        document_id: u64,
         request: u64,
         path: PathBuf,
         source: String,
@@ -407,17 +408,18 @@ enum AppEvent {
         elapsed_ms: f64,
     },
     DocumentFailed {
+        document_id: u64,
         request: u64,
         error: String,
     },
     ViewReady {
-        document_request: u64,
+        document_id: u64,
         revision: u64,
         outcome: ParseOutcome,
         elapsed_ms: f64,
     },
     ViewFailed {
-        document_request: u64,
+        document_id: u64,
         revision: u64,
         error: String,
     },
@@ -449,7 +451,7 @@ enum AppEvent {
         error: String,
     },
     ExternalChangeChecked {
-        request: u64,
+        document_id: u64,
         result: Result<bool, String>,
     },
 }
@@ -461,12 +463,12 @@ enum DocumentMode {
 }
 
 fn is_current_view_result(
-    result_document_request: u64,
-    active_document_request: u64,
+    result_document_id: u64,
+    target_document_id: u64,
     result_revision: u64,
     active_revision: u64,
 ) -> bool {
-    result_document_request == active_document_request && result_revision == active_revision
+    result_document_id == target_document_id && result_revision == active_revision
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
@@ -2659,6 +2661,9 @@ struct DocumentState {
     /// Posición visual propia de la pestaña. Se sincroniza antes de cambiar
     /// de documento y se restaura al volver.
     scroll: f32,
+    /// Ancla solicitada mientras este documento se prepara. Viaja con la
+    /// pestaña para que un cambio de documento no aplique el scroll a otra.
+    pending_heading: Option<String>,
     last_recovery: Instant,
 }
 
@@ -2676,6 +2681,7 @@ impl DocumentState {
             blocks: Vec::new(),
             safe_mode: None,
             scroll: 0.0,
+            pending_heading: None,
             last_recovery: Instant::now(),
         }
     }
@@ -2766,7 +2772,7 @@ struct App {
     /// Orden visible estable de las pestañas, independiente de cuál esté
     /// activa. Los identificadores existen solo durante la sesión.
     tab_order: Vec<u64>,
-    external_check_in_flight: bool,
+    external_checks_in_flight: HashSet<u64>,
     /// Identifica las pestañas con una escritura atómica pendiente. El resto
     /// de la sesión puede seguir usándose sin atribuir el resultado a otro
     /// documento.
@@ -2787,9 +2793,10 @@ struct App {
     /// Versión de apertura solicitada. Una tarea terminada tarde no puede
     /// reemplazar el documento que la persona pidió después.
     document_request: u64,
-    /// Ancla solicitada por un wikilink ya resuelto dentro del workspace.
-    /// Se aplica recién después de medir el documento que se abrió.
-    pending_workspace_heading: Option<String>,
+    /// Solicitudes activas por pestaña. Un valor nuevo reemplaza lógicamente
+    /// al anterior; los hilos viejos pueden terminar, pero no publicar estado.
+    open_requests: HashMap<u64, u64>,
+    view_requests: HashMap<u64, u64>,
     proxy: EventLoopProxy<AppEvent>,
     window: Option<Rc<Window>>,
     surface: Option<softbuffer::Surface<Rc<Window>, Rc<Window>>>,
@@ -2826,7 +2833,6 @@ struct App {
     /// Tema activo. Arranca siguiendo al sistema operativo (`Window::theme`);
     /// `T` lo alterna a mano. Ver docs/design.md.
     palette: Palette,
-    loading: bool,
     /// Punto actual del cursor dentro de la ventana, en pixeles físicos.
     pointer: Option<(f32, f32)>,
     /// Mientras está activo, mover el mouse extiende la selección del bloque.
@@ -2886,6 +2892,7 @@ impl ApplicationHandler<AppEvent> for App {
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: AppEvent) {
         match event {
             AppEvent::DocumentReady {
+                document_id,
                 request,
                 path,
                 source,
@@ -2895,142 +2902,163 @@ impl ApplicationHandler<AppEvent> for App {
                 outcome,
                 elapsed_ms,
             } => {
-                if request != self.document_request {
+                if self.open_requests.get(&document_id) != Some(&request) {
                     self.log
                         .push("[apertura] se descartó un documento desactualizado".to_string());
                     return;
                 }
-                self.document.path = path.to_string_lossy().into_owned();
-                self.document.source = source;
-                self.document.source_metadata = metadata;
-                self.document.source_identity = Some(identity);
-                self.document.source_baseline_bytes = Some(baseline_bytes);
-                self.document.source_editor = SourceEditor::new();
-                self.external_check_in_flight = false;
-                self.document.mode = DocumentMode::Reading;
-                self.document.blocks = outcome.blocks;
-                self.document.safe_mode = outcome.degradation;
-                self.loading = false;
-                self.slots.clear();
-                self.live.clear();
-                self.doc_height = 0.0;
-                self.laid_for_width = -1.0;
-                self.exact_after_edit = true;
-                self.scroll = 0.0;
-                self.notice = None;
-                self.focused_link = None;
-                self.focus_destination = None;
-                self.context_menu = None;
+                self.open_requests.remove(&document_id);
+                let active = document_id == self.document.id;
+                let source_len = source.len();
+                let block_len = outcome.blocks.len();
+                let safe_mode = outcome.degradation;
+                let byte_len = identity.byte_len;
+                let Some(document) = document_by_id_mut(
+                    &mut self.document,
+                    &mut self.inactive_documents,
+                    document_id,
+                ) else {
+                    self.log.push(
+                        "[apertura] terminó una solicitud para una pestaña ya cerrada".to_string(),
+                    );
+                    return;
+                };
+                document.path = path.to_string_lossy().into_owned();
+                document.source = source;
+                document.source_metadata = metadata;
+                document.source_identity = Some(identity);
+                document.source_baseline_bytes = Some(baseline_bytes);
+                document.source_editor = SourceEditor::new();
+                document.mode = DocumentMode::Reading;
+                document.blocks = outcome.blocks;
+                document.safe_mode = safe_mode;
+                document.scroll = 0.0;
                 self.log.push(format!(
                     "[medicion] preparar documento de {:.1} KB fuera de UI: {elapsed_ms:.0} ms  ({} bloques)",
-                    self.document.source.len() as f64 / 1024.0,
-                    self.document.blocks.len()
+                    source_len as f64 / 1024.0,
+                    block_len
                 ));
                 self.log.push(format!(
                     "[fidelidad] UTF-8{}; EOL {:?}",
-                    if self.document.source_metadata.has_utf8_bom {
+                    if metadata.has_utf8_bom {
                         " con BOM"
                     } else {
                         " sin BOM"
                     },
-                    self.document.source_metadata.line_endings
+                    metadata.line_endings
                 ));
-                if let Some(identity) = &self.document.source_identity {
-                    self.log.push(format!(
-                        "[fidelidad] huella inicial: {} bytes",
-                        identity.byte_len
-                    ));
-                }
-                if let Some(reason) = self.document.safe_mode {
+                self.log
+                    .push(format!("[fidelidad] huella inicial: {byte_len} bytes"));
+                if let Some(reason) = safe_mode {
                     self.log.push(format!(
                         "[seguridad] {}; se muestra la fuente inerte",
                         reason.explanation()
                     ));
                 }
-                if let Some(window) = &self.window {
-                    window.set_title(&window_title(
-                        &self.document.path,
-                        self.document.safe_mode,
-                        false,
-                        None,
-                    ));
-                    window.request_redraw();
+                if active {
+                    self.external_checks_in_flight.remove(&document_id);
+                    self.reset_document_view();
+                    self.notice = None;
+                    self.refresh_title();
+                    if let Some(window) = &self.window {
+                        window.request_redraw();
+                    }
+                } else {
+                    self.set_notice("otra pestaña terminó de abrirse");
                 }
             }
-            AppEvent::DocumentFailed { request, error } => {
-                if request != self.document_request {
+            AppEvent::DocumentFailed {
+                document_id,
+                request,
+                error,
+            } => {
+                if self.open_requests.get(&document_id) != Some(&request) {
                     self.log
                         .push("[apertura] se descartó un error desactualizado".to_string());
                     return;
                 }
-                self.loading = false;
-                self.external_check_in_flight = false;
+                self.open_requests.remove(&document_id);
+                self.external_checks_in_flight.remove(&document_id);
                 self.log.push(format!("[error] {error}"));
-                (self.document.source, self.document.blocks) = opening_failure_blocks();
-                self.slots.clear();
-                self.live.clear();
-                self.doc_height = 0.0;
-                self.laid_for_width = -1.0;
-                self.focused_link = None;
-                self.focus_destination = None;
-                self.context_menu = None;
-                self.notice = Some("no se pudo abrir el documento".to_string());
-                self.refresh_title();
-                if let Some(window) = &self.window {
-                    window.request_redraw();
+                if let Some(document) = document_by_id_mut(
+                    &mut self.document,
+                    &mut self.inactive_documents,
+                    document_id,
+                ) {
+                    (document.source, document.blocks) = opening_failure_blocks();
+                }
+                if document_id == self.document.id {
+                    self.reset_document_view();
+                    self.set_notice("no se pudo abrir el documento");
+                    if let Some(window) = &self.window {
+                        window.request_redraw();
+                    }
+                } else {
+                    self.set_notice("no se pudo abrir otra pestaña");
                 }
             }
             AppEvent::ViewReady {
-                document_request,
+                document_id,
                 revision,
                 outcome,
                 elapsed_ms,
             } => {
+                if self.view_requests.get(&document_id) != Some(&revision) {
+                    self.log
+                        .push("[edición] se descartó una vista desactualizada".to_string());
+                    return;
+                }
+                let Some(document) = document_by_id_mut(
+                    &mut self.document,
+                    &mut self.inactive_documents,
+                    document_id,
+                ) else {
+                    self.view_requests.remove(&document_id);
+                    return;
+                };
                 if !is_current_view_result(
-                    document_request,
-                    self.document_request,
+                    document_id,
+                    document.id,
                     revision,
-                    self.document.source_editor.revision(),
+                    document.source_editor.revision(),
                 ) {
                     self.log
                         .push("[edición] se descartó una vista desactualizada".to_string());
                     return;
                 }
-                self.document.blocks = outcome.blocks;
-                self.document.safe_mode = outcome.degradation;
-                self.loading = false;
-                self.slots.clear();
-                self.live.clear();
-                self.laid_for_width = -1.0;
-                self.exact_after_edit = true;
-                self.selection = None;
-                self.notice = Some("vista de lectura actualizada".to_string());
+                document.blocks = outcome.blocks;
+                document.safe_mode = outcome.degradation;
+                self.view_requests.remove(&document_id);
                 self.log.push(format!(
                     "[medicion] actualizar vista fuera de UI: {elapsed_ms:.0} ms"
                 ));
-                self.refresh_title();
-                if let Some(window) = &self.window {
-                    window.request_redraw();
+                if document_id == self.document.id {
+                    self.reset_document_view();
+                    self.set_notice("vista de lectura actualizada");
+                    if let Some(window) = &self.window {
+                        window.request_redraw();
+                    }
+                } else {
+                    self.set_notice("otra pestaña actualizó su vista de lectura");
                 }
             }
             AppEvent::ViewFailed {
-                document_request,
+                document_id,
                 revision,
                 error,
             } => {
-                if !is_current_view_result(
-                    document_request,
-                    self.document_request,
-                    revision,
-                    self.document.source_editor.revision(),
-                ) {
+                if self.view_requests.get(&document_id) != Some(&revision) {
                     self.log
                         .push("[edición] se descartó un error de vista desactualizado".to_string());
                     return;
                 }
-                self.loading = false;
+                self.view_requests.remove(&document_id);
                 self.log.push(format!("[error] {error}"));
-                self.set_notice("no se pudo actualizar la vista; la fuente sigue intacta");
+                self.set_notice(if document_id == self.document.id {
+                    "no se pudo actualizar la vista; la fuente sigue intacta"
+                } else {
+                    "otra pestaña no pudo actualizar su vista; la fuente sigue intacta"
+                });
             }
             AppEvent::SaveReady {
                 document_id,
@@ -3173,9 +3201,12 @@ impl ApplicationHandler<AppEvent> for App {
                 self.log.push(format!("[workspace] {error}"));
                 self.set_notice("no se pudo abrir la carpeta de trabajo");
             }
-            AppEvent::ExternalChangeChecked { request, result } => {
-                self.external_check_in_flight = false;
-                if request != self.document_request {
+            AppEvent::ExternalChangeChecked {
+                document_id,
+                result,
+            } => {
+                self.external_checks_in_flight.remove(&document_id);
+                if document_id != self.document.id {
                     return;
                 }
                 match result {
@@ -4027,7 +4058,7 @@ impl ApplicationHandler<AppEvent> for App {
                     return;
                 }
 
-                if !self.loading
+                if !self.document_busy(self.document.id)
                     && let Some(total) = self.bench
                 {
                     if self.frames >= total {
@@ -4295,16 +4326,16 @@ impl App {
         self.command_palette = None;
         self.command_palette_query.clear();
         self.toolbar_focus = None;
-        self.pending_workspace_heading = None;
+    }
+
+    fn document_busy(&self, document_id: u64) -> bool {
+        self.open_requests.contains_key(&document_id)
+            || self.view_requests.contains_key(&document_id)
+            || self.saves_in_flight.contains(&document_id)
     }
 
     fn open_document_in_tab(&mut self, document: DocumentState) {
-        if self.loading {
-            self.set_notice("espera a que termine la operación actual");
-            return;
-        }
         let new_id = document.id;
-        self.document_request = self.document_request.wrapping_add(1);
         self.document.scroll = self.scroll;
         let current = std::mem::replace(&mut self.document, document);
         let next_recovery = self.new_recovery_session();
@@ -4318,10 +4349,6 @@ impl App {
     }
 
     fn switch_document_tab(&mut self, backwards: bool) {
-        if self.loading {
-            self.set_notice("espera a que termine la operación actual antes de cambiar de pestaña");
-            return;
-        }
         if self.inactive_documents.is_empty() {
             self.set_notice("solo hay un documento abierto");
             return;
@@ -4338,10 +4365,6 @@ impl App {
         if document_id == self.document.id {
             return;
         }
-        if self.loading {
-            self.set_notice("espera a que termine la operación actual antes de cambiar de pestaña");
-            return;
-        }
         let Some(index) = self
             .inactive_documents
             .iter()
@@ -4351,7 +4374,6 @@ impl App {
             return;
         };
         let next = self.inactive_documents.remove(index);
-        self.document_request = self.document_request.wrapping_add(1);
         self.document.scroll = self.scroll;
         let current = std::mem::replace(&mut self.document, next.document);
         let current_recovery = std::mem::replace(&mut self.recovery, next.recovery);
@@ -4367,14 +4389,13 @@ impl App {
     }
 
     fn close_active_document_tab(&mut self) {
-        if self.loading || self.saves_in_flight.contains(&self.document.id) {
+        if self.document_busy(self.document.id) {
             self.set_notice("espera a que termine la operación de esta pestaña antes de cerrarla");
             return;
         }
         if !self.request_close_current() {
             return;
         }
-        self.document_request = self.document_request.wrapping_add(1);
         let active_position = self
             .tab_order
             .iter()
@@ -4488,23 +4509,23 @@ impl App {
 
     fn refresh_reading_async(&mut self, notice: &str) {
         self.document.mode = DocumentMode::Reading;
-        self.loading = true;
         self.set_notice(notice);
         let source = self.document.source.clone();
-        let document_request = self.document_request;
+        let document_id = self.document.id;
         let revision = self.document.source_editor.revision();
+        self.view_requests.insert(document_id, revision);
         let proxy = self.proxy.clone();
         thread::spawn(move || {
             let started = Instant::now();
             let event = match parse_blocks(&source) {
                 Ok(outcome) => AppEvent::ViewReady {
-                    document_request,
+                    document_id,
                     revision,
                     outcome,
                     elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
                 },
                 Err(error) => AppEvent::ViewFailed {
-                    document_request,
+                    document_id,
                     revision,
                     error: format!("no se pudo actualizar la vista: {error}"),
                 },
@@ -4826,19 +4847,24 @@ impl App {
     /// lectura es acotada y ocurre fuera de UI; no se instala un watcher que
     /// observe carpetas o rutas que la persona no eligió.
     fn check_external_change(&mut self) {
-        if self.loading || self.external_check_in_flight {
+        let document_id = self.document.id;
+        if self.open_requests.contains_key(&document_id)
+            || self.external_checks_in_flight.contains(&document_id)
+        {
             return;
         }
         let Some(baseline_bytes) = self.document.source_baseline_bytes.clone() else {
             return;
         };
         let path = PathBuf::from(&self.document.path);
-        let request = self.document_request;
         let proxy = self.proxy.clone();
-        self.external_check_in_flight = true;
+        self.external_checks_in_flight.insert(document_id);
         thread::spawn(move || {
             let result = changed_on_disk(&path, &baseline_bytes).map_err(|error| error.to_string());
-            let _ = proxy.send_event(AppEvent::ExternalChangeChecked { request, result });
+            let _ = proxy.send_event(AppEvent::ExternalChangeChecked {
+                document_id,
+                result,
+            });
         });
     }
 
@@ -4989,7 +5015,10 @@ impl App {
     }
 
     fn request_close_all(&mut self) -> bool {
-        if self.loading || !self.saves_in_flight.is_empty() {
+        if !self.open_requests.is_empty()
+            || !self.view_requests.is_empty()
+            || !self.saves_in_flight.is_empty()
+        {
             self.set_notice("espera a que termine la operación actual antes de cerrar");
             return false;
         }
@@ -5065,10 +5094,6 @@ impl App {
     }
 
     fn create_new_document(&mut self) {
-        if self.loading {
-            self.set_notice("espera a que termine la operación actual antes de crear una pestaña");
-            return;
-        }
         self.open_document_in_tab(DocumentState::untitled());
         self.set_notice("documento nuevo · Ctrl+Shift+S para elegir destino");
         if let Some(window) = &self.window {
@@ -5147,10 +5172,6 @@ impl App {
     }
 
     fn restore_latest_recovery(&mut self) {
-        if self.loading {
-            self.set_notice("espera a que termine la operación actual antes de recuperar");
-            return;
-        }
         match RecoverySession::latest_pending(DEFAULT_DOCUMENT_LIMIT_BYTES) {
             Ok(Some(source)) => {
                 let recovered = match recovered_document(source) {
@@ -5172,10 +5193,6 @@ impl App {
     }
 
     fn open_document_path(&mut self, path: PathBuf) -> bool {
-        if self.loading {
-            self.set_notice("espera a que termine la apertura actual antes de abrir otra pestaña");
-            return false;
-        }
         if paths_refer_to_same_file(std::path::Path::new(&self.document.path), &path) {
             self.set_notice("el documento ya está abierto en la pestaña activa");
             return true;
@@ -5196,9 +5213,10 @@ impl App {
         pending.path = path.to_string_lossy().into_owned();
         pending.mode = DocumentMode::Reading;
         self.open_document_in_tab(pending);
+        let document_id = self.document.id;
         self.document_request = self.document_request.wrapping_add(1);
         let request = self.document_request;
-        self.loading = true;
+        self.open_requests.insert(document_id, request);
         self.set_notice("cargando documento");
         let proxy = self.proxy.clone();
         thread::spawn(move || {
@@ -5213,6 +5231,7 @@ impl App {
                     })
                 } {
                     Ok(outcome) => AppEvent::DocumentReady {
+                        document_id,
                         request,
                         path,
                         source: opened.source,
@@ -5223,11 +5242,13 @@ impl App {
                         elapsed_ms: 0.0,
                     },
                     Err(error) => AppEvent::DocumentFailed {
+                        document_id,
                         request,
                         error: format!("el documento no se pudo preparar de forma segura: {error}"),
                     },
                 },
                 Err(error) => AppEvent::DocumentFailed {
+                    document_id,
                     request,
                     error: format!("no se pudo abrir el documento: {error}"),
                 },
@@ -5416,7 +5437,7 @@ impl App {
                     .map(|(root, _)| root.resolve_existing(std::path::Path::new(&destination.1)));
                 match resolved {
                     Some(Ok(path)) => {
-                        self.pending_workspace_heading = None;
+                        self.document.pending_heading = None;
                         self.open_document_path(path);
                     }
                     Some(Err(error)) => {
@@ -5483,7 +5504,7 @@ impl App {
         match path {
             Ok(path) => {
                 if self.open_document_path(path) {
-                    self.pending_workspace_heading = heading;
+                    self.document.pending_heading = heading;
                     if let Some(window) = &self.window {
                         window.request_redraw();
                     }
@@ -5658,7 +5679,7 @@ impl App {
         };
         let Some(slot) = self.slots.get(block_index) else {
             self.set_notice("el encabezado se enfocará al terminar el layout");
-            self.pending_workspace_heading = Some(heading.to_owned());
+            self.document.pending_heading = Some(heading.to_owned());
             return;
         };
         let viewport = self
@@ -6274,7 +6295,7 @@ impl App {
             ));
         }
 
-        if let Some(heading) = self.pending_workspace_heading.take() {
+        if let Some(heading) = self.document.pending_heading.take() {
             self.scroll_to_heading(&heading);
         }
 
@@ -6468,7 +6489,13 @@ impl App {
             DocumentMode::Reading => "Lectura",
             DocumentMode::SourceEditing => "Edición",
         };
-        let document_state_label = if self.document.is_dirty() {
+        let document_state_label = if self.open_requests.contains_key(&self.document.id) {
+            "abriendo"
+        } else if self.view_requests.contains_key(&self.document.id) {
+            "actualizando vista"
+        } else if self.saves_in_flight.contains(&self.document.id) {
+            "guardando"
+        } else if self.document.is_dirty() {
             "sin guardar"
         } else {
             "guardado"
@@ -7232,11 +7259,12 @@ fn main() {
             blocks: Vec::new(),
             safe_mode: None,
             scroll: 0.0,
+            pending_heading: None,
             last_recovery: Instant::now(),
         },
         inactive_documents: Vec::new(),
         tab_order: vec![initial_document_id],
-        external_check_in_flight: false,
+        external_checks_in_flight: HashSet::new(),
         saves_in_flight: HashSet::new(),
         recovery_enabled: settings.recovery_enabled,
         recovery,
@@ -7246,7 +7274,12 @@ fn main() {
         workspace_cancel: None,
         workspace_stale: false,
         document_request: initial_document_request,
-        pending_workspace_heading: None,
+        open_requests: if opening_path.is_some() {
+            HashMap::from([(initial_document_id, initial_document_request)])
+        } else {
+            HashMap::new()
+        },
+        view_requests: HashMap::new(),
         proxy: proxy.clone(),
         window: None,
         surface: None,
@@ -7269,7 +7302,6 @@ fn main() {
         exact_after_edit: false,
         log,
         palette: NIGHT,
-        loading: opening_path.is_some(),
         pointer: None,
         selecting: false,
         selection: None,
@@ -7315,6 +7347,7 @@ fn main() {
                     })
                 } {
                     Ok(outcome) => AppEvent::DocumentReady {
+                        document_id: initial_document_id,
                         request: initial_document_request,
                         path: PathBuf::from(&worker_path),
                         source: opened.source,
@@ -7325,11 +7358,13 @@ fn main() {
                         elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
                     },
                     Err(error) => AppEvent::DocumentFailed {
+                        document_id: initial_document_id,
                         request: initial_document_request,
                         error: format!("el documento no se pudo preparar de forma segura: {error}"),
                     },
                 },
                 Err(error) => AppEvent::DocumentFailed {
+                    document_id: initial_document_id,
                     request: initial_document_request,
                     error: format!("no se pudo leer {worker_path}: {error}"),
                 },

@@ -125,8 +125,9 @@ exacto del traspaso.
   con `*` y permite elegir cada documento con mouse. La posición de lectura se
   conserva al cambiar. Cada guardado asíncrono lleva la identidad de su pestaña,
   por lo que se puede continuar en otra nota sin atribuirle el resultado, el
-  baseline o la limpieza de recuperación. Una apertura o render pendiente aún
-  impide temporalmente cambiar de pestaña.
+  baseline o la limpieza de recuperación. Aperturas y renders también llevan
+  identidad y versión propias: pueden completar una pestaña inactiva sin
+  congelar ni reemplazar la activa.
 - una barra superior sobria hace visibles Nuevo, Abrir, Guardar, el cambio entre
   lectura y edición, la búsqueda y el acceso al catálogo completo. Usa las
   mismas acciones que los atajos y la paleta, para evitar comportamientos

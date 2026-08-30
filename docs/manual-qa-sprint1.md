@@ -226,3 +226,6 @@ contenido permanece inerte y la fuente se conserva sin activar recursos.
 8. Pulsar `F6`, recorrer la barra con flechas y Tab y comprobar que el foco sea
    visible. Enter o Espacio deben ejecutar la acción enfocada y Escape debe
    devolver el teclado al documento.
+9. Abrir un documento grande y cambiar inmediatamente a otra pestaña. La barra
+   de estado debe indicar la operación solo al volver a la pestaña que carga;
+   al terminar, su contenido debe aparecer allí y no en la pestaña activa.

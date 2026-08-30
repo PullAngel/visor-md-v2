@@ -227,3 +227,7 @@ La regresión de concurrencia dirige cada resultado de guardado por identidad de
 documento. La prueba fija que una respuesta destinada a una pestaña inactiva no
 puede mutar la activa; las revisiones siguen determinando si el resultado
 guardado representa también la edición más reciente.
+
+Apertura y render aplican la misma regla: identidad de pestaña más solicitud o
+revisión vigente. Cambiar de pestaña no invalida una tarea correcta, mientras
+que una respuesta vieja para el mismo documento se descarta.
