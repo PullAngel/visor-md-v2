@@ -151,8 +151,8 @@ Evidencia actual en Windows:
 - `cargo test`: 136 de 136 pruebas verdes el 29 de agosto de 2026 tras
   pestañas, paneles, acciones visibles, recuperación configurable y guardados
   dirigidos por identidad de documento;
-- release Windows del mismo checkpoint: 3.264.512 bytes, 3,11 MiB, SHA-256
-  `FAB3EE9393FC556C4BED52138055B191D867D6A27D9E44B7BFD97B154152AAB3`;
+- release Windows del mismo checkpoint: 3.270.144 bytes, 3,12 MiB, SHA-256
+  `12958985246E977EF56C48A2282E2AECB40B2DA7B70B6D4DEEEC8513CAE30539`;
 - `cargo check`: verde;
 - `cargo fmt -- --check`: verde;
 - `cargo clippy --all-targets -- -D warnings`: verde;

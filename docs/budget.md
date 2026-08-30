@@ -25,11 +25,25 @@ compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
 | **Navegación y resaltado portable** | **3.231.744 bytes, 3,082 MiB** |
 | **Lista de notas y actualización de workspace** | **3.236.864 bytes, 3,087 MiB** |
 | **Pestañas, paneles y recuperación configurable** | **3.264.512 bytes, 3,11 MiB** |
+| **Acciones visibles y guardados por pestaña** | **3.270.144 bytes, 3,12 MiB** |
 
 Superar 8 MB exige medición, explicación y aprobación. El límite no se usa para
 recortar seguridad, estabilidad, accesibilidad, Unicode o funciones esenciales.
 Mermaid, correctores y otros componentes pesados no tienen permiso automático
 para ampliar el núcleo.
+
+### Acciones visibles y guardados por pestaña del 29 de agosto de 2026
+
+El checkpoint incorpora la barra de acciones, búsqueda visible de carpeta,
+filtro de la paleta y enrutado de guardados asíncronos por documento. No añade
+dependencias ni amplía capacidades de archivos o red.
+
+| Medida | Resultado |
+| --- | --- |
+| Binario Windows | 3.270.144 bytes, 3,12 MiB |
+| SHA-256 | `12958985246E977EF56C48A2282E2AECB40B2DA7B70B6D4DEEEC8513CAE30539` |
+| Variación frente al checkpoint anterior | +5.632 bytes |
+| Margen frente al límite deseado | 4,88 MiB |
 
 ### Aplicación diaria del 29 de agosto de 2026
 
