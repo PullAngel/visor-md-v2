@@ -42,6 +42,14 @@ function Get-LicenseExpression {
     }
 }
 
+function Sort-OrdinalStrings {
+    param([object[]]$Values)
+
+    $sorted = [string[]]@($Values | ForEach-Object { [string]$_ })
+    [Array]::Sort($sorted, [StringComparer]::Ordinal)
+    $sorted
+}
+
 $packagesById = @{}
 foreach ($package in $metadata.packages) {
     $packagesById[[string]$package.id] = $package
@@ -76,28 +84,36 @@ function New-Component {
     $component
 }
 
+$externalPackagesByPurl = @{}
+foreach ($package in $metadata.packages) {
+    if ([string]$package.id -ne [string]$metadata.resolve.root) {
+        $externalPackagesByPurl[(Get-Purl $package)] = $package
+    }
+}
 $components = @(
-    $metadata.packages |
-        Where-Object { [string]$_.id -ne [string]$metadata.resolve.root } |
-        Sort-Object name, version, source |
-        ForEach-Object { New-Component $_ "library" }
+    Sort-OrdinalStrings @($externalPackagesByPurl.Keys) |
+        ForEach-Object { New-Component $externalPackagesByPurl[$_] "library" }
 )
 
+$nodesByPurl = @{}
+foreach ($node in $metadata.resolve.nodes) {
+    $nodesByPurl[(Get-Purl $packagesById[[string]$node.id])] = $node
+}
 $dependencies = @(
-    $metadata.resolve.nodes |
+    Sort-OrdinalStrings @($nodesByPurl.Keys) |
         ForEach-Object {
-            $package = $packagesById[[string]$_.id]
-            $dependsOn = @(
-                $_.dependencies |
+            $ref = $_
+            $node = $nodesByPurl[$ref]
+            $dependsOn = Sort-OrdinalStrings @(
+                $node.dependencies |
                     ForEach-Object { Get-Purl $packagesById[[string]$_] } |
-                    Sort-Object -Unique
+                    Select-Object -Unique
             )
             [ordered]@{
-                ref       = Get-Purl $package
-                dependsOn = $dependsOn
+                ref       = $ref
+                dependsOn = @($dependsOn)
             }
-        } |
-        Sort-Object { $_.ref }
+        }
 )
 
 $allRefs = @((Get-Purl $rootPackage)) + @($components | ForEach-Object { $_.'bom-ref' })
@@ -107,10 +123,12 @@ if ($duplicateRefs.Count -gt 0) {
 }
 $knownRefs = [Collections.Generic.HashSet[string]]::new([string[]]$allRefs)
 $missingRefs = @(
-    $dependencies |
+    Sort-OrdinalStrings @(
+        $dependencies |
         ForEach-Object { @($_.ref) + @($_.dependsOn) } |
         Where-Object { -not $knownRefs.Contains([string]$_) } |
-        Sort-Object -Unique
+        Select-Object -Unique
+    )
 )
 if ($missingRefs.Count -gt 0) {
     throw "el SBOM contiene dependencias sin componente: $($missingRefs -join ', ')"
@@ -128,7 +146,10 @@ $bom = [ordered]@{
     dependencies = $dependencies
 }
 
-$content = ($bom | ConvertTo-Json -Depth 20) + [Environment]::NewLine
+# Windows PowerShell 5 y PowerShell 7 aplican sangría y espacios distintos a
+# `ConvertTo-Json`. La forma compacta evita que el mismo lockfile produzca un
+# SBOM diferente según el runner; `\n` fija también el final de línea.
+$content = ($bom | ConvertTo-Json -Depth 20 -Compress) + "`n"
 $fullDestination = [IO.Path]::GetFullPath($destination)
 if ($Check) {
     if (-not [IO.File]::Exists($fullDestination)) {

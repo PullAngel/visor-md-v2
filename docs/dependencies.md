@@ -134,8 +134,11 @@ registrar commit, fecha, target y resultado.
 partir del grafo resuelto por `cargo metadata --locked`. Incluye todos los
 paquetes de `Cargo.lock`, también los específicos de otras plataformas, y sus
 relaciones. El archivo no lleva fecha, rutas locales ni identificadores
-aleatorios, por lo que dos ejecuciones sobre el mismo lockfile producen el mismo
-contenido.
+aleatorios. El generador ordena referencias de forma ordinal y usa una
+serialización compacta, por lo que Windows PowerShell 5 y PowerShell 7 producen
+el mismo contenido para un mismo lockfile. El checkpoint del 30 de agosto de
+2026 contiene 285 componentes externos y pasó la comprobación en ambas
+versiones.
 
 ```powershell
 .\scripts\generate-sbom.ps1

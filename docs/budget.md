@@ -26,11 +26,30 @@ compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
 | **Lista de notas y actualización de workspace** | **3.236.864 bytes, 3,087 MiB** |
 | **Pestañas, paneles y recuperación configurable** | **3.264.512 bytes, 3,11 MiB** |
 | **Acciones visibles y guardados por pestaña** | **3.270.144 bytes, 3,12 MiB** |
+| **Editor escalable, vista dividida y árbol de workspace** | **3.351.040 bytes, 3,20 MiB** |
 
 Superar 8 MB exige medición, explicación y aprobación. El límite no se usa para
 recortar seguridad, estabilidad, accesibilidad, Unicode o funciones esenciales.
 Mermaid, correctores y otros componentes pesados no tienen permiso automático
 para ampliar el núcleo.
+
+### Editor escalable, vista dividida y árbol de workspace del 30 de agosto de 2026
+
+El checkpoint incorpora un buffer Unicode escalable, vista dividida con render
+versionado, árbol derivado del índice autorizado, detección limitada de cambios
+externos y métricas locales de lectura. No añade red, persistencia del índice ni
+dependencias directas nuevas.
+
+| Medida | Resultado |
+| --- | --- |
+| Binario Windows | 3.351.040 bytes, 3,20 MiB |
+| SHA-256 | `116CBD6FF577A35E71DA5EFF2BECF2A3A9BA24C2D956255FE71245A9D6E2128B` |
+| Variación frente al checkpoint anterior | +80.896 bytes |
+| Margen frente al límite deseado | 4,80 MiB |
+
+El gate completo verificó 146 pruebas y deja un margen amplio frente al límite
+de 8 MiB. La cifra mide tamaño; no sustituye el QA visual de la vista dividida
+ni una nueva serie controlada de arranque y memoria.
 
 ### Acciones visibles y guardados por pestaña del 29 de agosto de 2026
 

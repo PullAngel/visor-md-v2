@@ -1,18 +1,18 @@
 # Estado actual
 
-Última revisión: 28 de agosto de 2026.
+Última revisión: 30 de agosto de 2026.
 
 ## Resumen
 
-Visor MD v2 tiene un prototipo nativo medido y una recuperación funcional de
-Sprint 1 integrada en `main`. La referencia histórica anterior a Codex se
-conserva intacta en `archive/claude-pre-codex`.
+Visor MD v2 ya es una base nativa de uso diario en desarrollo: abre Markdown y
+texto inerte, conserva varios documentos, edita y guarda con protección ante
+conflictos, ofrece vista dividida y recorre una carpeta autorizada mediante una
+VFS acotada. La referencia anterior a Codex permanece intacta en
+`archive/claude-pre-codex`.
 
-El source heredado volvió a compilar y está verde. La recuperación conectó
-el trabajo interrumpido, reforzó el modelo documental y convirtió los límites
-defensivos en un fallback verificable. La tipografía ya tiene licencia y pipeline
-reproducible. Falta inspección visual y revisar el contrato de round-trip antes de
-considerar estabilizada la recuperación.
+El lector y el editor tienen gates automáticos verdes. Permanecen pendientes el
+QA humano acumulado, la actualización incremental de algunos modelos visibles,
+imágenes locales con consentimiento, accesibilidad completa y distribución.
 
 ## Git
 
@@ -162,6 +162,18 @@ exacto del traspaso.
   propio estado y recuperación.
 
 Evidencia actual en Windows:
+
+- `scripts/check.ps1`: verde el 30 de agosto de 2026 con formato, Clippy
+  estricto, 146 pruebas, SBOM reproducible, 40 documentos sin enlaces locales
+  rotos y build release;
+- release Windows actual: 3.351.040 bytes, 3,20 MiB, SHA-256
+  `116CBD6FF577A35E71DA5EFF2BECF2A3A9BA24C2D956255FE71245A9D6E2128B`;
+- `cargo audit` contra 1.226 advisories: cero vulnerabilidades conocidas y una
+  advertencia permitida, `RUSTSEC-2026-0192`, por `ttf-parser 0.25.1` transitivo
+  no mantenido. No es una vulnerabilidad demostrada y sigue bajo seguimiento;
+- el SBOM contiene 285 componentes externos y su generación fue verificada con
+  Windows PowerShell 5.1 y PowerShell 7.6.4. El orden ordinal y JSON compacto
+  evitan diferencias puramente culturales o de formato entre runners;
 
 - `cargo test`: 142 de 142 pruebas verdes el 30 de agosto de 2026 tras
   pestañas, paneles, acciones visibles, recuperación configurable y guardados
