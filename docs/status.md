@@ -164,18 +164,24 @@ exacto del traspaso.
   los declara y no desde la raíz global. La nota base y el destino deben estar
   contenidos por la VFS; las anclas `nota.md#encabezado` viajan con la pestaña
   que se abre y `#encabezado` navega solo dentro del documento actual.
+- una imagen Markdown sigue siendo un placeholder hasta una acción explícita.
+  Clic o Enter permite confirmar una vista previa de un PNG local contenido por
+  la VFS; firma, bytes, dimensiones y memoria se limitan antes de decodificar en
+  segundo plano. Las imágenes remotas y rutas no permitidas continúan
+  bloqueadas sin conexión. Escape o un clic descartan el único pixmap retenido.
 
 Evidencia actual en Windows:
 
-- `scripts/check.ps1`: verde el 30 de agosto de 2026 con formato, Clippy
-  estricto, 146 pruebas, SBOM reproducible, 40 documentos sin enlaces locales
-  rotos y build release;
-- release Windows actual: 3.351.040 bytes, 3,20 MiB, SHA-256
-  `116CBD6FF577A35E71DA5EFF2BECF2A3A9BA24C2D956255FE71245A9D6E2128B`;
+- formato, Clippy estricto y 155 pruebas verdes el 30 de agosto de 2026 después
+  de incorporar navegación relativa y PNG local acotado; el gate completo de
+  146 pruebas inmediatamente anterior también verificó SBOM, 40 documentos y
+  build release;
+- release Windows actual: 3.454.464 bytes, 3,294 MiB, SHA-256
+  `40B7A7E14CB31E18917DC83FC03A57825ADAF0A09CDBDFF225F0B50577B671EF`;
 - `cargo audit` contra 1.226 advisories: cero vulnerabilidades conocidas y una
   advertencia permitida, `RUSTSEC-2026-0192`, por `ttf-parser 0.25.1` transitivo
   no mantenido. No es una vulnerabilidad demostrada y sigue bajo seguimiento;
-- el SBOM contiene 285 componentes externos y su generación fue verificada con
+- el SBOM contiene 292 componentes externos y su generación fue verificada con
   Windows PowerShell 5.1 y PowerShell 7.6.4. El orden ordinal y JSON compacto
   evitan diferencias puramente culturales o de formato entre runners;
 

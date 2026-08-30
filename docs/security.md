@@ -268,6 +268,10 @@ legítimo.
 
 ## Imágenes locales
 
+La primera implementación solo permite una vista previa de PNG local después de
+un clic o Enter y una confirmación puntual. No recuerda el permiso, no carga al
+abrir el documento y conserva un único pixmap decodificado en memoria.
+
 Antes de decodificar:
 
 1. VFS resuelve y contiene la ruta;
@@ -279,6 +283,12 @@ Antes de decodificar:
 
 Una imagen comprimida pequeña puede expandirse a cientos de MB. El límite debe
 considerar dimensiones y memoria, no solo tamaño de archivo.
+
+Los topes actuales son 8 MiB comprimidos, 8192 píxeles por dimensión y 16
+millones de píxeles en total, equivalentes a un máximo de 64 MiB RGBA para la
+vista previa. El encabezado y la firma PNG se comprueban antes de invocar el
+decodificador. Rutas web, absolutas, UNC, con traversal o fuera de la VFS nunca
+llegan a esta capa.
 
 ## Imágenes remotas
 

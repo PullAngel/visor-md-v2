@@ -31,9 +31,9 @@ Estados permitidos:
 | Apertura explícita local | Integración | Parcial | Pendiente | Un mismo handle limita 16 MiB y exige UTF-8; falta QA visual y política configurable |
 | Parser fuera de UI | Integración y rendimiento | Parcial | Pendiente | Hilo de trabajo entrega un único evento al hilo de ventana; falta benchmark y cancelación |
 | Apertura manual UNC | Integración | Pendiente | No aplica | Política definida |
-| Traversal y escape bloqueados | Seguridad | Bloqueado | Bloqueado | No hay apertura secundaria todavía; deberá pasar por VFS al existir enlaces o recursos |
-| Symlinks y junctions | Seguridad | Pendiente | Pendiente | VFS no implementado |
-| Guardado atómico | Integración | Bloqueado | Bloqueado | Editor pendiente |
+| Traversal y escape bloqueados | Seguridad | Verificado | Pendiente | Enlaces, workspace y PNG pasan por VFS; la ruta base y el destino canonicalizado deben quedar dentro de la raíz |
+| Symlinks y junctions | Seguridad | Verificado | Pendiente | La canonicalización posterior a unir descubre escapes existentes |
+| Guardado atómico | Integración | Verificado | Pendiente | Temporal en el mismo filesystem, sincronización, reemplazo y conflicto externo tienen regresiones |
 | Rangos de fuente preservados | Integración | Parcial | Pendiente | Bloques, tramos y destinos verificados; el editor source-first no usa el rango parcial que Comrak informa para la sintaxis de enlaces |
 | Parches de fuente y undo/redo | Unitario | Parcial | Pendiente | `editor::EditHistory` preserva UTF-8, revisiones, undo/redo y presupuesto de 4 MiB; `SourceEditor` fija cursor y selección Unicode. Falta interacción, IME y round-trip de guardado |
 | Edición de fuente inicial | Integración y manual | Parcial | Pendiente | F2 alterna fuente/lectura; IME, Backspace, Delete, Ctrl+A, Ctrl+Z/Ctrl+Y, clic, arrastre, Inicio/Fin y flechas comparten fuente. La vista se prepara fuera de UI y un fallo conserva fuente. Faltan prueba end-to-end y guardado |
@@ -46,9 +46,9 @@ Estados permitidos:
 | Propiedad | Nivel | Windows | Linux | Evidencia actual |
 | --- | --- | --- | --- | --- |
 | Apertura normal sin sockets | Seguridad de runtime | Pendiente | Pendiente | Sin monitor automatizado |
-| Imagen remota bloqueada | Integración | Bloqueado | Bloqueado | Imágenes pendientes |
+| Imagen remota bloqueada | Integración | Verificado | Pendiente | El destino permanece visible, pero no llega a red ni al decodificador |
 | Consentimiento remoto delimitado | End to end | Bloqueado | Bloqueado | Componente pendiente |
-| Imagen local contenida y limitada | Seguridad | Bloqueado | Bloqueado | VFS e imágenes pendientes |
+| Imagen local contenida y limitada | Seguridad | Verificado | Pendiente | Confirmación por imagen, VFS desde la nota, firma PNG, 8 MiB, 8192 por lado y 16 millones de píxeles; falta QA visual |
 | Hipervínculo revela destino real | UX y phishing | Parcial | Pendiente | El hover muestra el destino declarado sin abrirlo; falta QA visual y política de clic |
 
 ## Rendering y UX

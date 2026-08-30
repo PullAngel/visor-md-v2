@@ -27,6 +27,7 @@ compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
 | **Pestañas, paneles y recuperación configurable** | **3.264.512 bytes, 3,11 MiB** |
 | **Acciones visibles y guardados por pestaña** | **3.270.144 bytes, 3,12 MiB** |
 | **Editor escalable, vista dividida y árbol de workspace** | **3.351.040 bytes, 3,20 MiB** |
+| **Vista previa PNG local confirmada** | **3.454.464 bytes, 3,294 MiB** |
 
 Superar 8 MB exige medición, explicación y aprobación. El límite no se usa para
 recortar seguridad, estabilidad, accesibilidad, Unicode o funciones esenciales.
@@ -50,6 +51,23 @@ dependencias directas nuevas.
 El gate completo verificó 146 pruebas y deja un margen amplio frente al límite
 de 8 MiB. La cifra mide tamaño; no sustituye el QA visual de la vista dividida
 ni una nueva serie controlada de arranque y memoria.
+
+### Vista previa PNG local confirmada del 30 de agosto de 2026
+
+El checkpoint activa el decodificador PNG de `tiny-skia` y agrega límites
+previos de bytes, dimensiones y memoria. No incorpora red ni otros formatos.
+
+| Medida | Resultado |
+| --- | --- |
+| Binario Windows | 3.454.464 bytes, 3,294 MiB |
+| SHA-256 | `40B7A7E14CB31E18917DC83FC03A57825ADAF0A09CDBDFF225F0B50577B671EF` |
+| Variación frente al checkpoint anterior | +103.424 bytes |
+| Margen frente al límite deseado | 4,706 MiB |
+
+El coste medido es pequeño frente al presupuesto y compra una capacidad diaria
+visible sin WebView ni motor de imágenes general. La memoria por vista previa se
+acota a 64 MiB RGBA y solo se retiene un pixmap; falta QA visual de escalado,
+transparencia y cierre.
 
 ### Acciones visibles y guardados por pestaña del 29 de agosto de 2026
 

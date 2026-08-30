@@ -3,6 +3,22 @@
 Este documento registra checkpoints verificables del grafo de dependencias. No
 reemplaza una SBOM ni convierte una auditoría puntual en garantía permanente.
 
+## PNG local confirmado
+
+El 30 de agosto de 2026 se habilitó `png-format` en `tiny-skia 0.12.0`, ya
+presente en el renderer. Añade siete paquetes transitivos exclusivamente Rust:
+`png 0.18.1`, `flate2 1.1.9`, `fdeflate 0.3.7`, `miniz_oxide 0.8.9`,
+`crc32fast 1.5.1`, `adler2 2.0.1` y `simd-adler32 0.3.10`. Sus licencias son
+combinaciones compatibles de MIT, Apache-2.0, Zlib y 0BSD.
+
+La feature incorpora decodificación y codificación PNG en la biblioteca, aunque
+el producto solo llama a decodificación. No habilita red, formatos adicionales
+ni portapapeles de imagen. `cargo audit` revisó 293 paquetes sin vulnerabilidades
+conocidas y mantuvo únicamente la advertencia previa de `ttf-parser`. El SBOM
+pasó de 285 a 292 componentes externos. El ejecutable Windows creció 103.424
+bytes, hasta 3.454.464 bytes (3,294 MiB), todavía 4,706 MiB por debajo del límite
+deseado.
+
 ## Cambio en curso: editor, guardado y diálogos nativos
 
 La primera parte del Sprint B incorpora tres dependencias directas, aún en

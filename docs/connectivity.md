@@ -42,8 +42,9 @@ apertura.
 
 ## Imágenes remotas
 
-Bloqueadas por defecto. El usuario puede autorizar una imagen o un alcance
-limitado desde configuración avanzada.
+Bloqueadas. El placeholder conserva el texto y el destino, pero un clic o Enter
+solo explica el bloqueo y no abre sockets. La autorización de red continúa
+aplazada hasta que exista un componente aislado con controles de SSRF.
 
 La capacidad futura de descarga debe aislarse del núcleo y no enviar cookies,
 credenciales, contenido, rutas o referrer. Se aplican timeout, límites, control
@@ -136,7 +137,8 @@ No hay componente de IA previsto para Visor MD.
 | Abrir Markdown | No | No automático | Archivo elegido |
 | Render normal | No | Solo recursos locales permitidos | Política local |
 | Abrir enlace web | Navegador externo | No | Clic |
-| Mostrar imagen remota | Componente aislado | No | Confirmación |
+| Mostrar imagen remota | Bloqueada | No | No disponible |
+| Mostrar PNG local | No | VFS, desde la nota | Confirmación por imagen |
 | Abrir enlace local | No | VFS | Clic y política |
 | Abrir UNC principal | Posible red de filesystem | Archivo elegido | Acción manual |
 | Indexar bóveda | No | Dentro de raíz | Confianza delimitada |

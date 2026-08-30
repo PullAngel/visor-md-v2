@@ -434,7 +434,7 @@ nativas reales. macOS permanece como posibilidad futura, no gate actual.
 
 | Área | Implementación actual | Objetivo |
 | --- | --- | --- |
-| Archivos | Apertura primaria limitada, guardado atómico, conflicto explícito, comprobación al recuperar foco y VFS de workspace | Política completa para recursos secundarios |
+| Archivos | Apertura primaria limitada, guardado atómico, conflicto explícito, comprobación al recuperar foco, VFS de workspace y PNG local confirmado | Política para otros recursos secundarios |
 | Parsing | Hilo de trabajo, revisión de apertura y evento interno; errores conservan ventana | Cancelación cooperativa con límites |
 | Modelo | `Block` y `Span` simplificados | Documento con rangos y semántica |
 | Layout | Visible con estimaciones | Geometría para render e interacción |
@@ -442,7 +442,7 @@ nativas reales. macOS permanece como posibilidad futura, no gate actual.
 | UI | Ventana, tema, menú contextual y avisos | Chrome, pestañas, comandos y paneles |
 | Edición | Buffer Rope, fuente alternable, vista dividida, undo/redo, portapapeles explícito, guardado fiel y recuperación local | Actualización incremental de la representación fuente y accesibilidad completa |
 | Workspace | Raíz explícita, VFS, índice acotado, wikilinks, callouts y navegación inicial de backlinks | Paneles, búsqueda, cancelación y detección de cambios |
-| Seguridad | Límites, HTML inerte, VFS, guardado y recuperación con pruebas | Controles de recursos secundarios, campaña de fuzzing y validación de release |
+| Seguridad | Límites, HTML inerte, VFS, guardado, recuperación y PNG local acotado con pruebas | Otros recursos secundarios, campaña de fuzzing y validación de release |
 
 ## Riesgos arquitectónicos abiertos
 

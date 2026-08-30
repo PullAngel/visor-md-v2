@@ -242,3 +242,17 @@ contenido permanece inerte y la fuente se conserva sin activar recursos.
    contenido de dos documentos ni perderse el indicador de cambios.
 5. Repetir con ventana estrecha y, si está disponible, otro DPI. Registrar
    recortes, superposición o texto ilegible; este gate visual sigue pendiente.
+
+## PNG local con confirmación
+
+1. Dentro de una carpeta de trabajo, crear una subcarpeta con una nota y un PNG.
+   Referenciarlo desde la nota con una ruta relativa a esa subcarpeta.
+2. Abrir la carpeta y la nota. El documento debe mostrar primero un placeholder;
+   no debe leer ni mostrar la imagen automáticamente.
+3. Pulsar el placeholder o enfocarlo con Tab y Enter. Confirmar el diálogo. La
+   imagen debe aparecer centrada, sin ampliarse por encima de su tamaño y sin
+   deformarse. Escape o un clic deben cerrarla.
+4. Repetir rechazando el diálogo: no debe cargar ni recordar el permiso.
+5. Probar una URL remota, una ruta absoluta, `..`, una extensión distinta y un
+   PNG fuera de la raíz mediante junction o symlink. Todos deben permanecer
+   bloqueados, mostrar una explicación breve y no abrir navegador ni red.

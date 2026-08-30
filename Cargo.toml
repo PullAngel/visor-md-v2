@@ -26,9 +26,10 @@ rfd = "0.17.2"
 ropey = "1.6.1"
 softbuffer = "0.4.8"
 swash = "0.2.10"
-# Sin `png-format`: el decodificador de PNG entra cuando toquen las imagenes,
-# con los limites de `security.md`, no de arrastre por una opcion por defecto.
+# El PNG solo se decodifica tras confirmación y los límites previos de
+# `src/images.rs`; habilitar la feature no autoriza cargas automáticas.
 tiny-skia = { version = "0.12.0", default-features = false, features = [
+    "png-format",
     "std",
     "simd",
 ] }

@@ -633,3 +633,21 @@ quitado e insertado, con un presupuesto de memoria de 4 MiB.
 **Por qué.** Mantiene la promesa de no reformatear ni perder sintaxis desconocida
 y evita basar la edición en rangos engañosos. La edición estructural o WYSIWYG
 queda fuera hasta que exista un contrato de mapeo fuente-vista completo y probado.
+
+## ADR-37: PNG local como capacidad puntual y acotada
+
+**Contexto.** Las notas universitarias y bóvedas reales incluyen diagramas, pero
+decodificar recursos al renderizar daría a un documento capacidad implícita de
+leer disco y reservar memoria. Un PNG pequeño comprimido puede expandirse mucho.
+
+**Decisión.** Mantener el placeholder como estado inicial. Solo un clic o Enter,
+seguido de confirmación por imagen, permite resolver un `.png` desde la carpeta
+de la nota mediante VFS. Validar firma, 8 MiB comprimidos, 8192 píxeles por lado
+y 16 millones de píxeles antes de usar `tiny-skia` con `png-format`. Decodificar
+fuera del hilo de interfaz, conservar como máximo un pixmap y no recordar el
+permiso. Red y otros formatos permanecen bloqueados.
+
+**Por qué.** Entrega el caso cotidiano sin convertir la apertura de Markdown en
+lectura secundaria automática, sin WebView y sin un motor general de imágenes.
+El mismo decoder del renderer suma 103.424 bytes al release medido; los límites
+y la retención única acotan disponibilidad y memoria.

@@ -128,7 +128,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 
 | Función | Estado | Criterio mínimo |
 | --- | --- | --- |
-| Imágenes locales | Planificado | VFS, límites y errores visibles |
+| Imágenes locales | Parcial | Placeholder, confirmación por PNG, VFS relativa a la nota y límites de bytes, dimensiones y memoria; falta presentación inline |
 | Imágenes remotas confirmadas | Planificado | Componente de red aislado |
 | Copiar bloque de código | Parcial | Acción visible y explícita; falta QA visual y de plataformas destino |
 | Resaltado de código | Planificado | Sin runtime o dependencia desproporcionada |

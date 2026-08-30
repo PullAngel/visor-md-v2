@@ -16,6 +16,7 @@
 pub mod editor;
 mod files;
 mod fonts;
+mod images;
 mod limits;
 mod recovery;
 mod settings;
@@ -47,7 +48,9 @@ use swash::FontRef;
 use swash::scale::image::Content;
 use swash::scale::{Render, ScaleContext, Source, StrikeWith};
 use swash::zeno::{Format, Vector};
-use tiny_skia::{Color, Paint, Pixmap, PremultipliedColorU8, Rect, Transform};
+use tiny_skia::{
+    Color, FilterQuality, Paint, Pixmap, PixmapPaint, PremultipliedColorU8, Rect, Transform,
+};
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
@@ -584,6 +587,16 @@ enum AppEvent {
         document_id: u64,
         result: Result<bool, String>,
     },
+    ImageReady {
+        request: u64,
+        document_id: u64,
+        revision: u64,
+        pixmap: Pixmap,
+    },
+    ImageFailed {
+        request: u64,
+        error: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -754,7 +767,7 @@ enum InlineTargetKind {
 
 impl InlineTargetKind {
     fn is_navigable(self) -> bool {
-        matches!(self, Self::Link | Self::WikiLink)
+        matches!(self, Self::Link | Self::WikiLink | Self::Image)
     }
 }
 
@@ -3017,6 +3030,34 @@ fn paths_refer_to_same_file(left: &std::path::Path, right: &std::path::Path) -> 
     }
 }
 
+struct ImagePreview {
+    document_id: u64,
+    pixmap: Pixmap,
+}
+
+fn fitted_image_rect(
+    image_width: u32,
+    image_height: u32,
+    viewport_width: f32,
+    viewport_height: f32,
+) -> Option<(f32, f32, f32)> {
+    if image_width == 0 || image_height == 0 || viewport_width < 160.0 || viewport_height < 160.0 {
+        return None;
+    }
+    let available_width = viewport_width - 120.0;
+    let available_height = viewport_height - 140.0;
+    let scale = (available_width / image_width as f32)
+        .min(available_height / image_height as f32)
+        .min(1.0);
+    let width = image_width as f32 * scale;
+    let height = image_height as f32 * scale;
+    Some((
+        (viewport_width - width) / 2.0,
+        (viewport_height - height) / 2.0,
+        scale,
+    ))
+}
+
 struct App {
     started: Instant,
     document: DocumentState,
@@ -3052,6 +3093,10 @@ struct App {
     /// al anterior; los hilos viejos pueden terminar, pero no publicar estado.
     open_requests: HashMap<u64, u64>,
     view_requests: HashMap<u64, u64>,
+    image_request: u64,
+    /// Solo existe después de una confirmación puntual. No persiste permisos,
+    /// bytes comprimidos ni más de una imagen decodificada a la vez.
+    image_preview: Option<ImagePreview>,
     proxy: EventLoopProxy<AppEvent>,
     window: Option<Rc<Window>>,
     surface: Option<softbuffer::Surface<Rc<Window>, Rc<Window>>>,
@@ -3551,6 +3596,40 @@ impl ApplicationHandler<AppEvent> for App {
                     }
                 }
             }
+            AppEvent::ImageReady {
+                request,
+                document_id,
+                revision,
+                pixmap,
+            } => {
+                if request != self.image_request
+                    || document_id != self.document.id
+                    || revision != self.document.source_editor.revision()
+                {
+                    self.log
+                        .push("[imagen] se descartó una vista previa desactualizada".to_string());
+                    return;
+                }
+                let dimensions = (pixmap.width(), pixmap.height());
+                self.image_preview = Some(ImagePreview {
+                    document_id,
+                    pixmap,
+                });
+                self.set_notice(&format!(
+                    "PNG local cargado: {} × {} · Escape para cerrar",
+                    dimensions.0, dimensions.1
+                ));
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+            }
+            AppEvent::ImageFailed { request, error } => {
+                if request != self.image_request {
+                    return;
+                }
+                self.log.push(format!("[imagen] {error}"));
+                self.set_notice(&error);
+            }
         }
     }
 
@@ -3736,6 +3815,13 @@ impl ApplicationHandler<AppEvent> for App {
                 ..
             } => match state {
                 ElementState::Pressed => {
+                    if self.image_preview.take().is_some() {
+                        self.set_notice("vista previa de imagen cerrada");
+                        if let Some(window) = &self.window {
+                            window.request_redraw();
+                        }
+                        return;
+                    }
                     if let Some(menu) = self.context_menu.take() {
                         if let Some(action) = self.pointer.and_then(|pointer| {
                             context_action_at(menu, pointer, self.document.mode)
@@ -3804,6 +3890,16 @@ impl ApplicationHandler<AppEvent> for App {
                             self.selecting = false;
                             return;
                         }
+                    }
+                    if self.document.mode == DocumentMode::Reading
+                        && let Some((block, target)) = self
+                            .pointer
+                            .and_then(|(x, y)| self.target_position_at(x, y))
+                    {
+                        self.focused_link = Some((block, target));
+                        self.open_focused_link();
+                        self.selecting = false;
+                        return;
                     }
                     if self.document.mode == DocumentMode::Reading
                         && let Some((x, y)) = self.pointer
@@ -4194,6 +4290,13 @@ impl ApplicationHandler<AppEvent> for App {
                     },
                 ..
             } => {
+                if self.image_preview.take().is_some() {
+                    self.set_notice("vista previa de imagen cerrada");
+                    if let Some(window) = &self.window {
+                        window.request_redraw();
+                    }
+                    return;
+                }
                 self.selection = None;
                 self.focused_link = None;
                 self.focus_destination = None;
@@ -4685,6 +4788,8 @@ impl App {
         self.command_palette = None;
         self.command_palette_query.clear();
         self.toolbar_focus = None;
+        self.image_request = self.image_request.wrapping_add(1);
+        self.image_preview = None;
     }
 
     fn invalidate_document_layout(&mut self) {
@@ -5829,6 +5934,10 @@ impl App {
             self.open_workspace_wikilink(&destination.1);
             return;
         }
+        if destination.0 == InlineTargetKind::Image {
+            self.preview_local_image(&destination.1);
+            return;
+        }
         match classify_link_destination(&destination.1) {
             LinkDestinationKind::RelativeFile => {
                 let (relative_path, heading) = relative_destination_parts(&destination.1);
@@ -5877,6 +5986,81 @@ impl App {
                 }
             }
         }
+    }
+
+    fn preview_local_image(&mut self, destination: &str) {
+        let (relative_path, _) = relative_destination_parts(destination);
+        if classify_link_destination(relative_path) != LinkDestinationKind::RelativeFile {
+            self.set_notice("imagen remota o ruta no permitida bloqueada; no se realizó conexión");
+            return;
+        }
+        if !std::path::Path::new(relative_path)
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("png"))
+        {
+            self.set_notice("solo se pueden previsualizar PNG locales contenidos");
+            return;
+        }
+        let Some((root, _)) = self.workspace.as_ref() else {
+            self.set_notice("abre una carpeta de trabajo antes de cargar una imagen local");
+            return;
+        };
+        if self.document.source_identity.is_none() {
+            self.set_notice(
+                "guarda la nota dentro de la carpeta de trabajo antes de cargar recursos",
+            );
+            return;
+        }
+        let path = match root.resolve_existing_from(
+            std::path::Path::new(&self.document.path),
+            std::path::Path::new(relative_path),
+        ) {
+            Ok(path) => path,
+            Err(error) => {
+                self.log.push(format!("[imagen/vfs] {error}"));
+                self.set_notice("la imagen local fue bloqueada por la política de archivos");
+                return;
+            }
+        };
+        let dialog = MessageDialog::new()
+            .set_level(MessageLevel::Info)
+            .set_title("Visor MD · mostrar imagen local")
+            .set_description(
+                "Se leerá una sola imagen PNG dentro de la carpeta elegida. Se aplican límites de 8 MiB y 16 millones de píxeles. El permiso no se recuerda.",
+            )
+            .set_buttons(MessageButtons::YesNo);
+        let result = if let Some(window) = &self.window {
+            dialog.set_parent(window.as_ref()).show()
+        } else {
+            dialog.show()
+        };
+        if !matches!(result, MessageDialogResult::Yes) {
+            self.set_notice("imagen local no cargada");
+            return;
+        }
+
+        self.image_request = self.image_request.wrapping_add(1);
+        let request = self.image_request;
+        let document_id = self.document.id;
+        let revision = self.document.source_editor.revision();
+        let proxy = self.proxy.clone();
+        self.image_preview = None;
+        self.set_notice("cargando PNG local con límites de seguridad");
+        thread::spawn(move || {
+            let event = match images::load_local_png(&path) {
+                Ok(pixmap) => AppEvent::ImageReady {
+                    request,
+                    document_id,
+                    revision,
+                    pixmap,
+                },
+                Err(error) => AppEvent::ImageFailed {
+                    request,
+                    error: error.to_string(),
+                },
+            };
+            let _ = proxy.send_event(event);
+        });
     }
 
     /// Abre un wikilink solo después de resolverlo contra el índice de la
@@ -6498,15 +6682,25 @@ impl App {
     }
 
     fn target_at(&self, x: f32, y: f32) -> Option<&InlineTarget> {
+        let (block, target) = self.target_position_at(x, y)?;
+        self.document.blocks.get(block)?.targets.get(target)
+    }
+
+    fn target_position_at(&self, x: f32, y: f32) -> Option<(usize, usize)> {
         let cursor = self.cursor_at(x, y)?;
-        self.document
+        let target = self
+            .document
             .blocks
             .get(cursor.block)?
             .targets
             .iter()
+            .enumerate()
             .find(|target| {
-                target.kind.is_navigable() && (target.start..target.end).contains(&cursor.offset)
-            })
+                target.1.kind.is_navigable()
+                    && (target.1.start..target.1.end).contains(&cursor.offset)
+            })?
+            .0;
+        Some((cursor.block, target))
     }
 
     fn extend_selection_to(&mut self, x: f32, y: f32) {
@@ -7117,6 +7311,7 @@ impl App {
             focused_link,
             scale_factor,
             document,
+            image_preview,
             ..
         } = self;
         let blocks = &document.blocks;
@@ -7723,6 +7918,34 @@ impl App {
             }
         }
 
+        if let Some(preview) = image_preview.as_ref()
+            && preview.document_id == document.id
+            && let Some((x, y, scale)) = fitted_image_rect(
+                preview.pixmap.width(),
+                preview.pixmap.height(),
+                w.get() as f32,
+                h.get() as f32,
+            )
+        {
+            let mut veil = Paint::default();
+            veil.set_color(Color::from_rgba8(bg.0, bg.1, bg.2, 236));
+            if let Some(rect) = Rect::from_xywh(0.0, 0.0, w.get() as f32, h.get() as f32) {
+                pixmap.fill_rect(rect, &veil, Transform::identity(), None);
+            }
+            let image_paint = PixmapPaint {
+                quality: FilterQuality::Bicubic,
+                ..Default::default()
+            };
+            pixmap.draw_pixmap(
+                x.round() as i32,
+                y.round() as i32,
+                preview.pixmap.as_ref(),
+                &image_paint,
+                Transform::from_scale(scale, scale),
+                None,
+            );
+        }
+
         // Volcado del pixmap a la ventana.
         let surface = surface
             .as_mut()
@@ -7938,6 +8161,8 @@ fn main() {
             HashMap::new()
         },
         view_requests: HashMap::new(),
+        image_request: 0,
+        image_preview: None,
         proxy: proxy.clone(),
         window: None,
         surface: None,
@@ -8116,6 +8341,18 @@ mod pruebas {
         );
         assert!(DocumentMode::Split.is_editable());
         assert!(!DocumentMode::Reading.is_editable());
+    }
+
+    #[test]
+    fn la_vista_previa_de_imagen_no_amplia_ni_sale_del_viewport() {
+        let (x, y, scale) = fitted_image_rect(2_000, 1_000, 1_000.0, 700.0).unwrap();
+        assert!(scale <= 1.0);
+        assert!(x >= 0.0 && y >= 0.0);
+        assert!(x + 2_000.0 * scale <= 1_000.0);
+        assert!(y + 1_000.0 * scale <= 700.0);
+
+        assert_eq!(fitted_image_rect(0, 100, 1_000.0, 700.0), None);
+        assert_eq!(fitted_image_rect(100, 100, 120.0, 700.0), None);
     }
 
     #[test]
@@ -8604,15 +8841,15 @@ mod pruebas {
     }
 
     #[test]
-    fn tab_recorrre_solo_los_enlaces_en_orden_del_documento() {
+    fn tab_recorre_enlaces_e_imagenes_confirmables_en_orden() {
         let outcome = parse_blocks(
             "[primero](https://example.test)\n\n![imagen](img.png)\n\n[segundo](notas/dos.md)",
         )
         .unwrap();
         let links = link_targets_in_document_order(&outcome.blocks);
-        assert_eq!(links, vec![(0, 0), (2, 0)]);
+        assert_eq!(links, vec![(0, 0), (1, 0), (2, 0)]);
         assert_eq!(next_link_target(&links, None, false), Some((0, 0)));
-        assert_eq!(next_link_target(&links, Some((0, 0)), false), Some((2, 0)));
+        assert_eq!(next_link_target(&links, Some((0, 0)), false), Some((1, 0)));
         assert_eq!(next_link_target(&links, Some((0, 0)), true), Some((2, 0)));
         assert_eq!(next_link_target(&[], None, false), None);
     }
