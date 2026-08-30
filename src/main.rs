@@ -83,10 +83,22 @@ const MAX_OVERLAY_LABEL_CHARS: usize = 180;
 const STATUS_HEIGHT: f32 = 28.0;
 const MAX_TAB_WIDTH: f32 = 220.0;
 const PANEL_X: f32 = MARGIN;
-const PANEL_Y: f32 = 44.0;
+const PANEL_Y: f32 = 80.0;
 const PANEL_WIDTH: f32 = 420.0;
 const PANEL_ROW_HEIGHT: f32 = 28.0;
 const PANEL_CAPACITY: usize = 9;
+const TOOLBAR_X: f32 = MARGIN;
+const TOOLBAR_Y: f32 = 8.0;
+const TOOLBAR_HEIGHT: f32 = 28.0;
+const TOOLBAR_ITEM_WIDTH: f32 = 86.0;
+const TOOLBAR_ACTIONS: [AppAction; 6] = [
+    AppAction::NewDocument,
+    AppAction::OpenDocument,
+    AppAction::Save,
+    AppAction::ToggleMode,
+    AppAction::SearchDocument,
+    AppAction::CommandPalette,
+];
 static NEXT_DOCUMENT_ID: AtomicU64 = AtomicU64::new(1);
 
 fn tab_width(window_width: f32, tab_count: usize) -> f32 {
@@ -158,6 +170,14 @@ fn panel_item_at(x: f32, y: f32, total: usize, selected: usize) -> Option<usize>
     (item_offset < range.len()).then_some(range.start + item_offset)
 }
 
+fn toolbar_action_at(x: f32, y: f32, window_width: f32) -> Option<AppAction> {
+    if x < TOOLBAR_X || y < TOOLBAR_Y || y >= TOOLBAR_Y + TOOLBAR_HEIGHT || x >= window_width {
+        return None;
+    }
+    let index = ((x - TOOLBAR_X) / TOOLBAR_ITEM_WIDTH) as usize;
+    TOOLBAR_ACTIONS.get(index).copied()
+}
+
 fn tab_label(path: &str, dirty: bool, max_chars: usize) -> String {
     let path_buf = PathBuf::from(path);
     let name = path_buf
@@ -225,6 +245,7 @@ enum AppAction {
     Backlinks,
     RestoreRecovery,
     ToggleRecovery,
+    CommandPalette,
 }
 
 const APP_ACTIONS: [AppAction; 14] = [
@@ -261,6 +282,20 @@ impl AppAction {
             Self::Backlinks => "Backlinks · Ctrl+Shift+B",
             Self::RestoreRecovery => "Abrir recuperación · Ctrl+Shift+R",
             Self::ToggleRecovery => "Activar o desactivar recuperación local",
+            Self::CommandPalette => "Mostrar todas las acciones · Ctrl+Shift+P",
+        }
+    }
+
+    fn short_label(self, mode: DocumentMode) -> &'static str {
+        match self {
+            Self::NewDocument => "Nuevo",
+            Self::OpenDocument => "Abrir",
+            Self::Save => "Guardar",
+            Self::ToggleMode if mode == DocumentMode::Reading => "Editar",
+            Self::ToggleMode => "Leer",
+            Self::SearchDocument => "Buscar",
+            Self::CommandPalette => "Más",
+            _ => self.label(),
         }
     }
 }
@@ -3262,6 +3297,11 @@ impl ApplicationHandler<AppEvent> for App {
                     }
                     if let (Some((x, y)), Some(window)) = (self.pointer, &self.window) {
                         let size = window.inner_size();
+                        if let Some(action) = toolbar_action_at(x, y, size.width as f32) {
+                            self.perform_action(action);
+                            self.selecting = false;
+                            return;
+                        }
                         if let Some(index) = tab_close_index_at(
                             x,
                             y,
@@ -3910,6 +3950,7 @@ impl App {
             AppAction::Backlinks => self.show_backlinks(),
             AppAction::RestoreRecovery => self.restore_latest_recovery(),
             AppAction::ToggleRecovery => self.toggle_recovery(),
+            AppAction::CommandPalette => self.open_command_palette(),
         }
     }
 
@@ -6183,6 +6224,17 @@ impl App {
             &mut self.layout_cx,
             self.palette,
         );
+        let toolbar_layouts = TOOLBAR_ACTIONS
+            .iter()
+            .map(|action| {
+                build_menu_layout(
+                    action.short_label(self.document.mode),
+                    &mut self.font_cx,
+                    &mut self.layout_cx,
+                    self.palette,
+                )
+            })
+            .collect::<Vec<_>>();
         let document_mode_label = match self.document.mode {
             DocumentMode::Reading => "Lectura",
             DocumentMode::SourceEditing => "Edición",
@@ -6541,19 +6593,43 @@ impl App {
             }
         }
 
-        if let Some(layout) = safe_banner {
-            let banner_width = (layout.width() + 24.0).min(w.get() as f32 - MARGIN * 2.0);
-            if let Some(rect) = Rect::from_xywh(MARGIN, 10.0, banner_width, 28.0) {
+        for (index, layout) in toolbar_layouts.iter().enumerate() {
+            let x = TOOLBAR_X + index as f32 * TOOLBAR_ITEM_WIDTH;
+            let width = TOOLBAR_ITEM_WIDTH - 4.0;
+            if x + width > w.get() as f32 - MARGIN {
+                break;
+            }
+            if let Some(rect) = Rect::from_xywh(x, TOOLBAR_Y, width, TOOLBAR_HEIGHT) {
                 pixmap.fill_rect(rect, &paint, Transform::identity(), None);
             }
-            if let Some(rect) = Rect::from_xywh(MARGIN, 10.0, 3.0, 28.0) {
+            if TOOLBAR_ACTIONS[index] == AppAction::ToggleMode
+                && let Some(rect) = Rect::from_xywh(x, TOOLBAR_Y + TOOLBAR_HEIGHT - 2.0, width, 2.0)
+            {
                 pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
             }
             for line in layout.lines() {
                 for entry in line.items() {
                     if let PositionedLayoutItem::GlyphRun(run) = entry {
-                        draw_run_background(pixmap, &run, MARGIN + 10.0, 15.0);
-                        draw_glyph_run(pixmap, scale_cx, glyphs, &run, MARGIN + 10.0, 15.0);
+                        draw_run_background(pixmap, &run, x + 9.0, TOOLBAR_Y + 6.0);
+                        draw_glyph_run(pixmap, scale_cx, glyphs, &run, x + 9.0, TOOLBAR_Y + 6.0);
+                    }
+                }
+            }
+        }
+
+        if let Some(layout) = safe_banner {
+            let banner_width = (layout.width() + 24.0).min(w.get() as f32 - MARGIN * 2.0);
+            if let Some(rect) = Rect::from_xywh(MARGIN, 44.0, banner_width, 28.0) {
+                pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+            }
+            if let Some(rect) = Rect::from_xywh(MARGIN, 44.0, 3.0, 28.0) {
+                pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
+            }
+            for line in layout.lines() {
+                for entry in line.items() {
+                    if let PositionedLayoutItem::GlyphRun(run) = entry {
+                        draw_run_background(pixmap, &run, MARGIN + 10.0, 49.0);
+                        draw_glyph_run(pixmap, scale_cx, glyphs, &run, MARGIN + 10.0, 49.0);
                     }
                 }
             }
@@ -6619,14 +6695,14 @@ impl App {
 
         if let Some(layout) = search_overlay.or(workspace_search_overlay) {
             let overlay_width = (layout.width() + 24.0).min(w.get() as f32 - MARGIN * 2.0);
-            if let Some(rect) = Rect::from_xywh(MARGIN, 44.0, overlay_width, 28.0) {
+            if let Some(rect) = Rect::from_xywh(MARGIN, 80.0, overlay_width, 28.0) {
                 pixmap.fill_rect(rect, &paint, Transform::identity(), None);
             }
             for line in layout.lines() {
                 for entry in line.items() {
                     if let PositionedLayoutItem::GlyphRun(run) = entry {
-                        draw_run_background(pixmap, &run, MARGIN + 10.0, 49.0);
-                        draw_glyph_run(pixmap, scale_cx, glyphs, &run, MARGIN + 10.0, 49.0);
+                        draw_run_background(pixmap, &run, MARGIN + 10.0, 85.0);
+                        draw_glyph_run(pixmap, scale_cx, glyphs, &run, MARGIN + 10.0, 85.0);
                     }
                 }
             }
@@ -7052,6 +7128,24 @@ mod pruebas {
     }
 
     #[test]
+    fn la_barra_superior_expone_solo_acciones_visibles() {
+        assert_eq!(
+            toolbar_action_at(50.0, 12.0, 900.0),
+            Some(AppAction::NewDocument)
+        );
+        assert_eq!(
+            toolbar_action_at(140.0, 12.0, 900.0),
+            Some(AppAction::OpenDocument)
+        );
+        assert_eq!(
+            toolbar_action_at(480.0, 12.0, 900.0),
+            Some(AppAction::CommandPalette)
+        );
+        assert_eq!(toolbar_action_at(50.0, 50.0, 900.0), None);
+        assert_eq!(toolbar_action_at(900.0, 12.0, 900.0), None);
+    }
+
+    #[test]
     fn el_catalogo_de_acciones_es_pequeno_y_no_duplica_etiquetas() {
         let mut labels = APP_ACTIONS
             .iter()
@@ -7072,10 +7166,19 @@ mod pruebas {
         assert_eq!(panel_window(30, 29, 9), 21..30);
         assert_eq!(panel_window(3, 2, 9), 0..3);
         assert_eq!(panel_window(0, 0, 9), 0..0);
-        assert_eq!(panel_item_at(60.0, 80.0, 30, 15), Some(11));
-        assert_eq!(panel_item_at(60.0, 108.0, 30, 15), Some(12));
-        assert_eq!(panel_item_at(20.0, 80.0, 30, 15), None);
-        assert_eq!(panel_item_at(60.0, 50.0, 30, 15), None);
+        assert_eq!(
+            panel_item_at(60.0, PANEL_Y + PANEL_ROW_HEIGHT, 30, 15),
+            Some(11)
+        );
+        assert_eq!(
+            panel_item_at(60.0, PANEL_Y + PANEL_ROW_HEIGHT * 2.0, 30, 15),
+            Some(12)
+        );
+        assert_eq!(
+            panel_item_at(20.0, PANEL_Y + PANEL_ROW_HEIGHT, 30, 15),
+            None
+        );
+        assert_eq!(panel_item_at(60.0, PANEL_Y, 30, 15), None);
     }
 
     #[test]

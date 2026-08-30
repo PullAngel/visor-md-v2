@@ -204,3 +204,13 @@ Los bloques de código ahora muestran una acción nativa `Copiar` que copia su
 fuente de forma explícita. Las tablas ya se representan con celdas y bordes
 nativos; selección y copia TSV de celdas quedan pendientes. En ambos casos, el
 contenido permanece inerte y la fuente se conserva sin activar recursos.
+
+## Barra de acciones y pestañas
+
+1. Comprobar que Nuevo, Abrir, Guardar, Editar o Leer, Buscar y Más aparecen en
+   la franja superior sin taparse en una ventana normal.
+2. Activar cada acción con mouse y comprobar que coincide con su atajo.
+3. Abrir dos documentos, alternarlos desde la barra inferior y comprobar que el
+   asterisco de cambios permanece asociado al documento correcto.
+4. Reducir el ancho de la ventana y confirmar que las acciones que ya no caben
+   se omiten sin texto cortado ni controles parcialmente clicables.

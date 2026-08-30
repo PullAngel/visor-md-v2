@@ -125,6 +125,10 @@ exacto del traspaso.
   con `*` y permite elegir cada documento con mouse. La posición de lectura se
   conserva al cambiar; una apertura o guardado pendiente impide temporalmente
   cambiar de pestaña para no atribuir el resultado al documento equivocado.
+- una barra superior sobria hace visibles Nuevo, Abrir, Guardar, el cambio entre
+  lectura y edición, la búsqueda y el acceso al catálogo completo. Usa las
+  mismas acciones que los atajos y la paleta, para evitar comportamientos
+  distintos según cómo se invoque una operación.
 - índice del documento, lista de notas y backlinks se presentan como paneles
   plegables de varias filas. Las listas largas mantienen visible la selección
   sin construir layouts para todos los resultados y conservan navegación por
