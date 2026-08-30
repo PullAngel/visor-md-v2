@@ -169,10 +169,14 @@ exacto del traspaso.
   la VFS; firma, bytes, dimensiones y memoria se limitan antes de decodificar en
   segundo plano. Las imágenes remotas y rutas no permitidas continúan
   bloqueadas sin conexión. Escape o un clic descartan el único pixmap retenido.
+- una tabla enfocada o seleccionada puede copiarse como TSV desde el menú
+  contextual o la paleta. Se usan las celdas del modelo, no los separadores
+  visibles ni una reserialización del Markdown; saltos y tabuladores internos
+  se vuelven espacios para no romper filas o columnas al pegar.
 
 Evidencia actual en Windows:
 
-- formato, Clippy estricto y 155 pruebas verdes el 30 de agosto de 2026 después
+- formato, Clippy estricto y 156 pruebas verdes el 30 de agosto de 2026 después
   de incorporar navegación relativa y PNG local acotado; el gate completo de
   146 pruebas inmediatamente anterior también verificó SBOM, 40 documentos y
   build release;

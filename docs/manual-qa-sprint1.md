@@ -202,7 +202,8 @@ posterior a esas correcciones antes de cerrar Sprint A.
 
 Los bloques de código ahora muestran una acción nativa `Copiar` que copia su
 fuente de forma explícita. Las tablas ya se representan con celdas y bordes
-nativos; selección y copia TSV de celdas quedan pendientes. En ambos casos, el
+nativos y la tabla completa se copia como TSV desde el menú o la paleta;
+selección parcial de celdas queda pendiente. En ambos casos, el
 contenido permanece inerte y la fuente se conserva sin activar recursos.
 
 ## Barra de acciones y pestañas

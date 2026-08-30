@@ -336,6 +336,7 @@ enum ContextAction {
     Paste,
     CopyText,
     CopyMarkdown,
+    CopyTableTsv,
     Search,
     ToggleMode,
     ToggleSplit,
@@ -353,6 +354,7 @@ enum AppAction {
     ToggleMode,
     ToggleSplit,
     SearchDocument,
+    CopyTableTsv,
     ChooseWorkspace,
     RefreshWorkspace,
     SearchWorkspace,
@@ -364,7 +366,7 @@ enum AppAction {
     CommandPalette,
 }
 
-const APP_ACTIONS: [AppAction; 16] = [
+const APP_ACTIONS: [AppAction; 17] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -373,6 +375,7 @@ const APP_ACTIONS: [AppAction; 16] = [
     AppAction::ToggleMode,
     AppAction::ToggleSplit,
     AppAction::SearchDocument,
+    AppAction::CopyTableTsv,
     AppAction::ChooseWorkspace,
     AppAction::RefreshWorkspace,
     AppAction::SearchWorkspace,
@@ -394,6 +397,7 @@ impl AppAction {
             Self::ToggleMode => "Alternar lectura y edición · F2",
             Self::ToggleSplit => "Comparar fuente y vista · F3",
             Self::SearchDocument => "Buscar en documento · Ctrl+F",
+            Self::CopyTableTsv => "Copiar tabla seleccionada como TSV",
             Self::ChooseWorkspace => "Abrir carpeta · Ctrl+Shift+O",
             Self::RefreshWorkspace => "Actualizar índice de carpeta · Ctrl+Shift+I",
             Self::SearchWorkspace => "Buscar en carpeta · Ctrl+Shift+F",
@@ -437,6 +441,7 @@ impl ContextAction {
             Self::Paste => "Pegar",
             Self::CopyText => "Copiar texto",
             Self::CopyMarkdown => "Copiar Markdown original",
+            Self::CopyTableTsv => "Copiar tabla como TSV",
             Self::Search => "Buscar en documento",
             Self::ToggleMode => "Alternar lectura y edición",
             Self::ToggleSplit => "Comparar fuente y vista",
@@ -455,6 +460,7 @@ fn context_actions(mode: DocumentMode) -> &'static [ContextAction] {
         DocumentMode::Reading => &[
             ContextAction::CopyText,
             ContextAction::CopyMarkdown,
+            ContextAction::CopyTableTsv,
             ContextAction::Search,
             ContextAction::ToggleMode,
             ContextAction::ToggleSplit,
@@ -465,6 +471,7 @@ fn context_actions(mode: DocumentMode) -> &'static [ContextAction] {
             ContextAction::Paste,
             ContextAction::CopyText,
             ContextAction::CopyMarkdown,
+            ContextAction::CopyTableTsv,
             ContextAction::Search,
             ContextAction::ToggleMode,
             ContextAction::ToggleSplit,
@@ -475,6 +482,7 @@ fn context_actions(mode: DocumentMode) -> &'static [ContextAction] {
             ContextAction::Paste,
             ContextAction::CopyText,
             ContextAction::CopyMarkdown,
+            ContextAction::CopyTableTsv,
             ContextAction::Search,
             ContextAction::ToggleMode,
             ContextAction::ToggleSplit,
@@ -1078,6 +1086,41 @@ fn rendered_block_prefix(block: &Block) -> String {
         None if matches!(block.kind, Kind::Quote) => "> ".repeat(block.quote_depth.max(1) as usize),
         None => String::new(),
     }
+}
+
+fn table_tsv_at(blocks: &[Block], block_index: usize) -> Option<String> {
+    if !matches!(blocks.get(block_index)?.kind, Kind::TableRow { .. }) {
+        return None;
+    }
+    let mut start = block_index;
+    while start > 0 && matches!(blocks[start - 1].kind, Kind::TableRow { .. }) {
+        start -= 1;
+    }
+    let mut end = block_index + 1;
+    while end < blocks.len() && matches!(blocks[end].kind, Kind::TableRow { .. }) {
+        end += 1;
+    }
+    let rows = blocks[start..end]
+        .iter()
+        .map(|block| {
+            block
+                .table_cells
+                .iter()
+                .map(|cell| {
+                    cell.text
+                        .chars()
+                        .map(|character| match character {
+                            '\t' | '\r' | '\n' => ' ',
+                            other => other,
+                        })
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+                .join("\t")
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    (!rows.is_empty()).then_some(rows)
 }
 
 impl Block {
@@ -3831,6 +3874,7 @@ impl ApplicationHandler<AppEvent> for App {
                                 ContextAction::CopyText | ContextAction::CopyMarkdown => {
                                     self.copy_selection(action.source_markdown());
                                 }
+                                ContextAction::CopyTableTsv => self.copy_current_table_tsv(),
                                 ContextAction::Search => {
                                     self.perform_action(AppAction::SearchDocument)
                                 }
@@ -4567,6 +4611,7 @@ impl App {
                 DocumentMode::Reading | DocumentMode::SourceEditing => self.enter_split_mode(),
             },
             AppAction::SearchDocument => self.open_document_search(),
+            AppAction::CopyTableTsv => self.copy_current_table_tsv(),
             AppAction::ChooseWorkspace => self.choose_workspace(),
             AppAction::RefreshWorkspace => self.reindex_workspace(),
             AppAction::SearchWorkspace => self.open_workspace_search(),
@@ -5828,6 +5873,22 @@ impl App {
             "texto copiado"
         };
         self.copy_text_to_clipboard(text, kind);
+    }
+
+    fn copy_current_table_tsv(&mut self) {
+        let block = self
+            .selection
+            .map(|selection| selection.focus.block)
+            .or_else(|| {
+                self.pointer
+                    .and_then(|(x, y)| self.cursor_at(x, y))
+                    .map(|cursor| cursor.block)
+            });
+        let Some(text) = block.and_then(|block| table_tsv_at(&self.document.blocks, block)) else {
+            self.set_notice("selecciona una celda de tabla antes de copiar como TSV");
+            return;
+        };
+        self.copy_text_to_clipboard(text, "tabla copiada como TSV");
     }
 
     fn copy_text_to_clipboard(&mut self, text: String, kind: &str) {
@@ -8327,7 +8388,7 @@ mod pruebas {
         labels.sort_unstable();
         labels.dedup();
 
-        assert_eq!(original_len, 16);
+        assert_eq!(original_len, 17);
         assert_eq!(labels.len(), original_len);
     }
 
@@ -9961,6 +10022,29 @@ Pagina 14 de 14"#;
         assert_eq!(row.table_cells.len(), 2);
         assert_eq!(row.table_cells[1].text, "dos");
         assert!(row.spans.iter().any(|span| span.style.strong));
+    }
+
+    #[test]
+    fn una_tabla_se_copia_como_tsv_desde_cualquiera_de_sus_filas() {
+        let blocks = aplanar(
+            "Antes\n\n| Propiedad | Estado |\n| --- | --- |\n| Seguridad | Activa |\n| Nota | dos líneas |\n\nDespués",
+        );
+        let row = blocks
+            .iter()
+            .position(|block| {
+                matches!(block.kind, Kind::TableRow { header: false })
+                    && block
+                        .table_cells
+                        .first()
+                        .is_some_and(|cell| cell.text == "Seguridad")
+            })
+            .unwrap();
+
+        assert_eq!(
+            table_tsv_at(&blocks, row).as_deref(),
+            Some("Propiedad\tEstado\nSeguridad\tActiva\nNota\tdos líneas")
+        );
+        assert_eq!(table_tsv_at(&blocks, 0), None);
     }
 
     #[test]
