@@ -28,6 +28,7 @@ compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
 | **Acciones visibles y guardados por pestaña** | **3.270.144 bytes, 3,12 MiB** |
 | **Editor escalable, vista dividida y árbol de workspace** | **3.351.040 bytes, 3,20 MiB** |
 | **Vista previa PNG local confirmada** | **3.454.464 bytes, 3,294 MiB** |
+| **Copia TSV y modo por documento** | **3.459.072 bytes, 3,299 MiB** |
 
 Superar 8 MB exige medición, explicación y aprobación. El límite no se usa para
 recortar seguridad, estabilidad, accesibilidad, Unicode o funciones esenciales.
@@ -68,6 +69,23 @@ El coste medido es pequeño frente al presupuesto y compra una capacidad diaria
 visible sin WebView ni motor de imágenes general. La memoria por vista previa se
 acota a 64 MiB RGBA y solo se retiene un pixmap; falta QA visual de escalado,
 transparencia y cierre.
+
+### Copia TSV y modo por documento del 30 de agosto de 2026
+
+El checkpoint añade copia semántica de tablas y hasta 128 preferencias de modo
+identificadas por hash. No modifica dependencias ni capacidades de disco del
+contenido.
+
+| Medida | Resultado |
+| --- | --- |
+| Binario Windows | 3.459.072 bytes, 3,299 MiB |
+| SHA-256 | `5FC5D6AFBA54F506EFC01676BF740C1F0A70C2214F49399B1BE9ACB4D8C702B9` |
+| Variación frente al checkpoint anterior | +4.608 bytes |
+| Margen frente al límite deseado | 4,701 MiB |
+
+Un smoke test release abrió la fixture de 1,2 KiB, produjo 23 bloques y salió
+con código 0. La ventana fue visible en 371 ms y el primer cuadro terminó a los
+396 ms; es evidencia funcional puntual y no reemplaza la serie reproducible.
 
 ### Acciones visibles y guardados por pestaña del 29 de agosto de 2026
 

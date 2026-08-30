@@ -184,8 +184,11 @@ Evidencia actual en Windows:
   de incorporar navegación relativa y PNG local acotado; el gate completo de
   146 pruebas inmediatamente anterior también verificó SBOM, 40 documentos y
   build release;
-- release Windows actual: 3.454.464 bytes, 3,294 MiB, SHA-256
-  `40B7A7E14CB31E18917DC83FC03A57825ADAF0A09CDBDFF225F0B50577B671EF`;
+- release Windows actual: 3.459.072 bytes, 3,299 MiB, SHA-256
+  `5FC5D6AFBA54F506EFC01676BF740C1F0A70C2214F49399B1BE9ACB4D8C702B9`;
+- smoke test release con `--bench=0` y la fixture visual: salida 0, ventana
+  visible en 371 ms y primer cuadro con 23 bloques en 396 ms. Es una muestra
+  funcional aislada, no una nueva serie estadística de arranque;
 - `cargo audit` contra 1.226 advisories: cero vulnerabilidades conocidas y una
   advertencia permitida, `RUSTSEC-2026-0192`, por `ttf-parser 0.25.1` transitivo
   no mantenido. No es una vulnerabilidad demostrada y sigue bajo seguimiento;
