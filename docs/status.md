@@ -214,11 +214,13 @@ Evidencia actual en Windows:
   de incorporar plegado de secciones; el gate completo de
   146 pruebas inmediatamente anterior también verificó SBOM, 40 documentos y
   build release;
-- release Windows actual: 3.464.704 bytes, 3,304 MiB, SHA-256
-  `5A7AB84C0745A1CB0C25821C03D36E7E6F3CF439A3BC4556CD63B8C44537C08E`;
+- release Windows actual: 3.471.360 bytes, 3,310 MiB, SHA-256
+  `FB61E47AA8EC50ECD823202D9AF047E4065C7780DDA1B1536FD1C658D9FF3D2E`;
 - smoke test release con `--bench=0` y la fixture visual: salida 0, ventana
-  visible en 371 ms y primer cuadro con 23 bloques en 396 ms. Es una muestra
-  funcional aislada, no una nueva serie estadística de arranque;
+  visible en 359 ms y primer cuadro con 23 bloques en 907 ms. Es una muestra
+  funcional aislada, no una nueva serie estadística de arranque; la medición de
+  layout de ese proceso fue atípica (534 ms), por lo que no se interpreta como
+  regresión sin una serie controlada;
 - `cargo audit` contra 1.226 advisories: cero vulnerabilidades conocidas y una
   advertencia permitida, `RUSTSEC-2026-0192`, por `ttf-parser 0.25.1` transitivo
   no mantenido. No es una vulnerabilidad demostrada y sigue bajo seguimiento;
