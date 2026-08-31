@@ -6790,7 +6790,7 @@ impl App {
         }
     }
 
-    fn search_matches(&self) -> Vec<usize> {
+    fn search_matches(&self) -> Vec<SearchMatch> {
         let Some(query) = self
             .search_query
             .as_deref()
@@ -6798,7 +6798,7 @@ impl App {
         else {
             return Vec::new();
         };
-        matching_block_indices(&self.document.blocks, query)
+        matching_document_ranges(&self.document.blocks, query)
     }
 
     fn focus_search_match(&mut self, direction: i8) {
@@ -6814,23 +6814,18 @@ impl App {
         } else {
             self.search_match %= matches.len();
         }
-        let block = matches[self.search_match];
-        let range = self.search_query.as_deref().and_then(|query| {
-            case_insensitive_match_range(&self.document.blocks[block].text, query)
-        });
-        self.selection = Some(range.map_or_else(
-            || DocumentSelection::collapsed(BlockCursor { block, offset: 0 }),
-            |range| DocumentSelection {
-                anchor: BlockCursor {
-                    block,
-                    offset: range.start,
-                },
-                focus: BlockCursor {
-                    block,
-                    offset: range.end,
-                },
+        let hit = &matches[self.search_match];
+        let block = hit.block;
+        self.selection = Some(DocumentSelection {
+            anchor: BlockCursor {
+                block,
+                offset: hit.range.start,
             },
-        ));
+            focus: BlockCursor {
+                block,
+                offset: hit.range.end,
+            },
+        });
         if self.reveal_block(block) {
             if let Some(window) = &self.window {
                 window.request_redraw();
@@ -7500,9 +7495,11 @@ impl App {
             )
         });
         let search_query = self.search_query.clone();
-        let search_mark_blocks = self.search_matches();
+        let search_hits = self.search_matches();
+        let mut search_mark_blocks = search_hits.iter().map(|hit| hit.block).collect::<Vec<_>>();
+        search_mark_blocks.dedup();
         let search_overlay = search_query.as_ref().map(|query| {
-            let matches = self.search_matches().len();
+            let matches = search_hits.len();
             let label = if query.is_empty() {
                 "Buscar en documento…".to_string()
             } else {
@@ -8473,30 +8470,27 @@ fn code_copy_bounds(slot: &Slot, text_width: f32, scroll: f32, scale: f32) -> (f
     )
 }
 
-fn matching_block_indices(blocks: &[Block], query: &str) -> Vec<usize> {
-    if query.is_empty() {
-        return Vec::new();
-    }
-    // La búsqueda es una interacción explícita y acotada al documento ya
-    // cargado. Normalizar una vez la consulta evita que una diferencia de
-    // mayúsculas vuelva inaccesible contenido Unicode al usuario.
-    let folded_query = query.to_lowercase();
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SearchMatch {
+    block: usize,
+    range: std::ops::Range<usize>,
+}
+
+fn matching_document_ranges(blocks: &[Block], query: &str) -> Vec<SearchMatch> {
     blocks
         .iter()
         .enumerate()
-        .filter_map(|(index, block)| {
-            block
-                .text
-                .to_lowercase()
-                .contains(&folded_query)
-                .then_some(index)
+        .flat_map(|(block, item)| {
+            case_insensitive_match_ranges(&item.text, query)
+                .into_iter()
+                .map(move |range| SearchMatch { block, range })
         })
         .collect()
 }
 
-fn case_insensitive_match_range(text: &str, query: &str) -> Option<std::ops::Range<usize>> {
+fn case_insensitive_match_ranges(text: &str, query: &str) -> Vec<std::ops::Range<usize>> {
     if query.is_empty() {
-        return None;
+        return Vec::new();
     }
     let mut folded = String::new();
     let mut characters = Vec::new();
@@ -8511,15 +8505,19 @@ fn case_insensitive_match_range(text: &str, query: &str) -> Option<std::ops::Ran
         ));
     }
     let folded_query = query.to_lowercase();
-    let folded_start = folded.find(&folded_query)?;
-    let folded_end = folded_start + folded_query.len();
-    let source_start = characters
-        .iter()
-        .find_map(|(start, _, source, _)| (*start == folded_start).then_some(*source))?;
-    let source_end = characters
-        .iter()
-        .find_map(|(_, end, _, source)| (*end == folded_end).then_some(*source))?;
-    Some(source_start..source_end)
+    folded
+        .match_indices(&folded_query)
+        .filter_map(|(folded_start, matched)| {
+            let folded_end = folded_start + matched.len();
+            let source_start = characters
+                .iter()
+                .find_map(|(start, _, source, _)| (*start == folded_start).then_some(*source))?;
+            let source_end = characters
+                .iter()
+                .find_map(|(_, end, _, source)| (*end == folded_end).then_some(*source))?;
+            Some(source_start..source_end)
+        })
+        .collect()
 }
 
 fn search_mark_positions(
@@ -9889,19 +9887,36 @@ con dos lineas
             .expect("la fixture debe parsearse")
             .blocks;
 
-        assert_eq!(matching_block_indices(&blocks, "clave"), vec![1]);
-        assert_eq!(matching_block_indices(&blocks, "Ñandú"), vec![2]);
-        assert!(matching_block_indices(&blocks, "ausente").is_empty());
-        assert!(matching_block_indices(&blocks, "").is_empty());
+        assert_eq!(matching_document_ranges(&blocks, "clave")[0].block, 1);
+        assert_eq!(matching_document_ranges(&blocks, "Ñandú")[0].block, 2);
+        assert!(matching_document_ranges(&blocks, "ausente").is_empty());
+        assert!(matching_document_ranges(&blocks, "").is_empty());
         assert_eq!(
-            case_insensitive_match_range("Antes ÑANDÚ después", "ñandú"),
-            Some(6..13)
+            case_insensitive_match_ranges("Antes ÑANDÚ después", "ñandú"),
+            vec![6..13]
         );
         assert_eq!(
-            case_insensitive_match_range("clave segura", "SEGURA"),
-            Some(6..12)
+            case_insensitive_match_ranges("clave segura", "SEGURA"),
+            vec![6..12]
         );
-        assert!(case_insensitive_match_range("texto", "").is_none());
+        assert_eq!(
+            case_insensitive_match_ranges("clave, CLAVE y Clave", "clave"),
+            vec![0..5, 7..12, 15..20]
+        );
+        assert_eq!(
+            matching_document_ranges(&aplanar("clave y clave"), "CLAVE"),
+            vec![
+                SearchMatch {
+                    block: 0,
+                    range: 0..5
+                },
+                SearchMatch {
+                    block: 0,
+                    range: 8..13
+                }
+            ]
+        );
+        assert!(case_insensitive_match_ranges("texto", "").is_empty());
     }
 
     #[test]

@@ -189,7 +189,8 @@ exacto del traspaso.
   bloques coincidentes. Reutiliza el resultado de la consulta y omite contenido
   plegado, por lo que no introduce un recorrido completo durante cada cuadro.
   El resultado activo resalta el término exacto mediante un mapeo de minúsculas
-  Unicode hacia offsets válidos del texto original.
+  Unicode hacia offsets válidos del texto original. Enter recorre cada aparición,
+  incluso cuando una misma línea o bloque contiene varias.
 
 Evidencia actual en Windows:
 
