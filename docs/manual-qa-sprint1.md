@@ -270,6 +270,8 @@ contenido permanece inerte y la fuente se conserva sin activar recursos.
    Abrir el menú contextual o la paleta, fijar una de las pestañas y comprobar
    que aparece `•`; intentar cerrarla debe avisar sin cerrar ni perder cambios.
    Liberarla debe restaurar el cierre protegido normal.
+   Hacer clic derecho directamente sobre una pestaña inactiva debe activarla
+   antes de abrir el menú, para que Fijar o soltar se aplique a esa nota.
    Repetir el cambio con `Ctrl+Tab` y `Ctrl+Shift+Tab`, tanto en lectura como
    con el cursor dentro del editor: debe envolver la primera y última pestaña.
 4. Intentar reducir la ventana por debajo de 640 × 480 puntos lógicos. Debe

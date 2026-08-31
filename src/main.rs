@@ -4401,6 +4401,19 @@ impl ApplicationHandler<AppEvent> for App {
                 let Some((x, y)) = self.pointer else {
                     return;
                 };
+                if let Some(window) = &self.window {
+                    let size = window.inner_size();
+                    if let Some(index) = tab_index_at(
+                        x,
+                        y,
+                        size.width as f32,
+                        size.height as f32,
+                        self.tab_order.len(),
+                    ) && let Some(document_id) = self.tab_order.get(index).copied()
+                    {
+                        self.activate_document_tab(document_id);
+                    }
+                }
                 if self.document.mode == DocumentMode::Split
                     && self
                         .window
