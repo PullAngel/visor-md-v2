@@ -400,6 +400,31 @@ impl SourceEditor {
         Ok(changed)
     }
 
+    /// Inserta un enlace Markdown sin consultar el portapapeles ni resolver el
+    /// destino. Con texto seleccionado, deja la URL guía seleccionada; sin
+    /// selección, deja seleccionado el rótulo para escribirlo primero.
+    pub fn insert_link(&mut self, source: &mut TextBuffer) -> Result<bool, EditError> {
+        const LABEL: &str = "texto";
+        const DESTINATION: &str = "https://";
+        let range = self.selection();
+        let selected = source.slice_bytes(range.clone())?;
+        let had_selection = !selected.is_empty();
+        let label = if had_selection { &selected } else { LABEL };
+        let replacement = format!("[{label}]({DESTINATION})");
+        let changed = self.history.apply(source, range.clone(), &replacement)?;
+        if changed {
+            if had_selection {
+                self.anchor = range.start + 1 + label.len() + 2;
+                self.cursor = self.anchor + DESTINATION.len();
+            } else {
+                self.anchor = range.start + 1;
+                self.cursor = self.anchor + LABEL.len();
+            }
+            self.preferred_column = None;
+        }
+        Ok(changed)
+    }
+
     pub fn backspace(&mut self, source: &mut TextBuffer) -> Result<bool, EditError> {
         let selection = self.selection();
         let range = if selection.is_empty() {
@@ -600,6 +625,22 @@ mod tests {
         assert!(editor.surround(&mut source, "_", "_", "texto").unwrap());
         assert_eq!(source.to_string(), "antes _texto_después");
         assert_eq!(source.slice_bytes(editor.selection()).unwrap(), "texto");
+    }
+
+    #[test]
+    fn insertar_enlace_con_rotulo_unicode_deja_el_destino_para_reemplazar() {
+        let mut source = buffer("guía ágil");
+        let mut editor = SourceEditor::new();
+        editor.set_cursor(&source, 0, false).unwrap();
+        editor
+            .set_cursor(&source, source.len_bytes(), true)
+            .unwrap();
+
+        assert!(editor.insert_link(&mut source).unwrap());
+        assert_eq!(source.to_string(), "[guía ágil](https://)");
+        assert_eq!(source.slice_bytes(editor.selection()).unwrap(), "https://");
+        assert!(editor.undo(&mut source).unwrap());
+        assert_eq!(source.to_string(), "guía ágil");
     }
 
     #[test]

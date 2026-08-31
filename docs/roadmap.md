@@ -281,8 +281,8 @@ workspace, anotaciones y Obsidian, por lo que descubrirlo tarde sería costoso.
 - mapeo fuente y render;
 - undo y redo;
 - ayudas Markdown discretas;
-  negrita y cursiva ya comparten operación reversible entre teclado, menú y
-  paleta; faltan enlace, encabezado, listas y su barra visual;
+  negrita, cursiva y enlace ya comparten operaciones reversibles entre teclado,
+  menú y paleta; faltan encabezado, listas y su barra visual;
 - crear, abrir, guardar y guardar como;
 - guardado atómico;
 - cambios externos y conflictos;

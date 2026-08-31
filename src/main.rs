@@ -336,6 +336,7 @@ enum ContextAction {
     Paste,
     Bold,
     Italic,
+    Link,
     CopyText,
     CopyMarkdown,
     CopyTableTsv,
@@ -357,6 +358,7 @@ enum AppAction {
     ToggleSplit,
     FormatBold,
     FormatItalic,
+    InsertLink,
     ToggleSection,
     SearchDocument,
     CopyTableTsv,
@@ -371,7 +373,7 @@ enum AppAction {
     CommandPalette,
 }
 
-const APP_ACTIONS: [AppAction; 20] = [
+const APP_ACTIONS: [AppAction; 21] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -381,6 +383,7 @@ const APP_ACTIONS: [AppAction; 20] = [
     AppAction::ToggleSplit,
     AppAction::FormatBold,
     AppAction::FormatItalic,
+    AppAction::InsertLink,
     AppAction::ToggleSection,
     AppAction::SearchDocument,
     AppAction::CopyTableTsv,
@@ -406,6 +409,7 @@ impl AppAction {
             Self::ToggleSplit => "Comparar fuente y vista · F3",
             Self::FormatBold => "Aplicar negrita · Ctrl+B",
             Self::FormatItalic => "Aplicar cursiva · Ctrl+I",
+            Self::InsertLink => "Insertar enlace · Ctrl+K",
             Self::ToggleSection => "Plegar o desplegar sección enfocada",
             Self::SearchDocument => "Buscar en documento · Ctrl+F",
             Self::CopyTableTsv => "Copiar tabla seleccionada como TSV",
@@ -432,6 +436,7 @@ impl AppAction {
             Self::ToggleSplit => "Comparar",
             Self::FormatBold => "Negrita",
             Self::FormatItalic => "Cursiva",
+            Self::InsertLink => "Enlace",
             Self::ToggleSection => "Plegar sección",
             Self::SearchDocument => "Buscar",
             Self::CommandPalette => "Más",
@@ -455,6 +460,7 @@ impl ContextAction {
             Self::Paste => "Pegar",
             Self::Bold => "Negrita",
             Self::Italic => "Cursiva",
+            Self::Link => "Insertar enlace",
             Self::CopyText => "Copiar texto",
             Self::CopyMarkdown => "Copiar Markdown original",
             Self::CopyTableTsv => "Copiar tabla como TSV",
@@ -487,6 +493,7 @@ fn context_actions(mode: DocumentMode) -> &'static [ContextAction] {
             ContextAction::Paste,
             ContextAction::Bold,
             ContextAction::Italic,
+            ContextAction::Link,
             ContextAction::CopyText,
             ContextAction::CopyMarkdown,
             ContextAction::CopyTableTsv,
@@ -500,6 +507,7 @@ fn context_actions(mode: DocumentMode) -> &'static [ContextAction] {
             ContextAction::Paste,
             ContextAction::Bold,
             ContextAction::Italic,
+            ContextAction::Link,
             ContextAction::CopyText,
             ContextAction::CopyMarkdown,
             ContextAction::CopyTableTsv,
@@ -4052,6 +4060,7 @@ impl ApplicationHandler<AppEvent> for App {
                                 ContextAction::Italic => {
                                     self.perform_action(AppAction::FormatItalic)
                                 }
+                                ContextAction::Link => self.perform_action(AppAction::InsertLink),
                                 ContextAction::CopyText | ContextAction::CopyMarkdown => {
                                     self.copy_selection(action.source_markdown());
                                 }
@@ -4803,6 +4812,7 @@ impl App {
             },
             AppAction::FormatBold => self.apply_markdown_surround("**", "**", "texto"),
             AppAction::FormatItalic => self.apply_markdown_surround("_", "_", "texto"),
+            AppAction::InsertLink => self.insert_markdown_link(),
             AppAction::ToggleSection => self.toggle_focused_section(),
             AppAction::SearchDocument => self.open_document_search(),
             AppAction::CopyTableTsv => self.copy_current_table_tsv(),
@@ -5239,6 +5249,14 @@ impl App {
         self.edit_source(|editor, source| editor.surround(source, prefix, suffix, placeholder));
     }
 
+    fn insert_markdown_link(&mut self) {
+        if !self.document.mode.is_editable() {
+            self.set_notice("activa edición para insertar un enlace en el Markdown");
+            return;
+        }
+        self.edit_source(|editor, source| editor.insert_link(source));
+    }
+
     fn schedule_recovery(&mut self) {
         if self.document.last_recovery.elapsed().as_secs() < 3 {
             return;
@@ -5458,6 +5476,9 @@ impl App {
             }
             PhysicalKey::Code(KeyCode::KeyB) if self.modifiers.control_key() => {
                 self.perform_action(AppAction::FormatBold);
+            }
+            PhysicalKey::Code(KeyCode::KeyK) if self.modifiers.control_key() => {
+                self.perform_action(AppAction::InsertLink);
             }
             PhysicalKey::Code(KeyCode::KeyS)
                 if self.modifiers.control_key() && self.modifiers.shift_key() =>

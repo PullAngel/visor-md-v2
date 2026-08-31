@@ -42,7 +42,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Función | Estado | Criterio mínimo |
 | --- | --- | --- |
 | Modo fuente | Parcial | Buffer Rope, selección, IME, undo y atajos; falta actualización incremental de la vista fuente |
-| Ayudas de formato | Parcial | Negrita y cursiva rodean selección Unicode como un único cambio reversible desde atajo, menú o paleta; falta barra visual y más sintaxis cotidiana |
+| Ayudas de formato | Parcial | Negrita, cursiva y enlace editan selección Unicode como un único cambio reversible desde atajo, menú o paleta; falta barra visual y más sintaxis cotidiana |
 | Vista dividida | Parcial | `F3` compara fuente editable y render de la misma revisión; falta QA de edición prolongada, DPI y accesibilidad |
 | Modo por documento | Parcial | Recuerda lectura, edición o vista dividida mediante hasta 128 claves hash locales; falta QA de reinicio |
 | Guardado atómico | Parcial | Sin corrupción ante fallo y conflictos probados; falta QA multiplataforma |

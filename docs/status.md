@@ -149,10 +149,11 @@ exacto del traspaso.
 - pasar el mouse por un enlace o recorrerlo con Tab muestra dentro del lienzo su
   tipo y destino declarado. Esta vista previa no resuelve rutas ni toca red o
   disco; el título conserva el destino completo si el aviso debe abreviarse.
-- en edición, `Ctrl+B` y `Ctrl+I`, el menú contextual y la paleta aplican
-  negrita o cursiva a la selección como un único cambio reversible. Sin
+- en edición, `Ctrl+B`, `Ctrl+I` y `Ctrl+K`, el menú contextual y la paleta
+  aplican negrita, cursiva o enlace como un único cambio reversible. Sin
   selección dejan `texto` seleccionado para reemplazarlo al escribir; nunca
-  reserializan el resto del documento.
+  reserializan el resto del documento. Un enlace con rótulo ya seleccionado
+  deja `https://` listo para reemplazar, sin leer el portapapeles.
 - la barra de estado cuenta palabras del texto visible del último render y
   muestra una estimación conservadora de lectura a 200 palabras por minuto. No
   tokeniza, no usa red y no promete precisión lingüística para idiomas sin
