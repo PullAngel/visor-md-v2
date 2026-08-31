@@ -1,6 +1,6 @@
 # Roadmap
 
-Última revisión: 30 de agosto de 2026.
+Última revisión: 31 de agosto de 2026.
 
 El roadmap ordena dependencias y criterios de salida. No promete fechas. Una
 etapa solo se cierra con evidencia y el producto debe quedar en un punto útil al

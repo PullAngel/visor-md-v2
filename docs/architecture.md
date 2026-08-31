@@ -258,8 +258,10 @@ de scroll. La caché de layout y render sigue perteneciendo a
 la ventana: se descarta o reconstruye al cambiar de documento, en vez de
 confundirse con datos persistentes. El cambio de documento invalida resultados
 de render anteriores mediante una generación monotónica. La barra visible ya
-permite elegir y cerrar pestañas; falta trasladar el resto del estado visual,
-como foco y selección de lectura, a cada documento.
+permite elegir y cerrar pestañas. Scroll, plegado y selección de lectura viajan
+con cada documento; el cursor y la selección de fuente viven en su
+`SourceEditor`. Los caches y overlays efímeros pertenecen a la ventana y se
+reconstruyen al cambiar de pestaña.
 
 Responsabilidades:
 
@@ -445,9 +447,9 @@ nativas reales. macOS permanece como posibilidad futura, no gate actual.
 | Modelo | `Block` y `Span` simplificados | Documento con rangos y semántica |
 | Layout | Visible con estimaciones | Geometría para render e interacción |
 | Rendering | Software nativo funcional | Display list validada y accesible |
-| UI | Ventana, tema, menú contextual y avisos | Chrome, pestañas, comandos y paneles |
+| UI | Ventana, tema, pestañas, barra de acciones, menú contextual, paleta y paneles | Ventana sin borde y semántica accesible completa |
 | Edición | Buffer Rope, fuente alternable, vista dividida, undo/redo, portapapeles explícito, guardado fiel y recuperación local | Actualización incremental de la representación fuente y accesibilidad completa |
-| Workspace | Raíz explícita, VFS, índice acotado, wikilinks, callouts y navegación inicial de backlinks | Paneles, búsqueda, cancelación y detección de cambios |
+| Workspace | Raíz explícita, VFS, índice cancelable, árbol, búsqueda, wikilinks, callouts, backlinks y detección limitada de cambios | Actualización incremental y QA con bóvedas grandes |
 | Seguridad | Límites, HTML inerte, VFS, guardado, recuperación y PNG local acotado con pruebas | Otros recursos secundarios, campaña de fuzzing y validación de release |
 
 ## Riesgos arquitectónicos abiertos

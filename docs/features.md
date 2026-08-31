@@ -48,7 +48,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Detectar cambios externos | Parcial | Conflicto visible al guardar y al recuperar foco; falta QA multiplataforma |
 | Recuperación de sesión | Parcial | Activa por defecto, separada por pestaña, versionada y desactivable con advertencia; falta QA de cierre inesperado |
 | Crear documento | Parcial | Crea una pestaña nueva sin reemplazar el documento activo; Guardar abre el diálogo de destino incluso para un documento vacío; falta plantilla inicial |
-| Varios documentos y pestañas | Parcial | Barra visible, cambio y cierre por mouse/teclado, estado, historial, scroll, anclas y recuperación separados; aperturas, renders y guardados se dirigen por pestaña sin congelar las demás; falta accesibilidad completa |
+| Varios documentos y pestañas | Parcial | Barra visible, cambio y cierre por mouse/teclado, estado, historial, scroll, selección, plegado, anclas y recuperación separados; aperturas, renders y guardados se dirigen por pestaña sin congelar las demás; falta accesibilidad completa |
 | Menú contextual | Parcial | Copia y pegado explícito según modo, búsqueda, cambio de vista y guardado; faltan acciones de workspace y estados deshabilitados visibles |
 | Paleta de comandos | Parcial | `Ctrl+Shift+P` muestra el catálogo compartido, filtra por nombre y ejecuta por teclado o mouse; falta accesibilidad semántica completa |
 | Barra de acciones | Parcial | Nuevo, abrir, guardar, cambiar vista, buscar y el catálogo completo son operables con mouse o foco visible desde F6; falta semántica de lector de pantalla y adaptación para ventanas estrechas |
@@ -64,8 +64,8 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Sin WebView ni JavaScript | Estable | Grafo de dependencias y runtime |
 | Sin red durante uso normal | Parcial | Falta prueba automatizada de sockets |
 | Límites de anidamiento | Recuperación | Tiempo, memoria y fallback |
-| VFS central | Parcial | Workspace contenido, archivo principal limitado y enlaces relativos resueltos desde su nota; imágenes secundarias todavía no se abren |
-| Política de rutas | Parcial | UNC, traversal, symlinks y junctions cubiertos para workspace; faltan recursos secundarios |
+| VFS central | Parcial | Workspace contenido, archivo principal limitado, enlaces relativos e imágenes PNG resueltos desde su nota; faltan futuros recursos secundarios |
+| Política de rutas | Parcial | UNC, traversal, symlinks y junctions cubiertos para workspace, navegación y PNG local; falta QA adversarial multiplataforma |
 | Allowlist HTML semántica | Recuperación | `br`, `kbd`, `mark`, `sub` y `sup` nativos sin atributos; falta corpus sistemático y QA visual |
 | Límites de imágenes | Parcial | PNG local: firma, 8 MiB, 8192 por lado y 16 millones de píxeles; falta corpus hostil ampliado |
 | Consentimiento remoto | Planificado | Aislado, explícito y revocable |

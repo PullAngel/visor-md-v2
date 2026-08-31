@@ -182,6 +182,9 @@ exacto del traspaso.
   fuente, historial y selección permanecen intactos. La lista compacta de
   bloques visibles evita recorrer contenido plegado en cada cuadro; buscar,
   seguir un enlace o elegir el índice revela solo los ancestros necesarios.
+- cambiar de pestaña conserva también la selección de lectura. En edición, el
+  cursor y la selección se reconstruyen desde el `SourceEditor` de esa pestaña,
+  por lo que volver a ella no exige pulsar una tecla para recuperar el caret.
 
 Evidencia actual en Windows:
 
@@ -263,8 +266,9 @@ causa porque todavía no se controlan caché, carga y planificación del sistema
   vuelta lectura-edición-lectura tras una edición grande;
 - selección de ejemplos de la suite oficial CommonMark y ampliación GFM sistemática;
 - separación incompleta de `main.rs`; fuentes y tema ya tienen módulos propios;
-- VFS de recursos secundarios como imágenes; la contención y política de
-  bóvedas ya cubren navegación e índice;
+- VFS de recursos secundarios ya cubre PNG local confirmado; otros formatos o
+  capacidades futuras deberán reutilizar la misma frontera sin permisos
+  persistentes;
 - lista efímera de notas indexadas con `Ctrl+Shift+T`: no recorre el disco ni
   acepta rutas del documento y vuelve a resolver la elección dentro de VFS;
   el árbol deriva directorios solo de rutas contenidas y permite plegarlos; el

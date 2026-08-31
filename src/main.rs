@@ -888,9 +888,9 @@ fn open_external_destination(destination: &str) -> Result<(), String> {
         .map_err(|error| format!("no se pudo delegar el enlace al sistema: {error}"))
 }
 
-/// Orden estable de los enlaces que puede recorrer el teclado. Las imágenes y
-/// los destinos no interactivos permanecen fuera hasta que tengan una acción
-/// segura y una UX propia.
+/// Orden estable de los destinos que puede recorrer el teclado. Las imágenes
+/// participan porque su acción segura es pedir confirmación para una vista
+/// previa local; los destinos bloqueados conservan texto pero no capacidad.
 fn link_targets_in_document_order(blocks: &[Block]) -> Vec<(usize, usize)> {
     blocks
         .iter()
@@ -1024,6 +1024,16 @@ struct BlockCursor {
 struct DocumentSelection {
     anchor: BlockCursor,
     focus: BlockCursor,
+}
+
+fn selection_fits_blocks(selection: DocumentSelection, blocks: &[Block]) -> bool {
+    [selection.anchor, selection.focus]
+        .into_iter()
+        .all(|cursor| {
+            blocks
+                .get(cursor.block)
+                .is_some_and(|block| cursor.offset <= block.text.len())
+        })
 }
 
 impl DocumentSelection {
@@ -3043,6 +3053,9 @@ struct DocumentState {
     /// Posición visual propia de la pestaña. Se sincroniza antes de cambiar
     /// de documento y se restaura al volver.
     scroll: f32,
+    /// Selección propia del lector. El editor ya conserva la suya mediante
+    /// `SourceEditor`; separarlas evita atribuir offsets renderizados a fuente.
+    reading_selection: Option<DocumentSelection>,
     /// Ancla solicitada mientras este documento se prepara. Viaja con la
     /// pestaña para que un cambio de documento no aplique el scroll a otra.
     pending_heading: Option<String>,
@@ -3071,6 +3084,7 @@ impl DocumentState {
             blocks: Vec::new(),
             safe_mode: None,
             scroll: 0.0,
+            reading_selection: None,
             pending_heading: None,
             pending_block: None,
             folded_headings: HashSet::new(),
@@ -4962,7 +4976,13 @@ impl App {
     fn reset_document_view(&mut self) {
         self.invalidate_document_layout();
         self.scroll = self.document.scroll;
-        self.selection = None;
+        self.selection = if self.document.mode == DocumentMode::Reading {
+            self.document
+                .reading_selection
+                .filter(|selection| selection_fits_blocks(*selection, &self.document.blocks))
+        } else {
+            None
+        };
         self.focused_link = None;
         self.focus_destination = None;
         self.context_menu = None;
@@ -4975,6 +4995,9 @@ impl App {
         self.toolbar_focus = None;
         self.image_request = self.image_request.wrapping_add(1);
         self.image_preview = None;
+        if self.document.mode.is_editable() {
+            self.sync_source_selection();
+        }
     }
 
     fn invalidate_document_layout(&mut self) {
@@ -5000,6 +5023,9 @@ impl App {
     fn open_document_in_tab(&mut self, document: DocumentState) {
         let new_id = document.id;
         self.document.scroll = self.scroll;
+        if self.document.mode == DocumentMode::Reading {
+            self.document.reading_selection = self.selection;
+        }
         let current = std::mem::replace(&mut self.document, document);
         let next_recovery = self.new_recovery_session();
         let current_recovery = std::mem::replace(&mut self.recovery, next_recovery);
@@ -5038,6 +5064,9 @@ impl App {
         };
         let next = self.inactive_documents.remove(index);
         self.document.scroll = self.scroll;
+        if self.document.mode == DocumentMode::Reading {
+            self.document.reading_selection = self.selection;
+        }
         let current = std::mem::replace(&mut self.document, next.document);
         let current_recovery = std::mem::replace(&mut self.recovery, next.recovery);
         self.inactive_documents.push(InactiveDocument {
@@ -5093,6 +5122,7 @@ impl App {
     fn enter_source_mode(&mut self) {
         match safe_buffer_blocks(&self.document.source) {
             Ok(blocks) => {
+                self.document.reading_selection = self.selection;
                 self.document.mode = DocumentMode::SourceEditing;
                 self.remember_current_document_mode();
                 self.document.blocks = blocks;
@@ -5121,6 +5151,9 @@ impl App {
     fn enter_split_mode(&mut self) {
         match safe_buffer_blocks(&self.document.source) {
             Ok(blocks) => {
+                if self.document.mode == DocumentMode::Reading {
+                    self.document.reading_selection = self.selection;
+                }
                 self.document.mode = DocumentMode::Split;
                 self.remember_current_document_mode();
                 self.document.blocks = blocks;
@@ -5144,6 +5177,7 @@ impl App {
         match operation(&mut document.source_editor, &mut document.source) {
             Ok(true) => match self.refresh_source_blocks() {
                 Ok(()) => {
+                    self.document.reading_selection = None;
                     self.notice = None;
                     self.refresh_title();
                     self.schedule_recovery();
@@ -8534,6 +8568,7 @@ fn main() {
             blocks: Vec::new(),
             safe_mode: None,
             scroll: 0.0,
+            reading_selection: None,
             pending_heading: None,
             pending_block: None,
             folded_headings: HashSet::new(),
@@ -9464,6 +9499,39 @@ con dos lineas
             offset: 4,
         });
         assert_eq!(collapsed.range_for(2, 9), Some((4, 4)));
+    }
+
+    #[test]
+    fn una_seleccion_de_pestana_solo_vuelve_si_aun_pertenece_a_sus_bloques() {
+        let blocks = aplanar("# Uno\n\ntexto\n");
+        let valid = DocumentSelection {
+            anchor: BlockCursor {
+                block: 0,
+                offset: 0,
+            },
+            focus: BlockCursor {
+                block: 1,
+                offset: blocks[1].text.len(),
+            },
+        };
+        let stale_block = DocumentSelection {
+            focus: BlockCursor {
+                block: blocks.len(),
+                offset: 0,
+            },
+            ..valid
+        };
+        let stale_offset = DocumentSelection {
+            focus: BlockCursor {
+                block: 1,
+                offset: blocks[1].text.len() + 1,
+            },
+            ..valid
+        };
+
+        assert!(selection_fits_blocks(valid, &blocks));
+        assert!(!selection_fits_blocks(stale_block, &blocks));
+        assert!(!selection_fits_blocks(stale_offset, &blocks));
     }
 
     #[test]
