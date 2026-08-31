@@ -6815,10 +6815,22 @@ impl App {
             self.search_match %= matches.len();
         }
         let block = matches[self.search_match];
-        self.selection = Some(DocumentSelection::collapsed(BlockCursor {
-            block,
-            offset: 0,
-        }));
+        let range = self.search_query.as_deref().and_then(|query| {
+            case_insensitive_match_range(&self.document.blocks[block].text, query)
+        });
+        self.selection = Some(range.map_or_else(
+            || DocumentSelection::collapsed(BlockCursor { block, offset: 0 }),
+            |range| DocumentSelection {
+                anchor: BlockCursor {
+                    block,
+                    offset: range.start,
+                },
+                focus: BlockCursor {
+                    block,
+                    offset: range.end,
+                },
+            },
+        ));
         if self.reveal_block(block) {
             if let Some(window) = &self.window {
                 window.request_redraw();
@@ -8482,6 +8494,34 @@ fn matching_block_indices(blocks: &[Block], query: &str) -> Vec<usize> {
         .collect()
 }
 
+fn case_insensitive_match_range(text: &str, query: &str) -> Option<std::ops::Range<usize>> {
+    if query.is_empty() {
+        return None;
+    }
+    let mut folded = String::new();
+    let mut characters = Vec::new();
+    for (source_start, character) in text.char_indices() {
+        let folded_start = folded.len();
+        folded.extend(character.to_lowercase());
+        characters.push((
+            folded_start,
+            folded.len(),
+            source_start,
+            source_start + character.len_utf8(),
+        ));
+    }
+    let folded_query = query.to_lowercase();
+    let folded_start = folded.find(&folded_query)?;
+    let folded_end = folded_start + folded_query.len();
+    let source_start = characters
+        .iter()
+        .find_map(|(start, _, source, _)| (*start == folded_start).then_some(*source))?;
+    let source_end = characters
+        .iter()
+        .find_map(|(_, end, _, source)| (*end == folded_end).then_some(*source))?;
+    Some(source_start..source_end)
+}
+
 fn search_mark_positions(
     matches: &[usize],
     slots: &[Slot],
@@ -9853,6 +9893,15 @@ con dos lineas
         assert_eq!(matching_block_indices(&blocks, "Ñandú"), vec![2]);
         assert!(matching_block_indices(&blocks, "ausente").is_empty());
         assert!(matching_block_indices(&blocks, "").is_empty());
+        assert_eq!(
+            case_insensitive_match_range("Antes ÑANDÚ después", "ñandú"),
+            Some(6..13)
+        );
+        assert_eq!(
+            case_insensitive_match_range("clave segura", "SEGURA"),
+            Some(6..12)
+        );
+        assert!(case_insensitive_match_range("texto", "").is_none());
     }
 
     #[test]

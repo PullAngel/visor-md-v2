@@ -188,6 +188,8 @@ exacto del traspaso.
 - la búsqueda local marca en el borde derecho la posición relativa de todos los
   bloques coincidentes. Reutiliza el resultado de la consulta y omite contenido
   plegado, por lo que no introduce un recorrido completo durante cada cuadro.
+  El resultado activo resalta el término exacto mediante un mapeo de minúsculas
+  Unicode hacia offsets válidos del texto original.
 
 Evidencia actual en Windows:
 
