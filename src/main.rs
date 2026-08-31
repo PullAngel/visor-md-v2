@@ -93,13 +93,23 @@ const PANEL_CAPACITY: usize = 9;
 const TOOLBAR_X: f32 = MARGIN;
 const TOOLBAR_Y: f32 = 8.0;
 const TOOLBAR_HEIGHT: f32 = 28.0;
-const TOOLBAR_ITEM_WIDTH: f32 = 86.0;
-const TOOLBAR_ACTIONS: [AppAction; 6] = [
+const TOOLBAR_ITEM_WIDTH: f32 = 68.0;
+const READING_TOOLBAR_ACTIONS: [AppAction; 6] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
     AppAction::ToggleMode,
     AppAction::SearchDocument,
+    AppAction::CommandPalette,
+];
+const EDITING_TOOLBAR_ACTIONS: [AppAction; 8] = [
+    AppAction::Save,
+    AppAction::ToggleMode,
+    AppAction::FormatBold,
+    AppAction::FormatItalic,
+    AppAction::InsertHeading,
+    AppAction::InsertBulletList,
+    AppAction::InsertLink,
     AppAction::CommandPalette,
 ];
 static NEXT_DOCUMENT_ID: AtomicU64 = AtomicU64::new(1);
@@ -275,19 +285,30 @@ fn visible_workspace_tree_rows(
         .collect()
 }
 
-fn toolbar_action_at(x: f32, y: f32, window_width: f32) -> Option<AppAction> {
+fn toolbar_actions(mode: DocumentMode) -> &'static [AppAction] {
+    if mode.is_editable() {
+        &EDITING_TOOLBAR_ACTIONS
+    } else {
+        &READING_TOOLBAR_ACTIONS
+    }
+}
+
+fn toolbar_action_at(x: f32, y: f32, window_width: f32, mode: DocumentMode) -> Option<AppAction> {
     if x < TOOLBAR_X || y < TOOLBAR_Y || y >= TOOLBAR_Y + TOOLBAR_HEIGHT || x >= window_width {
         return None;
     }
     let index = ((x - TOOLBAR_X) / TOOLBAR_ITEM_WIDTH) as usize;
-    TOOLBAR_ACTIONS.get(index).copied()
+    toolbar_actions(mode).get(index).copied()
 }
 
-fn adjacent_toolbar_index(current: usize, backwards: bool) -> usize {
+fn adjacent_toolbar_index(current: usize, backwards: bool, action_count: usize) -> usize {
+    if action_count == 0 {
+        return 0;
+    }
     if backwards {
-        (current + TOOLBAR_ACTIONS.len() - 1) % TOOLBAR_ACTIONS.len()
+        (current + action_count - 1) % action_count
     } else {
-        (current + 1) % TOOLBAR_ACTIONS.len()
+        (current + 1) % action_count
     }
 }
 
@@ -445,7 +466,7 @@ impl AppAction {
             Self::FormatBold => "Negrita",
             Self::FormatItalic => "Cursiva",
             Self::InsertLink => "Enlace",
-            Self::InsertHeading => "Encabezado",
+            Self::InsertHeading => "H2",
             Self::InsertBulletList => "Lista",
             Self::ToggleSection => "Plegar sección",
             Self::SearchDocument => "Buscar",
@@ -4113,7 +4134,9 @@ impl ApplicationHandler<AppEvent> for App {
                     }
                     if let (Some((x, y)), Some(window)) = (self.pointer, &self.window) {
                         let size = window.inner_size();
-                        if let Some(action) = toolbar_action_at(x, y, size.width as f32) {
+                        if let Some(action) =
+                            toolbar_action_at(x, y, size.width as f32, self.document.mode)
+                        {
                             self.toolbar_focus = None;
                             self.perform_action(action);
                             self.selecting = false;
@@ -4926,17 +4949,18 @@ impl App {
         let Some(index) = self.toolbar_focus else {
             return;
         };
+        let actions = toolbar_actions(self.document.mode);
         match event.physical_key {
             PhysicalKey::Code(KeyCode::Escape | KeyCode::F6) => self.toolbar_focus = None,
             PhysicalKey::Code(KeyCode::ArrowLeft) => {
-                self.toolbar_focus = Some(adjacent_toolbar_index(index, true));
+                self.toolbar_focus = Some(adjacent_toolbar_index(index, true, actions.len()));
             }
             PhysicalKey::Code(KeyCode::ArrowRight | KeyCode::Tab) => {
-                self.toolbar_focus = Some(adjacent_toolbar_index(index, false));
+                self.toolbar_focus = Some(adjacent_toolbar_index(index, false, actions.len()));
             }
             PhysicalKey::Code(KeyCode::Enter | KeyCode::Space) => {
                 self.toolbar_focus = None;
-                self.perform_action(TOOLBAR_ACTIONS[index % TOOLBAR_ACTIONS.len()]);
+                self.perform_action(actions[index % actions.len()]);
             }
             _ => return,
         }
@@ -7720,7 +7744,8 @@ impl App {
             &mut self.layout_cx,
             self.palette,
         );
-        let toolbar_layouts = TOOLBAR_ACTIONS
+        let active_toolbar_actions = toolbar_actions(self.document.mode);
+        let toolbar_layouts = active_toolbar_actions
             .iter()
             .map(|action| {
                 build_menu_layout(
@@ -8268,7 +8293,7 @@ impl App {
                     && (TOOLBAR_Y..TOOLBAR_Y + TOOLBAR_HEIGHT).contains(&pointer_y)
             });
             let focused = toolbar_focus == Some(index);
-            let active = toolbar_action_is_active(TOOLBAR_ACTIONS[index], context_mode);
+            let active = toolbar_action_is_active(active_toolbar_actions[index], context_mode);
             if (hovered || focused || active)
                 && let Some(rect) = Rect::from_xywh(x, TOOLBAR_Y, width, TOOLBAR_HEIGHT)
             {
@@ -8927,21 +8952,45 @@ mod pruebas {
     #[test]
     fn la_barra_superior_expone_solo_acciones_visibles() {
         assert_eq!(
-            toolbar_action_at(50.0, 12.0, 900.0),
+            toolbar_action_at(50.0, 12.0, 900.0, DocumentMode::Reading),
             Some(AppAction::NewDocument)
         );
         assert_eq!(
-            toolbar_action_at(140.0, 12.0, 900.0),
+            toolbar_action_at(140.0, 12.0, 900.0, DocumentMode::Reading),
             Some(AppAction::OpenDocument)
         );
         assert_eq!(
-            toolbar_action_at(480.0, 12.0, 900.0),
+            toolbar_action_at(400.0, 12.0, 900.0, DocumentMode::Reading),
             Some(AppAction::CommandPalette)
         );
-        assert_eq!(toolbar_action_at(50.0, 50.0, 900.0), None);
-        assert_eq!(toolbar_action_at(900.0, 12.0, 900.0), None);
-        assert_eq!(adjacent_toolbar_index(0, true), TOOLBAR_ACTIONS.len() - 1);
-        assert_eq!(adjacent_toolbar_index(TOOLBAR_ACTIONS.len() - 1, false), 0);
+        assert_eq!(
+            toolbar_action_at(50.0, 50.0, 900.0, DocumentMode::Reading),
+            None
+        );
+        assert_eq!(
+            toolbar_action_at(900.0, 12.0, 900.0, DocumentMode::Reading),
+            None
+        );
+        assert_eq!(
+            toolbar_action_at(190.0, 12.0, 900.0, DocumentMode::SourceEditing),
+            Some(AppAction::FormatBold)
+        );
+        assert_eq!(
+            toolbar_action_at(390.0, 12.0, 900.0, DocumentMode::SourceEditing),
+            Some(AppAction::InsertBulletList)
+        );
+        assert_eq!(
+            adjacent_toolbar_index(0, true, READING_TOOLBAR_ACTIONS.len()),
+            READING_TOOLBAR_ACTIONS.len() - 1
+        );
+        assert_eq!(
+            adjacent_toolbar_index(
+                EDITING_TOOLBAR_ACTIONS.len() - 1,
+                false,
+                EDITING_TOOLBAR_ACTIONS.len()
+            ),
+            0
+        );
         assert!(!toolbar_action_is_active(
             AppAction::ToggleMode,
             DocumentMode::Reading

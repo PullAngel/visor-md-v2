@@ -138,11 +138,12 @@ exacto del traspaso.
   baseline o la limpieza de recuperación. Aperturas y renders también llevan
   identidad y versión propias: pueden completar una pestaña inactiva sin
   congelar ni reemplazar la activa.
-- una barra superior sobria hace visibles Nuevo, Abrir, Guardar, el cambio entre
-  lectura y edición, la búsqueda y el acceso al catálogo completo. Usa las
-  mismas acciones que los atajos y la paleta, para evitar comportamientos
-  distintos según cómo se invoque una operación. El acento de modo solo aparece
-  durante edición o vista dividida; en lectura, `Editar` vuelve al reposo.
+- una barra superior sobria adapta la jerarquía al modo. En lectura hace visibles
+  Nuevo, Abrir, Guardar, Editar, Buscar y Más; en edición muestra Guardar, Leer,
+  Negrita, Cursiva, H2, Lista, Enlace y Más. Usa las mismas acciones que atajos,
+  menú y paleta, para evitar comportamientos distintos según cómo se invoque una
+  operación. El acento de modo solo aparece durante edición o vista dividida;
+  en lectura, `Editar` vuelve al reposo.
 - el viewport reserva la franja inferior completa. El final del documento ya no
   queda bajo pestañas o estado, y bordes de tablas, separadores de pestañas y la
   división de la vista usan el color estructural definido por el sistema visual.

@@ -86,11 +86,12 @@ en reposo**. En la v1 todos lo llevan y compiten con el documento. Estados:
 | Activo | Fondo del acento al 14 %, borde del acento al 35 %, icono en acento |
 | Inactivo | Icono al 25 % de opacidad, sin fondo |
 
-La barra superior provisional de acciones de archivo aplica la misma gramática:
-no dibuja una hilera de botones sólidos en reposo, usa superficie solo al pasar
-el mouse y reserva el acento para la acción de modo cuando el documento está en
-edición o vista dividida. En lectura, `Editar` es una acción disponible, no un
-estado activo. Sus rótulos se
+La barra superior progresiva aplica la misma gramática: en lectura muestra
+Nuevo, Abrir, Guardar, Editar, Buscar y Más; en edición prioriza Guardar, Leer,
+Negrita, Cursiva, H2, Lista, Enlace y Más. No dibuja una hilera de botones
+sólidos en reposo, usa superficie solo al pasar el mouse y reserva el acento
+para la acción de modo cuando el documento está en edición o vista dividida. En
+lectura, `Editar` es una acción disponible, no un estado activo. Sus rótulos se
 reemplazarán por iconos accesibles cuando el sistema definitivo de iconos esté
 integrado.
 
