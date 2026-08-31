@@ -3973,6 +3973,9 @@ impl ApplicationHandler<AppEvent> for App {
                 if target_changed {
                     self.hover_destination = target;
                     self.refresh_title();
+                    if let Some(w) = &self.window {
+                        w.request_redraw();
+                    }
                 }
                 self.text_cursor_hover = text_cursor_hover;
                 if let Some(w) = &self.window {
@@ -3999,6 +4002,7 @@ impl ApplicationHandler<AppEvent> for App {
                 self.refresh_title();
                 if let Some(w) = &self.window {
                     w.set_cursor(CursorIcon::Default);
+                    w.request_redraw();
                 }
             }
             WindowEvent::Focused(false) => {
@@ -7716,6 +7720,14 @@ impl App {
             &mut self.layout_cx,
             self.palette,
         );
+        let link_peek_layout = self
+            .hover_destination
+            .as_deref()
+            .or(self.focus_destination.as_deref())
+            .map(|destination| abbreviated_label(destination, MAX_OVERLAY_LABEL_CHARS))
+            .map(|label| {
+                build_menu_layout(&label, &mut self.font_cx, &mut self.layout_cx, self.palette)
+            });
 
         // El pixmap se reusa entre cuadros: reservar 2,7 MB por cuadro y
         // ponerlos en cero es trabajo que no hace falta repetir.
@@ -8214,6 +8226,24 @@ impl App {
         }
 
         let status_y = h.get() as f32 - STATUS_HEIGHT;
+        if let Some(layout) = link_peek_layout {
+            let peek_width = (layout.width() + 24.0).min(w.get() as f32 - MARGIN * 2.0);
+            let peek_y = (status_y - 32.0).max(TOOLBAR_Y + TOOLBAR_HEIGHT + 4.0);
+            if let Some(rect) = Rect::from_xywh(MARGIN, peek_y, peek_width, 28.0) {
+                pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+            }
+            if let Some(rect) = Rect::from_xywh(MARGIN, peek_y, 3.0, 28.0) {
+                pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
+            }
+            for line in layout.lines() {
+                for entry in line.items() {
+                    if let PositionedLayoutItem::GlyphRun(run) = entry {
+                        draw_run_background(pixmap, &run, MARGIN + 10.0, peek_y + 5.0);
+                        draw_glyph_run(pixmap, scale_cx, glyphs, &run, MARGIN + 10.0, peek_y + 5.0);
+                    }
+                }
+            }
+        }
         if let Some(rect) = Rect::from_xywh(0.0, status_y, w.get() as f32, STATUS_HEIGHT) {
             pixmap.fill_rect(rect, &paint, Transform::identity(), None);
         }

@@ -34,6 +34,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Plegado de secciones | Parcial | Triángulo nativo en encabezados, estado por pestaña y fuente intacta; falta QA visual y accesibilidad ampliada |
 | Búsqueda en documento | Parcial | `Ctrl+F` local, Unicode sin distinción de mayúsculas, recorrido por cada coincidencia, término activo resaltado y marcas globales por bloque; falta QA visual |
 | Palabras y tiempo de lectura | Parcial | La barra cuenta texto visible del último render y estima minutos a 200 palabras; falta QA con idiomas sin separación por espacios |
+| Vista previa de enlaces | Parcial | Mouse y teclado muestran tipo y destino declarado antes de abrir, sin resolverlo ni acceder a recursos; falta QA visual |
 | Vista de texto segura | Parcial | Fallback por límites y HTML inerte; falta QA end to end completo |
 
 ## Edición y archivos

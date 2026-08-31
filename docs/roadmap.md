@@ -257,7 +257,8 @@ ampliar el producto.
 - plegado de secciones; implementado en lectura con estado por pestaña y revelado al navegar;
 - contador de palabras y lectura;
 - copiar tablas como TSV; implementado para la tabla completa desde una fila;
-- link peek seguro.
+- link peek seguro; implementado como aviso efímero del tipo y destino declarado,
+  sin resolver rutas ni acceder a recursos antes de la acción explícita.
 
 ### Criterios de salida
 

@@ -146,6 +146,9 @@ exacto del traspaso.
 - el viewport reserva la franja inferior completa. El final del documento ya no
   queda bajo pestañas o estado, y bordes de tablas, separadores de pestañas y la
   división de la vista usan el color estructural definido por el sistema visual.
+- pasar el mouse por un enlace o recorrerlo con Tab muestra dentro del lienzo su
+  tipo y destino declarado. Esta vista previa no resuelve rutas ni toca red o
+  disco; el título conserva el destino completo si el aviso debe abreviarse.
 - la barra de estado cuenta palabras del texto visible del último render y
   muestra una estimación conservadora de lectura a 200 palabras por minuto. No
   tokeniza, no usa red y no promete precisión lingüística para idiomas sin
