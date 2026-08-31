@@ -240,6 +240,23 @@ nativos y la tabla completa se copia como TSV desde el menú o la paleta;
 selección parcial de celdas queda pendiente. En ambos casos, el
 contenido permanece inerte y la fuente se conserva sin activar recursos.
 
+## Chrome sin borde de Windows
+
+1. En Windows, abrir el ejecutable release y comprobar que no aparece la barra
+   de título decorada del sistema, pero sí tres controles en el extremo superior
+   derecho: minimizar, maximizar o restaurar y cerrar.
+2. Pulsar minimizar, restaurar y maximizar. La ventana debe conservar documento,
+   pestañas y estado sin guardar. El botón Cerrar debe seguir mostrando la
+   protección de cambios sin guardar cuando corresponda.
+3. Arrastrar el espacio libre de la franja superior. Debe mover la ventana, pero
+   no al iniciar el gesto sobre una acción de la barra ni un control de ventana.
+4. Llevar el cursor a cada borde y esquina. Debe anunciar la dirección de resize
+   con el cursor apropiado y permitir redimensionar sin pasar por debajo de
+   640 × 480 puntos lógicos.
+5. En Linux u otra plataforma, comprobar el fallback: deben conservarse los
+   controles nativos equivalentes y la aplicación debe seguir pudiendo moverse,
+   redimensionarse, minimizarse, maximizarse y cerrarse.
+
 ## Barra de acciones y pestañas
 
 1. Comprobar que Nuevo, Abrir, Guardar, Editar o Leer, Buscar y Más aparecen en

@@ -55,7 +55,7 @@ use winit::application::ApplicationHandler;
 use winit::event::{ElementState, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
-use winit::window::{CursorIcon, Theme, Window, WindowId};
+use winit::window::{CursorIcon, ResizeDirection, Theme, Window, WindowId};
 
 use editor::{SourceEditor, TextBuffer};
 use files::{
@@ -90,10 +90,13 @@ const PANEL_Y: f32 = 80.0;
 const PANEL_WIDTH: f32 = 420.0;
 const PANEL_ROW_HEIGHT: f32 = 28.0;
 const PANEL_CAPACITY: usize = 9;
-const TOOLBAR_X: f32 = MARGIN;
+const TOOLBAR_X: f32 = 12.0;
 const TOOLBAR_Y: f32 = 8.0;
 const TOOLBAR_HEIGHT: f32 = 28.0;
-const TOOLBAR_ITEM_WIDTH: f32 = 68.0;
+const TOOLBAR_ITEM_WIDTH: f32 = 60.0;
+const WINDOW_CHROME_HEIGHT: f32 = 40.0;
+const WINDOW_CONTROL_WIDTH: f32 = 46.0;
+const WINDOW_RESIZE_BORDER: f32 = 6.0;
 const MIN_WINDOW_WIDTH: f64 = 640.0;
 const MIN_WINDOW_HEIGHT: f64 = 480.0;
 const READING_TOOLBAR_ACTIONS: [AppAction; 6] = [
@@ -115,6 +118,71 @@ const EDITING_TOOLBAR_ACTIONS: [AppAction; 8] = [
     AppAction::CommandPalette,
 ];
 static NEXT_DOCUMENT_ID: AtomicU64 = AtomicU64::new(1);
+
+/// Windows recibe chrome propio para realizar la dirección visual aprobada. En
+/// otras plataformas se conserva el chrome nativo hasta tener el mismo nivel
+/// de integración y accesibilidad comprobado.
+const fn custom_window_chrome_enabled() -> bool {
+    cfg!(target_os = "windows")
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum WindowControl {
+    Minimize,
+    ToggleMaximize,
+    Close,
+}
+
+fn window_control_at(x: f32, y: f32, window_width: f32) -> Option<WindowControl> {
+    if !custom_window_chrome_enabled()
+        || !(0.0..WINDOW_CHROME_HEIGHT).contains(&y)
+        || x < (window_width - WINDOW_CONTROL_WIDTH * 3.0).max(0.0)
+    {
+        return None;
+    }
+    let first_control = (window_width - WINDOW_CONTROL_WIDTH * 3.0).max(0.0);
+    let slot = ((x - first_control) / WINDOW_CONTROL_WIDTH) as usize;
+    match slot {
+        0 => Some(WindowControl::Minimize),
+        1 => Some(WindowControl::ToggleMaximize),
+        2 => Some(WindowControl::Close),
+        _ => None,
+    }
+}
+
+fn resize_direction_at(
+    x: f32,
+    y: f32,
+    window_width: f32,
+    window_height: f32,
+    border: f32,
+) -> Option<ResizeDirection> {
+    if !custom_window_chrome_enabled() || border <= 0.0 {
+        return None;
+    }
+    let west = x >= 0.0 && x < border;
+    let east = x >= (window_width - border).max(0.0) && x < window_width;
+    let north = y >= 0.0 && y < border;
+    let south = y >= (window_height - border).max(0.0) && y < window_height;
+    match (west, east, north, south) {
+        (true, _, true, _) => Some(ResizeDirection::NorthWest),
+        (_, true, true, _) => Some(ResizeDirection::NorthEast),
+        (true, _, _, true) => Some(ResizeDirection::SouthWest),
+        (_, true, _, true) => Some(ResizeDirection::SouthEast),
+        (true, _, _, _) => Some(ResizeDirection::West),
+        (_, true, _, _) => Some(ResizeDirection::East),
+        (_, _, true, _) => Some(ResizeDirection::North),
+        (_, _, _, true) => Some(ResizeDirection::South),
+        _ => None,
+    }
+}
+
+fn titlebar_drag_at(x: f32, y: f32, window_width: f32, mode: DocumentMode) -> bool {
+    custom_window_chrome_enabled()
+        && (0.0..WINDOW_CHROME_HEIGHT).contains(&y)
+        && window_control_at(x, y, window_width).is_none()
+        && toolbar_action_at(x, y, window_width, mode).is_none()
+}
 
 fn tab_width(window_width: f32, tab_count: usize) -> f32 {
     if tab_count == 0 {
@@ -3915,7 +3983,8 @@ impl ApplicationHandler<AppEvent> for App {
             .with_min_inner_size(winit::dpi::LogicalSize::new(
                 MIN_WINDOW_WIDTH,
                 MIN_WINDOW_HEIGHT,
-            ));
+            ))
+            .with_decorations(!custom_window_chrome_enabled());
         let t = Instant::now();
         let window = match event_loop.create_window(attrs) {
             Ok(window) => Rc::new(window),
@@ -4036,6 +4105,23 @@ impl ApplicationHandler<AppEvent> for App {
                 let disclosure_hover = self
                     .heading_disclosure_at(position.x as f32, position.y as f32)
                     .is_some();
+                let resize_direction = self.window.as_ref().and_then(|window| {
+                    let size = window.inner_size();
+                    resize_direction_at(
+                        position.x as f32,
+                        position.y as f32,
+                        size.width as f32,
+                        size.height as f32,
+                        WINDOW_RESIZE_BORDER,
+                    )
+                });
+                let chrome_control = self.window.as_ref().and_then(|window| {
+                    window_control_at(
+                        position.x as f32,
+                        position.y as f32,
+                        window.inner_size().width as f32,
+                    )
+                });
                 let target_changed = target != self.hover_destination;
                 if target_changed {
                     self.hover_destination = target;
@@ -4046,7 +4132,12 @@ impl ApplicationHandler<AppEvent> for App {
                 }
                 self.text_cursor_hover = text_cursor_hover;
                 if let Some(w) = &self.window {
-                    w.set_cursor(if self.hover_destination.is_some() || disclosure_hover {
+                    w.set_cursor(if let Some(direction) = resize_direction {
+                        direction.into()
+                    } else if chrome_control.is_some()
+                        || self.hover_destination.is_some()
+                        || disclosure_hover
+                    {
                         CursorIcon::Pointer
                     } else if text_cursor_hover {
                         CursorIcon::Text
@@ -4138,6 +4229,54 @@ impl ApplicationHandler<AppEvent> for App {
                         self.selecting = false;
                         return;
                     }
+                    let resize_direction = self.window.as_ref().and_then(|window| {
+                        let size = window.inner_size();
+                        resize_direction_at(
+                            self.pointer.map_or(0.0, |(x, _)| x),
+                            self.pointer.map_or(0.0, |(_, y)| y),
+                            size.width as f32,
+                            size.height as f32,
+                            WINDOW_RESIZE_BORDER,
+                        )
+                    });
+                    if let Some(direction) = resize_direction {
+                        let unsupported = self
+                            .window
+                            .as_ref()
+                            .is_some_and(|window| window.drag_resize_window(direction).is_err());
+                        if unsupported {
+                            self.set_notice("el sistema no habilitó redimensionar desde ese borde");
+                        }
+                        self.selecting = false;
+                        return;
+                    }
+                    let chrome_control = self.window.as_ref().and_then(|window| {
+                        self.pointer.and_then(|(x, y)| {
+                            window_control_at(x, y, window.inner_size().width as f32)
+                        })
+                    });
+                    if let Some(control) = chrome_control {
+                        match control {
+                            WindowControl::Minimize => {
+                                if let Some(window) = &self.window {
+                                    window.set_minimized(true);
+                                }
+                            }
+                            WindowControl::ToggleMaximize => {
+                                if let Some(window) = &self.window {
+                                    window.set_maximized(!window.is_maximized());
+                                }
+                            }
+                            WindowControl::Close => {
+                                if self.request_close_all() {
+                                    self.report();
+                                    event_loop.exit();
+                                }
+                            }
+                        }
+                        self.selecting = false;
+                        return;
+                    }
                     if let (Some((x, y)), Some(window)) = (self.pointer, &self.window) {
                         let size = window.inner_size();
                         if let Some(action) =
@@ -4172,6 +4311,15 @@ impl ApplicationHandler<AppEvent> for App {
                         ) && let Some(document_id) = self.tab_order.get(index).copied()
                         {
                             self.activate_document_tab(document_id);
+                            self.selecting = false;
+                            return;
+                        }
+                        if titlebar_drag_at(x, y, size.width as f32, self.document.mode) {
+                            if window.drag_window().is_err() {
+                                self.set_notice(
+                                    "el sistema no habilitó mover la ventana desde esa zona",
+                                );
+                            }
                             self.selecting = false;
                             return;
                         }
@@ -8290,7 +8438,12 @@ impl App {
         for (index, layout) in toolbar_layouts.iter().enumerate() {
             let x = TOOLBAR_X + index as f32 * TOOLBAR_ITEM_WIDTH;
             let width = TOOLBAR_ITEM_WIDTH - 4.0;
-            if x + width > w.get() as f32 - MARGIN {
+            let right_limit = if custom_window_chrome_enabled() {
+                w.get() as f32 - WINDOW_CONTROL_WIDTH * 3.0
+            } else {
+                w.get() as f32 - MARGIN
+            };
+            if x + width > right_limit {
                 break;
             }
             let hovered = menu_pointer.is_some_and(|(pointer_x, pointer_y)| {
@@ -8323,6 +8476,76 @@ impl App {
                         draw_run_background(pixmap, &run, x + 9.0, TOOLBAR_Y + 6.0);
                         draw_glyph_run(pixmap, scale_cx, glyphs, &run, x + 9.0, TOOLBAR_Y + 6.0);
                     }
+                }
+            }
+        }
+
+        if custom_window_chrome_enabled() {
+            let chrome_start = w.get() as f32 - WINDOW_CONTROL_WIDTH * 3.0;
+            if let Some(rect) =
+                Rect::from_xywh(0.0, WINDOW_CHROME_HEIGHT - 1.0, w.get() as f32, 1.0)
+            {
+                pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
+            }
+            for (index, control) in [
+                WindowControl::Minimize,
+                WindowControl::ToggleMaximize,
+                WindowControl::Close,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let x = chrome_start + index as f32 * WINDOW_CONTROL_WIDTH;
+                let hovered = menu_pointer.is_some_and(|(pointer_x, pointer_y)| {
+                    window_control_at(pointer_x, pointer_y, w.get() as f32) == Some(control)
+                });
+                if hovered {
+                    let mut control_paint = Paint::default();
+                    let color = if control == WindowControl::Close {
+                        (150, 55, 55)
+                    } else {
+                        palette.surface
+                    };
+                    control_paint.set_color(Color::from_rgba8(color.0, color.1, color.2, 255));
+                    if let Some(rect) =
+                        Rect::from_xywh(x, 0.0, WINDOW_CONTROL_WIDTH, WINDOW_CHROME_HEIGHT)
+                    {
+                        pixmap.fill_rect(rect, &control_paint, Transform::identity(), None);
+                    }
+                }
+                let center_x = x + WINDOW_CONTROL_WIDTH * 0.5;
+                let center_y = WINDOW_CHROME_HEIGHT * 0.5;
+                let mut path = tiny_skia::PathBuilder::new();
+                match control {
+                    WindowControl::Minimize => {
+                        path.move_to(center_x - 6.0, center_y + 4.0);
+                        path.line_to(center_x + 6.0, center_y + 4.0);
+                    }
+                    WindowControl::ToggleMaximize => {
+                        path.move_to(center_x - 5.0, center_y - 5.0);
+                        path.line_to(center_x + 5.0, center_y - 5.0);
+                        path.line_to(center_x + 5.0, center_y + 5.0);
+                        path.line_to(center_x - 5.0, center_y + 5.0);
+                        path.close();
+                    }
+                    WindowControl::Close => {
+                        path.move_to(center_x - 5.0, center_y - 5.0);
+                        path.line_to(center_x + 5.0, center_y + 5.0);
+                        path.move_to(center_x + 5.0, center_y - 5.0);
+                        path.line_to(center_x - 5.0, center_y + 5.0);
+                    }
+                }
+                if let Some(path) = path.finish() {
+                    pixmap.stroke_path(
+                        &path,
+                        &dim_paint,
+                        &tiny_skia::Stroke {
+                            width: 1.5,
+                            ..Default::default()
+                        },
+                        Transform::identity(),
+                        None,
+                    );
                 }
             }
         }
@@ -8956,17 +9179,63 @@ mod pruebas {
     }
 
     #[test]
+    fn el_chrome_propio_reserva_controles_y_bordes_sin_interceptar_la_barra() {
+        if !custom_window_chrome_enabled() {
+            return;
+        }
+
+        assert_eq!(
+            window_control_at(635.0, 20.0, 640.0),
+            Some(WindowControl::Close)
+        );
+        assert_eq!(
+            window_control_at(570.0, 20.0, 640.0),
+            Some(WindowControl::ToggleMaximize)
+        );
+        assert_eq!(
+            window_control_at(520.0, 20.0, 640.0),
+            Some(WindowControl::Minimize)
+        );
+        assert_eq!(
+            resize_direction_at(2.0, 2.0, 640.0, 480.0, WINDOW_RESIZE_BORDER),
+            Some(ResizeDirection::NorthWest)
+        );
+        assert_eq!(
+            resize_direction_at(638.0, 478.0, 640.0, 480.0, WINDOW_RESIZE_BORDER),
+            Some(ResizeDirection::SouthEast)
+        );
+        assert!(titlebar_drag_at(
+            496.0,
+            20.0,
+            640.0,
+            DocumentMode::SourceEditing
+        ));
+        assert!(!titlebar_drag_at(
+            100.0,
+            20.0,
+            640.0,
+            DocumentMode::SourceEditing
+        ));
+        assert!(!titlebar_drag_at(
+            635.0,
+            20.0,
+            640.0,
+            DocumentMode::SourceEditing
+        ));
+    }
+
+    #[test]
     fn la_barra_superior_expone_solo_acciones_visibles() {
         assert_eq!(
             toolbar_action_at(50.0, 12.0, 900.0, DocumentMode::Reading),
             Some(AppAction::NewDocument)
         );
         assert_eq!(
-            toolbar_action_at(140.0, 12.0, 900.0, DocumentMode::Reading),
+            toolbar_action_at(100.0, 12.0, 900.0, DocumentMode::Reading),
             Some(AppAction::OpenDocument)
         );
         assert_eq!(
-            toolbar_action_at(400.0, 12.0, 900.0, DocumentMode::Reading),
+            toolbar_action_at(330.0, 12.0, 900.0, DocumentMode::Reading),
             Some(AppAction::CommandPalette)
         );
         assert_eq!(
@@ -8978,11 +9247,11 @@ mod pruebas {
             None
         );
         assert_eq!(
-            toolbar_action_at(190.0, 12.0, 900.0, DocumentMode::SourceEditing),
+            toolbar_action_at(170.0, 12.0, 900.0, DocumentMode::SourceEditing),
             Some(AppAction::FormatBold)
         );
         assert_eq!(
-            toolbar_action_at(390.0, 12.0, 900.0, DocumentMode::SourceEditing),
+            toolbar_action_at(340.0, 12.0, 900.0, DocumentMode::SourceEditing),
             Some(AppAction::InsertBulletList)
         );
         assert_eq!(

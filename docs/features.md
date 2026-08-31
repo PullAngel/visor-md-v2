@@ -54,6 +54,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Menú contextual | Parcial | Copia y pegado explícito según modo, búsqueda, cambio de vista y guardado; faltan acciones de workspace y estados deshabilitados visibles |
 | Paleta de comandos | Parcial | `Ctrl+Shift+P` muestra el catálogo compartido, filtra por nombre y ejecuta por teclado o mouse; falta accesibilidad semántica completa |
 | Barra de acciones | Parcial | En lectura prioriza archivo, modo y búsqueda; en edición muestra guardar y las cinco ayudas Markdown actuales. Mouse y F6 comparten acciones; 640 × 480 lógicos evita controles ocultos; falta semántica de lector de pantalla |
+| Chrome de ventana | Parcial | En Windows no hay borde del sistema: minimizar, maximizar o restaurar, cerrar, arrastrar y redimensionar usan `winit`; otras plataformas conservan controles nativos hasta completar QA accesible |
 | Paneles plegables | Parcial | Índice, árbol plegable de notas, búsqueda de carpeta y backlinks muestran listas acotadas con selección visible, navegación por teclado o mouse y cierre con Escape; falta accesibilidad completa |
 | Actualizar workspace | Parcial | El catálogo y `Ctrl+Shift+I` reconstruyen de forma explícita el índice cancelable cuando la carpeta cambió; falta invalidación más precisa por archivo |
 | `.txt` y otros textos inertes | Parcial | Extensiones no Markdown se muestran como texto inerte; falta QA y reconocimiento UX |

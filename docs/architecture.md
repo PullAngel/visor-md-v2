@@ -316,6 +316,14 @@ está disponible. El catálogo inicial ya unifica las acciones esenciales entre
 los atajos del lector, los atajos del editor y `Ctrl+Shift+P`; la disponibilidad
 contextual y los controles de mouse todavía se completan de forma incremental.
 
+En Windows el chrome propio se limita a la presentación e integra el movimiento,
+redimensionado y controles de minimizar, maximizar o restaurar y cerrar mediante
+las APIs seguras de `winit`. No usa `unsafe`, mensajes Win32 propios ni cambia
+el modelo de cierre protegido: el botón Cerrar pasa por la misma comprobación de
+documentos modificados que una solicitud del sistema. En otras plataformas la
+ventana conserva las decoraciones nativas mientras no haya una alternativa con
+las mismas affordances y QA accesible.
+
 ### Workspace e índice
 
 La primera implementación usa un índice regenerable en memoria, sin SQLite ni
@@ -429,7 +437,7 @@ plataforma:
 
 - asociaciones de archivos;
 - diálogos y revelado en explorador;
-- ventana sin borde;
+- QA manual del chrome sin borde de Windows;
 - siempre encima;
 - DPI, tema y accesibilidad;
 - paths e identidad de archivo;
@@ -447,7 +455,7 @@ nativas reales. macOS permanece como posibilidad futura, no gate actual.
 | Modelo | `Block` y `Span` simplificados | Documento con rangos y semántica |
 | Layout | Visible con estimaciones | Geometría para render e interacción |
 | Rendering | Software nativo funcional | Display list validada y accesible |
-| UI | Ventana, tema, pestañas, barra de acciones, menú contextual, paleta y paneles | Ventana sin borde y semántica accesible completa |
+| UI | Ventana, tema, pestañas, barra de acciones, menú contextual, paleta, paneles y chrome sin borde en Windows | Semántica accesible completa y QA del fallback por plataforma |
 | Edición | Buffer Rope, fuente alternable, vista dividida, undo/redo, portapapeles explícito, guardado fiel y recuperación local | Actualización incremental de la representación fuente y accesibilidad completa |
 | Workspace | Raíz explícita, VFS, índice cancelable, árbol, búsqueda, wikilinks, callouts, backlinks y detección limitada de cambios | Actualización incremental y QA con bóvedas grandes |
 | Seguridad | Límites, HTML inerte, VFS, guardado, recuperación y PNG local acotado con pruebas | Otros recursos secundarios, campaña de fuzzing y validación de release |

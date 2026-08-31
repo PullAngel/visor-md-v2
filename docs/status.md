@@ -147,6 +147,10 @@ exacto del traspaso.
 - el viewport reserva la franja inferior completa. El final del documento ya no
   queda bajo pestañas o estado, y bordes de tablas, separadores de pestañas y la
   división de la vista usan el color estructural definido por el sistema visual.
+- en Windows la ventana usa chrome sin borde con controles propios de minimizar,
+  maximizar o restaurar y cerrar, además de arrastre en su franja libre y resize
+  por bordes. El cierre conserva la protección de cambios sin guardar; Linux y
+  otros sistemas mantienen decoraciones nativas hasta que exista QA equivalente.
 - pasar el mouse por un enlace o recorrerlo con Tab muestra dentro del lienzo su
   tipo y destino declarado. Esta vista previa no resuelve rutas ni toca red o
   disco; el título conserva el destino completo si el aviso debe abreviarse.
@@ -214,6 +218,11 @@ Evidencia actual en Windows:
   de incorporar plegado de secciones; el gate completo de
   146 pruebas inmediatamente anterior también verificó SBOM, 40 documentos y
   build release;
+- release Windows posterior al chrome sin borde: 3.473.920 bytes, 3,313 MiB,
+  SHA-256 `4D38FCD8C45242D6FD9DF6DB981BFB7754A97E9F10A258B174DF965EBC1F4E81`.
+  El smoke `--bench=0` abrió y pintó la fixture de 23 bloques sin error; sus
+  tiempos de 682 ms de ventana visible y 1.764 ms de primer pintado son una
+  muestra aislada bajo carga de compilación, no una serie de rendimiento;
 - release Windows actual: 3.471.360 bytes, 3,310 MiB, SHA-256
   `FB61E47AA8EC50ECD823202D9AF047E4065C7780DDA1B1536FD1C658D9FF3D2E`;
 - smoke test release con `--bench=0` y la fixture visual: salida 0, ventana

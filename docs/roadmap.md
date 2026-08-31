@@ -42,7 +42,7 @@ final de cada hito.
 | Validación base | Iniciada | Gates Windows, auditoría, SBOM y benchmarks |
 | Lector completo | En curso | Markdown cotidiano, tablas con copia TSV, notas al pie, autolinks, búsqueda, índice, métricas, plegado y vista previa PNG local presentes; faltan imágenes inline y cierre sistemático del corpus |
 | Editor básico | En curso | Abrir, crear, buffer escalable, edición fuente y dividida, guardado atómico, conflictos explícitos y recuperación local configurable; faltan actualización incremental del modelo fuente y QA manual de edición y diálogos nativos |
-| Chrome | En curso | Pestañas, acciones esenciales y paneles visibles con cierre protegido; faltan accesibilidad completa y ventana sin borde |
+| Chrome | En curso | Pestañas, acciones esenciales y paneles visibles con cierre protegido; el chrome sin borde de Windows conserva mover, redimensionar y controles de ventana, mientras otros sistemas usan fallback nativo; faltan accesibilidad completa y QA por plataforma |
 | Workspace | En curso | Carpeta explícita, VFS, índice acotado/cancelable, árbol plegable, búsqueda y detección externa limitada; faltan actualización incremental y QA con bóvedas grandes |
 | Obsidian | En curso | Wikilinks, callouts, panel de backlinks y PNG local confirmado contenidos; faltan actualización incremental y corpus ampliado |
 | Estudio | En curso | Resaltado portable inicial; faltan herramientas portables |

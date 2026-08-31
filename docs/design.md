@@ -68,6 +68,14 @@ documento; todo lo demás vive un nivel más adentro, disponible pero sin gritar
 Sin líneas de contorno. La jerarquía sale del salto de color entre superficies.
 Radio de 11 px, sombra difusa para despegar del escritorio.
 
+En Windows, la implementación actual usa una ventana sin borde con tres
+controles propios, visibles y separados: minimizar, maximizar o restaurar y
+cerrar. El espacio libre de la franja superior mueve la ventana; sus seis
+píxeles periféricos permiten redimensionarla y cambian el cursor para anunciar
+la dirección. En plataformas donde esa integración todavía no tiene una
+equivalencia accesible comprobada, se conserva el chrome nativo como fallback.
+Esta diferencia no cambia el documento ni concede capacidades adicionales.
+
 **La condición que esto impone**, y por eso importa: el salto de fondo a
 superficie tiene que ser de al menos 6 % de luminosidad, o todo se aplana. Es
 justo lo que le faltaba al modo noche de la v1. La paleta de arriba ya cumple.
