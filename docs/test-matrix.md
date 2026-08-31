@@ -57,6 +57,8 @@ Estados permitidos:
 | --- | --- | --- | --- | --- |
 | Tema claro y oscuro | Visual | Parcial | Pendiente | Commit `090e9de` |
 | Resize sin layout corrupto | Integración | Parcial | Pendiente | Prototipo |
+| Chrome y controles de ventana | Unitario y manual | Parcial | Pendiente | Geometría de controles, drag y resize cubierta; falta QA manual de Windows sin borde y fallback nativo |
+| Pestañas, fijado y cierre protegido | Unitario e integración | Parcial | Pendiente | Cambio, envoltura, identidad separada y protección de pestaña fijada probados; falta QA con mouse y documentos reales |
 | DPI y zoom | Unitario, manual y visual | Parcial | Pendiente | El layout escala cuerpo, márgenes, sangrías y marcadores a partir de `Window::scale_factor`; `la_escala_dpi_aumenta_la_tipografia_sin_cambiar_el_ancho_logico` verifica la propiedad geométrica. Falta QA en monitores con distintas escalas y el futuro zoom explícito. |
 | Selección con mouse | Integración y visual | Parcial | Pendiente | Hit testing y geometría de Parley comparten el layout; autoscroll y copia unitaria probados, falta QA manual |
 | Copia al portapapeles | Integración y seguridad | Parcial | Pendiente | `Ctrl+C` y `Ctrl+Shift+C` distinguen vista y fuente en pruebas de selección; falta QA con otras aplicaciones y plataformas |
@@ -77,7 +79,7 @@ Estados permitidos:
 | Documento de 5 MB | Benchmark | Verificado en Sprint 0 | Pendiente | `budget.md` |
 | Scroll proporcional a visible | Unitario y benchmark | Parcial | Pendiente | Rango visible por búsqueda binaria; 4,4 ms medidos |
 | Memoria estable | Benchmark | Parcial | Pendiente | Medición inicial |
-| Binario menor de 8 MB | Release | Verificado | Pendiente | 2.996.736 bytes en `6176a82` |
+| Binario menor de 8 MB | Release | Verificado | Pendiente | 3.473.920 bytes, 3,313 MiB, release posterior al chrome de Windows |
 
 ## Cadena de suministro
 
