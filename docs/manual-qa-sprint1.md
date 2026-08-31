@@ -1,5 +1,16 @@
 # QA manual del Sprint 1
 
+## Plegado de secciones pendiente de validación
+
+1. Abrir `tests/fixtures/sprint1-visual.md` en lectura.
+2. Pulsar el triángulo a la izquierda de un encabezado y confirmar que su
+   contenido desaparece hasta el siguiente encabezado del mismo nivel.
+3. Volver a pulsarlo y confirmar que reaparecen texto, listas y selección.
+4. Plegar una sección, abrir el índice con `Ctrl+Shift+L` y elegir un encabezado
+   hijo: sus ancestros deben desplegarse y el destino quedar enfocado.
+5. Cambiar de pestaña y volver: el plegado de cada documento debe mantenerse
+   independiente. Entrar en edición debe mostrar siempre la fuente completa.
+
 Esta lista comprueba propiedades visuales y de interacción que las pruebas de
 píxeles no pueden juzgar por sí solas. No convierte una impresión informal en
 evidencia: se registra plataforma, escala, commit y resultado.

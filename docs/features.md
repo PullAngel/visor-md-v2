@@ -31,7 +31,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | GFM elegido | Parcial | Tablas, tachado, tareas, autolinks y notas al pie; falta corpus sistemático |
 | Copia de tablas | Parcial | Menú y paleta copian la tabla elegida como TSV desde celdas semánticas; falta selección parcial |
 | Índice de encabezados | Parcial | `Ctrl+Shift+L` muestra y enfoca encabezados; falta panel filtrable y accesible |
-| Plegado de secciones | Planificado | Sin perder posición ni selección |
+| Plegado de secciones | Parcial | Triángulo nativo en encabezados, estado por pestaña y fuente intacta; falta QA visual y accesibilidad ampliada |
 | Búsqueda en documento | Parcial | `Ctrl+F` local, Unicode sin distinción de mayúsculas, resultados y navegación; faltan marcas de todas las coincidencias y QA visual |
 | Palabras y tiempo de lectura | Parcial | La barra cuenta texto visible del último render y estima minutos a 200 palabras; falta QA con idiomas sin separación por espacios |
 | Vista de texto segura | Parcial | Fallback por límites y HTML inerte; falta QA end to end completo |

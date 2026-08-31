@@ -29,6 +29,7 @@ compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
 | **Editor escalable, vista dividida y árbol de workspace** | **3.351.040 bytes, 3,20 MiB** |
 | **Vista previa PNG local confirmada** | **3.454.464 bytes, 3,294 MiB** |
 | **Copia TSV y modo por documento** | **3.459.072 bytes, 3,299 MiB** |
+| **Plegado de secciones** | **3.464.704 bytes, 3,304 MiB** |
 
 Superar 8 MB exige medición, explicación y aprobación. El límite no se usa para
 recortar seguridad, estabilidad, accesibilidad, Unicode o funciones esenciales.
@@ -86,6 +87,24 @@ contenido.
 Un smoke test release abrió la fixture de 1,2 KiB, produjo 23 bloques y salió
 con código 0. La ventana fue visible en 371 ms y el primer cuadro terminó a los
 396 ms; es evidencia funcional puntual y no reemplaza la serie reproducible.
+
+### Plegado de secciones del 31 de agosto de 2026
+
+El checkpoint añade plegado visual por encabezados y una lista compacta de
+bloques visibles. La fuente y el historial no cambian, y navegar hacia un
+destino oculto despliega únicamente sus ancestros. No añade dependencias.
+
+| Medida | Resultado |
+| --- | --- |
+| Binario Windows | 3.464.704 bytes, 3,304 MiB |
+| SHA-256 | `5A7AB84C0745A1CB0C25821C03D36E7E6F3CF439A3BC4556CD63B8C44537C08E` |
+| Variación frente al checkpoint anterior | +5.632 bytes |
+| Margen frente al límite deseado | 4,696 MiB |
+
+El smoke release abrió la fixture visual, produjo 23 bloques y salió con código
+0. La medición inmediatamente posterior al build mostró la ventana a 840 ms y
+el primer cuadro a 907 ms; no se usa como regresión de arranque porque no fue
+una serie controlada y el equipo acababa de completar compilación con LTO.
 
 ### Acciones visibles y guardados por pestaña del 29 de agosto de 2026
 

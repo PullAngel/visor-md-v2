@@ -40,7 +40,7 @@ final de cada hito.
 | Recuperación | En cierre | Código preservado y estable; falta QA visual |
 | Sprint 1 | Parcial | Lector mínimo profesional |
 | Validación base | Iniciada | Gates Windows, auditoría, SBOM y benchmarks |
-| Lector completo | En curso | Markdown cotidiano, tablas con copia TSV, notas al pie, autolinks, búsqueda, índice, métricas y vista previa PNG local presentes; faltan imágenes inline y plegado |
+| Lector completo | En curso | Markdown cotidiano, tablas con copia TSV, notas al pie, autolinks, búsqueda, índice, métricas, plegado y vista previa PNG local presentes; faltan imágenes inline y cierre sistemático del corpus |
 | Editor básico | En curso | Abrir, crear, buffer escalable, edición fuente y dividida, guardado atómico, conflictos explícitos y recuperación local configurable; faltan actualización incremental del modelo fuente y QA manual de edición y diálogos nativos |
 | Chrome | En curso | Pestañas, acciones esenciales y paneles visibles con cierre protegido; faltan accesibilidad completa y ventana sin borde |
 | Workspace | En curso | Carpeta explícita, VFS, índice acotado/cancelable, árbol plegable, búsqueda y detección externa limitada; faltan actualización incremental y QA con bóvedas grandes |
@@ -254,7 +254,7 @@ ampliar el producto.
 - bloques de código y resaltado medido;
 - índice filtrable;
 - búsqueda con marcas de scroll;
-- plegado de secciones;
+- plegado de secciones; implementado en lectura con estado por pestaña y revelado al navegar;
 - contador de palabras y lectura;
 - copiar tablas como TSV; implementado para la tabla completa desde una fila;
 - link peek seguro.

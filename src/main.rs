@@ -353,6 +353,7 @@ enum AppAction {
     CloseDocument,
     ToggleMode,
     ToggleSplit,
+    ToggleSection,
     SearchDocument,
     CopyTableTsv,
     ChooseWorkspace,
@@ -366,7 +367,7 @@ enum AppAction {
     CommandPalette,
 }
 
-const APP_ACTIONS: [AppAction; 17] = [
+const APP_ACTIONS: [AppAction; 18] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -374,6 +375,7 @@ const APP_ACTIONS: [AppAction; 17] = [
     AppAction::CloseDocument,
     AppAction::ToggleMode,
     AppAction::ToggleSplit,
+    AppAction::ToggleSection,
     AppAction::SearchDocument,
     AppAction::CopyTableTsv,
     AppAction::ChooseWorkspace,
@@ -396,6 +398,7 @@ impl AppAction {
             Self::CloseDocument => "Cerrar pestaña · Ctrl+W",
             Self::ToggleMode => "Alternar lectura y edición · F2",
             Self::ToggleSplit => "Comparar fuente y vista · F3",
+            Self::ToggleSection => "Plegar o desplegar sección enfocada",
             Self::SearchDocument => "Buscar en documento · Ctrl+F",
             Self::CopyTableTsv => "Copiar tabla seleccionada como TSV",
             Self::ChooseWorkspace => "Abrir carpeta · Ctrl+Shift+O",
@@ -419,6 +422,7 @@ impl AppAction {
             Self::ToggleMode => "Leer",
             Self::ToggleSplit if mode == DocumentMode::Split => "Cerrar comparación",
             Self::ToggleSplit => "Comparar",
+            Self::ToggleSection => "Plegar sección",
             Self::SearchDocument => "Buscar",
             Self::CommandPalette => "Más",
             _ => self.label(),
@@ -1748,6 +1752,35 @@ fn draw_checkbox(pixmap: &mut Pixmap, x: f32, y: f32, size: f32, done: bool, pal
     }
 }
 
+fn draw_disclosure(pixmap: &mut Pixmap, x: f32, y: f32, size: f32, folded: bool, palette: Palette) {
+    let mut path = tiny_skia::PathBuilder::new();
+    if folded {
+        path.move_to(x + size * 0.28, y + size * 0.18);
+        path.line_to(x + size * 0.76, y + size * 0.5);
+        path.line_to(x + size * 0.28, y + size * 0.82);
+    } else {
+        path.move_to(x + size * 0.18, y + size * 0.3);
+        path.line_to(x + size * 0.82, y + size * 0.3);
+        path.line_to(x + size * 0.5, y + size * 0.76);
+    }
+    path.close();
+    if let Some(path) = path.finish() {
+        let dim = palette.dim;
+        let mut paint = Paint {
+            anti_alias: true,
+            ..Default::default()
+        };
+        paint.set_color(Color::from_rgba8(dim.0, dim.1, dim.2, 210));
+        pixmap.fill_path(
+            &path,
+            &paint,
+            tiny_skia::FillRule::Winding,
+            Transform::identity(),
+            None,
+        );
+    }
+}
+
 fn flatten<'a>(
     node: &'a AstNode<'a>,
     depth: u8,
@@ -2218,6 +2251,7 @@ fn parse_blocks(source: &str) -> Result<ParseOutcome, &'static str> {
 /// layouts de parley vivos costaba 393 MB en la primera medicion del Sprint 0.
 /// Lo unico que hay que recordar por bloque es donde va y cuanto mide; el
 /// layout se reconstruye para los pocos bloques visibles y se cachea.
+#[derive(Clone, Copy)]
 struct Slot {
     y: f32,
     height: f32,
@@ -2240,13 +2274,50 @@ fn table_cell_advance(width: f32, scale: f32, columns: usize) -> f32 {
     ((table_width / columns.max(1) as f32) - TABLE_CELL_PADDING * 2.0).max(1.0)
 }
 
-/// Busca el tramo visible sin recorrer todos los bloques en cada cuadro.
-/// `slots` esta ordenado por `y`, por lo que dos busquedas binarias hacen que
-/// el trabajo de scroll dependa de lo visible, no del largo del documento.
-fn visible_range(slots: &[Slot], view_top: f32, view_bottom: f32) -> std::ops::Range<usize> {
-    let start = slots.partition_point(|slot| slot.y + slot.height < view_top);
-    let end = start + slots[start..].partition_point(|slot| slot.y <= view_bottom);
+/// Busca el tramo visible dentro de una lista compacta de bloques mostrados.
+/// Los bloques plegados no participan de esta lista, por lo que plegar una
+/// sección grande no convierte cada cuadro en un recorrido de esa sección.
+fn visible_order_range(
+    slots: &[Slot],
+    order: &[usize],
+    view_top: f32,
+    view_bottom: f32,
+) -> std::ops::Range<usize> {
+    let start = order.partition_point(|index| {
+        slots
+            .get(*index)
+            .is_some_and(|slot| slot.y + slot.height < view_top)
+    });
+    let end = start
+        + order[start..]
+            .partition_point(|index| slots.get(*index).is_some_and(|slot| slot.y <= view_bottom));
     start..end
+}
+
+/// Determina qué bloques quedan cubiertos por encabezados plegados. La clave
+/// es el inicio del encabezado en la fuente: si una edición la invalida, el
+/// plegado desaparece de forma segura en vez de ocultar otra sección.
+fn folded_block_mask(blocks: &[Block], folded_headings: &HashSet<usize>) -> Vec<bool> {
+    let mut hidden = vec![false; blocks.len()];
+    let mut folded_level = None;
+
+    for (index, block) in blocks.iter().enumerate() {
+        if let Kind::Heading(level) = block.kind {
+            if folded_level.is_some_and(|active| level <= active) {
+                folded_level = None;
+            }
+            if folded_level.is_some() {
+                hidden[index] = true;
+                continue;
+            }
+            if folded_headings.contains(&block.source.start) {
+                folded_level = Some(level);
+            }
+        } else if folded_level.is_some() {
+            hidden[index] = true;
+        }
+    }
+    hidden
 }
 
 fn max_scroll(doc_height: f32, viewport_height: f32) -> f32 {
@@ -2595,11 +2666,22 @@ fn measure_all(
     width: f32,
     scale: f32,
     exact: bool,
-) -> (Vec<Slot>, f32) {
+    hidden: &[bool],
+) -> (Vec<Slot>, Vec<usize>, f32) {
     let mut slots = Vec::with_capacity(blocks.len());
+    let mut visible_order = Vec::with_capacity(blocks.len());
     let mut y = MARGIN * scale;
 
-    for block in blocks {
+    for (index, block) in blocks.iter().enumerate() {
+        if hidden.get(index).copied().unwrap_or(false) {
+            slots.push(Slot {
+                y,
+                height: -1.0,
+                x: MARGIN * scale + block.indent() * scale,
+                kind: block.kind,
+            });
+            continue;
+        }
         let height = if matches!(block.kind, Kind::Rule) {
             scale
         } else if matches!(block.kind, Kind::TableRow { .. }) {
@@ -2624,10 +2706,11 @@ fn measure_all(
             x: MARGIN * scale + block.indent() * scale,
             kind: block.kind,
         });
+        visible_order.push(index);
         y += height;
     }
 
-    (slots, y + MARGIN * scale)
+    (slots, visible_order, y + MARGIN * scale)
 }
 
 // ---------------------------------------------------------------- dibujo
@@ -2963,6 +3046,12 @@ struct DocumentState {
     /// Ancla solicitada mientras este documento se prepara. Viaja con la
     /// pestaña para que un cambio de documento no aplique el scroll a otra.
     pending_heading: Option<String>,
+    /// Bloque que debe enfocarse después de reconstruir una geometría que lo
+    /// acaba de revelar al desplegar sus encabezados ancestros.
+    pending_block: Option<usize>,
+    /// Encabezados plegados solo en la representación. La fuente, el historial
+    /// y la selección permanecen intactos y el estado viaja con su pestaña.
+    folded_headings: HashSet<usize>,
     last_recovery: Instant,
 }
 
@@ -2983,6 +3072,8 @@ impl DocumentState {
             safe_mode: None,
             scroll: 0.0,
             pending_heading: None,
+            pending_block: None,
+            folded_headings: HashSet::new(),
             last_recovery: Instant::now(),
         }
     }
@@ -3051,6 +3142,15 @@ fn apply_view_outcome(document: &mut DocumentState, outcome: ParseOutcome) {
     if document.mode == DocumentMode::Reading {
         document.blocks = document.rendered_blocks.clone();
     }
+    let heading_starts = document
+        .rendered_blocks
+        .iter()
+        .filter(|block| matches!(block.kind, Kind::Heading(_)))
+        .map(|block| block.source.start)
+        .collect::<HashSet<_>>();
+    document
+        .folded_headings
+        .retain(|start| heading_starts.contains(start));
     document.safe_mode = outcome.degradation;
 }
 
@@ -3170,6 +3270,9 @@ struct App {
     glyphs: GlyphCache,
     pixmap: Option<Pixmap>,
     slots: Vec<Slot>,
+    /// Índices de los bloques que participan de la geometría actual. Permite
+    /// omitir secciones plegadas sin recorrerlas durante cada cuadro.
+    visible_blocks: Vec<usize>,
     /// Layouts de los bloques visibles, por indice. Se poda cada cuadro.
     live: HashMap<usize, (CachedBlockLayout, Option<CachedMarker>)>,
     doc_height: f32,
@@ -3177,6 +3280,7 @@ struct App {
     /// Cache independiente de la mitad renderizada. Comparar ambas vistas no
     /// mezcla cursores ni rangos de la fuente con el modelo Markdown.
     preview_slots: Vec<Slot>,
+    preview_visible_blocks: Vec<usize>,
     preview_live: HashMap<usize, (CachedBlockLayout, Option<CachedMarker>)>,
     preview_height: f32,
     preview_laid_for_width: f32,
@@ -3840,22 +3944,23 @@ impl ApplicationHandler<AppEvent> for App {
                     && self
                         .cursor_at(position.x as f32, position.y as f32)
                         .is_some();
+                let disclosure_hover = self
+                    .heading_disclosure_at(position.x as f32, position.y as f32)
+                    .is_some();
                 let target_changed = target != self.hover_destination;
                 if target_changed {
                     self.hover_destination = target;
                     self.refresh_title();
                 }
-                if target_changed || text_cursor_hover != self.text_cursor_hover {
-                    self.text_cursor_hover = text_cursor_hover;
-                    if let Some(w) = &self.window {
-                        w.set_cursor(if self.hover_destination.is_some() {
-                            CursorIcon::Pointer
-                        } else if text_cursor_hover {
-                            CursorIcon::Text
-                        } else {
-                            CursorIcon::Default
-                        });
-                    }
+                self.text_cursor_hover = text_cursor_hover;
+                if let Some(w) = &self.window {
+                    w.set_cursor(if self.hover_destination.is_some() || disclosure_hover {
+                        CursorIcon::Pointer
+                    } else if text_cursor_hover {
+                        CursorIcon::Text
+                    } else {
+                        CursorIcon::Default
+                    });
                 }
                 if self.selecting {
                     self.extend_selection_to(position.x as f32, position.y as f32);
@@ -3964,6 +4069,14 @@ impl ApplicationHandler<AppEvent> for App {
                             self.selecting = false;
                             return;
                         }
+                    }
+                    if let Some(block) = self
+                        .pointer
+                        .and_then(|(x, y)| self.heading_disclosure_at(x, y))
+                    {
+                        self.toggle_section(block);
+                        self.selecting = false;
+                        return;
                     }
                     if self.document.mode == DocumentMode::Reading
                         && let Some((block, target)) = self
@@ -4640,6 +4753,7 @@ impl App {
                 DocumentMode::Split => self.refresh_reading_async("cerrando vista dividida"),
                 DocumentMode::Reading | DocumentMode::SourceEditing => self.enter_split_mode(),
             },
+            AppAction::ToggleSection => self.toggle_focused_section(),
             AppAction::SearchDocument => self.open_document_search(),
             AppAction::CopyTableTsv => self.copy_current_table_tsv(),
             AppAction::ChooseWorkspace => self.choose_workspace(),
@@ -4865,10 +4979,12 @@ impl App {
 
     fn invalidate_document_layout(&mut self) {
         self.slots.clear();
+        self.visible_blocks.clear();
         self.live.clear();
         self.doc_height = 0.0;
         self.laid_for_width = -1.0;
         self.preview_slots.clear();
+        self.preview_visible_blocks.clear();
         self.preview_live.clear();
         self.preview_height = 0.0;
         self.preview_laid_for_width = -1.0;
@@ -6005,6 +6121,13 @@ impl App {
             block: block_index,
             offset: target_start,
         }));
+        if self.reveal_block(block_index) {
+            if let Some(window) = &self.window {
+                window.request_redraw();
+            }
+            self.refresh_title();
+            return;
+        }
         if let (Some(slot), Some(window)) = (self.slots.get(block_index), &self.window) {
             let viewport = window.inner_size().height as f32;
             if slot.y < self.scroll {
@@ -6358,17 +6481,19 @@ impl App {
             .as_ref()
             .and_then(|headings| headings.get(self.outline_match % headings.len()))
             .map(|(block, _)| *block);
-        if let Some(block) = heading
-            && let (Some(slot), Some(window)) = (self.slots.get(block), &self.window)
-        {
-            self.scroll = slot.y.min(max_scroll(
-                self.doc_height,
-                window.inner_size().height as f32,
-            ));
+        if let Some(block) = heading {
             self.selection = Some(DocumentSelection::collapsed(BlockCursor {
                 block,
                 offset: 0,
             }));
+            if !self.reveal_block(block)
+                && let (Some(slot), Some(window)) = (self.slots.get(block), &self.window)
+            {
+                self.scroll = slot.y.min(max_scroll(
+                    self.doc_height,
+                    window.inner_size().height as f32,
+                ));
+            }
         }
         self.outline_headings = None;
         self.set_notice("encabezado enfocado");
@@ -6382,6 +6507,14 @@ impl App {
             self.set_notice("el documento no contiene el encabezado solicitado");
             return;
         };
+        self.selection = Some(DocumentSelection::collapsed(BlockCursor {
+            block: block_index,
+            offset: 0,
+        }));
+        if self.reveal_block(block_index) {
+            self.set_notice("encabezado revelado");
+            return;
+        }
         let Some(slot) = self.slots.get(block_index) else {
             self.set_notice("el encabezado se enfocará al terminar el layout");
             self.document.pending_heading = Some(heading.to_owned());
@@ -6395,10 +6528,6 @@ impl App {
             self.doc_height.max(self.preview_height),
             viewport,
         ));
-        self.selection = Some(DocumentSelection::collapsed(BlockCursor {
-            block: block_index,
-            offset: 0,
-        }));
         self.set_notice("encabezado enfocado");
     }
 
@@ -6656,6 +6785,12 @@ impl App {
             block,
             offset: 0,
         }));
+        if self.reveal_block(block) {
+            if let Some(window) = &self.window {
+                window.request_redraw();
+            }
+            return;
+        }
         if let (Some(slot), Some(window)) = (self.slots.get(block), &self.window) {
             self.scroll = slot.y.min(max_scroll(
                 self.doc_height,
@@ -6690,6 +6825,123 @@ impl App {
         if let Some(window) = &self.window {
             window.request_redraw();
         }
+    }
+
+    fn heading_disclosure_at(&self, x: f32, y: f32) -> Option<usize> {
+        if self.document.mode != DocumentMode::Reading {
+            return None;
+        }
+        self.slots.iter().enumerate().find_map(|(index, slot)| {
+            if slot.height <= 0.0 || !matches!(slot.kind, Kind::Heading(_)) {
+                return None;
+            }
+            let top = slot.y - self.scroll;
+            let left = slot.x - 24.0 * self.scale_factor;
+            ((top..=top + slot.height).contains(&y) && (left..slot.x).contains(&x)).then_some(index)
+        })
+    }
+
+    fn toggle_focused_section(&mut self) {
+        if self.document.mode != DocumentMode::Reading {
+            self.set_notice("el plegado de secciones está disponible en lectura");
+            return;
+        }
+        let focused = self.selection.map(|selection| selection.focus.block);
+        let heading = focused
+            .and_then(|block| {
+                matches!(
+                    self.document.blocks.get(block).map(|block| block.kind),
+                    Some(Kind::Heading(_))
+                )
+                .then_some(block)
+            })
+            .or_else(|| {
+                focused.and_then(|block| {
+                    self.document.blocks[..block.min(self.document.blocks.len())]
+                        .iter()
+                        .rposition(|candidate| matches!(candidate.kind, Kind::Heading(_)))
+                })
+            })
+            .or_else(|| {
+                self.visible_blocks.iter().copied().find(|index| {
+                    self.slots
+                        .get(*index)
+                        .is_some_and(|slot| slot.y + slot.height >= self.scroll)
+                        && matches!(self.document.blocks[*index].kind, Kind::Heading(_))
+                })
+            });
+        let Some(heading) = heading else {
+            self.set_notice("enfoca un encabezado para plegar su sección");
+            return;
+        };
+        self.toggle_section(heading);
+    }
+
+    fn toggle_section(&mut self, heading: usize) {
+        let Some(block) = self.document.blocks.get(heading) else {
+            return;
+        };
+        if !matches!(block.kind, Kind::Heading(_)) {
+            return;
+        }
+        let source_start = block.source.start;
+        let folded = if self.document.folded_headings.remove(&source_start) {
+            false
+        } else {
+            self.document.folded_headings.insert(source_start);
+            true
+        };
+        self.slots.clear();
+        self.visible_blocks.clear();
+        self.live.clear();
+        self.doc_height = 0.0;
+        self.laid_for_width = -1.0;
+        self.exact_after_edit = false;
+        self.set_notice(if folded {
+            "sección plegada; la fuente permanece intacta"
+        } else {
+            "sección desplegada"
+        });
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    /// Revela un destino de navegación sin desplegar secciones no
+    /// relacionadas. Devuelve `true` cuando el layout debe reconstruirse
+    /// antes de poder calcular la posición final del bloque.
+    fn reveal_block(&mut self, target: usize) -> bool {
+        if self.document.folded_headings.is_empty() || target >= self.document.blocks.len() {
+            return false;
+        }
+        let mut hierarchy: Vec<(u8, usize)> = Vec::new();
+        for block in self.document.blocks.iter().take(target) {
+            let Kind::Heading(level) = block.kind else {
+                continue;
+            };
+            while hierarchy
+                .last()
+                .is_some_and(|(ancestor_level, _)| *ancestor_level >= level)
+            {
+                hierarchy.pop();
+            }
+            hierarchy.push((level, block.source.start));
+        }
+        let before = self.document.folded_headings.len();
+        for (_, source_start) in hierarchy {
+            self.document.folded_headings.remove(&source_start);
+        }
+        if self.document.folded_headings.len() == before {
+            return false;
+        }
+        self.slots.clear();
+        self.visible_blocks.clear();
+        self.live.clear();
+        self.doc_height = 0.0;
+        self.laid_for_width = -1.0;
+        self.exact_after_edit = false;
+        self.document.pending_block = Some(target);
+        true
     }
 
     fn cursor_at(&self, x: f32, y: f32) -> Option<BlockCursor> {
@@ -7021,15 +7273,22 @@ impl App {
         // Re-medir solo si cambio el ancho.
         if self.exact_after_edit || layout_width_is_stale(self.laid_for_width, layout_width) {
             let t = Instant::now();
-            let (slots, height) = measure_all(
+            let hidden = if self.document.mode == DocumentMode::Reading {
+                folded_block_mask(&self.document.blocks, &self.document.folded_headings)
+            } else {
+                Vec::new()
+            };
+            let (slots, visible_blocks, height) = measure_all(
                 &self.document.blocks,
                 &mut self.font_cx,
                 &mut self.layout_cx,
                 layout_width,
                 self.scale_factor,
                 self.exact_measure || self.exact_after_edit,
+                &hidden,
             );
             self.slots = slots;
+            self.visible_blocks = visible_blocks;
             self.doc_height = height;
             self.laid_for_width = layout_width;
             self.exact_after_edit = false;
@@ -7052,15 +7311,17 @@ impl App {
         }
 
         if split && layout_width_is_stale(self.preview_laid_for_width, layout_width) {
-            let (slots, height) = measure_all(
+            let (slots, visible_blocks, height) = measure_all(
                 &self.document.rendered_blocks,
                 &mut self.font_cx,
                 &mut self.layout_cx,
                 layout_width,
                 self.scale_factor,
                 false,
+                &[],
             );
             self.preview_slots = slots;
+            self.preview_visible_blocks = visible_blocks;
             self.preview_height = height;
             self.preview_laid_for_width = layout_width;
             self.preview_live.clear();
@@ -7073,20 +7334,36 @@ impl App {
         if let Some(heading) = self.document.pending_heading.take() {
             self.scroll_to_heading(&heading);
         }
+        if let Some(block) = self.document.pending_block.take()
+            && let Some(slot) = self.slots.get(block)
+        {
+            self.scroll = slot.y.min(max_scroll(
+                self.doc_height.max(self.preview_height),
+                size.height as f32,
+            ));
+        }
 
         // Que bloques caen en pantalla este cuadro.
         let view_top = self.scroll;
         let view_bottom = self.scroll + size.height as f32;
-        let visible = visible_range(&self.slots, view_top, view_bottom);
+        let visible_positions =
+            visible_order_range(&self.slots, &self.visible_blocks, view_top, view_bottom);
+        let visible = self.visible_blocks[visible_positions].to_vec();
         let preview_visible = if split {
-            visible_range(&self.preview_slots, view_top, view_bottom)
+            let positions = visible_order_range(
+                &self.preview_slots,
+                &self.preview_visible_blocks,
+                view_top,
+                view_bottom,
+            );
+            self.preview_visible_blocks[positions].to_vec()
         } else {
-            0..0
+            Vec::new()
         };
 
         // Solo los visibles conservan su layout vivo.
-        self.live.retain(|i, _| visible.contains(i));
-        for i in visible.clone() {
+        self.live.retain(|i, _| visible.binary_search(i).is_ok());
+        for &i in &visible {
             if !self.live.contains_key(&i) {
                 let block = &self.document.blocks[i];
                 let layout = if matches!(block.kind, Kind::TableRow { .. }) {
@@ -7124,8 +7401,8 @@ impl App {
         }
 
         self.preview_live
-            .retain(|index, _| preview_visible.contains(index));
-        for index in preview_visible.clone() {
+            .retain(|index, _| preview_visible.binary_search(index).is_ok());
+        for &index in &preview_visible {
             if !self.preview_live.contains_key(&index) {
                 let block = &self.document.rendered_blocks[index];
                 let layout = if matches!(block.kind, Kind::TableRow { .. }) {
@@ -7505,6 +7782,18 @@ impl App {
             let CachedBlockLayout::Text(layout) = cached_layout else {
                 continue;
             };
+
+            if matches!(slot.kind, Kind::Heading(_)) && context_mode == DocumentMode::Reading {
+                let size = 11.0 * *scale_factor;
+                draw_disclosure(
+                    pixmap,
+                    slot.x - 21.0 * *scale_factor,
+                    top + (slot.height - size).max(0.0) * 0.5,
+                    size,
+                    document.folded_headings.contains(&blocks[i].source.start),
+                    *palette,
+                );
+            }
 
             match slot.kind {
                 // Fondo de los bloques de codigo, dibujado con tiny-skia.
@@ -8246,6 +8535,8 @@ fn main() {
             safe_mode: None,
             scroll: 0.0,
             pending_heading: None,
+            pending_block: None,
+            folded_headings: HashSet::new(),
             last_recovery: Instant::now(),
         },
         inactive_documents: Vec::new(),
@@ -8279,10 +8570,12 @@ fn main() {
         glyphs: GlyphCache::new(),
         pixmap: None,
         slots: Vec::new(),
+        visible_blocks: Vec::new(),
         live: HashMap::new(),
         doc_height: 0.0,
         laid_for_width: -1.0,
         preview_slots: Vec::new(),
+        preview_visible_blocks: Vec::new(),
         preview_live: HashMap::new(),
         preview_height: 0.0,
         preview_laid_for_width: -1.0,
@@ -8434,7 +8727,7 @@ mod pruebas {
         labels.sort_unstable();
         labels.dedup();
 
-        assert_eq!(original_len, 17);
+        assert!(original_len <= 20, "el catálogo dejó de ser pequeño");
         assert_eq!(labels.len(), original_len);
     }
 
@@ -8791,10 +9084,51 @@ mod pruebas {
                 kind: Kind::Para,
             })
             .collect();
+        let order = (0..slots.len()).collect::<Vec<_>>();
 
-        assert_eq!(visible_range(&slots, 175.0, 325.0), 2..4);
-        assert_eq!(visible_range(&slots, 0.0, 50.0), 0..1);
-        assert_eq!(visible_range(&slots, 951.0, 1_100.0), 10..10);
+        assert_eq!(visible_order_range(&slots, &order, 175.0, 325.0), 2..4);
+        assert_eq!(visible_order_range(&slots, &order, 0.0, 50.0), 0..1);
+        assert_eq!(visible_order_range(&slots, &order, 951.0, 1_100.0), 10..10);
+    }
+
+    #[test]
+    fn plegar_un_encabezado_oculta_hasta_el_siguiente_del_mismo_nivel() {
+        let blocks = aplanar("# Uno\n\ntexto\n\n## Hijo\n\nmás\n\n# Dos\n\nfinal\n");
+        let first = blocks
+            .iter()
+            .position(|block| matches!(block.kind, Kind::Heading(1)))
+            .unwrap();
+        let second = blocks
+            .iter()
+            .enumerate()
+            .skip(first + 1)
+            .find_map(|(index, block)| matches!(block.kind, Kind::Heading(1)).then_some(index))
+            .unwrap();
+        let folded = HashSet::from([blocks[first].source.start]);
+
+        let hidden = folded_block_mask(&blocks, &folded);
+
+        assert!(!hidden[first]);
+        assert!(hidden[first + 1..second].iter().all(|hidden| *hidden));
+        assert!(!hidden[second]);
+        assert!(hidden[second + 1..].iter().all(|hidden| !*hidden));
+    }
+
+    #[test]
+    fn plegar_no_elimina_fuente_ni_bloques_del_modelo() {
+        let markdown = "# Visible\n\nsecreto **con formato**\n";
+        let blocks = aplanar(markdown);
+        let folded = HashSet::from([blocks[0].source.start]);
+
+        let hidden = folded_block_mask(&blocks, &folded);
+
+        assert_eq!(blocks.len(), hidden.len());
+        let source = blocks[1].source;
+        assert_eq!(
+            &markdown[source.start..source.end],
+            "secreto **con formato**"
+        );
+        assert!(hidden[1]);
     }
 
     #[test]

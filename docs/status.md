@@ -177,15 +177,20 @@ exacto del traspaso.
   configuración local versionada. Se conservan hasta 128 identificadores hash,
   nunca rutas, nombres, contenido o permisos; una ruta no conocida abre en
   lectura y un formato de configuración desconocido vuelve al valor seguro.
+- los encabezados muestran un control discreto para plegar su sección en modo
+  lectura. El estado pertenece a la pestaña y solo altera la geometría visible:
+  fuente, historial y selección permanecen intactos. La lista compacta de
+  bloques visibles evita recorrer contenido plegado en cada cuadro; buscar,
+  seguir un enlace o elegir el índice revela solo los ancestros necesarios.
 
 Evidencia actual en Windows:
 
-- formato, Clippy estricto y 159 pruebas verdes el 30 de agosto de 2026 después
-  de incorporar navegación relativa y PNG local acotado; el gate completo de
+- formato, Clippy estricto y 161 pruebas verdes el 31 de agosto de 2026 después
+  de incorporar plegado de secciones; el gate completo de
   146 pruebas inmediatamente anterior también verificó SBOM, 40 documentos y
   build release;
-- release Windows actual: 3.459.072 bytes, 3,299 MiB, SHA-256
-  `5FC5D6AFBA54F506EFC01676BF740C1F0A70C2214F49399B1BE9ACB4D8C702B9`;
+- release Windows actual: 3.464.704 bytes, 3,304 MiB, SHA-256
+  `5A7AB84C0745A1CB0C25821C03D36E7E6F3CF439A3BC4556CD63B8C44537C08E`;
 - smoke test release con `--bench=0` y la fixture visual: salida 0, ventana
   visible en 371 ms y primer cuadro con 23 bloques en 396 ms. Es una muestra
   funcional aislada, no una nueva serie estadística de arranque;
