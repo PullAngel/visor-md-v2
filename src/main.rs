@@ -334,6 +334,8 @@ fn abbreviated_label(text: &str, limit: usize) -> String {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ContextAction {
     Paste,
+    Bold,
+    Italic,
     CopyText,
     CopyMarkdown,
     CopyTableTsv,
@@ -353,6 +355,8 @@ enum AppAction {
     CloseDocument,
     ToggleMode,
     ToggleSplit,
+    FormatBold,
+    FormatItalic,
     ToggleSection,
     SearchDocument,
     CopyTableTsv,
@@ -367,7 +371,7 @@ enum AppAction {
     CommandPalette,
 }
 
-const APP_ACTIONS: [AppAction; 18] = [
+const APP_ACTIONS: [AppAction; 20] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -375,6 +379,8 @@ const APP_ACTIONS: [AppAction; 18] = [
     AppAction::CloseDocument,
     AppAction::ToggleMode,
     AppAction::ToggleSplit,
+    AppAction::FormatBold,
+    AppAction::FormatItalic,
     AppAction::ToggleSection,
     AppAction::SearchDocument,
     AppAction::CopyTableTsv,
@@ -398,6 +404,8 @@ impl AppAction {
             Self::CloseDocument => "Cerrar pestaña · Ctrl+W",
             Self::ToggleMode => "Alternar lectura y edición · F2",
             Self::ToggleSplit => "Comparar fuente y vista · F3",
+            Self::FormatBold => "Aplicar negrita · Ctrl+B",
+            Self::FormatItalic => "Aplicar cursiva · Ctrl+I",
             Self::ToggleSection => "Plegar o desplegar sección enfocada",
             Self::SearchDocument => "Buscar en documento · Ctrl+F",
             Self::CopyTableTsv => "Copiar tabla seleccionada como TSV",
@@ -422,6 +430,8 @@ impl AppAction {
             Self::ToggleMode => "Leer",
             Self::ToggleSplit if mode == DocumentMode::Split => "Cerrar comparación",
             Self::ToggleSplit => "Comparar",
+            Self::FormatBold => "Negrita",
+            Self::FormatItalic => "Cursiva",
             Self::ToggleSection => "Plegar sección",
             Self::SearchDocument => "Buscar",
             Self::CommandPalette => "Más",
@@ -443,6 +453,8 @@ impl ContextAction {
     fn label(self) -> &'static str {
         match self {
             Self::Paste => "Pegar",
+            Self::Bold => "Negrita",
+            Self::Italic => "Cursiva",
             Self::CopyText => "Copiar texto",
             Self::CopyMarkdown => "Copiar Markdown original",
             Self::CopyTableTsv => "Copiar tabla como TSV",
@@ -473,6 +485,8 @@ fn context_actions(mode: DocumentMode) -> &'static [ContextAction] {
         ],
         DocumentMode::SourceEditing => &[
             ContextAction::Paste,
+            ContextAction::Bold,
+            ContextAction::Italic,
             ContextAction::CopyText,
             ContextAction::CopyMarkdown,
             ContextAction::CopyTableTsv,
@@ -484,6 +498,8 @@ fn context_actions(mode: DocumentMode) -> &'static [ContextAction] {
         ],
         DocumentMode::Split => &[
             ContextAction::Paste,
+            ContextAction::Bold,
+            ContextAction::Italic,
             ContextAction::CopyText,
             ContextAction::CopyMarkdown,
             ContextAction::CopyTableTsv,
@@ -4032,6 +4048,10 @@ impl ApplicationHandler<AppEvent> for App {
                         }) {
                             match action {
                                 ContextAction::Paste => self.paste_into_source(),
+                                ContextAction::Bold => self.perform_action(AppAction::FormatBold),
+                                ContextAction::Italic => {
+                                    self.perform_action(AppAction::FormatItalic)
+                                }
                                 ContextAction::CopyText | ContextAction::CopyMarkdown => {
                                     self.copy_selection(action.source_markdown());
                                 }
@@ -4781,6 +4801,8 @@ impl App {
                 DocumentMode::Split => self.refresh_reading_async("cerrando vista dividida"),
                 DocumentMode::Reading | DocumentMode::SourceEditing => self.enter_split_mode(),
             },
+            AppAction::FormatBold => self.apply_markdown_surround("**", "**", "texto"),
+            AppAction::FormatItalic => self.apply_markdown_surround("_", "_", "texto"),
             AppAction::ToggleSection => self.toggle_focused_section(),
             AppAction::SearchDocument => self.open_document_search(),
             AppAction::CopyTableTsv => self.copy_current_table_tsv(),
@@ -5209,6 +5231,14 @@ impl App {
         }
     }
 
+    fn apply_markdown_surround(&mut self, prefix: &str, suffix: &str, placeholder: &str) {
+        if !self.document.mode.is_editable() {
+            self.set_notice("activa edición para aplicar formato al Markdown");
+            return;
+        }
+        self.edit_source(|editor, source| editor.surround(source, prefix, suffix, placeholder));
+    }
+
     fn schedule_recovery(&mut self) {
         if self.document.last_recovery.elapsed().as_secs() < 3 {
             return;
@@ -5426,6 +5456,9 @@ impl App {
             PhysicalKey::Code(KeyCode::KeyV) if self.modifiers.control_key() => {
                 self.paste_into_source();
             }
+            PhysicalKey::Code(KeyCode::KeyB) if self.modifiers.control_key() => {
+                self.perform_action(AppAction::FormatBold);
+            }
             PhysicalKey::Code(KeyCode::KeyS)
                 if self.modifiers.control_key() && self.modifiers.shift_key() =>
             {
@@ -5448,6 +5481,9 @@ impl App {
                 if self.modifiers.control_key() && self.modifiers.shift_key() =>
             {
                 self.perform_action(AppAction::RefreshWorkspace);
+            }
+            PhysicalKey::Code(KeyCode::KeyI) if self.modifiers.control_key() => {
+                self.perform_action(AppAction::FormatItalic);
             }
             PhysicalKey::Code(KeyCode::KeyR)
                 if self.modifiers.control_key() && self.modifiers.shift_key() =>

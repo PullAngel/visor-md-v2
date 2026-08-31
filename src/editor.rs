@@ -373,6 +373,33 @@ impl SourceEditor {
         Ok(changed)
     }
 
+    /// Rodea la selección con sintaxis Markdown mediante un único cambio
+    /// reversible. Si no hay selección, inserta un texto guía y lo deja
+    /// seleccionado para que la siguiente escritura lo reemplace.
+    pub fn surround(
+        &mut self,
+        source: &mut TextBuffer,
+        prefix: &str,
+        suffix: &str,
+        placeholder: &str,
+    ) -> Result<bool, EditError> {
+        let range = self.selection();
+        let selected = source.slice_bytes(range.clone())?;
+        let content = if selected.is_empty() {
+            placeholder
+        } else {
+            &selected
+        };
+        let replacement = format!("{prefix}{content}{suffix}");
+        let changed = self.history.apply(source, range.clone(), &replacement)?;
+        if changed {
+            self.anchor = range.start + prefix.len();
+            self.cursor = self.anchor + content.len();
+            self.preferred_column = None;
+        }
+        Ok(changed)
+    }
+
     pub fn backspace(&mut self, source: &mut TextBuffer) -> Result<bool, EditError> {
         let selection = self.selection();
         let range = if selection.is_empty() {
@@ -546,6 +573,33 @@ mod tests {
             assert!(editor.redo(&mut source).unwrap());
         }
         assert_eq!(source.to_string().matches('🔐').count(), 64);
+    }
+
+    #[test]
+    fn rodear_una_seleccion_unicode_es_un_solo_cambio_reversible() {
+        let mut source = buffer("idea segura 🔐");
+        let mut editor = SourceEditor::new();
+        editor.set_cursor(&source, 0, false).unwrap();
+        editor
+            .set_cursor(&source, "idea segura".len(), true)
+            .unwrap();
+
+        assert!(editor.surround(&mut source, "**", "**", "texto").unwrap());
+        assert_eq!(source.to_string(), "**idea segura** 🔐");
+        assert_eq!(editor.selection(), 2.."**idea segura".len());
+        assert!(editor.undo(&mut source).unwrap());
+        assert_eq!(source.to_string(), "idea segura 🔐");
+    }
+
+    #[test]
+    fn rodear_un_cursor_deja_el_texto_guia_seleccionado() {
+        let mut source = buffer("antes después");
+        let mut editor = SourceEditor::new();
+        editor.set_cursor(&source, "antes ".len(), false).unwrap();
+
+        assert!(editor.surround(&mut source, "_", "_", "texto").unwrap());
+        assert_eq!(source.to_string(), "antes _texto_después");
+        assert_eq!(source.slice_bytes(editor.selection()).unwrap(), "texto");
     }
 
     #[test]
