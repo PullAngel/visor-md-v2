@@ -128,6 +128,10 @@ Registrar antes de comenzar:
 - RePág y AvPág desplazan aproximadamente una pantalla sin perder la selección.
 - Tab y Shift+Tab recorren enlaces en ambos sentidos, hacen visible el destino
   real y dejan una señal de foco distinguible del hover.
+- Pasar el mouse sobre un enlace debe mostrar una banda efímera con su tipo y
+  destino antes de abrirlo. El mismo aviso debe aparecer al enfocarlo con Tab;
+  al alejar el mouse o pulsar Escape, desaparece. Verificar que una ruta
+  bloqueada solo se anuncia y sigue sin acceder a archivos o red.
 - Enter sobre un enlace web o de correo enfocado lo delega al navegador o
   aplicación del sistema. Un enlace relativo avisa que requiere VFS; una ruta
   bloqueada no se abre.
@@ -145,6 +149,14 @@ Registrar antes de comenzar:
 
 - Pulsar `F2` muestra la fuente Markdown como texto inerte; escribir texto con
   teclado o IME, Backspace, Delete, Ctrl+Z y Ctrl+Y no debe cerrar la ventana.
+- En edición, seleccionar texto Unicode y probar `Ctrl+B`, `Ctrl+I` y
+  `Ctrl+K`. Deben crear respectivamente negrita, cursiva y enlace, conservar
+  seleccionada la parte útil para seguir escribiendo y revertirse con una sola
+  pulsación de `Ctrl+Z`. Sin selección, negrita y cursiva dejan `texto`
+  seleccionado; un enlace deja `texto` o `https://` listo para reemplazar.
+- Abrir el menú contextual en edición y comprobar Negrita, Cursiva, Enlace,
+  Encabezado H2 y Lista. H2 y Lista solo anteponen `## ` o `- ` a la línea
+  actual; no deben cambiar las líneas vecinas ni normalizar CRLF.
 - Tras editar, el título muestra `*` junto al nombre del documento; desaparece
   solamente después de un guardado confirmado.
 - Pulsar `F2` otra vez vuelve a lectura y muestra el contenido modificado, sin
@@ -232,6 +244,9 @@ contenido permanece inerte y la fuente se conserva sin activar recursos.
 
 1. Comprobar que Nuevo, Abrir, Guardar, Editar o Leer, Buscar y Más aparecen en
    la franja superior sin taparse en una ventana normal.
+   En edición, comprobar que la misma franja cambia a Guardar, Leer, Negrita,
+   Cursiva, H2, Lista, Enlace y Más. Volver a lectura debe restaurar el conjunto
+   de lectura, sin dejar acciones de formato marcadas como activas.
 2. Activar cada acción con mouse y comprobar que coincide con su atajo.
 3. Abrir dos documentos, alternarlos desde la barra inferior y comprobar que el
    asterisco de cambios permanece asociado al documento correcto.
