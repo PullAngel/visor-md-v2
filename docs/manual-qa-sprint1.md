@@ -267,6 +267,9 @@ contenido permanece inerte y la fuente se conserva sin activar recursos.
 2. Activar cada acción con mouse y comprobar que coincide con su atajo.
 3. Abrir dos documentos, alternarlos desde la barra inferior y comprobar que el
    asterisco de cambios permanece asociado al documento correcto.
+   Abrir el menú contextual o la paleta, fijar una de las pestañas y comprobar
+   que aparece `•`; intentar cerrarla debe avisar sin cerrar ni perder cambios.
+   Liberarla debe restaurar el cierre protegido normal.
 4. Intentar reducir la ventana por debajo de 640 × 480 puntos lógicos. Debe
    detenerse en ese mínimo y conservar todos los controles de la barra visibles
    y clicables.

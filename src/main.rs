@@ -382,15 +382,16 @@ fn adjacent_toolbar_index(current: usize, backwards: bool, action_count: usize) 
     }
 }
 
-fn tab_label(path: &str, dirty: bool, max_chars: usize) -> String {
+fn tab_label(path: &str, dirty: bool, pinned: bool, max_chars: usize) -> String {
     let path_buf = PathBuf::from(path);
     let name = path_buf
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or(path);
     let max_chars = max_chars.max(4);
+    let prefix = if pinned { "• " } else { "" };
     let suffix = if dirty { " *" } else { "" };
-    let available = max_chars.saturating_sub(suffix.chars().count());
+    let available = max_chars.saturating_sub(prefix.chars().count() + suffix.chars().count());
     let shortened = if name.chars().count() > available {
         format!(
             "{}…",
@@ -401,7 +402,7 @@ fn tab_label(path: &str, dirty: bool, max_chars: usize) -> String {
     } else {
         name.to_string()
     };
-    format!("{shortened}{suffix}")
+    format!("{prefix}{shortened}{suffix}")
 }
 
 /// Los controles efímeros no necesitan retener texto ilimitado. El límite se
@@ -438,6 +439,7 @@ enum ContextAction {
     ToggleSplit,
     Save,
     SaveAs,
+    PinTab,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -447,6 +449,7 @@ enum AppAction {
     Save,
     SaveAs,
     CloseDocument,
+    TogglePinTab,
     ToggleMode,
     ToggleSplit,
     FormatBold,
@@ -468,12 +471,13 @@ enum AppAction {
     CommandPalette,
 }
 
-const APP_ACTIONS: [AppAction; 23] = [
+const APP_ACTIONS: [AppAction; 24] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
     AppAction::SaveAs,
     AppAction::CloseDocument,
+    AppAction::TogglePinTab,
     AppAction::ToggleMode,
     AppAction::ToggleSplit,
     AppAction::FormatBold,
@@ -502,6 +506,7 @@ impl AppAction {
             Self::Save => "Guardar · Ctrl+S",
             Self::SaveAs => "Guardar como · Ctrl+Shift+S",
             Self::CloseDocument => "Cerrar pestaña · Ctrl+W",
+            Self::TogglePinTab => "Fijar o soltar pestaña",
             Self::ToggleMode => "Alternar lectura y edición · F2",
             Self::ToggleSplit => "Comparar fuente y vista · F3",
             Self::FormatBold => "Aplicar negrita · Ctrl+B",
@@ -572,6 +577,7 @@ impl ContextAction {
             Self::ToggleSplit => "Comparar fuente y vista",
             Self::Save => "Guardar",
             Self::SaveAs => "Guardar como",
+            Self::PinTab => "Fijar o soltar pestaña",
         }
     }
 
@@ -591,6 +597,7 @@ fn context_actions(mode: DocumentMode) -> &'static [ContextAction] {
             ContextAction::ToggleSplit,
             ContextAction::Save,
             ContextAction::SaveAs,
+            ContextAction::PinTab,
         ],
         DocumentMode::SourceEditing => &[
             ContextAction::Paste,
@@ -607,6 +614,7 @@ fn context_actions(mode: DocumentMode) -> &'static [ContextAction] {
             ContextAction::ToggleSplit,
             ContextAction::Save,
             ContextAction::SaveAs,
+            ContextAction::PinTab,
         ],
         DocumentMode::Split => &[
             ContextAction::Paste,
@@ -623,6 +631,7 @@ fn context_actions(mode: DocumentMode) -> &'static [ContextAction] {
             ContextAction::ToggleSplit,
             ContextAction::Save,
             ContextAction::SaveAs,
+            ContextAction::PinTab,
         ],
     }
 }
@@ -3176,6 +3185,8 @@ fn blit_color(pixmap: &mut Pixmap, g: &CachedGlyph, gx: f32, gy: f32, width: i32
 struct DocumentState {
     id: u64,
     path: String,
+    /// Protección reversible de sesión. No se persiste ni modifica el archivo.
+    pinned: bool,
     source: TextBuffer,
     source_metadata: TextMetadata,
     source_identity: Option<FileIdentity>,
@@ -3212,6 +3223,7 @@ impl DocumentState {
         Self {
             id: NEXT_DOCUMENT_ID.fetch_add(1, Ordering::Relaxed),
             path: "sin título.md".to_string(),
+            pinned: false,
             source: TextBuffer::new(),
             source_metadata: TextMetadata::default(),
             source_identity: None,
@@ -4216,6 +4228,9 @@ impl ApplicationHandler<AppEvent> for App {
                                 }
                                 ContextAction::Save => self.perform_action(AppAction::Save),
                                 ContextAction::SaveAs => self.perform_action(AppAction::SaveAs),
+                                ContextAction::PinTab => {
+                                    self.perform_action(AppAction::TogglePinTab)
+                                }
                             }
                         }
                         if let Some(w) = &self.window {
@@ -4999,6 +5014,7 @@ impl App {
             AppAction::Save => self.save_current_document(),
             AppAction::SaveAs => self.save_as_current_document(),
             AppAction::CloseDocument => self.close_active_document_tab(),
+            AppAction::TogglePinTab => self.toggle_active_tab_pin(),
             AppAction::ToggleMode => match self.document.mode {
                 DocumentMode::Reading => self.enter_source_mode(),
                 DocumentMode::SourceEditing | DocumentMode::Split => {
@@ -5329,6 +5345,10 @@ impl App {
     }
 
     fn close_active_document_tab(&mut self) {
+        if self.document.pinned {
+            self.set_notice("la pestaña está fijada; soltala antes de cerrarla");
+            return;
+        }
         if self.document_busy(self.document.id) {
             self.set_notice("espera a que termine la operación de esta pestaña antes de cerrarla");
             return;
@@ -5367,6 +5387,19 @@ impl App {
             window.request_redraw();
         }
     }
+
+    fn toggle_active_tab_pin(&mut self) {
+        self.document.pinned = !self.document.pinned;
+        self.set_notice(if self.document.pinned {
+            "pestaña fijada para esta sesión"
+        } else {
+            "pestaña liberada"
+        });
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
     fn enter_source_mode(&mut self) {
         match safe_buffer_blocks(&self.document.source) {
             Ok(blocks) => {
@@ -7954,6 +7987,7 @@ impl App {
                         tab_label(
                             &self.document.path,
                             self.document.is_dirty(),
+                            self.document.pinned,
                             tab_label_chars,
                         ),
                     ))
@@ -7967,6 +8001,7 @@ impl App {
                                 tab_label(
                                     &tab.document.path,
                                     tab.document.is_dirty(),
+                                    tab.document.pinned,
                                     tab_label_chars,
                                 ),
                             )
@@ -8999,6 +9034,7 @@ fn main() {
             path: opening_path
                 .clone()
                 .unwrap_or_else(|| "sin título.md".to_string()),
+            pinned: false,
             source: TextBuffer::new(),
             source_metadata: TextMetadata::default(),
             source_identity: None,
@@ -9395,11 +9431,14 @@ mod pruebas {
 
     #[test]
     fn la_etiqueta_de_pestana_conserva_unicode_y_marca_cambios() {
-        let label = tab_label(r"C:\notas\日本語 y ciberseguridad.md", true, 18);
+        let label = tab_label(r"C:\notas\日本語 y ciberseguridad.md", true, true, 18);
 
         assert!(label.ends_with('*'));
+        assert!(label.starts_with("• "));
         assert!(label.chars().count() <= 18);
         assert!(label.is_char_boundary(label.len()));
+        assert!(APP_ACTIONS.contains(&AppAction::TogglePinTab));
+        assert!(context_actions(DocumentMode::Reading).contains(&ContextAction::PinTab));
     }
 
     #[test]

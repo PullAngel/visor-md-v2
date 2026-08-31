@@ -111,6 +111,10 @@ iconos secundarios. El tamaño mínimo es 640 × 480 puntos lógicos: debajo de 
 umbral una barra de edición completa dejaría controles invisibles o parcialmente
 clicables.
 
+Fijar una pestaña es una protección de la sesión, no metadato del Markdown ni
+una preferencia persistente. Su marca `•` se ve antes del nombre y evita cierres
+accidentales hasta que la persona la libere desde el menú contextual o la paleta.
+
 `F6` lleva el foco visible a esa barra; flechas o Tab lo recorren, Enter o
 Espacio ejecutan y Escape vuelve al documento. Este foco no se presenta como
 prueba de lector de pantalla: la semántica accesible del canvas sigue siendo un

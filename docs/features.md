@@ -50,7 +50,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Detectar cambios externos | Parcial | Conflicto visible al guardar y al recuperar foco; falta QA multiplataforma |
 | Recuperación de sesión | Parcial | Activa por defecto, separada por pestaña, versionada y desactivable con advertencia; falta QA de cierre inesperado |
 | Crear documento | Parcial | Crea una pestaña nueva sin reemplazar el documento activo; Guardar abre el diálogo de destino incluso para un documento vacío; falta plantilla inicial |
-| Varios documentos y pestañas | Parcial | Barra visible, cambio y cierre por mouse/teclado, estado, historial, scroll, selección, plegado, anclas y recuperación separados; aperturas, renders y guardados se dirigen por pestaña sin congelar las demás; falta accesibilidad completa |
+| Varios documentos y pestañas | Parcial | Barra visible, cambio y cierre por mouse/teclado, pestañas fijables por sesión, estado, historial, scroll, selección, plegado, anclas y recuperación separados; aperturas, renders y guardados se dirigen por pestaña sin congelar las demás; falta accesibilidad completa |
 | Menú contextual | Parcial | Copia y pegado explícito según modo, búsqueda, cambio de vista y guardado; faltan acciones de workspace y estados deshabilitados visibles |
 | Paleta de comandos | Parcial | `Ctrl+Shift+P` muestra el catálogo compartido, filtra por nombre y ejecuta por teclado o mouse; falta accesibilidad semántica completa |
 | Barra de acciones | Parcial | En lectura prioriza archivo, modo y búsqueda; en edición muestra guardar y las cinco ayudas Markdown actuales. Mouse y F6 comparten acciones; 640 × 480 lógicos evita controles ocultos; falta semántica de lector de pantalla |

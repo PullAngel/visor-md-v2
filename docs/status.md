@@ -138,6 +138,9 @@ exacto del traspaso.
   baseline o la limpieza de recuperación. Aperturas y renders también llevan
   identidad y versión propias: pueden completar una pestaña inactiva sin
   congelar ni reemplazar la activa.
+- una pestaña puede fijarse desde la paleta o el menú contextual. La marca `•`
+  es solo de sesión, no se escribe ni se guarda en el Markdown, y evita su
+  cierre hasta liberarla explícitamente.
 - una barra superior sobria adapta la jerarquía al modo. En lectura hace visibles
   Nuevo, Abrir, Guardar, Editar, Buscar y Más; en edición muestra Guardar, Leer,
   Negrita, Cursiva, H2, Lista, Enlace y Más. Usa las mismas acciones que atajos,
