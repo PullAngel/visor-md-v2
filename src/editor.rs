@@ -437,7 +437,9 @@ impl SourceEditor {
         let changed = self.history.apply(source, start..start, prefix)?;
         if changed {
             self.cursor += prefix.len();
-            self.anchor += prefix.len();
+            if self.anchor >= start {
+                self.anchor += prefix.len();
+            }
             self.preferred_column = None;
         }
         Ok(changed)
@@ -676,6 +678,21 @@ mod tests {
         assert_eq!(source.slice_bytes(editor.selection()).unwrap(), "idea ágil");
         assert!(editor.undo(&mut source).unwrap());
         assert_eq!(source.to_string(), "primera\r\nidea ágil\r\nfinal");
+    }
+
+    #[test]
+    fn prefijar_linea_no_mueve_un_ancla_en_linea_anterior() {
+        let mut source = buffer("primera\nsegunda\ntercera");
+        let mut editor = SourceEditor::new();
+        editor.set_cursor(&source, 0, false).unwrap();
+        editor
+            .set_cursor(&source, "primera\nsegunda".len(), true)
+            .unwrap();
+
+        assert!(editor.prefix_current_line(&mut source, "## ").unwrap());
+        assert_eq!(source.to_string(), "primera\n## segunda\ntercera");
+        assert_eq!(editor.anchor(), 0);
+        assert_eq!(editor.cursor(), "primera\n## segunda".len());
     }
 
     #[test]
