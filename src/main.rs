@@ -9025,7 +9025,10 @@ mod pruebas {
         labels.sort_unstable();
         labels.dedup();
 
-        assert!(original_len <= 20, "el catálogo dejó de ser pequeño");
+        // Incluye las ayudas editoriales cotidianas sin convertir la paleta en
+        // un menú de IDE. Superar 24 exige revisar jerarquía y no solo ampliar
+        // la lista por comodidad de implementación.
+        assert!(original_len <= 24, "el catálogo dejó de ser pequeño");
         assert_eq!(labels.len(), original_len);
     }
 
