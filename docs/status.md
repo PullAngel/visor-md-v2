@@ -185,6 +185,9 @@ exacto del traspaso.
 - cambiar de pestaña conserva también la selección de lectura. En edición, el
   cursor y la selección se reconstruyen desde el `SourceEditor` de esa pestaña,
   por lo que volver a ella no exige pulsar una tecla para recuperar el caret.
+- la búsqueda local marca en el borde derecho la posición relativa de todos los
+  bloques coincidentes. Reutiliza el resultado de la consulta y omite contenido
+  plegado, por lo que no introduce un recorrido completo durante cada cuadro.
 
 Evidencia actual en Windows:
 

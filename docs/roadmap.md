@@ -253,7 +253,7 @@ ampliar el producto.
 - imágenes locales seguras;
 - bloques de código y resaltado medido;
 - índice filtrable;
-- búsqueda con marcas de scroll;
+- búsqueda con marcas de scroll; implementada por bloque coincidente sin recorridos extra por cuadro;
 - plegado de secciones; implementado en lectura con estado por pestaña y revelado al navegar;
 - contador de palabras y lectura;
 - copiar tablas como TSV; implementado para la tabla completa desde una fila;

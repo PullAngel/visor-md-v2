@@ -7488,6 +7488,7 @@ impl App {
             )
         });
         let search_query = self.search_query.clone();
+        let search_mark_blocks = self.search_matches();
         let search_overlay = search_query.as_ref().map(|query| {
             let matches = self.search_matches().len();
             let label = if query.is_empty() {
@@ -7721,6 +7722,7 @@ impl App {
             scale_cx,
             glyphs,
             scroll,
+            doc_height,
             surface,
             palette,
             selection,
@@ -8127,6 +8129,15 @@ impl App {
             }
         }
 
+        // La búsqueda ya recorre el documento al cambiar la consulta. Estas
+        // marcas reutilizan ese resultado y la geometría compacta: no agregan
+        // un recorrido completo a cada cuadro ni revelan secciones plegadas.
+        for y in search_mark_positions(&search_mark_blocks, slots, *doc_height, h.get() as f32) {
+            if let Some(rect) = Rect::from_xywh(w.get() as f32 - 5.0, y, 3.0, 4.0) {
+                pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
+            }
+        }
+
         for (index, layout) in toolbar_layouts.iter().enumerate() {
             let x = TOOLBAR_X + index as f32 * TOOLBAR_ITEM_WIDTH;
             let width = TOOLBAR_ITEM_WIDTH - 4.0;
@@ -8468,6 +8479,22 @@ fn matching_block_indices(blocks: &[Block], query: &str) -> Vec<usize> {
                 .contains(&folded_query)
                 .then_some(index)
         })
+        .collect()
+}
+
+fn search_mark_positions(
+    matches: &[usize],
+    slots: &[Slot],
+    document_height: f32,
+    viewport_height: f32,
+) -> Vec<f32> {
+    let track_height = (viewport_height - STATUS_HEIGHT - 4.0).max(0.0);
+    let denominator = document_height.max(1.0);
+    matches
+        .iter()
+        .filter_map(|index| slots.get(*index))
+        .filter(|slot| slot.height >= 0.0)
+        .map(|slot| (slot.y / denominator).clamp(0.0, 1.0) * track_height)
         .collect()
 }
 
@@ -9826,6 +9853,36 @@ con dos lineas
         assert_eq!(matching_block_indices(&blocks, "Ñandú"), vec![2]);
         assert!(matching_block_indices(&blocks, "ausente").is_empty());
         assert!(matching_block_indices(&blocks, "").is_empty());
+    }
+
+    #[test]
+    fn las_marcas_de_busqueda_muestran_el_documento_completo_y_omiten_lo_plegado() {
+        let slots = vec![
+            Slot {
+                y: 100.0,
+                height: 20.0,
+                x: 0.0,
+                kind: Kind::Para,
+            },
+            Slot {
+                y: 500.0,
+                height: -1.0,
+                x: 0.0,
+                kind: Kind::Para,
+            },
+            Slot {
+                y: 900.0,
+                height: 20.0,
+                x: 0.0,
+                kind: Kind::Para,
+            },
+        ];
+
+        let marks = search_mark_positions(&[0, 1, 2], &slots, 1_000.0, 800.0);
+
+        assert_eq!(marks.len(), 2);
+        assert!(marks[0] < marks[1]);
+        assert!(marks.iter().all(|mark| (0.0..768.0).contains(mark)));
     }
 
     #[test]

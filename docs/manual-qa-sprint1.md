@@ -11,6 +11,16 @@
 5. Cambiar de pestaña y volver: el plegado de cada documento debe mantenerse
    independiente. Entrar en edición debe mostrar siempre la fuente completa.
 
+## Selección por pestaña y marcas de búsqueda
+
+1. Seleccionar texto en lectura, abrir otra pestaña y volver: la selección debe
+   reaparecer en el documento correcto.
+2. En una pestaña de edición, mover el cursor, cambiar de pestaña y volver: el
+   caret debe verse de inmediato en la posición anterior.
+3. Pulsar `Ctrl+F`, buscar una palabra repetida y comprobar marcas verdes
+   discretas en el borde derecho. Enter debe recorrer resultados sin confundir
+   las marcas con una barra de desplazamiento interactiva.
+
 Esta lista comprueba propiedades visuales y de interacción que las pruebas de
 píxeles no pueden juzgar por sí solas. No convierte una impresión informal en
 evidencia: se registra plataforma, escala, commit y resultado.
