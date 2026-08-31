@@ -337,6 +337,8 @@ enum ContextAction {
     Bold,
     Italic,
     Link,
+    Heading,
+    BulletList,
     CopyText,
     CopyMarkdown,
     CopyTableTsv,
@@ -359,6 +361,8 @@ enum AppAction {
     FormatBold,
     FormatItalic,
     InsertLink,
+    InsertHeading,
+    InsertBulletList,
     ToggleSection,
     SearchDocument,
     CopyTableTsv,
@@ -373,7 +377,7 @@ enum AppAction {
     CommandPalette,
 }
 
-const APP_ACTIONS: [AppAction; 21] = [
+const APP_ACTIONS: [AppAction; 23] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -384,6 +388,8 @@ const APP_ACTIONS: [AppAction; 21] = [
     AppAction::FormatBold,
     AppAction::FormatItalic,
     AppAction::InsertLink,
+    AppAction::InsertHeading,
+    AppAction::InsertBulletList,
     AppAction::ToggleSection,
     AppAction::SearchDocument,
     AppAction::CopyTableTsv,
@@ -410,6 +416,8 @@ impl AppAction {
             Self::FormatBold => "Aplicar negrita · Ctrl+B",
             Self::FormatItalic => "Aplicar cursiva · Ctrl+I",
             Self::InsertLink => "Insertar enlace · Ctrl+K",
+            Self::InsertHeading => "Convertir línea en encabezado H2",
+            Self::InsertBulletList => "Convertir línea en lista con viñetas",
             Self::ToggleSection => "Plegar o desplegar sección enfocada",
             Self::SearchDocument => "Buscar en documento · Ctrl+F",
             Self::CopyTableTsv => "Copiar tabla seleccionada como TSV",
@@ -437,6 +445,8 @@ impl AppAction {
             Self::FormatBold => "Negrita",
             Self::FormatItalic => "Cursiva",
             Self::InsertLink => "Enlace",
+            Self::InsertHeading => "Encabezado",
+            Self::InsertBulletList => "Lista",
             Self::ToggleSection => "Plegar sección",
             Self::SearchDocument => "Buscar",
             Self::CommandPalette => "Más",
@@ -461,6 +471,8 @@ impl ContextAction {
             Self::Bold => "Negrita",
             Self::Italic => "Cursiva",
             Self::Link => "Insertar enlace",
+            Self::Heading => "Encabezado H2",
+            Self::BulletList => "Lista con viñetas",
             Self::CopyText => "Copiar texto",
             Self::CopyMarkdown => "Copiar Markdown original",
             Self::CopyTableTsv => "Copiar tabla como TSV",
@@ -494,6 +506,8 @@ fn context_actions(mode: DocumentMode) -> &'static [ContextAction] {
             ContextAction::Bold,
             ContextAction::Italic,
             ContextAction::Link,
+            ContextAction::Heading,
+            ContextAction::BulletList,
             ContextAction::CopyText,
             ContextAction::CopyMarkdown,
             ContextAction::CopyTableTsv,
@@ -508,6 +522,8 @@ fn context_actions(mode: DocumentMode) -> &'static [ContextAction] {
             ContextAction::Bold,
             ContextAction::Italic,
             ContextAction::Link,
+            ContextAction::Heading,
+            ContextAction::BulletList,
             ContextAction::CopyText,
             ContextAction::CopyMarkdown,
             ContextAction::CopyTableTsv,
@@ -4061,6 +4077,12 @@ impl ApplicationHandler<AppEvent> for App {
                                     self.perform_action(AppAction::FormatItalic)
                                 }
                                 ContextAction::Link => self.perform_action(AppAction::InsertLink),
+                                ContextAction::Heading => {
+                                    self.perform_action(AppAction::InsertHeading)
+                                }
+                                ContextAction::BulletList => {
+                                    self.perform_action(AppAction::InsertBulletList)
+                                }
                                 ContextAction::CopyText | ContextAction::CopyMarkdown => {
                                     self.copy_selection(action.source_markdown());
                                 }
@@ -4813,6 +4835,8 @@ impl App {
             AppAction::FormatBold => self.apply_markdown_surround("**", "**", "texto"),
             AppAction::FormatItalic => self.apply_markdown_surround("_", "_", "texto"),
             AppAction::InsertLink => self.insert_markdown_link(),
+            AppAction::InsertHeading => self.prefix_markdown_line("## "),
+            AppAction::InsertBulletList => self.prefix_markdown_line("- "),
             AppAction::ToggleSection => self.toggle_focused_section(),
             AppAction::SearchDocument => self.open_document_search(),
             AppAction::CopyTableTsv => self.copy_current_table_tsv(),
@@ -5255,6 +5279,14 @@ impl App {
             return;
         }
         self.edit_source(|editor, source| editor.insert_link(source));
+    }
+
+    fn prefix_markdown_line(&mut self, prefix: &str) {
+        if !self.document.mode.is_editable() {
+            self.set_notice("activa edición para cambiar la estructura del Markdown");
+            return;
+        }
+        self.edit_source(|editor, source| editor.prefix_current_line(source, prefix));
     }
 
     fn schedule_recovery(&mut self) {

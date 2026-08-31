@@ -154,6 +154,9 @@ exacto del traspaso.
   selección dejan `texto` seleccionado para reemplazarlo al escribir; nunca
   reserializan el resto del documento. Un enlace con rótulo ya seleccionado
   deja `https://` listo para reemplazar, sin leer el portapapeles.
+- el mismo catálogo puede anteponer `## ` o `- ` a la línea actual para crear
+  un encabezado H2 o una viñeta. La selección permanece sobre el contenido y
+  undo revierte cada ayuda como una sola edición, incluso con CRLF y Unicode.
 - la barra de estado cuenta palabras del texto visible del último render y
   muestra una estimación conservadora de lectura a 200 palabras por minuto. No
   tokeniza, no usa red y no promete precisión lingüística para idiomas sin

@@ -425,6 +425,24 @@ impl SourceEditor {
         Ok(changed)
     }
 
+    /// Inserta un marcador al inicio de la línea actual. La operación no
+    /// interpreta ni normaliza las demás líneas y mantiene selección y cursor
+    /// sobre el mismo contenido lógico.
+    pub fn prefix_current_line(
+        &mut self,
+        source: &mut TextBuffer,
+        prefix: &str,
+    ) -> Result<bool, EditError> {
+        let start = source.line_start(self.cursor);
+        let changed = self.history.apply(source, start..start, prefix)?;
+        if changed {
+            self.cursor += prefix.len();
+            self.anchor += prefix.len();
+            self.preferred_column = None;
+        }
+        Ok(changed)
+    }
+
     pub fn backspace(&mut self, source: &mut TextBuffer) -> Result<bool, EditError> {
         let selection = self.selection();
         let range = if selection.is_empty() {
@@ -641,6 +659,23 @@ mod tests {
         assert_eq!(source.slice_bytes(editor.selection()).unwrap(), "https://");
         assert!(editor.undo(&mut source).unwrap());
         assert_eq!(source.to_string(), "guía ágil");
+    }
+
+    #[test]
+    fn prefijar_linea_con_crlf_conserva_el_resto_y_la_seleccion() {
+        let mut source = buffer("primera\r\nidea ágil\r\nfinal");
+        let mut editor = SourceEditor::new();
+        let start = "primera\r\n".len();
+        editor.set_cursor(&source, start, false).unwrap();
+        editor
+            .set_cursor(&source, start + "idea ágil".len(), true)
+            .unwrap();
+
+        assert!(editor.prefix_current_line(&mut source, "- ").unwrap());
+        assert_eq!(source.to_string(), "primera\r\n- idea ágil\r\nfinal");
+        assert_eq!(source.slice_bytes(editor.selection()).unwrap(), "idea ágil");
+        assert!(editor.undo(&mut source).unwrap());
+        assert_eq!(source.to_string(), "primera\r\nidea ágil\r\nfinal");
     }
 
     #[test]
