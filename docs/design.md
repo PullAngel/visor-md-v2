@@ -88,9 +88,17 @@ en reposo**. En la v1 todos lo llevan y compiten con el documento. Estados:
 
 La barra superior provisional de acciones de archivo aplica la misma gramática:
 no dibuja una hilera de botones sólidos en reposo, usa superficie solo al pasar
-el mouse y reserva el acento para la acción de modo activa. Sus rótulos se
+el mouse y reserva el acento para la acción de modo cuando el documento está en
+edición o vista dividida. En lectura, `Editar` es una acción disponible, no un
+estado activo. Sus rótulos se
 reemplazarán por iconos accesibles cuando el sistema definitivo de iconos esté
 integrado.
+
+La franja inferior contiene pestañas y estado, por lo que forma parte del chrome
+y no del viewport del documento. El scroll debe reservar su altura: la última
+línea nunca puede quedar oculta detrás de una pestaña. Separadores, tablas y la
+división fuente/vista usan el rol `Borde`; `Tenue` queda reservado para texto e
+iconos secundarios.
 
 `F6` lleva el foco visible a esa barra; flechas o Tab lo recorren, Enter o
 Espacio ejecutan y Escape vuelve al documento. Este foco no se presenta como

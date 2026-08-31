@@ -141,7 +141,11 @@ exacto del traspaso.
 - una barra superior sobria hace visibles Nuevo, Abrir, Guardar, el cambio entre
   lectura y edición, la búsqueda y el acceso al catálogo completo. Usa las
   mismas acciones que los atajos y la paleta, para evitar comportamientos
-  distintos según cómo se invoque una operación.
+  distintos según cómo se invoque una operación. El acento de modo solo aparece
+  durante edición o vista dividida; en lectura, `Editar` vuelve al reposo.
+- el viewport reserva la franja inferior completa. El final del documento ya no
+  queda bajo pestañas o estado, y bordes de tablas, separadores de pestañas y la
+  división de la vista usan el color estructural definido por el sistema visual.
 - la barra de estado cuenta palabras del texto visible del último render y
   muestra una estimación conservadora de lectura a 200 palabras por minuto. No
   tokeniza, no usa red y no promete precisión lingüística para idiomas sin

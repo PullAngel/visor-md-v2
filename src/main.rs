@@ -624,6 +624,10 @@ impl DocumentMode {
     }
 }
 
+fn toolbar_action_is_active(action: AppAction, mode: DocumentMode) -> bool {
+    action == AppAction::ToggleMode && mode.is_editable()
+}
+
 impl From<DocumentModePreference> for DocumentMode {
     fn from(value: DocumentModePreference) -> Self {
         match value {
@@ -1711,7 +1715,7 @@ fn marker_for(list: &comrak::nodes::NodeList, index: usize, task: Option<char>) 
 /// Dibuja la casilla de una tarea: cuadrado con borde y, si esta hecha,
 /// relleno con su tilde.
 fn draw_checkbox(pixmap: &mut Pixmap, x: f32, y: f32, size: f32, done: bool, palette: Palette) {
-    let borde = palette.dim;
+    let borde = palette.border;
     let acento = palette.accent;
     let fondo = palette.bg;
 
@@ -2332,6 +2336,10 @@ fn folded_block_mask(blocks: &[Block], folded_headings: &HashSet<usize>) -> Vec<
 
 fn max_scroll(doc_height: f32, viewport_height: f32) -> f32 {
     (doc_height - viewport_height).max(0.0)
+}
+
+fn document_viewport_height(window_height: f32) -> f32 {
+    (window_height - STATUS_HEIGHT).max(0.0)
 }
 
 fn layout_width_is_stale(laid_for_width: f32, viewport_width: f32) -> bool {
@@ -4705,7 +4713,7 @@ impl ApplicationHandler<AppEvent> for App {
                 let viewport_height = self
                     .window
                     .as_ref()
-                    .map(|window| window.inner_size().height as f32)
+                    .map(|window| document_viewport_height(window.inner_size().height as f32))
                     .unwrap_or(0.0);
                 let max = max_scroll(self.doc_height.max(self.preview_height), viewport_height);
                 self.scroll = (self.scroll - dy).clamp(0.0, max);
@@ -4732,7 +4740,9 @@ impl ApplicationHandler<AppEvent> for App {
                         let viewport_height = self
                             .window
                             .as_ref()
-                            .map(|window| window.inner_size().height as f32)
+                            .map(|window| {
+                                document_viewport_height(window.inner_size().height as f32)
+                            })
                             .unwrap_or(0.0);
                         let max =
                             max_scroll(self.doc_height.max(self.preview_height), viewport_height)
@@ -6163,7 +6173,7 @@ impl App {
             return;
         }
         if let (Some(slot), Some(window)) = (self.slots.get(block_index), &self.window) {
-            let viewport = window.inner_size().height as f32;
+            let viewport = document_viewport_height(window.inner_size().height as f32);
             if slot.y < self.scroll {
                 self.scroll = slot.y;
             } else if slot.y + slot.height > self.scroll + viewport {
@@ -6525,7 +6535,7 @@ impl App {
             {
                 self.scroll = slot.y.min(max_scroll(
                     self.doc_height,
-                    window.inner_size().height as f32,
+                    document_viewport_height(window.inner_size().height as f32),
                 ));
             }
         }
@@ -6554,10 +6564,9 @@ impl App {
             self.document.pending_heading = Some(heading.to_owned());
             return;
         };
-        let viewport = self
-            .window
-            .as_ref()
-            .map_or(0.0, |window| window.inner_size().height as f32);
+        let viewport = self.window.as_ref().map_or(0.0, |window| {
+            document_viewport_height(window.inner_size().height as f32)
+        });
         self.scroll = slot.y.min(max_scroll(
             self.doc_height.max(self.preview_height),
             viewport,
@@ -6835,7 +6844,7 @@ impl App {
         if let (Some(slot), Some(window)) = (self.slots.get(block), &self.window) {
             self.scroll = slot.y.min(max_scroll(
                 self.doc_height,
-                window.inner_size().height as f32,
+                document_viewport_height(window.inner_size().height as f32),
             ));
             window.request_redraw();
         }
@@ -7154,7 +7163,7 @@ impl App {
         let Some(window) = &self.window else {
             return;
         };
-        let viewport = window.inner_size().height as f32;
+        let viewport = document_viewport_height(window.inner_size().height as f32);
         let step = (viewport * 0.88).max(1.0);
         let delta = if down { step } else { -step };
         self.scroll = (self.scroll + delta).clamp(
@@ -7310,6 +7319,7 @@ impl App {
         let frame_start = Instant::now();
         let split = self.document.mode == DocumentMode::Split;
         let layout_width = content_layout_width(size.width as f32, self.document.mode);
+        let viewport_height = document_viewport_height(size.height as f32);
 
         // Re-medir solo si cambio el ancho.
         if self.exact_after_edit || layout_width_is_stale(self.laid_for_width, layout_width) {
@@ -7335,7 +7345,7 @@ impl App {
             self.exact_after_edit = false;
             self.scroll = self.scroll.min(max_scroll(
                 self.doc_height.max(self.preview_height),
-                size.height as f32,
+                viewport_height,
             ));
             self.live.clear();
             self.log.push(format!(
@@ -7368,7 +7378,7 @@ impl App {
             self.preview_live.clear();
             self.scroll = self.scroll.min(max_scroll(
                 self.doc_height.max(self.preview_height),
-                size.height as f32,
+                viewport_height,
             ));
         }
 
@@ -7380,13 +7390,13 @@ impl App {
         {
             self.scroll = slot.y.min(max_scroll(
                 self.doc_height.max(self.preview_height),
-                size.height as f32,
+                viewport_height,
             ));
         }
 
         // Que bloques caen en pantalla este cuadro.
         let view_top = self.scroll;
-        let view_bottom = self.scroll + size.height as f32;
+        let view_bottom = self.scroll + viewport_height;
         let visible_positions =
             visible_order_range(&self.slots, &self.visible_blocks, view_top, view_bottom);
         let visible = self.visible_blocks[visible_positions].to_vec();
@@ -7480,7 +7490,7 @@ impl App {
             }
         }
 
-        if self.autoscroll_selection(size.height as f32) {
+        if self.autoscroll_selection(viewport_height) {
             window.request_redraw();
         }
 
@@ -7765,6 +7775,10 @@ impl App {
         let dc = palette.dim;
         dim_paint.set_color(Color::from_rgba8(dc.0, dc.1, dc.2, 160));
 
+        let mut border_paint = Paint::default();
+        let bc = palette.border;
+        border_paint.set_color(Color::from_rgba8(bc.0, bc.1, bc.2, 255));
+
         let ancho_texto =
             (layout_width - MARGIN * *scale_factor * 2.0).min(MAX_MEASURE * *scale_factor);
 
@@ -7779,9 +7793,6 @@ impl App {
                 let columns = cells.len().max(1) as f32;
                 let left = slot.x - 6.0;
                 let table_width = ancho_texto + 12.0;
-                let mut line = Paint::default();
-                let dc = palette.dim;
-                line.set_color(Color::from_rgba8(dc.0, dc.1, dc.2, 112));
                 if matches!(slot.kind, Kind::TableRow { header: true }) {
                     let ac = palette.accent;
                     let mut header = Paint::default();
@@ -7799,13 +7810,13 @@ impl App {
                     (left + table_width - 1.0, top - 1.0, 1.0, slot.height + 2.0),
                 ] {
                     if let Some(rect) = Rect::from_xywh(x, y, width, height) {
-                        pixmap.fill_rect(rect, &line, Transform::identity(), None);
+                        pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
                     }
                 }
                 for column in 1..columns as usize {
                     let x = left + table_width * column as f32 / columns;
                     if let Some(rect) = Rect::from_xywh(x, top - 1.0, 1.0, slot.height + 2.0) {
-                        pixmap.fill_rect(rect, &line, Transform::identity(), None);
+                        pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
                     }
                 }
                 let column_width = ancho_texto / columns;
@@ -8030,7 +8041,7 @@ impl App {
         if split {
             let pane_x = layout_width;
             if let Some(rect) = Rect::from_xywh(pane_x - 1.0, 0.0, 1.0, h.get() as f32) {
-                pixmap.fill_rect(rect, &dim_paint, Transform::identity(), None);
+                pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
             }
             for index in preview_visible {
                 let slot = &preview_slots[index];
@@ -8042,9 +8053,6 @@ impl App {
                     let columns = cells.len().max(1) as f32;
                     let left = pane_x + slot.x - 6.0;
                     let table_width = ancho_texto + 12.0;
-                    let mut line_paint = Paint::default();
-                    let dim = palette.dim;
-                    line_paint.set_color(Color::from_rgba8(dim.0, dim.1, dim.2, 112));
                     for (x, y, width, height) in [
                         (left, top - 1.0, table_width, 1.0),
                         (left, top + slot.height, table_width, 1.0),
@@ -8052,13 +8060,13 @@ impl App {
                         (left + table_width - 1.0, top - 1.0, 1.0, slot.height + 2.0),
                     ] {
                         if let Some(rect) = Rect::from_xywh(x, y, width, height) {
-                            pixmap.fill_rect(rect, &line_paint, Transform::identity(), None);
+                            pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
                         }
                     }
                     for column in 1..columns as usize {
                         let x = left + table_width * column as f32 / columns;
                         if let Some(rect) = Rect::from_xywh(x, top - 1.0, 1.0, slot.height + 2.0) {
-                            pixmap.fill_rect(rect, &line_paint, Transform::identity(), None);
+                            pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
                         }
                     }
                     let column_width = ancho_texto / columns;
@@ -8159,7 +8167,7 @@ impl App {
                     && (TOOLBAR_Y..TOOLBAR_Y + TOOLBAR_HEIGHT).contains(&pointer_y)
             });
             let focused = toolbar_focus == Some(index);
-            let active = TOOLBAR_ACTIONS[index] == AppAction::ToggleMode;
+            let active = toolbar_action_is_active(TOOLBAR_ACTIONS[index], context_mode);
             if (hovered || focused || active)
                 && let Some(rect) = Rect::from_xywh(x, TOOLBAR_Y, width, TOOLBAR_HEIGHT)
             {
@@ -8219,7 +8227,7 @@ impl App {
             if index > 0
                 && let Some(rect) = Rect::from_xywh(x, status_y + 6.0, 1.0, 16.0)
             {
-                pixmap.fill_rect(rect, &dim_paint, Transform::identity(), None);
+                pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
             }
             for line in layout.lines() {
                 for entry in line.items() {
@@ -8815,6 +8823,22 @@ mod pruebas {
         assert_eq!(toolbar_action_at(900.0, 12.0, 900.0), None);
         assert_eq!(adjacent_toolbar_index(0, true), TOOLBAR_ACTIONS.len() - 1);
         assert_eq!(adjacent_toolbar_index(TOOLBAR_ACTIONS.len() - 1, false), 0);
+        assert!(!toolbar_action_is_active(
+            AppAction::ToggleMode,
+            DocumentMode::Reading
+        ));
+        assert!(toolbar_action_is_active(
+            AppAction::ToggleMode,
+            DocumentMode::SourceEditing
+        ));
+        assert!(toolbar_action_is_active(
+            AppAction::ToggleMode,
+            DocumentMode::Split
+        ));
+        assert!(!toolbar_action_is_active(
+            AppAction::Save,
+            DocumentMode::SourceEditing
+        ));
     }
 
     #[test]
@@ -9235,6 +9259,9 @@ mod pruebas {
     fn el_scroll_respeta_el_alto_real_de_la_ventana() {
         assert_eq!(max_scroll(1_000.0, 760.0), 240.0);
         assert_eq!(max_scroll(500.0, 760.0), 0.0);
+        assert_eq!(document_viewport_height(760.0), 732.0);
+        assert_eq!(max_scroll(1_000.0, document_viewport_height(760.0)), 268.0);
+        assert_eq!(document_viewport_height(20.0), 0.0);
     }
 
     #[test]
