@@ -4695,6 +4695,18 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::Tab),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } if self.modifiers.control_key() => {
+                self.switch_document_tab(self.modifiers.shift_key())
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
                         physical_key: PhysicalKey::Code(KeyCode::PageUp),
                         state: ElementState::Pressed,
                         repeat: false,
@@ -5567,6 +5579,13 @@ impl App {
 
     fn handle_source_key(&mut self, event: &KeyEvent) {
         if event.state != ElementState::Pressed {
+            return;
+        }
+        if !event.repeat
+            && self.modifiers.control_key()
+            && matches!(event.physical_key, PhysicalKey::Code(KeyCode::Tab))
+        {
+            self.switch_document_tab(self.modifiers.shift_key());
             return;
         }
         if !event.repeat
