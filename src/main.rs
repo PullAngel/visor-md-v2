@@ -94,6 +94,8 @@ const TOOLBAR_X: f32 = MARGIN;
 const TOOLBAR_Y: f32 = 8.0;
 const TOOLBAR_HEIGHT: f32 = 28.0;
 const TOOLBAR_ITEM_WIDTH: f32 = 68.0;
+const MIN_WINDOW_WIDTH: f64 = 640.0;
+const MIN_WINDOW_HEIGHT: f64 = 480.0;
 const READING_TOOLBAR_ACTIONS: [AppAction; 6] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
@@ -3909,7 +3911,11 @@ impl ApplicationHandler<AppEvent> for App {
                 self.document.source_editor.is_dirty(),
                 self.notice.as_deref(),
             ))
-            .with_inner_size(winit::dpi::LogicalSize::new(900.0, 760.0));
+            .with_inner_size(winit::dpi::LogicalSize::new(900.0, 760.0))
+            .with_min_inner_size(winit::dpi::LogicalSize::new(
+                MIN_WINDOW_WIDTH,
+                MIN_WINDOW_HEIGHT,
+            ));
         let t = Instant::now();
         let window = match event_loop.create_window(attrs) {
             Ok(window) => Rc::new(window),

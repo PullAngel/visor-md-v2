@@ -99,7 +99,9 @@ La franja inferior contiene pestañas y estado, por lo que forma parte del chrom
 y no del viewport del documento. El scroll debe reservar su altura: la última
 línea nunca puede quedar oculta detrás de una pestaña. Separadores, tablas y la
 división fuente/vista usan el rol `Borde`; `Tenue` queda reservado para texto e
-iconos secundarios.
+iconos secundarios. El tamaño mínimo es 640 × 480 puntos lógicos: debajo de ese
+umbral una barra de edición completa dejaría controles invisibles o parcialmente
+clicables.
 
 `F6` lleva el foco visible a esa barra; flechas o Tab lo recorren, Enter o
 Espacio ejecutan y Escape vuelve al documento. Este foco no se presenta como

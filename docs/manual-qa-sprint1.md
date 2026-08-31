@@ -250,8 +250,9 @@ contenido permanece inerte y la fuente se conserva sin activar recursos.
 2. Activar cada acción con mouse y comprobar que coincide con su atajo.
 3. Abrir dos documentos, alternarlos desde la barra inferior y comprobar que el
    asterisco de cambios permanece asociado al documento correcto.
-4. Reducir el ancho de la ventana y confirmar que las acciones que ya no caben
-   se omiten sin texto cortado ni controles parcialmente clicables.
+4. Intentar reducir la ventana por debajo de 640 × 480 puntos lógicos. Debe
+   detenerse en ese mínimo y conservar todos los controles de la barra visibles
+   y clicables.
 5. Con una carpeta abierta, usar Buscar en carpeta y escribir una consulta con
    varios resultados. Recorrerlos con flechas y abrir uno con mouse; la nota
    debe abrirse en su pestaña sin modificar la carpeta ni salir de su raíz.
