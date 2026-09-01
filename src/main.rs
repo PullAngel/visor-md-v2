@@ -70,7 +70,10 @@ use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, Messag
 use settings::{DocumentModePreference, Settings};
 use theme::{DAY, NIGHT, Palette, Role};
 use vfs::WorkspaceRoot;
-use workspace::{WikiResolution, WorkspaceIndex, WorkspaceLimits, index_workspace_cancellable};
+use workspace::{
+    WikiResolution, WorkspaceIndex, WorkspaceLimits, index_workspace_cancellable,
+    reindex_workspace_cancellable,
+};
 
 const MARGIN: f32 = 48.0;
 const MAX_MEASURE: f32 = 720.0;
@@ -725,6 +728,7 @@ enum AppEvent {
         request: u64,
         root: WorkspaceRoot,
         index: WorkspaceIndex,
+        refreshed: bool,
     },
     WorkspaceFailed {
         request: u64,
@@ -3861,6 +3865,7 @@ impl ApplicationHandler<AppEvent> for App {
                 request,
                 root,
                 index,
+                refreshed,
             } => {
                 if request != self.workspace_request || index.cancelled {
                     self.log
@@ -3885,7 +3890,8 @@ impl ApplicationHandler<AppEvent> for App {
                     (false, false, false) => "",
                 };
                 self.set_notice(&format!(
-                    "workspace indexado: {note_count} notas, {skipped} omitidas{suffix}"
+                    "workspace {}: {note_count} notas, {skipped} omitidas{suffix}",
+                    if refreshed { "actualizado" } else { "indexado" }
                 ));
             }
             AppEvent::WorkspaceFailed { request, error } => {
@@ -6212,21 +6218,30 @@ impl App {
             self.set_notice("abrir carpeta cancelado");
             return;
         };
-        self.start_workspace_index(path, "indexando carpeta de trabajo");
+        self.start_workspace_index(path, "indexando carpeta de trabajo", None);
     }
 
     /// Volver a recorrer una carpeta ya concedida es una acción explícita. No
     /// instala vigilancia de directorios ni permite que contenido Markdown
     /// active lecturas nuevas fuera de la raíz elegida.
     fn reindex_workspace(&mut self) {
-        let Some((root, _)) = &self.workspace else {
+        let Some((root, index)) = &self.workspace else {
             self.set_notice("elige primero una carpeta de trabajo con Ctrl+Shift+O");
             return;
         };
-        self.start_workspace_index(root.root().to_path_buf(), "actualizando carpeta de trabajo");
+        self.start_workspace_index(
+            root.root().to_path_buf(),
+            "actualizando carpeta de trabajo",
+            Some(index.clone()),
+        );
     }
 
-    fn start_workspace_index(&mut self, path: PathBuf, notice: &str) {
+    fn start_workspace_index(
+        &mut self,
+        path: PathBuf,
+        notice: &str,
+        previous: Option<WorkspaceIndex>,
+    ) {
         if let Some(cancel) = &self.workspace_cancel {
             cancel.store(true, Ordering::Relaxed);
         }
@@ -6240,12 +6255,23 @@ impl App {
         thread::spawn(move || {
             let event = match WorkspaceRoot::open(path) {
                 Ok(root) => {
-                    let index =
-                        index_workspace_cancellable(&root, WorkspaceLimits::default(), &cancel);
+                    let refreshed = previous.is_some();
+                    let index = previous.as_ref().map_or_else(
+                        || index_workspace_cancellable(&root, WorkspaceLimits::default(), &cancel),
+                        |previous| {
+                            reindex_workspace_cancellable(
+                                &root,
+                                previous,
+                                WorkspaceLimits::default(),
+                                &cancel,
+                            )
+                        },
+                    );
                     AppEvent::WorkspaceReady {
                         request,
                         root,
                         index,
+                        refreshed,
                     }
                 }
                 Err(error) => AppEvent::WorkspaceFailed {

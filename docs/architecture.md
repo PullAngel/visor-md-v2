@@ -338,8 +338,11 @@ por orden. Una ancla igual a un encabezado visible se aplica después de abrir l
 nota. El recorrido del índice se cancela cooperativamente al elegir otra carpeta
 y su versión evita publicar resultados tardíos. `Ctrl+Shift+F` consulta el
 índice local y solo abre la nota elegida después de resolver su ruta con la VFS.
-`Ctrl+Shift+I` vuelve a crear el índice de la raíz ya concedida y cancela el
-recorrido anterior si aún estaba activo. `Ctrl+Shift+B` presenta los backlinks
+`Ctrl+Shift+I` vuelve a recorrer la raíz ya concedida, descubre altas y bajas y
+reutiliza los datos semánticos de notas cuya longitud y fecha de modificación no
+cambiaron; cancela el recorrido anterior si aún estaba activo. No confía en ese
+dato para abrir archivos: cada navegación vuelve a pasar por VFS.
+`Ctrl+Shift+B` presenta los backlinks
 del documento actual y solo abre una selección tras resolverla de nuevo con la
 VFS. Índice, árbol de notas, búsqueda y backlinks ya usan paneles plegables. El
 árbol deriva carpetas únicamente desde rutas indexadas y permite plegarlas sin
@@ -457,7 +460,7 @@ nativas reales. macOS permanece como posibilidad futura, no gate actual.
 | Rendering | Software nativo funcional | Display list validada y accesible |
 | UI | Ventana, tema, pestañas, barra de acciones, menú contextual, paleta, paneles y chrome sin borde en Windows | Semántica accesible completa y QA del fallback por plataforma |
 | Edición | Buffer Rope, fuente alternable, vista dividida, undo/redo, portapapeles explícito, guardado fiel y recuperación local | Actualización incremental de la representación fuente y accesibilidad completa |
-| Workspace | Raíz explícita, VFS, índice cancelable, árbol, búsqueda, wikilinks, callouts, backlinks y detección limitada de cambios | Actualización incremental y QA con bóvedas grandes |
+| Workspace | Raíz explícita, VFS, índice cancelable con reutilización de notas intactas, árbol, búsqueda, wikilinks, callouts, backlinks y detección limitada de cambios | QA con bóvedas grandes |
 | Seguridad | Límites, HTML inerte, VFS, guardado, recuperación y PNG local acotado con pruebas | Otros recursos secundarios, campaña de fuzzing y validación de release |
 
 ## Riesgos arquitectónicos abiertos

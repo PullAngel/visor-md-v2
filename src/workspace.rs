@@ -6,7 +6,7 @@
 
 use crate::files::open_explicit_primary;
 use crate::vfs::WorkspaceRoot;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -100,6 +100,10 @@ pub(crate) struct WorkspaceNote {
     /// Fragmento acotado y en memoria de la fuente. Sirve únicamente para
     /// búsqueda local; no se escribe, envía ni interpreta como código.
     search_text: String,
+    /// Evidencia de una lectura ya contenida. Solo se usa para evitar releer
+    /// notas intactas durante una actualización explícita.
+    source_byte_len: u64,
+    source_modified: Option<SystemTime>,
 }
 
 /// Resultado explícito de resolver un wikilink. No se elige una coincidencia
@@ -110,7 +114,7 @@ pub(crate) enum WikiResolution<'a> {
     Ambiguous,
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct WorkspaceIndex {
     pub(crate) notes: Vec<WorkspaceNote>,
     pub(crate) skipped: usize,
@@ -242,9 +246,37 @@ pub(crate) fn index_workspace_cancellable(
     limits: WorkspaceLimits,
     cancelled: &AtomicBool,
 ) -> WorkspaceIndex {
+    index_workspace_with_previous(root, None, limits, cancelled)
+}
+
+/// Recorre de nuevo una raíz ya concedida para descubrir altas y bajas, pero
+/// reutiliza la semántica de notas cuya evidencia de disco sigue igual. Abrir
+/// una nota continúa resolviéndola con VFS: el índice no concede acceso.
+pub(crate) fn reindex_workspace_cancellable(
+    root: &WorkspaceRoot,
+    previous: &WorkspaceIndex,
+    limits: WorkspaceLimits,
+    cancelled: &AtomicBool,
+) -> WorkspaceIndex {
+    index_workspace_with_previous(root, Some(previous), limits, cancelled)
+}
+
+fn index_workspace_with_previous(
+    root: &WorkspaceRoot,
+    previous: Option<&WorkspaceIndex>,
+    limits: WorkspaceLimits,
+    cancelled: &AtomicBool,
+) -> WorkspaceIndex {
     let mut index = WorkspaceIndex::default();
     let mut pending = vec![root.root().to_path_buf()];
     let mut visited_directories = HashSet::new();
+    let previous_notes = previous.map_or_else(HashMap::new, |previous| {
+        previous
+            .notes
+            .iter()
+            .map(|note| (note.relative_path.clone(), note))
+            .collect::<HashMap<_, _>>()
+    });
 
     while let Some(directory) = pending.pop() {
         if cancelled.load(Ordering::Relaxed) {
@@ -304,17 +336,38 @@ pub(crate) fn index_workspace_cancellable(
                 return index;
             }
             index.scanned_bytes = index.scanned_bytes.saturating_add(metadata.len());
+            let relative_path = canonical
+                .strip_prefix(root.root())
+                .expect("la contención se comprobó antes")
+                .to_path_buf();
+            if let Some(previous) = previous_notes.get(&relative_path)
+                && previous.source_byte_len == metadata.len()
+                && previous.source_modified == metadata.modified().ok()
+            {
+                let available = limits
+                    .max_indexed_content_bytes
+                    .saturating_sub(index.indexed_content_bytes);
+                let (note, indexed_bytes, content_truncated) =
+                    reused_note_with_content_limit(previous, available);
+                index.indexed_content_bytes =
+                    index.indexed_content_bytes.saturating_add(indexed_bytes);
+                index.content_truncated |= content_truncated;
+                index.notes.push(note);
+                record_change_mark(&mut index, root, &canonical, false);
+                continue;
+            }
             match open_explicit_primary(&canonical, limits.max_note_bytes) {
                 Ok(opened) => {
-                    let relative_path = canonical
-                        .strip_prefix(root.root())
-                        .expect("la contención se comprobó antes")
-                        .to_path_buf();
                     let available = limits
                         .max_indexed_content_bytes
                         .saturating_sub(index.indexed_content_bytes);
-                    let (note, indexed_bytes, content_truncated) =
-                        note_from_source(relative_path, &opened.source, available);
+                    let (note, indexed_bytes, content_truncated) = note_from_source(
+                        relative_path,
+                        &opened.source,
+                        metadata.len(),
+                        metadata.modified().ok(),
+                        available,
+                    );
                     index.indexed_content_bytes =
                         index.indexed_content_bytes.saturating_add(indexed_bytes);
                     index.content_truncated |= content_truncated;
@@ -370,6 +423,8 @@ fn is_markdown_path(path: &Path) -> bool {
 fn note_from_source(
     relative_path: PathBuf,
     source: &str,
+    source_byte_len: u64,
+    source_modified: Option<SystemTime>,
     available_content_bytes: usize,
 ) -> (WorkspaceNote, usize, bool) {
     let headings = headings_in(source);
@@ -399,10 +454,27 @@ fn note_from_source(
             headings,
             wikilinks: wikilinks_in(source),
             search_text,
+            source_byte_len,
+            source_modified,
         },
         end,
         content_truncated,
     )
+}
+
+fn reused_note_with_content_limit(
+    previous: &WorkspaceNote,
+    available_content_bytes: usize,
+) -> (WorkspaceNote, usize, bool) {
+    let mut note = previous.clone();
+    let keep = available_content_bytes.min(note.search_text.len());
+    let mut end = keep;
+    while end > 0 && !note.search_text.is_char_boundary(end) {
+        end -= 1;
+    }
+    note.search_text.truncate(end);
+    let source_len = usize::try_from(previous.source_byte_len).unwrap_or(usize::MAX);
+    (note, end, end < source_len)
 }
 
 fn headings_in(source: &str) -> Vec<Heading> {
@@ -588,9 +660,63 @@ mod tests {
     }
 
     #[test]
+    fn la_actualizacion_reutiliza_lo_intacto_y_relee_las_notas_modificadas() {
+        let root = fixture_root();
+        let vfs = WorkspaceRoot::open(&root).expect("la raíz es válida");
+        let initial = index_workspace(&vfs, WorkspaceLimits::default());
+
+        fs::write(
+            root.join("seguridad.md"),
+            "# Seguridad actualizada\n\n[[redes]]\n\ncontenido nuevo",
+        )
+        .expect("se modifica la nota");
+        let refreshed = reindex_workspace_cancellable(
+            &vfs,
+            &initial,
+            WorkspaceLimits::default(),
+            &AtomicBool::new(false),
+        );
+
+        let seguridad = refreshed
+            .note_at_relative(Path::new("seguridad.md"))
+            .expect("la nota actualizada se conserva");
+        assert_eq!(seguridad.title, "Seguridad actualizada");
+        assert_eq!(seguridad.wikilinks.len(), 1);
+        assert_eq!(refreshed.search("ciberseguridad interna").len(), 1);
+    }
+
+    #[test]
+    fn la_actualizacion_descubre_altas_y_bajas_sin_retener_notas_eliminadas() {
+        let root = fixture_root();
+        let vfs = WorkspaceRoot::open(&root).expect("la raíz es válida");
+        let initial = index_workspace(&vfs, WorkspaceLimits::default());
+        fs::remove_file(root.join("seguridad.md")).expect("se elimina la nota");
+        fs::write(root.join("nueva.md"), "# Nueva nota").expect("se agrega la nota");
+
+        let refreshed = reindex_workspace_cancellable(
+            &vfs,
+            &initial,
+            WorkspaceLimits::default(),
+            &AtomicBool::new(false),
+        );
+
+        assert!(
+            refreshed
+                .note_at_relative(Path::new("seguridad.md"))
+                .is_none()
+        );
+        assert!(refreshed.note_at_relative(Path::new("nueva.md")).is_some());
+    }
+
+    #[test]
     fn limita_el_texto_retenido_para_busqueda_sin_partir_unicode() {
-        let (note, bytes, truncated) =
-            note_from_source(PathBuf::from("nota.md"), "áéí contenido importante", 3);
+        let (note, bytes, truncated) = note_from_source(
+            PathBuf::from("nota.md"),
+            "áéí contenido importante",
+            "áéí contenido importante".len() as u64,
+            None,
+            3,
+        );
 
         assert_eq!(note.search_text, "á");
         assert_eq!(bytes, "á".len());

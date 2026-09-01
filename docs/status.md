@@ -12,7 +12,7 @@ VFS acotada. La referencia anterior a Codex permanece intacta en
 
 El lector y el editor tienen gates automáticos verdes. Permanecen pendientes el
 QA humano acumulado, la actualización incremental de algunos modelos visibles,
-imágenes locales con consentimiento, accesibilidad completa y distribución.
+accesibilidad completa y distribución.
 
 ## Git
 
@@ -173,8 +173,11 @@ exacto del traspaso.
   acotada para teclado y mouse. La consulta es efímera y nunca se persiste ni se
   mezcla con búsquedas del documento o de la carpeta.
 - actualizar el índice de la carpeta forma parte del mismo catálogo de acciones,
-  además de `Ctrl+Shift+I`. La reconstrucción sigue siendo explícita, cancelable
+  además de `Ctrl+Shift+I`. La actualización sigue siendo explícita, cancelable
   y reemplaza resultados viejos sin instalar vigilancia permanente del disco.
+  Recorre la estructura para descubrir notas agregadas o eliminadas, pero reutiliza
+  título, encabezados, wikilinks y texto de búsqueda de notas que siguen intactas.
+  Esa reutilización solo ahorra trabajo: la VFS vuelve a validar toda navegación.
 - índice del documento, árbol plegable de notas, búsqueda de carpeta y backlinks se
   presentan como paneles plegables de varias filas. Las listas largas mantienen
   visible la selección sin construir layouts para todos los resultados y
