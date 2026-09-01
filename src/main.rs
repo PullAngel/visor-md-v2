@@ -130,11 +130,13 @@ const READING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 6] = [
     AppAction::SearchWorkspace,
     AppAction::Backlinks,
 ];
-const EDITING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 6] = [
+const EDITING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 8] = [
     AppAction::FormatBold,
     AppAction::FormatItalic,
     AppAction::InsertHeading,
     AppAction::InsertBulletList,
+    AppAction::InsertTask,
+    AppAction::InsertQuote,
     AppAction::InsertLink,
     AppAction::ToggleSplit,
 ];
@@ -616,6 +618,8 @@ enum ContextAction {
     Link,
     Heading,
     BulletList,
+    Task,
+    Quote,
     CopyText,
     CopyMarkdown,
     CopyTableTsv,
@@ -644,6 +648,8 @@ enum AppAction {
     InsertLink,
     InsertHeading,
     InsertBulletList,
+    InsertTask,
+    InsertQuote,
     ToggleSection,
     SearchDocument,
     CopyTableTsv,
@@ -658,7 +664,7 @@ enum AppAction {
     CommandPalette,
 }
 
-const APP_ACTIONS: [AppAction; 26] = [
+const APP_ACTIONS: [AppAction; 28] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -674,6 +680,8 @@ const APP_ACTIONS: [AppAction; 26] = [
     AppAction::InsertLink,
     AppAction::InsertHeading,
     AppAction::InsertBulletList,
+    AppAction::InsertTask,
+    AppAction::InsertQuote,
     AppAction::ToggleSection,
     AppAction::SearchDocument,
     AppAction::CopyTableTsv,
@@ -705,6 +713,8 @@ impl AppAction {
             Self::InsertLink => "Insertar enlace · Ctrl+K",
             Self::InsertHeading => "Convertir línea en encabezado H2",
             Self::InsertBulletList => "Convertir línea en lista con viñetas",
+            Self::InsertTask => "Convertir línea en tarea",
+            Self::InsertQuote => "Convertir línea en cita",
             Self::ToggleSection => "Plegar o desplegar sección enfocada",
             Self::SearchDocument => "Buscar en documento · Ctrl+F",
             Self::CopyTableTsv => "Copiar tabla seleccionada como TSV",
@@ -740,6 +750,8 @@ impl ContextAction {
             Self::Link => "Insertar enlace",
             Self::Heading => "Encabezado H2",
             Self::BulletList => "Lista con viñetas",
+            Self::Task => "Tarea",
+            Self::Quote => "Cita",
             Self::CopyText => "Copiar texto",
             Self::CopyMarkdown => "Copiar Markdown original",
             Self::CopyTableTsv => "Copiar tabla como TSV",
@@ -762,6 +774,8 @@ fn context_actions(mode: DocumentMode, table_available: bool) -> Vec<ContextActi
             ContextAction::Link,
             ContextAction::Heading,
             ContextAction::BulletList,
+            ContextAction::Task,
+            ContextAction::Quote,
             ContextAction::CopyText,
             ContextAction::CopyMarkdown,
         ],
@@ -2209,6 +2223,28 @@ fn draw_toolbar_icon(
                 path.move_to(left + 9.0, row);
                 path.line_to(right - 3.0, row);
             }
+        }
+        AppAction::InsertTask => {
+            path.move_to(left + 3.0, top + 3.0);
+            path.line_to(left + 10.0, top + 3.0);
+            path.line_to(left + 10.0, top + 10.0);
+            path.line_to(left + 3.0, top + 10.0);
+            path.close();
+            path.move_to(left + 4.0, top + 7.0);
+            path.line_to(left + 6.0, top + 9.0);
+            path.line_to(left + 9.0, top + 5.0);
+            path.move_to(left + 13.0, top + 6.0);
+            path.line_to(right - 3.0, top + 6.0);
+            path.move_to(left + 13.0, top + 12.0);
+            path.line_to(right - 3.0, top + 12.0);
+        }
+        AppAction::InsertQuote => {
+            path.move_to(left + 4.0, top + 4.0);
+            path.line_to(left + 4.0, bottom - 4.0);
+            path.move_to(left + 9.0, top + 7.0);
+            path.line_to(right - 4.0, top + 7.0);
+            path.move_to(left + 9.0, top + 12.0);
+            path.line_to(right - 6.0, top + 12.0);
         }
         AppAction::InsertLink => {
             path.move_to(left + 3.0, center_y);
@@ -4683,6 +4719,8 @@ impl ApplicationHandler<AppEvent> for App {
                                 ContextAction::BulletList => {
                                     self.perform_action(AppAction::InsertBulletList)
                                 }
+                                ContextAction::Task => self.perform_action(AppAction::InsertTask),
+                                ContextAction::Quote => self.perform_action(AppAction::InsertQuote),
                                 ContextAction::CopyText | ContextAction::CopyMarkdown => {
                                     self.copy_selection(action.source_markdown());
                                 }
@@ -5521,6 +5559,8 @@ impl App {
             AppAction::InsertLink => self.insert_markdown_link(),
             AppAction::InsertHeading => self.prefix_markdown_line("## "),
             AppAction::InsertBulletList => self.prefix_markdown_line("- "),
+            AppAction::InsertTask => self.prefix_markdown_line("- [ ] "),
+            AppAction::InsertQuote => self.prefix_markdown_line("> "),
             AppAction::ToggleSection => self.toggle_focused_section(),
             AppAction::SearchDocument => self.open_document_search(),
             AppAction::CopyTableTsv => self.copy_current_table_tsv(),
@@ -9329,7 +9369,7 @@ impl App {
                 break;
             }
             let begins_group = (context_mode == DocumentMode::Reading && index == 2)
-                || (context_mode.is_editable() && index == 5);
+                || (context_mode.is_editable() && index == 7);
             if begins_group
                 && let Some(rect) = Rect::from_xywh(
                     x - 8.0,
@@ -10285,6 +10325,14 @@ mod pruebas {
             Some(AppAction::InsertBulletList)
         );
         assert_eq!(
+            toolbar_action_at(330.0, 50.0, 900.0, DocumentMode::SourceEditing),
+            Some(AppAction::InsertTask)
+        );
+        assert_eq!(
+            toolbar_action_at(400.0, 50.0, 900.0, DocumentMode::SourceEditing),
+            Some(AppAction::InsertQuote)
+        );
+        assert_eq!(
             adjacent_toolbar_index(0, true, READING_TOOLBAR_ACTIONS.len()),
             READING_TOOLBAR_ACTIONS.len() - 1
         );
@@ -10974,12 +11022,14 @@ mod pruebas {
         };
         assert_eq!(reading_menu.actions.len(), 2);
         assert_eq!(table_menu.actions.len(), 3);
-        assert_eq!(editing_menu.actions.len(), 9);
+        assert_eq!(editing_menu.actions.len(), 11);
         assert!(!reading_menu.actions.contains(&ContextAction::Paste));
         assert!(!reading_menu.actions.contains(&ContextAction::Cut));
         assert!(!reading_menu.actions.contains(&ContextAction::CopyTableTsv));
         assert!(table_menu.actions.contains(&ContextAction::CopyTableTsv));
         assert!(editing_menu.actions.contains(&ContextAction::Cut));
+        assert!(editing_menu.actions.contains(&ContextAction::Task));
+        assert!(editing_menu.actions.contains(&ContextAction::Quote));
         assert_eq!(
             context_action_at(&reading_menu, (110.0, 210.0)),
             Some(ContextAction::CopyText)

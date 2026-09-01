@@ -102,8 +102,12 @@ sienten parte del mismo producto.
 
 ### C. Kit de escritura y toma de notas
 
-- Formato inline, encabezados, listas/tareas, cita, código, tabla, enlaces,
-  wikilinks, callouts, resaltado y recursos locales seguros.
+- **Primer cierre:** además de negrita, cursiva, encabezado, lista y enlace,
+  la barra, el menú contextual y la paleta ofrecen tarea y cita. Todas escriben
+  sintaxis Markdown estándar al inicio de la línea actual y se deshacen como
+  una edición normal.
+- Pendiente: código, tabla, wikilinks, callouts, resaltado y recursos locales
+  seguros como acciones de escritura completas.
 - Operaciones contextuales para selección y cursor; insertar fecha, símbolos,
   bloques de estudio y fragmentos preparados para IA quedan bajo menús o panel.
 - Herramientas de estudio portables: pregunta/respuesta, ocultación, estados,

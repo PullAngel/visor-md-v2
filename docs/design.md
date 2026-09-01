@@ -97,9 +97,9 @@ en reposo**. En la v1 todos lo llevan y compiten con el documento. Estados:
 La barra superior contiene solo acciones del documento: Nuevo, Abrir, Guardar,
 Editar o Leer, Buscar y Más. Debajo vive una segunda franja contextual, que
 evita mezclar archivo, formato y navegación: en edición muestra Negrita,
-Cursiva, H2, Lista, Enlace y Comparar; en lectura muestra Índice, Plegar,
-Carpeta, Notas, Bóveda y Vínculos. Un separador sobrio distingue acciones del
-documento de las de bóveda, y formato de comparación. La segunda franja no es
+Cursiva, H2, Lista, Tarea, Cita, Enlace y Comparar; en lectura muestra Índice,
+Plegar, Carpeta, Notas, Bóveda y Vínculos. Un separador sobrio distingue
+acciones del documento de las de bóveda, y formato de comparación. La segunda franja no es
 una barra lateral ni un panel permanente: cambia con el modo, da acceso visible
 a las funciones de trabajo diario y deja las variantes y operaciones poco
 frecuentes en `Más`.
