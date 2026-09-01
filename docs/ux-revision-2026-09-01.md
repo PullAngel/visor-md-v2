@@ -43,6 +43,10 @@ un IDE ni en una réplica de Obsidian.
   `Cambiar tema día o noche`. `T` sigue siendo un atajo solo en lectura: en
   edición se conserva para escribir, evitando que un carácter común cambie la
   apariencia por accidente.
+- **Corregido:** la vista dividida vuelve a dos columnas equivalentes. Mantiene
+  un único desplazamiento para el documento y la vista, pero una línea fuente
+  puede no coincidir píxel a píxel con un párrafo renderizado que se ajusta; la
+  futura sincronización por bloque necesita diseño y pruebas separados.
 - **Corregido:** los paneles y la paleta comparten una regla de clic fuera: un
   clic dentro queda contenido por el marco y un clic fuera descarta la capa sin
   activar el documento de abajo. La búsqueda dentro del documento se conserva,

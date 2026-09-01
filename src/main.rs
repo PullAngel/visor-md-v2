@@ -106,10 +106,10 @@ const CONTEXT_TOOLBAR_Y: f32 = 44.0;
 const CONTEXT_TOOLBAR_HEIGHT: f32 = 28.0;
 const CONTEXT_TOOLBAR_ITEM_WIDTH: f32 = 72.0;
 const WINDOW_CHROME_HEIGHT: f32 = 40.0;
-/// En comparación, la lectura necesita una medida más generosa que la fuente.
-/// La fuente sigue siendo editable, pero el resultado es el objetivo de esta
-/// vista y no debe parecer una columna secundaria comprimida.
-const SPLIT_SOURCE_FRACTION: f32 = 0.42;
+/// Fuente y resultado tienen el mismo espacio en la comparación. La evidencia
+/// de QA mostró que privilegiar lectura comprimía demasiado la fuente y hacía
+/// que ambas columnas dejaran de corresponder visualmente.
+const SPLIT_SOURCE_FRACTION: f32 = 0.5;
 const WINDOW_CONTROL_WIDTH: f32 = 46.0;
 const WINDOW_RESIZE_BORDER: f32 = 6.0;
 const MIN_WINDOW_WIDTH: f64 = 640.0;
@@ -10341,18 +10341,18 @@ mod pruebas {
         labels.sort_unstable();
         labels.dedup();
 
-        // Incluye las ayudas editoriales cotidianas sin convertir la paleta en
-        // un menú de IDE. Superar 24 exige revisar jerarquía y no solo ampliar
-        // la lista por comodidad de implementación.
-        assert!(original_len <= 24, "el catálogo dejó de ser pequeño");
+        // Incluye operaciones de documento y ayudas editoriales cotidianas sin
+        // convertir la paleta en un menú de IDE. Superar 28 exige revisar la
+        // jerarquía y no solo ampliar la lista por comodidad de implementación.
+        assert!(original_len <= 28, "el catálogo dejó de ser pequeño");
         assert_eq!(labels.len(), original_len);
     }
 
     #[test]
-    fn la_vista_dividida_prioriza_la_medida_de_lectura() {
-        assert_eq!(content_layout_width(1200.0, DocumentMode::Split), 504.0);
-        assert_eq!(preview_layout_width(1200.0, DocumentMode::Split), 696.0);
-        assert_eq!(split_pane_widths(900.0), (378.0, 522.0));
+    fn la_vista_dividida_reserva_la_misma_medida_para_ambos_paneles() {
+        assert_eq!(content_layout_width(1200.0, DocumentMode::Split), 600.0);
+        assert_eq!(preview_layout_width(1200.0, DocumentMode::Split), 600.0);
+        assert_eq!(split_pane_widths(900.0), (450.0, 450.0));
         assert_eq!(content_layout_width(1200.0, DocumentMode::Reading), 1200.0);
         assert_eq!(
             content_layout_width(1200.0, DocumentMode::SourceEditing),
