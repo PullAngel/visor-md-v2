@@ -503,6 +503,19 @@ fn toolbar_action_at(x: f32, y: f32, window_width: f32, mode: DocumentMode) -> O
     None
 }
 
+/// La barra usa iconos para conservar espacio de lectura. Esta ayuda efímera
+/// conserva el nombre de la acción y su atajo tanto con mouse como con F6.
+fn toolbar_hint_action(
+    focus: Option<usize>,
+    pointer: Option<(f32, f32)>,
+    window_width: f32,
+    mode: DocumentMode,
+) -> Option<AppAction> {
+    focus
+        .and_then(|index| toolbar_actions(mode).get(index).copied())
+        .or_else(|| pointer.and_then(|(x, y)| toolbar_action_at(x, y, window_width, mode)))
+}
+
 fn adjacent_toolbar_index(current: usize, backwards: bool, action_count: usize) -> usize {
     if action_count == 0 {
         return 0;
@@ -4490,7 +4503,16 @@ impl ApplicationHandler<AppEvent> for App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.pointer = Some((position.x as f32, position.y as f32));
-                if self.context_menu.is_some()
+                let toolbar_hover = self.window.as_ref().is_some_and(|window| {
+                    toolbar_action_at(
+                        position.x as f32,
+                        position.y as f32,
+                        window.inner_size().width as f32,
+                        self.document.mode,
+                    )
+                    .is_some()
+                });
+                if (self.context_menu.is_some() || toolbar_hover)
                     && let Some(w) = &self.window
                 {
                     w.request_redraw();
@@ -4540,6 +4562,7 @@ impl ApplicationHandler<AppEvent> for App {
                     } else if chrome_control.is_some()
                         || self.hover_destination.is_some()
                         || disclosure_hover
+                        || toolbar_hover
                     {
                         CursorIcon::Pointer
                     } else if text_cursor_hover {
@@ -8440,6 +8463,32 @@ impl App {
         );
         let contextual_toolbar_actions = contextual_toolbar_actions(self.document.mode);
         let toolbar_focus = self.toolbar_focus;
+        let toolbar_hint = toolbar_hint_action(
+            toolbar_focus,
+            menu_pointer,
+            w.get() as f32,
+            self.document.mode,
+        );
+        let toolbar_hint_layout = toolbar_hint.map(|action| {
+            build_menu_layout(
+                action.label(),
+                &mut self.font_cx,
+                &mut self.layout_cx,
+                self.palette,
+            )
+        });
+        let toolbar_hint_anchor_x = toolbar_focus
+            .map(|index| {
+                if index < PRIMARY_TOOLBAR_ACTIONS.len() {
+                    TOOLBAR_X + index as f32 * TOOLBAR_ITEM_WIDTH
+                } else {
+                    TOOLBAR_X
+                        + (index - PRIMARY_TOOLBAR_ACTIONS.len()) as f32
+                            * CONTEXT_TOOLBAR_ITEM_WIDTH
+                }
+            })
+            .or_else(|| menu_pointer.map(|(x, _)| x))
+            .unwrap_or(TOOLBAR_X);
         let document_mode_label = match self.document.mode {
             DocumentMode::Reading => "Lectura",
             DocumentMode::SourceEditing => "Edición",
@@ -9149,6 +9198,28 @@ impl App {
                 18.0,
                 icon_color,
             );
+        }
+
+        if let Some(layout) = toolbar_hint_layout {
+            let hint_width = (layout.width() + 20.0).min(w.get() as f32 - MARGIN * 2.0);
+            let hint_x = toolbar_hint_anchor_x
+                .min((w.get() as f32 - hint_width - MARGIN).max(MARGIN))
+                .max(MARGIN);
+            let hint_y = DOCUMENT_VIEWPORT_TOP + 4.0;
+            if let Some(rect) = Rect::from_xywh(hint_x, hint_y, hint_width, 26.0) {
+                pixmap.fill_rect(rect, &floating_paint, Transform::identity(), None);
+            }
+            if let Some(rect) = Rect::from_xywh(hint_x, hint_y, 3.0, 26.0) {
+                pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
+            }
+            for line in layout.lines() {
+                for entry in line.items() {
+                    if let PositionedLayoutItem::GlyphRun(run) = entry {
+                        draw_run_background(pixmap, &run, hint_x + 9.0, hint_y + 5.0);
+                        draw_glyph_run(pixmap, scale_cx, glyphs, &run, hint_x + 9.0, hint_y + 5.0);
+                    }
+                }
+            }
         }
 
         if custom_window_chrome_enabled() {
@@ -10043,6 +10114,23 @@ mod pruebas {
             AppAction::Save,
             DocumentMode::SourceEditing
         ));
+    }
+
+    #[test]
+    fn la_ayuda_de_iconos_prefiere_el_foco_y_conserva_el_atajo() {
+        assert_eq!(
+            toolbar_hint_action(Some(1), Some((50.0, 50.0)), 900.0, DocumentMode::Reading,),
+            Some(AppAction::OpenDocument)
+        );
+        assert_eq!(
+            toolbar_hint_action(None, Some((50.0, 50.0)), 900.0, DocumentMode::Reading),
+            Some(AppAction::DocumentOutline)
+        );
+        assert_eq!(
+            toolbar_hint_action(None, Some((899.0, 50.0)), 900.0, DocumentMode::Reading),
+            None
+        );
+        assert_eq!(AppAction::OpenDocument.label(), "Abrir documento · Ctrl+O");
     }
 
     #[test]
