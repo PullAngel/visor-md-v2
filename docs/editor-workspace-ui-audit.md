@@ -67,13 +67,13 @@ de escribir Markdown con comodidad.
 
 ## Defectos de interacción a corregir antes de ampliar funciones
 
-1. `panel_item_at` usa el ancho fijo `PANEL_WIDTH`, mientras el dibujo reduce el
-   panel cuando la ventana es estrecha. Por tanto, un clic puede ser aceptado
-   fuera del rectángulo visible. La geometría de dibujo y de hit testing debe
-   provenir de una única función.
-2. Los paneles tienen capacidad limitada, pero no exponen con claridad cuántos
+1. **Corregido en la base de paneles:** la geometría de dibujo y de hit testing
+   ahora procede de una única función responsive. El panel también muestra el
+   rango visible y el total, por ejemplo `1–9 de 24 · Esc para cerrar`.
+2. Los paneles tienen capacidad limitada, pero no exponían con claridad cuántos
    resultados quedan fuera de la ventana ni la posición de la selección. Esto
-   afecta orientación, no seguridad, pero sí lectura profesional.
+   queda resuelto para listas largas por el pie de rango; falta conservar esa
+   claridad en estados vacíos y resultados enriquecidos.
 3. Elegir y actualizar una carpeta está disponible mediante paleta o atajo. Es
    correcto para personas expertas, pero demasiado oculto para un flujo central
    de Obsidian. Debe quedar accesible desde `Más` o desde un único punto de
@@ -87,11 +87,11 @@ de escribir Markdown con comodidad.
 
 ### 1. Fundamento común de paneles
 
-- centralizar rectángulo, cabecera, filas, pie, límites y hit testing;
-- hacer el ancho y alto responsivos, sin permitir que el panel tape toda la
-  lectura en ventanas pequeñas;
-- mostrar total, selección y salida por teclado;
-- conservar Escape, flechas y Enter, y añadir foco visible.
+- **Realizado:** centralizar rectángulo, cabecera, filas, pie y hit testing;
+- **Realizado:** hacer el ancho y alto responsivos y mostrar total, selección
+  y salida por teclado;
+- conservar Escape, flechas y Enter, y añadir foco visible consistente con el
+  sistema de iconos pendiente.
 
 **Cierre verificable:** cada panel acepta clics solo dentro de su rectángulo
 real y comunica selección/total; las pruebas cubren geometría estrecha y

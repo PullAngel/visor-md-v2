@@ -96,6 +96,8 @@ const PANEL_Y: f32 = 80.0;
 const PANEL_WIDTH: f32 = 420.0;
 const PANEL_ROW_HEIGHT: f32 = 28.0;
 const PANEL_CAPACITY: usize = 9;
+const PANEL_PADDING: f32 = 4.0;
+const PANEL_FOOTER_HEIGHT: f32 = 24.0;
 const TOOLBAR_X: f32 = 12.0;
 const TOOLBAR_Y: f32 = 8.0;
 const TOOLBAR_HEIGHT: f32 = 28.0;
@@ -249,14 +251,82 @@ fn panel_window(total: usize, selected: usize, capacity: usize) -> std::ops::Ran
     start..(start + capacity.min(total))
 }
 
-fn panel_item_at(x: f32, y: f32, total: usize, selected: usize) -> Option<usize> {
-    if x < PANEL_X || x >= PANEL_X + PANEL_WIDTH || y < PANEL_Y + PANEL_ROW_HEIGHT {
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct PanelGeometry {
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    items_y: f32,
+}
+
+fn navigation_panel_geometry(
+    window_width: f32,
+    window_height: f32,
+    item_count: usize,
+) -> PanelGeometry {
+    let width = PANEL_WIDTH.min((window_width - MARGIN * 2.0).max(120.0));
+    let x = PANEL_X.min((window_width - width).max(0.0));
+    let requested_height = PANEL_PADDING * 2.0
+        + PANEL_ROW_HEIGHT
+        + PANEL_ROW_HEIGHT * item_count as f32
+        + PANEL_FOOTER_HEIGHT;
+    let available_height = (window_height - PANEL_Y - STATUS_HEIGHT - 12.0).max(PANEL_ROW_HEIGHT);
+    let height = requested_height.min(available_height);
+    PanelGeometry {
+        x,
+        y: PANEL_Y,
+        width,
+        height,
+        items_y: PANEL_Y + PANEL_PADDING + PANEL_ROW_HEIGHT,
+    }
+}
+
+fn panel_item_at(
+    x: f32,
+    y: f32,
+    total: usize,
+    selected: usize,
+    geometry: PanelGeometry,
+) -> Option<usize> {
+    if x < geometry.x
+        || x >= geometry.x + geometry.width
+        || y < geometry.items_y
+        || y >= geometry.items_y
+            + PANEL_ROW_HEIGHT * panel_window(total, selected, PANEL_CAPACITY).len() as f32
+    {
         return None;
     }
     let range = panel_window(total, selected, PANEL_CAPACITY);
-    let visible_row = ((y - PANEL_Y) / PANEL_ROW_HEIGHT) as usize;
-    let item_offset = visible_row.checked_sub(1)?;
+    let item_offset = ((y - geometry.items_y) / PANEL_ROW_HEIGHT) as usize;
     (item_offset < range.len()).then_some(range.start + item_offset)
+}
+
+#[derive(Clone, Debug)]
+struct NavigationPanelRows {
+    title: String,
+    items: Vec<(bool, String)>,
+    footer: String,
+}
+
+impl NavigationPanelRows {
+    fn labels(&self) -> impl Iterator<Item = &str> {
+        std::iter::once(self.title.as_str())
+            .chain(self.items.iter().map(|(_, label)| label.as_str()))
+            .chain(std::iter::once(self.footer.as_str()))
+    }
+}
+
+fn panel_footer(total: usize, range: std::ops::Range<usize>) -> String {
+    if total == 0 {
+        "Sin resultados · Esc para cerrar".to_string()
+    } else {
+        format!(
+            "{}–{} de {total} · Esc para cerrar",
+            range.start + 1,
+            range.end
+        )
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -5333,9 +5403,18 @@ impl App {
     }
 
     fn activate_panel_at(&mut self, x: f32, y: f32) -> bool {
+        let Some(window) = self.window.as_ref() else {
+            return false;
+        };
+        let size = window.inner_size();
         if let Some(selected) = self.command_palette {
             let actions = self.command_palette_actions();
-            if let Some(index) = panel_item_at(x, y, actions.len(), selected) {
+            let geometry = navigation_panel_geometry(
+                size.width as f32,
+                size.height as f32,
+                panel_window(actions.len(), selected, PANEL_CAPACITY).len(),
+            );
+            if let Some(index) = panel_item_at(x, y, actions.len(), selected, geometry) {
                 self.command_palette = None;
                 self.command_palette_query.clear();
                 self.perform_action(actions[index]);
@@ -5343,25 +5422,53 @@ impl App {
             }
         } else if self.workspace_search_query.is_some() {
             let count = self.workspace_search_matches().len();
-            if let Some(index) = panel_item_at(x, y, count, self.workspace_search_match) {
+            let selected = self.workspace_search_match;
+            let geometry = navigation_panel_geometry(
+                size.width as f32,
+                size.height as f32,
+                panel_window(count, selected, PANEL_CAPACITY).len(),
+            );
+            if let Some(index) = panel_item_at(x, y, count, selected, geometry) {
                 self.workspace_search_match = index;
                 self.open_workspace_search_match();
                 return true;
             }
         } else if let Some(paths) = &self.workspace_paths {
-            if let Some(index) = panel_item_at(x, y, paths.len(), self.workspace_path_match) {
+            let selected = self.workspace_path_match;
+            let geometry = navigation_panel_geometry(
+                size.width as f32,
+                size.height as f32,
+                panel_window(paths.len(), selected, PANEL_CAPACITY).len(),
+            );
+            if let Some(index) = panel_item_at(x, y, paths.len(), selected, geometry) {
                 self.workspace_path_match = index;
                 self.open_workspace_path_match();
                 return true;
             }
         } else if let Some(paths) = &self.backlink_paths {
-            if let Some(index) = panel_item_at(x, y, paths.len(), self.backlink_match) {
+            let selected = self.backlink_match;
+            let geometry = navigation_panel_geometry(
+                size.width as f32,
+                size.height as f32,
+                panel_window(paths.len(), selected, PANEL_CAPACITY).len(),
+            );
+            if let Some(index) = panel_item_at(x, y, paths.len(), selected, geometry) {
                 self.backlink_match = index;
                 self.open_backlink_match();
                 return true;
             }
         } else if let Some(headings) = &self.outline_headings
-            && let Some(index) = panel_item_at(x, y, headings.len(), self.outline_match)
+            && let Some(index) = panel_item_at(
+                x,
+                y,
+                headings.len(),
+                self.outline_match,
+                navigation_panel_geometry(
+                    size.width as f32,
+                    size.height as f32,
+                    panel_window(headings.len(), self.outline_match, PANEL_CAPACITY).len(),
+                ),
+            )
         {
             self.outline_match = index;
             self.open_outline_match();
@@ -8018,14 +8125,19 @@ impl App {
                     actions.len()
                 )
             };
-            let mut rows = vec![(false, abbreviated_label(&title, 48))];
-            rows.extend(range.map(|index| {
-                (
-                    index == selected,
-                    abbreviated_label(actions[index].label(), 48),
-                )
-            }));
-            Some(rows)
+            Some(NavigationPanelRows {
+                title: abbreviated_label(&title, 48),
+                items: range
+                    .clone()
+                    .map(|index| {
+                        (
+                            index == selected,
+                            abbreviated_label(actions[index].label(), 48),
+                        )
+                    })
+                    .collect(),
+                footer: panel_footer(actions.len(), range),
+            })
         } else if let (Some(query), Some(paths)) = (
             workspace_search_query.as_ref(),
             workspace_search_results.as_ref(),
@@ -8037,14 +8149,19 @@ impl App {
             } else {
                 format!("Buscar: {query} · {} resultados", paths.len())
             };
-            let mut rows = vec![(false, abbreviated_label(&title, 48))];
-            rows.extend(range.map(|index| {
-                (
-                    index == selected,
-                    abbreviated_label(&paths[index].display().to_string(), 48),
-                )
-            }));
-            Some(rows)
+            Some(NavigationPanelRows {
+                title: abbreviated_label(&title, 48),
+                items: range
+                    .clone()
+                    .map(|index| {
+                        (
+                            index == selected,
+                            abbreviated_label(&paths[index].display().to_string(), 48),
+                        )
+                    })
+                    .collect(),
+                footer: panel_footer(paths.len(), range),
+            })
         } else if let Some(paths) = self.workspace_paths.as_ref() {
             let selected = self.workspace_path_match % paths.len().max(1);
             let range = panel_window(paths.len(), selected, PANEL_CAPACITY);
@@ -8052,39 +8169,52 @@ impl App {
                 .iter()
                 .filter(|row| matches!(row.kind, WorkspaceTreeKind::Note))
                 .count();
-            let mut rows = vec![(false, format!("Notas · {note_count} archivos"))];
-            rows.extend(range.map(|index| {
-                (
-                    index == selected,
-                    abbreviated_label(&paths[index].label(), 48),
-                )
-            }));
-            Some(rows)
+            Some(NavigationPanelRows {
+                title: format!("Notas · {note_count} archivos"),
+                items: range
+                    .clone()
+                    .map(|index| {
+                        (
+                            index == selected,
+                            abbreviated_label(&paths[index].label(), 48),
+                        )
+                    })
+                    .collect(),
+                footer: panel_footer(paths.len(), range),
+            })
         } else if let Some(paths) = self.backlink_paths.as_ref() {
             let selected = self.backlink_match % paths.len().max(1);
             let range = panel_window(paths.len(), selected, PANEL_CAPACITY);
-            let mut rows = vec![(false, format!("Backlinks · {} resultados", paths.len()))];
-            rows.extend(range.map(|index| {
-                (
-                    index == selected,
-                    abbreviated_label(&paths[index].display().to_string(), 48),
-                )
-            }));
-            Some(rows)
+            Some(NavigationPanelRows {
+                title: format!("Backlinks · {} resultados", paths.len()),
+                items: range
+                    .clone()
+                    .map(|index| {
+                        (
+                            index == selected,
+                            abbreviated_label(&paths[index].display().to_string(), 48),
+                        )
+                    })
+                    .collect(),
+                footer: panel_footer(paths.len(), range),
+            })
         } else if let Some(headings) = self.outline_headings.as_ref() {
             let selected = self.outline_match % headings.len().max(1);
             let range = panel_window(headings.len(), selected, PANEL_CAPACITY);
-            let mut rows = vec![(false, format!("Índice · {} encabezados", headings.len()))];
-            rows.extend(
-                range.map(|index| (index == selected, abbreviated_label(&headings[index].1, 48))),
-            );
-            Some(rows)
+            Some(NavigationPanelRows {
+                title: format!("Índice · {} encabezados", headings.len()),
+                items: range
+                    .clone()
+                    .map(|index| (index == selected, abbreviated_label(&headings[index].1, 48)))
+                    .collect(),
+                footer: panel_footer(headings.len(), range),
+            })
         } else {
             None
         };
         let navigation_panel_layouts = navigation_panel_rows.as_ref().map(|rows| {
-            rows.iter()
-                .map(|(_, label)| {
+            rows.labels()
+                .map(|label| {
                     build_menu_layout(label, &mut self.font_cx, &mut self.layout_cx, self.palette)
                 })
                 .collect::<Vec<_>>()
@@ -8940,31 +9070,48 @@ impl App {
             navigation_panel_rows.as_ref(),
             navigation_panel_layouts.as_ref(),
         ) {
-            let panel_x = PANEL_X;
-            let panel_y = PANEL_Y;
-            let panel_width = PANEL_WIDTH.min((w.get() as f32 - MARGIN * 2.0).max(120.0));
-            let row_height = PANEL_ROW_HEIGHT;
-            let panel_height = row_height * rows.len() as f32 + 8.0;
-            if let Some(rect) = Rect::from_xywh(panel_x, panel_y, panel_width, panel_height) {
+            let geometry =
+                navigation_panel_geometry(w.get() as f32, h.get() as f32, rows.items.len());
+            if let Some(rect) =
+                Rect::from_xywh(geometry.x, geometry.y, geometry.width, geometry.height)
+            {
                 pixmap.fill_rect(rect, &floating_paint, Transform::identity(), None);
             }
-            for (row, ((selected, _), layout)) in rows.iter().zip(layouts).enumerate() {
-                let y = panel_y + 4.0 + row as f32 * row_height;
-                if *selected {
+            for (row, layout) in layouts.iter().enumerate() {
+                let is_item = row > 0 && row <= rows.items.len();
+                let selected = is_item && rows.items[row - 1].0;
+                let y = if row == 0 {
+                    geometry.y + PANEL_PADDING
+                } else if is_item {
+                    geometry.items_y + (row - 1) as f32 * PANEL_ROW_HEIGHT
+                } else {
+                    geometry.items_y + PANEL_ROW_HEIGHT * rows.items.len() as f32
+                };
+                if selected {
                     let ac = palette.accent;
                     let mut selected_paint = Paint::default();
                     selected_paint.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 44));
-                    if let Some(rect) =
-                        Rect::from_xywh(panel_x + 4.0, y, panel_width - 8.0, row_height)
-                    {
+                    if let Some(rect) = Rect::from_xywh(
+                        geometry.x + PANEL_PADDING,
+                        y,
+                        geometry.width - PANEL_PADDING * 2.0,
+                        PANEL_ROW_HEIGHT,
+                    ) {
                         pixmap.fill_rect(rect, &selected_paint, Transform::identity(), None);
                     }
                 }
                 for line in layout.lines() {
                     for entry in line.items() {
                         if let PositionedLayoutItem::GlyphRun(run) = entry {
-                            draw_run_background(pixmap, &run, panel_x + 12.0, y + 7.0);
-                            draw_glyph_run(pixmap, scale_cx, glyphs, &run, panel_x + 12.0, y + 7.0);
+                            draw_run_background(pixmap, &run, geometry.x + 12.0, y + 7.0);
+                            draw_glyph_run(
+                                pixmap,
+                                scale_cx,
+                                glyphs,
+                                &run,
+                                geometry.x + 12.0,
+                                y + 7.0,
+                            );
                         }
                     }
                 }
@@ -9665,24 +9812,53 @@ mod pruebas {
 
     #[test]
     fn un_panel_largo_mantiene_visible_la_fila_elegida() {
+        let geometry = navigation_panel_geometry(900.0, 560.0, 9);
         assert_eq!(panel_window(30, 0, 9), 0..9);
         assert_eq!(panel_window(30, 15, 9), 11..20);
         assert_eq!(panel_window(30, 29, 9), 21..30);
         assert_eq!(panel_window(3, 2, 9), 0..3);
         assert_eq!(panel_window(0, 0, 9), 0..0);
         assert_eq!(
-            panel_item_at(60.0, PANEL_Y + PANEL_ROW_HEIGHT, 30, 15),
+            panel_item_at(60.0, geometry.items_y, 30, 15, geometry),
             Some(11)
         );
         assert_eq!(
-            panel_item_at(60.0, PANEL_Y + PANEL_ROW_HEIGHT * 2.0, 30, 15),
+            panel_item_at(60.0, geometry.items_y + PANEL_ROW_HEIGHT, 30, 15, geometry),
             Some(12)
         );
         assert_eq!(
-            panel_item_at(20.0, PANEL_Y + PANEL_ROW_HEIGHT, 30, 15),
+            panel_item_at(20.0, geometry.items_y, 30, 15, geometry),
             None
         );
-        assert_eq!(panel_item_at(60.0, PANEL_Y, 30, 15), None);
+        assert_eq!(panel_item_at(60.0, geometry.y, 30, 15, geometry), None);
+        assert_eq!(
+            panel_item_at(
+                geometry.x + geometry.width + 1.0,
+                geometry.items_y,
+                30,
+                15,
+                geometry
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn la_geometria_del_panel_comparte_ancho_para_dibujo_y_click() {
+        let geometry = navigation_panel_geometry(200.0, 480.0, 9);
+        assert_eq!(geometry.width, 120.0);
+        assert_eq!(geometry.x, 48.0);
+        assert!(geometry.height <= 480.0 - PANEL_Y - STATUS_HEIGHT - 12.0);
+        assert_eq!(
+            panel_item_at(
+                geometry.x + geometry.width + 0.5,
+                geometry.items_y,
+                9,
+                0,
+                geometry
+            ),
+            None
+        );
     }
 
     #[test]
