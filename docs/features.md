@@ -98,7 +98,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Comparar versiones | Planificado | Diferencias legibles y no destructivas |
 | Archivo listo para adjuntar | Planificado | Markdown portable |
 | Copia para Discord o correo | Planificado | Resultado previsible |
-| Estimación de tokens | Futuro condicionado | Solo si el coste es insignificante |
+| Estimación de tokens | Parcial | Aproximación local por caracteres visibles, sin tokenizer ni red; sirve para orientar, no para cotizar un proveedor |
 | IA propia | Descartado | No pertenece a Visor MD |
 
 ## Obsidian y workspace

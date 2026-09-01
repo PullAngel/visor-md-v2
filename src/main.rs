@@ -3404,6 +3404,7 @@ fn apply_view_outcome(document: &mut DocumentState, outcome: ParseOutcome) {
 struct DocumentMetrics {
     words: usize,
     reading_minutes: usize,
+    estimated_tokens: usize,
 }
 
 impl DocumentMetrics {
@@ -3413,9 +3414,17 @@ impl DocumentMetrics {
             .flat_map(|block| block.text.split_whitespace())
             .filter(|word| word.chars().any(char::is_alphanumeric))
             .count();
+        let visible_characters = blocks
+            .iter()
+            .flat_map(|block| block.text.chars())
+            .filter(|character| !character.is_control())
+            .count();
         Self {
             words,
             reading_minutes: words.div_ceil(200),
+            // Regla deliberadamente simple: orienta fragmentación y copias,
+            // no pretende reemplazar el tokenizer de un proveedor concreto.
+            estimated_tokens: visible_characters.div_ceil(4),
         }
     }
 }
@@ -8119,8 +8128,10 @@ impl App {
             "sin palabras".to_string()
         } else {
             format!(
-                "{} palabras · ~{} min",
-                self.document.metrics.words, self.document.metrics.reading_minutes
+                "{} palabras · ~{} min · ≈{} tokens",
+                self.document.metrics.words,
+                self.document.metrics.reading_minutes,
+                self.document.metrics.estimated_tokens
             )
         };
         let tab_width = tab_width(w.get() as f32, self.tab_order.len());
@@ -9757,6 +9768,7 @@ mod pruebas {
 
         assert_eq!(metrics.words, 202);
         assert_eq!(metrics.reading_minutes, 2);
+        assert!(metrics.estimated_tokens > 0);
     }
 
     #[test]
@@ -9765,6 +9777,14 @@ mod pruebas {
             DocumentMetrics::from_blocks(&[]),
             DocumentMetrics::default()
         );
+    }
+
+    #[test]
+    fn la_estimacion_de_tokens_es_local_y_cuenta_unicode_visible() {
+        let blocks = parse_blocks("áéí 日本語 🔐").unwrap().blocks;
+        let metrics = DocumentMetrics::from_blocks(&blocks);
+
+        assert_eq!(metrics.estimated_tokens, 3);
     }
 
     #[test]
