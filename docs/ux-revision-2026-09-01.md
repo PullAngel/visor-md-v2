@@ -39,9 +39,10 @@ un IDE ni en una réplica de Obsidian.
   paleta de acciones. Copia primero el rango UTF-8 seleccionado y solo lo
   elimina cuando el portapapeles confirma la operación; `Ctrl+Z` restaura el
   cambio como una única edición.
-- El tema alterna con `T`, pero no figura como acción visible y puede ser
-  absorbido por la entrada de fuente. La solución es una acción del catálogo,
-  no otro atajo oculto.
+- **Corregido:** `Más acciones` en la barra superior y la paleta muestran
+  `Cambiar tema día o noche`. `T` sigue siendo un atajo solo en lectura: en
+  edición se conserva para escribir, evitando que un carácter común cambie la
+  apariencia por accidente.
 - **Corregido:** los paneles y la paleta comparten una regla de clic fuera: un
   clic dentro queda contenido por el marco y un clic fuera descarta la capa sin
   activar el documento de abajo. La búsqueda dentro del documento se conserva,

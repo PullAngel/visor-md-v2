@@ -637,6 +637,7 @@ enum AppAction {
     TogglePinTab,
     ToggleMode,
     ToggleSplit,
+    ToggleTheme,
     Cut,
     FormatBold,
     FormatItalic,
@@ -657,7 +658,7 @@ enum AppAction {
     CommandPalette,
 }
 
-const APP_ACTIONS: [AppAction; 25] = [
+const APP_ACTIONS: [AppAction; 26] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -666,6 +667,7 @@ const APP_ACTIONS: [AppAction; 25] = [
     AppAction::TogglePinTab,
     AppAction::ToggleMode,
     AppAction::ToggleSplit,
+    AppAction::ToggleTheme,
     AppAction::Cut,
     AppAction::FormatBold,
     AppAction::FormatItalic,
@@ -696,6 +698,7 @@ impl AppAction {
             Self::TogglePinTab => "Fijar o soltar pestaña",
             Self::ToggleMode => "Alternar lectura y edición · F2",
             Self::ToggleSplit => "Comparar fuente y vista · F3",
+            Self::ToggleTheme => "Cambiar tema día o noche · T en lectura",
             Self::Cut => "Cortar · Ctrl+X",
             Self::FormatBold => "Aplicar negrita · Ctrl+B",
             Self::FormatItalic => "Aplicar cursiva · Ctrl+I",
@@ -713,7 +716,7 @@ impl AppAction {
             Self::Backlinks => "Backlinks · Ctrl+Shift+B",
             Self::RestoreRecovery => "Abrir recuperación · Ctrl+Shift+R",
             Self::ToggleRecovery => "Activar o desactivar recuperación local",
-            Self::CommandPalette => "Mostrar todas las acciones · Ctrl+Shift+P",
+            Self::CommandPalette => "Más acciones · Ctrl+Shift+P",
         }
     }
 }
@@ -2094,6 +2097,22 @@ fn draw_toolbar_icon(
             path.line_to(right - 4.0, top + 8.0);
             path.line_to(right - 7.0, bottom - 5.0);
             path.close();
+        }
+        AppAction::ToggleTheme => {
+            path.move_to(left + 6.0, top + 6.0);
+            path.line_to(right - 6.0, top + 6.0);
+            path.line_to(right - 6.0, bottom - 6.0);
+            path.line_to(left + 6.0, bottom - 6.0);
+            path.close();
+            for (x1, y1, x2, y2) in [
+                (center_x, top + 2.0, center_x, top + 5.0),
+                (center_x, bottom - 5.0, center_x, bottom - 2.0),
+                (left + 2.0, center_y, left + 5.0, center_y),
+                (right - 5.0, center_y, right - 2.0, center_y),
+            ] {
+                path.move_to(x1, y1);
+                path.line_to(x2, y2);
+            }
         }
         AppAction::SearchDocument | AppAction::SearchWorkspace => {
             path.move_to(left + 4.0, top + 4.0);
@@ -5420,13 +5439,7 @@ impl ApplicationHandler<AppEvent> for App {
                     },
                 ..
             } => {
-                let is_night = self.palette.bg == NIGHT.bg;
-                self.palette = if is_night { DAY } else { NIGHT };
-                self.live.clear();
-                self.preview_live.clear();
-                if let Some(w) = &self.window {
-                    w.request_redraw();
-                }
+                self.perform_action(AppAction::ToggleTheme);
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 let dy = match delta {
@@ -5501,6 +5514,7 @@ impl App {
                 DocumentMode::Split => self.refresh_reading_async("cerrando vista dividida"),
                 DocumentMode::Reading | DocumentMode::SourceEditing => self.enter_split_mode(),
             },
+            AppAction::ToggleTheme => self.toggle_theme(),
             AppAction::Cut => self.cut_source_selection(),
             AppAction::FormatBold => self.apply_markdown_surround("**", "**", "texto"),
             AppAction::FormatItalic => self.apply_markdown_surround("_", "_", "texto"),
@@ -5519,6 +5533,20 @@ impl App {
             AppAction::RestoreRecovery => self.restore_latest_recovery(),
             AppAction::ToggleRecovery => self.toggle_recovery(),
             AppAction::CommandPalette => self.open_command_palette(),
+        }
+    }
+
+    fn toggle_theme(&mut self) {
+        self.palette = if self.palette.bg == NIGHT.bg {
+            DAY
+        } else {
+            NIGHT
+        };
+        self.live.clear();
+        self.preview_live.clear();
+        self.set_notice("tema actualizado");
+        if let Some(window) = &self.window {
+            window.request_redraw();
         }
     }
 
@@ -10350,6 +10378,7 @@ mod pruebas {
     fn la_paleta_filtra_acciones_sin_inventar_comandos() {
         assert_eq!(filtered_actions("").len(), APP_ACTIONS.len());
         assert_eq!(filtered_actions("backlinks"), vec![AppAction::Backlinks]);
+        assert_eq!(filtered_actions("tema"), vec![AppAction::ToggleTheme]);
         assert!(filtered_actions("GUARDAR").contains(&AppAction::Save));
         assert!(filtered_actions("GUARDAR").contains(&AppAction::SaveAs));
         assert_eq!(
