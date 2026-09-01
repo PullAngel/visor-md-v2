@@ -30,11 +30,30 @@ compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
 | **Vista previa PNG local confirmada** | **3.454.464 bytes, 3,294 MiB** |
 | **Copia TSV y modo por documento** | **3.459.072 bytes, 3,299 MiB** |
 | **Plegado de secciones** | **3.464.704 bytes, 3,304 MiB** |
+| **UX editorial y navegación contextual** | **3.486.720 bytes, 3,325 MiB** |
 
 Superar 8 MB exige medición, explicación y aprobación. El límite no se usa para
 recortar seguridad, estabilidad, accesibilidad, Unicode o funciones esenciales.
 Mermaid, correctores y otros componentes pesados no tienen permiso automático
 para ampliar el núcleo.
+
+### UX editorial y navegación contextual del 1 de septiembre de 2026
+
+El checkpoint incorpora ayuda de iconos con mouse y teclado, estado inferior
+priorizado, contexto de carpeta y resultados de búsqueda más legibles, además
+de menús contextuales que muestran TSV solamente sobre una tabla. No añade
+dependencias, red, permisos ni persistencia.
+
+| Medida | Resultado |
+| --- | --- |
+| Binario Windows | 3.486.720 bytes, 3,325 MiB |
+| SHA-256 | `526ED94FC331C2BC5EF2F4CB895583E2587DF7B8C6583C8E4561E7EB8919D09F` |
+| Variación frente al checkpoint anterior | +22.016 bytes |
+| Margen frente al límite deseado | 4,675 MiB |
+
+La suite completa de esta revisión ejecutó 183 pruebas y Clippy estricto. La
+medición de tamaño no reemplaza QA visual manual de día, noche, edición, paneles
+ni DPI alto.
 
 ### Editor escalable, vista dividida y árbol de workspace del 30 de agosto de 2026
 
