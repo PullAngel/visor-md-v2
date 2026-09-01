@@ -3,7 +3,12 @@
 #[derive(Clone, Copy)]
 pub(crate) struct Palette {
     pub(crate) bg: (u8, u8, u8),
+    /// Base del documento. Se separa del fondo de ventana sin usar sombras.
     pub(crate) surface: (u8, u8, u8),
+    /// Bloques y chrome que necesitan presencia sin competir con la lectura.
+    pub(crate) elevated: (u8, u8, u8),
+    /// Menús, paneles y avisos que flotan sobre el documento.
+    pub(crate) floating: (u8, u8, u8),
     pub(crate) border: (u8, u8, u8),
     pub(crate) text: (u8, u8, u8),
     pub(crate) dim: (u8, u8, u8),
@@ -18,6 +23,8 @@ pub(crate) struct Palette {
 pub(crate) const NIGHT: Palette = Palette {
     bg: (0x0C, 0x0F, 0x0D),
     surface: (0x12, 0x15, 0x13),
+    elevated: (0x1A, 0x1F, 0x1C),
+    floating: (0x23, 0x2A, 0x26),
     border: (0x1D, 0x23, 0x20),
     text: (0xE9, 0xE9, 0xE4),
     dim: (0x8B, 0x91, 0x8C),
@@ -30,6 +37,8 @@ pub(crate) const NIGHT: Palette = Palette {
 pub(crate) const DAY: Palette = Palette {
     bg: (0xEB, 0xFA, 0xDC),
     surface: (0xF7, 0xFD, 0xEF),
+    elevated: (0xEE, 0xF6, 0xE3),
+    floating: (0xE2, 0xED, 0xD5),
     border: (0xD6, 0xE5, 0xC6),
     text: (0x13, 0x2A, 0x0A),
     dim: (0x5A, 0x6B, 0x4F),
@@ -43,7 +52,6 @@ pub(crate) const DAY: Palette = Palette {
 pub(crate) enum Role {
     Text,
     Dim,
-    Accent,
 }
 
 impl Palette {
@@ -51,7 +59,6 @@ impl Palette {
         match role {
             Role::Text => self.text,
             Role::Dim => self.dim,
-            Role::Accent => self.accent,
         }
     }
 }

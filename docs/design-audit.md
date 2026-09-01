@@ -86,15 +86,17 @@ ni comprimir el documento.
 Esto no cambia el producto ni elimina la vista dividida. Evita que una función
 aprobada parezca defectuosa en el tamaño inicial de la aplicación.
 
-### Contradicción que requiere verificación de plataforma
+### Verificación de plataforma
 
-`design.md` y el código declaran chrome propio en Windows. La captura de la
-compilación release muestra todavía una franja de título del sistema encima de
-la barra de acciones. Antes de pulir sus iconos hay que confirmar en una build
-actual si es una limitación de la ventana sin borde, una diferencia de la
-compilación observada o una integración incompleta de la plataforma. No se debe
-dibujar una segunda barra para ocultar el problema: duplicaría controles y
-empeoraría accesibilidad.
+Una captura posterior de la compilación release actual confirma que Windows sí
+está usando el chrome propio: los controles se dibujan dentro de la franja de
+Visor MD, no existe una segunda barra de título. La evidencia anterior mezclaba
+una captura de una ejecución previa y no justifica duplicar chrome ni controles.
+
+La misma captura detectó un defecto real distinto: el tamaño inicial de 900 ×
+760 podía extender una ventana sin borde por debajo del área de trabajo de un
+portátil y ocultar la barra inferior detrás de la barra del sistema. El tamaño
+inicial se reduce de forma conservadora; el mínimo de 640 × 480 no cambia.
 
 ## Orden de corrección recomendado
 
@@ -111,6 +113,27 @@ empeoraría accesibilidad.
 7. Ejecutar las capturas definidas abajo en ventana inicial, mínima, amplia,
    día, noche, fuente, dividida y DPI alto. El QA humano decide si la identidad
    se siente lograda; no si un rectángulo se dibuja o no.
+
+## Correcciones aplicadas durante la auditoría
+
+Estas correcciones reducen defectos objetivos; no cierran aún el sprint visual.
+
+- El viewport de documento ahora reserva una franja superior y otra inferior
+  mediante una sola conversión de coordenadas. Scroll, hit testing, selección,
+  botón de copia, divisor y marcas de búsqueda usan esa misma frontera.
+- La paleta del renderer incorporó `base`, `elevated` y `floating`: documento,
+  bloques, barra inferior, menús, paneles y avisos ya no usan una sola
+  superficie indistinta.
+- La fuente editable y los bloques de código usan tinta normal. El verde queda
+  en enlaces, estados y filetes; no se añadió resaltado sintáctico artificial.
+- Un bloque de código de varias líneas se pinta como una sola pieza visual. Dos
+  cercas de código vecinas conservan sus fondos y acciones de copia separados.
+- El tamaño inicial se hizo más conservador para que una ventana sin borde no
+  esconda su barra inferior en áreas de trabajo reducidas o escaladas.
+
+Las pruebas cubren la geometría nueva, el rol de tinta de fuente y la separación
+de cercas contiguas. Falta la comparación visual de release después de cada
+siguiente ajuste de composición.
 
 ## Plan de corrección
 

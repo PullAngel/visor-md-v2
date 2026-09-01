@@ -86,6 +86,9 @@ const CODE_COPY_WIDTH: f32 = 60.0;
 const CODE_COPY_HEIGHT: f32 = 22.0;
 const MAX_SEARCH_QUERY_CHARS: usize = 256;
 const MAX_OVERLAY_LABEL_CHARS: usize = 180;
+/// Franja reservada para acciones y controles de ventana. El documento nunca
+/// se dibuja ni recibe scroll dentro de esta zona.
+const DOCUMENT_VIEWPORT_TOP: f32 = 40.0;
 const STATUS_HEIGHT: f32 = 28.0;
 const MAX_TAB_WIDTH: f32 = 220.0;
 const PANEL_X: f32 = MARGIN;
@@ -97,7 +100,7 @@ const TOOLBAR_X: f32 = 12.0;
 const TOOLBAR_Y: f32 = 8.0;
 const TOOLBAR_HEIGHT: f32 = 28.0;
 const TOOLBAR_ITEM_WIDTH: f32 = 60.0;
-const WINDOW_CHROME_HEIGHT: f32 = 40.0;
+const WINDOW_CHROME_HEIGHT: f32 = DOCUMENT_VIEWPORT_TOP;
 const WINDOW_CONTROL_WIDTH: f32 = 46.0;
 const WINDOW_RESIZE_BORDER: f32 = 6.0;
 const MIN_WINDOW_WIDTH: f64 = 640.0;
@@ -1350,7 +1353,10 @@ impl Kind {
             Kind::Heading(3) => (20.0, 600.0, Role::Text, false),
             Kind::Heading(_) => (17.0, 600.0, Role::Text, false),
             Kind::Para | Kind::Item(_) => (16.0, 400.0, Role::Text, false),
-            Kind::Code => (13.5, 400.0, Role::Accent, true),
+            // El verde guía acciones, enlaces internos y confirmaciones. El
+            // código y la fuente conservan tinta normal para no convertir el
+            // modo de edición en una terminal ni competir con la lectura.
+            Kind::Code => (13.5, 400.0, Role::Text, true),
             Kind::TableRow { header: true } => (15.0, 600.0, Role::Text, true),
             Kind::TableRow { header: false } => (15.0, 400.0, Role::Dim, true),
             Kind::Quote => (16.0, 400.0, Role::Dim, false),
@@ -2560,7 +2566,13 @@ fn max_scroll(doc_height: f32, viewport_height: f32) -> f32 {
 }
 
 fn document_viewport_height(window_height: f32) -> f32 {
-    (window_height - STATUS_HEIGHT).max(0.0)
+    (window_height - DOCUMENT_VIEWPORT_TOP - STATUS_HEIGHT).max(0.0)
+}
+
+/// Convierte una coordenada vertical estable del documento a una coordenada
+/// de pantalla. Dibujo, selección y hit testing comparten esta frontera.
+fn document_screen_y(document_y: f32, scroll: f32) -> f32 {
+    DOCUMENT_VIEWPORT_TOP + document_y - scroll
 }
 
 fn layout_width_is_stale(laid_for_width: f32, viewport_width: f32) -> bool {
@@ -2698,8 +2710,9 @@ fn build_layout_with_advance(
             );
             // El monoespaciado se ve mas grande al mismo cuerpo: se compensa.
             builder.push(StyleProperty::FontSize(size * 0.92 * scale), range.clone());
-            let c = palette.accent;
-            builder.push(StyleProperty::Brush(Brush::text(c)), range.clone());
+            // El código se distingue por familia y tamaño; el acento verde se
+            // reserva para navegación y estados, como define Papel + Tinta.
+            builder.push(StyleProperty::Brush(Brush::text(color)), range.clone());
         }
         if span.style.link {
             let c = palette.accent;
@@ -4083,7 +4096,10 @@ impl ApplicationHandler<AppEvent> for App {
                 self.document.source_editor.is_dirty(),
                 self.notice.as_deref(),
             ))
-            .with_inner_size(winit::dpi::LogicalSize::new(900.0, 760.0))
+            // Debe caber junto a la barra del sistema en pantallas de portátil
+            // comunes. Una ventana sin borde no siempre recibe el ajuste de
+            // área de trabajo que aplica el chrome nativo.
+            .with_inner_size(winit::dpi::LogicalSize::new(900.0, 560.0))
             .with_min_inner_size(winit::dpi::LogicalSize::new(
                 MIN_WINDOW_WIDTH,
                 MIN_WINDOW_HEIGHT,
@@ -7346,7 +7362,7 @@ impl App {
             if slot.height <= 0.0 || !matches!(slot.kind, Kind::Heading(_)) {
                 return None;
             }
-            let top = slot.y - self.scroll;
+            let top = document_screen_y(slot.y, self.scroll);
             let left = slot.x - 24.0 * self.scale_factor;
             ((top..=top + slot.height).contains(&y) && (left..slot.x).contains(&x)).then_some(index)
         })
@@ -7465,7 +7481,7 @@ impl App {
             return None;
         }
         self.slots.iter().enumerate().find_map(|(block, slot)| {
-            let top = slot.y - self.scroll;
+            let top = document_screen_y(slot.y, self.scroll);
             if y < top || y > top + slot.height {
                 return None;
             }
@@ -7485,7 +7501,7 @@ impl App {
 
     fn task_at(&self, x: f32, y: f32) -> Option<usize> {
         self.slots.iter().enumerate().find_map(|(index, slot)| {
-            let top = slot.y - self.scroll;
+            let top = document_screen_y(slot.y, self.scroll);
             let is_task = matches!(
                 self.document.blocks[index].marker,
                 Some(Marker::Task { .. })
@@ -7756,7 +7772,7 @@ impl App {
         let Some((x, y)) = self.pointer else {
             return false;
         };
-        let delta = selection_scroll_delta(y, viewport_height);
+        let delta = selection_scroll_delta(y - DOCUMENT_VIEWPORT_TOP, viewport_height);
         if delta == 0.0 {
             return false;
         }
@@ -8245,6 +8261,24 @@ impl App {
             255,
         ));
 
+        let mut elevated_paint = Paint::default();
+        let elevated_color = palette.elevated;
+        elevated_paint.set_color(Color::from_rgba8(
+            elevated_color.0,
+            elevated_color.1,
+            elevated_color.2,
+            255,
+        ));
+
+        let mut floating_paint = Paint::default();
+        let floating_color = palette.floating;
+        floating_paint.set_color(Color::from_rgba8(
+            floating_color.0,
+            floating_color.1,
+            floating_color.2,
+            255,
+        ));
+
         let mut accent_paint = Paint::default();
         let ac = palette.accent;
         accent_paint.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 255));
@@ -8257,6 +8291,16 @@ impl App {
         let bc = palette.border;
         border_paint.set_color(Color::from_rgba8(bc.0, bc.1, bc.2, 255));
 
+        let status_y = h.get() as f32 - STATUS_HEIGHT;
+        if let Some(rect) = Rect::from_xywh(
+            0.0,
+            DOCUMENT_VIEWPORT_TOP,
+            w.get() as f32,
+            (status_y - DOCUMENT_VIEWPORT_TOP).max(0.0),
+        ) {
+            pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+        }
+
         let ancho_texto =
             (layout_width - MARGIN * *scale_factor * 2.0).min(MAX_MEASURE * *scale_factor);
 
@@ -8265,7 +8309,7 @@ impl App {
             let Some((cached_layout, marker)) = live.get(&i) else {
                 continue;
             };
-            let top = slot.y - *scroll;
+            let top = document_screen_y(slot.y, *scroll);
 
             if let CachedBlockLayout::Table(cells) = cached_layout {
                 let columns = cells.len().max(1) as f32;
@@ -8332,13 +8376,20 @@ impl App {
             match slot.kind {
                 // Fondo de los bloques de codigo, dibujado con tiny-skia.
                 Kind::Code => {
-                    if let Some(rect) = Rect::from_xywh(
-                        slot.x - 12.0,
-                        top - 2.0,
-                        ancho_texto + 24.0,
-                        slot.height + 4.0,
-                    ) {
-                        pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+                    if is_visible_code_group_start(blocks, slots, i, view_top)
+                        && let Some(range) = code_block_range(blocks, i)
+                        && let (Some(first), Some(last)) = (
+                            slots.get(range.start),
+                            slots.get(range.end.saturating_sub(1)),
+                        )
+                        && let Some(rect) = Rect::from_xywh(
+                            first.x - 12.0,
+                            document_screen_y(first.y, *scroll) - 2.0,
+                            ancho_texto + 24.0,
+                            last.y + last.height - first.y + 4.0,
+                        )
+                    {
+                        pixmap.fill_rect(rect, &elevated_paint, Transform::identity(), None);
                     }
                     if context_mode == DocumentMode::Reading && is_first_code_block(blocks, i) {
                         let (x, y, width, height) =
@@ -8382,7 +8433,7 @@ impl App {
                         ancho_texto + 20.0,
                         slot.height + 8.0,
                     ) {
-                        pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+                        pixmap.fill_rect(rect, &elevated_paint, Transform::identity(), None);
                     }
                     if let Some(rect) =
                         Rect::from_xywh(slot.x - 20.0, top - 4.0, 3.0, slot.height + 8.0)
@@ -8518,7 +8569,12 @@ impl App {
 
         if split {
             let pane_x = layout_width;
-            if let Some(rect) = Rect::from_xywh(pane_x - 1.0, 0.0, 1.0, h.get() as f32) {
+            if let Some(rect) = Rect::from_xywh(
+                pane_x - 1.0,
+                DOCUMENT_VIEWPORT_TOP,
+                1.0,
+                document_viewport_height(h.get() as f32),
+            ) {
                 pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
             }
             for index in preview_visible {
@@ -8526,7 +8582,7 @@ impl App {
                 let Some((cached_layout, marker)) = preview_live.get(&index) else {
                     continue;
                 };
-                let top = slot.y - *scroll;
+                let top = document_screen_y(slot.y, *scroll);
                 if let CachedBlockLayout::Table(cells) = cached_layout {
                     let columns = cells.len().max(1) as f32;
                     let left = pane_x + slot.x - 6.0;
@@ -8568,14 +8624,35 @@ impl App {
                 };
                 let x = pane_x + slot.x;
                 match slot.kind {
-                    Kind::Code | Kind::Callout => {
+                    Kind::Code => {
+                        if is_visible_code_group_start(
+                            &document.rendered_blocks,
+                            preview_slots,
+                            index,
+                            view_top,
+                        ) && let Some(range) = code_block_range(&document.rendered_blocks, index)
+                            && let (Some(first), Some(last)) = (
+                                preview_slots.get(range.start),
+                                preview_slots.get(range.end.saturating_sub(1)),
+                            )
+                            && let Some(rect) = Rect::from_xywh(
+                                pane_x + first.x - 12.0,
+                                document_screen_y(first.y, *scroll) - 2.0,
+                                ancho_texto + 24.0,
+                                last.y + last.height - first.y + 4.0,
+                            )
+                        {
+                            pixmap.fill_rect(rect, &elevated_paint, Transform::identity(), None);
+                        }
+                    }
+                    Kind::Callout => {
                         if let Some(rect) = Rect::from_xywh(
                             x - 12.0,
                             top - 2.0,
                             ancho_texto + 24.0,
                             slot.height + 4.0,
                         ) {
-                            pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+                            pixmap.fill_rect(rect, &elevated_paint, Transform::identity(), None);
                         }
                     }
                     Kind::Quote => {
@@ -8627,8 +8704,10 @@ impl App {
         // La búsqueda ya recorre el documento al cambiar la consulta. Estas
         // marcas reutilizan ese resultado y la geometría compacta: no agregan
         // un recorrido completo a cada cuadro ni revelan secciones plegadas.
-        for y in search_mark_positions(&search_mark_blocks, slots, *doc_height, h.get() as f32) {
-            if let Some(rect) = Rect::from_xywh(w.get() as f32 - 5.0, y, 3.0, 4.0) {
+        for y in search_mark_positions(&search_mark_blocks, slots, *doc_height, viewport_height) {
+            if let Some(rect) =
+                Rect::from_xywh(w.get() as f32 - 5.0, DOCUMENT_VIEWPORT_TOP + y, 3.0, 4.0)
+            {
                 pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
             }
         }
@@ -8660,7 +8739,7 @@ impl App {
                     active_paint.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 36));
                     pixmap.fill_rect(rect, &active_paint, Transform::identity(), None);
                 } else {
-                    pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+                    pixmap.fill_rect(rect, &elevated_paint, Transform::identity(), None);
                 }
             }
             if (active || focused)
@@ -8751,7 +8830,7 @@ impl App {
         if let Some(layout) = safe_banner {
             let banner_width = (layout.width() + 24.0).min(w.get() as f32 - MARGIN * 2.0);
             if let Some(rect) = Rect::from_xywh(MARGIN, 44.0, banner_width, 28.0) {
-                pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+                pixmap.fill_rect(rect, &floating_paint, Transform::identity(), None);
             }
             if let Some(rect) = Rect::from_xywh(MARGIN, 44.0, 3.0, 28.0) {
                 pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
@@ -8771,7 +8850,7 @@ impl App {
             let peek_width = (layout.width() + 24.0).min(w.get() as f32 - MARGIN * 2.0);
             let peek_y = (status_y - 32.0).max(TOOLBAR_Y + TOOLBAR_HEIGHT + 4.0);
             if let Some(rect) = Rect::from_xywh(MARGIN, peek_y, peek_width, 28.0) {
-                pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+                pixmap.fill_rect(rect, &floating_paint, Transform::identity(), None);
             }
             if let Some(rect) = Rect::from_xywh(MARGIN, peek_y, 3.0, 28.0) {
                 pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
@@ -8786,7 +8865,7 @@ impl App {
             }
         }
         if let Some(rect) = Rect::from_xywh(0.0, status_y, w.get() as f32, STATUS_HEIGHT) {
-            pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+            pixmap.fill_rect(rect, &elevated_paint, Transform::identity(), None);
         }
         for (index, ((active, _), layout)) in
             tab_descriptors.iter().zip(tab_layouts.iter()).enumerate()
@@ -8845,7 +8924,7 @@ impl App {
         if let Some(layout) = search_overlay {
             let overlay_width = (layout.width() + 24.0).min(w.get() as f32 - MARGIN * 2.0);
             if let Some(rect) = Rect::from_xywh(MARGIN, 80.0, overlay_width, 28.0) {
-                pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+                pixmap.fill_rect(rect, &floating_paint, Transform::identity(), None);
             }
             for line in layout.lines() {
                 for entry in line.items() {
@@ -8867,7 +8946,7 @@ impl App {
             let row_height = PANEL_ROW_HEIGHT;
             let panel_height = row_height * rows.len() as f32 + 8.0;
             if let Some(rect) = Rect::from_xywh(panel_x, panel_y, panel_width, panel_height) {
-                pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+                pixmap.fill_rect(rect, &floating_paint, Transform::identity(), None);
             }
             for (row, ((selected, _), layout)) in rows.iter().zip(layouts).enumerate() {
                 let y = panel_y + 4.0 + row as f32 * row_height;
@@ -8899,7 +8978,7 @@ impl App {
                 CONTEXT_MENU_WIDTH,
                 CONTEXT_MENU_ROW_HEIGHT * context_actions(context_mode).len() as f32,
             ) {
-                pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+                pixmap.fill_rect(rect, &floating_paint, Transform::identity(), None);
             }
             for (row, (action, layout)) in context_actions(context_mode)
                 .iter()
@@ -9043,30 +9122,57 @@ fn code_copy_bounds(slot: &Slot, text_width: f32, scroll: f32, scale: f32) -> (f
     let height = CODE_COPY_HEIGHT * scale;
     (
         slot.x + text_width - width - 4.0 * scale,
-        slot.y - scroll + 4.0 * scale,
+        document_screen_y(slot.y, scroll) + 4.0 * scale,
         width,
         height,
     )
 }
 
 fn is_first_code_block(blocks: &[Block], index: usize) -> bool {
-    matches!(blocks.get(index).map(|block| block.kind), Some(Kind::Code))
-        && (index == 0 || !matches!(blocks[index - 1].kind, Kind::Code))
+    code_block_range(blocks, index).is_some_and(|range| range.start == index)
 }
 
-fn code_block_source_range(blocks: &[Block], index: usize) -> Option<std::ops::Range<usize>> {
+fn same_code_group(previous: &Block, next: &Block) -> bool {
+    matches!(previous.kind, Kind::Code)
+        && matches!(next.kind, Kind::Code)
+        && previous.source == next.source
+}
+
+/// Las líneas de una misma cerca de código comparten rango de fuente. No se
+/// agrupan dos cercas vecinas por accidente solo porque ambas sean `Kind::Code`.
+fn code_block_range(blocks: &[Block], index: usize) -> Option<std::ops::Range<usize>> {
     if !matches!(blocks.get(index).map(|block| block.kind), Some(Kind::Code)) {
         return None;
     }
     let mut first = index;
-    while first > 0 && matches!(blocks[first - 1].kind, Kind::Code) {
+    while first > 0 && same_code_group(&blocks[first - 1], &blocks[first]) {
         first -= 1;
     }
     let mut last = index;
-    while last + 1 < blocks.len() && matches!(blocks[last + 1].kind, Kind::Code) {
+    while last + 1 < blocks.len() && same_code_group(&blocks[last], &blocks[last + 1]) {
         last += 1;
     }
-    Some(blocks[first].source.start..blocks[last].source.end)
+    Some(first..last + 1)
+}
+
+fn is_visible_code_group_start(
+    blocks: &[Block],
+    slots: &[Slot],
+    index: usize,
+    view_top: f32,
+) -> bool {
+    let Some(range) = code_block_range(blocks, index) else {
+        return false;
+    };
+    range.start == index
+        || slots
+            .get(index.saturating_sub(1))
+            .is_some_and(|slot| slot.y + slot.height < view_top)
+}
+
+fn code_block_source_range(blocks: &[Block], index: usize) -> Option<std::ops::Range<usize>> {
+    let range = code_block_range(blocks, index)?;
+    Some(blocks[range.start].source.start..blocks[range.end - 1].source.end)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -9125,7 +9231,7 @@ fn search_mark_positions(
     document_height: f32,
     viewport_height: f32,
 ) -> Vec<f32> {
-    let track_height = (viewport_height - STATUS_HEIGHT - 4.0).max(0.0);
+    let track_height = (viewport_height - 4.0).max(0.0);
     let denominator = document_height.max(1.0);
     matches
         .iter()
@@ -10023,9 +10129,22 @@ mod pruebas {
     fn el_scroll_respeta_el_alto_real_de_la_ventana() {
         assert_eq!(max_scroll(1_000.0, 760.0), 240.0);
         assert_eq!(max_scroll(500.0, 760.0), 0.0);
-        assert_eq!(document_viewport_height(760.0), 732.0);
-        assert_eq!(max_scroll(1_000.0, document_viewport_height(760.0)), 268.0);
+        assert_eq!(document_viewport_height(760.0), 692.0);
+        assert_eq!(max_scroll(1_000.0, document_viewport_height(760.0)), 308.0);
         assert_eq!(document_viewport_height(20.0), 0.0);
+        assert_eq!(document_screen_y(48.0, 0.0), 88.0);
+        assert_eq!(document_screen_y(100.0, 60.0), 80.0);
+    }
+
+    #[test]
+    fn la_fuente_usa_tinta_normal_y_no_el_acento_de_navegacion() {
+        let source = TextBuffer::from_text("# Título\n\ntexto **Markdown**\n");
+        let blocks = safe_buffer_blocks(&source).expect("la fuente se prepara por líneas");
+
+        assert!(blocks.iter().all(|block| matches!(block.kind, Kind::Code)));
+        assert!(matches!(Kind::Code.style().2, Role::Text));
+        assert_ne!(NIGHT.surface, NIGHT.elevated);
+        assert_ne!(NIGHT.elevated, NIGHT.floating);
     }
 
     #[test]
@@ -10665,11 +10784,12 @@ con dos lineas
             kind: Kind::Code,
         };
         let (x, y, width, height) = code_copy_bounds(&slot, 640.0, 40.0, 1.0);
+        let visible_top = document_screen_y(slot.y, 40.0);
 
         assert!(x >= slot.x);
-        assert!(y >= slot.y - 40.0);
+        assert!(y >= visible_top);
         assert!(x + width <= slot.x + 640.0);
-        assert!(y + height <= slot.y - 40.0 + slot.height);
+        assert!(y + height <= visible_top + slot.height);
     }
 
     #[test]
@@ -10691,6 +10811,25 @@ con dos lineas
         );
         let range = code_block_source_range(&blocks, first).expect("el rango existe");
         assert_eq!(&source[range], "```rust\nuno();\ndos();\n```");
+    }
+
+    #[test]
+    fn dos_cercas_de_codigo_vecinas_no_comparten_fondo_ni_copia() {
+        let source = "```\nuno\n```\n```\ndos\n```\n";
+        let blocks = parse_blocks(source).expect("el código es válido").blocks;
+        let code_indices = blocks
+            .iter()
+            .enumerate()
+            .filter_map(|(index, block)| matches!(block.kind, Kind::Code).then_some(index))
+            .collect::<Vec<_>>();
+
+        assert_eq!(code_indices.len(), 2);
+        assert!(is_first_code_block(&blocks, code_indices[0]));
+        assert!(is_first_code_block(&blocks, code_indices[1]));
+        assert_ne!(
+            code_block_range(&blocks, code_indices[0]),
+            code_block_range(&blocks, code_indices[1])
+        );
     }
 
     #[test]
