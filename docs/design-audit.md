@@ -25,13 +25,103 @@ su verde saturado ni su densidad de controles.
 5. La composición aún no ha pasado QA visual sistemático en día, noche, edición,
    dividida, ventanas estrechas y DPI alto.
 
+## Revisión profunda: causas, no solo síntomas
+
+La segunda inspección usa capturas controladas de lectura, fuente y vista
+dividida. Distingue los defectos que una persona ve de la decisión concreta que
+los provoca. Es importante porque cambiar solamente colores o márgenes no
+resolvería la sensación de prototipo.
+
+| Área | Evidencia observada | Causa actual | Impacto | Prioridad |
+| --- | --- | --- | --- | --- |
+| Chrome superior | Acciones como texto plano dentro de la misma franja que movería la ventana | La barra empieza en `y=8`, mide 28 px y comparte la franja de chrome de 40 px | Se percibe como interfaz de pruebas, no como aplicación editorial | P0 |
+| Fuente | Todo el Markdown fuente aparece verde, incluso el texto ordinario | Cada línea de fuente se representa internamente como `Kind::Code`, cuyo rol de tinta es `Accent` | El verde deja de ser guía y el editor se parece a una terminal | P0 |
+| Vista dividida | El título y párrafos se parten demasiado pronto; un H1 ocupa dos líneas incluso en la ventana inicial | La división es siempre 50/50, sin ancho mínimo editorial ni alternativa compacta | Comparar se vuelve peor que alternar entre modos | P0 |
+| Viewport | La altura desplazable descuenta la barra inferior pero no reserva de forma explícita el chrome superior | Cálculos de scroll, selección y dibujo parten de convenciones distintas | Riesgo de contenido bajo controles, marcas o overlays en alturas reducidas | P0 |
+| Superficies | Documento, código, barra y paneles se confunden en noche | La paleta solo modela fondo y una superficie; la misma superficie se reutiliza para bloques y elementos elevados | Se pierde profundidad y orientación sin necesidad de sombras pesadas | P0 |
+| Código y callouts | Un bloque de código se pinta por línea y los callouts no comparten una caja de grupo consistente | El parser emite líneas de código y el renderer dibuja una caja por `Slot` | Bandas repetidas, bordes discontinuos y botón de copia visualmente aislado | P1 |
+| Pestañas y estado | La banda inferior tiene solo 28 px para pestañas, cierres y estado; el estado puede desaparecer si hay pestañas | Un único rectángulo contiene dos roles que compiten por ancho | La multitarea existe, pero no se siente robusta ni fácil de leer | P1 |
+| Paneles y menús | Se colocan en coordenadas fijas y usan la misma superficie que el documento | `PANEL_Y`, overlays y menús no derivan de una geometría de chrome ni de una capa flotante | Pueden tapar contenido y no comunican que son temporales | P1 |
+| Tipografía | Newsreader en lectura es la parte más conseguida; Sora no llega a distinguir una jerarquía de UI por falta de iconos y escala | Las familias aprobadas están bien incorporadas, pero los roles de interfaz aún usan rótulos provisionales | No cambiar familias: primero corregir composición y roles | P1 |
+| Accesibilidad visual | Hay foco y teclado básicos, pero los iconos aún no tienen una representación visual ni un estado de foco de suficiente tamaño | La barra se diseñó primero como atajos etiquetados | Un refactor de iconos debe mantener foco, menú y paleta como nombre textual de la acción | P1 |
+
+### Diagnóstico de composición
+
+El documento no está encerrado en un área de lectura claramente distinguible y
+el chrome no tiene una función visual propia. Hoy ambos se construyen desde
+coordenadas independientes: los márgenes del documento, la barra superior, los
+paneles y la banda inferior no nacen de una misma descripción de viewport. Por
+eso el resultado se ve correcto por partes, pero no como una sola ventana.
+
+La corrección debe crear primero una geometría compartida: chrome superior,
+área de contenido, chrome inferior y, cuando exista, dos paneles de comparación
+con anchura mínima. Sobre esa geometría se dibujan después superficies, iconos
+e información. No conviene invertir el orden.
+
+### Diagnóstico de color y profundidad
+
+La paleta aprobada ya definía cuatro niveles nocturnos: fondo, base, elevado y
+flotante. El código actual solo dispone de fondo y superficie; por eso una
+misma tinta se usa para el área documental, código, barra, menú y panel. La
+solución no requiere una estética brillante ni sombras permanentes: basta con
+introducir roles `base`, `elevated` y `floating`, usar borde estructural y
+reservar el verde para estados, enlaces internos, filetes y confirmaciones.
+
+El verde en toda la fuente es una desviación especialmente clara. El modo
+fuente necesita JetBrains Mono y contraste suficiente, pero su tinta base debe
+ser el texto normal; sintaxis futura, selección y acciones pueden aportar color
+de forma limitada. No se debe introducir resaltado de sintaxis improvisado
+solo para corregir esta apariencia.
+
+### Diagnóstico de modos
+
+Lectura debe ser el modo dominante. Fuente debe ser una herramienta precisa,
+no un segundo producto con estética terminal. Vista dividida es útil solo si
+cada panel alcanza una medida mínima cómoda; con una ventana de 900 px, una
+división rígida deja demasiado poco espacio después de márgenes. La solución
+conservadora es definir un umbral: en ventanas estrechas, ofrecer una división
+asimétrica o volver explícitamente a una comparación alternable, sin recortar
+ni comprimir el documento.
+
+Esto no cambia el producto ni elimina la vista dividida. Evita que una función
+aprobada parezca defectuosa en el tamaño inicial de la aplicación.
+
+### Contradicción que requiere verificación de plataforma
+
+`design.md` y el código declaran chrome propio en Windows. La captura de la
+compilación release muestra todavía una franja de título del sistema encima de
+la barra de acciones. Antes de pulir sus iconos hay que confirmar en una build
+actual si es una limitación de la ventana sin borde, una diferencia de la
+compilación observada o una integración incompleta de la plataforma. No se debe
+dibujar una segunda barra para ocultar el problema: duplicaría controles y
+empeoraría accesibilidad.
+
+## Orden de corrección recomendado
+
+1. Crear una única geometría de ventana y sus pruebas: chrome superior,
+   contenido, banda inferior, hit testing, scroll y división.
+2. Ampliar la paleta a las cuatro superficies aprobadas y reasignar cada capa.
+3. Corregir la tinta del modo fuente y el fondo de fuente/división antes de
+   incorporar cualquier resaltado sintáctico.
+4. Sustituir los rótulos provisionales por iconos nativos suaves, conservando
+   texto en foco, menú contextual y paleta de comandos.
+5. Agrupar código, callouts y tablas como componentes documentales completos,
+   no como una sucesión de líneas independientes.
+6. Reequilibrar pestañas, estado, paneles y overlays sobre la nueva geometría.
+7. Ejecutar las capturas definidas abajo en ventana inicial, mínima, amplia,
+   día, noche, fuente, dividida y DPI alto. El QA humano decide si la identidad
+   se siente lograda; no si un rectángulo se dibuja o no.
+
 ## Plan de corrección
 
 ### A. Fundaciones y defectos visibles
 
 - corregir controles repetidos y clipping;
-- reservar chrome y viewport con una única geometría;
+- reservar chrome y viewport con una única geometría, incluido scroll,
+  selección, overlays y ventanas mínimas;
 - establecer cuatro superficies y separadores consistentes;
+- retirar el verde dominante de la fuente y proteger una medida mínima útil
+  para la vista dividida;
 - añadir pruebas de hit testing y geometría a cada defecto real.
 
 ### B. Chrome editorial
