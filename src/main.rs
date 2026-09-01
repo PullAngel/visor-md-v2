@@ -106,6 +106,10 @@ const CONTEXT_TOOLBAR_Y: f32 = 44.0;
 const CONTEXT_TOOLBAR_HEIGHT: f32 = 28.0;
 const CONTEXT_TOOLBAR_ITEM_WIDTH: f32 = 72.0;
 const WINDOW_CHROME_HEIGHT: f32 = 40.0;
+/// En comparación, la lectura necesita una medida más generosa que la fuente.
+/// La fuente sigue siendo editable, pero el resultado es el objetivo de esta
+/// vista y no debe parecer una columna secundaria comprimida.
+const SPLIT_SOURCE_FRACTION: f32 = 0.42;
 const WINDOW_CONTROL_WIDTH: f32 = 46.0;
 const WINDOW_RESIZE_BORDER: f32 = 6.0;
 const MIN_WINDOW_WIDTH: f64 = 640.0;
@@ -648,32 +652,6 @@ impl AppAction {
             Self::RestoreRecovery => "Abrir recuperación · Ctrl+Shift+R",
             Self::ToggleRecovery => "Activar o desactivar recuperación local",
             Self::CommandPalette => "Mostrar todas las acciones · Ctrl+Shift+P",
-        }
-    }
-
-    fn short_label(self, mode: DocumentMode) -> &'static str {
-        match self {
-            Self::NewDocument => "Nuevo",
-            Self::OpenDocument => "Abrir",
-            Self::Save => "Guardar",
-            Self::ToggleMode if mode == DocumentMode::Reading => "Editar",
-            Self::ToggleMode => "Leer",
-            Self::ToggleSplit if mode == DocumentMode::Split => "Cerrar comparación",
-            Self::ToggleSplit => "Comparar",
-            Self::FormatBold => "Negrita",
-            Self::FormatItalic => "Cursiva",
-            Self::InsertLink => "Enlace",
-            Self::InsertHeading => "H2",
-            Self::InsertBulletList => "Lista",
-            Self::ToggleSection => "Plegar",
-            Self::SearchDocument => "Buscar",
-            Self::ChooseWorkspace => "Carpeta",
-            Self::WorkspaceFiles => "Notas",
-            Self::SearchWorkspace => "Bóveda",
-            Self::DocumentOutline => "Índice",
-            Self::Backlinks => "Vínculos",
-            Self::CommandPalette => "Más",
-            _ => self.label(),
         }
     }
 }
@@ -2013,6 +1991,198 @@ fn draw_checkbox(pixmap: &mut Pixmap, x: f32, y: f32, size: f32, done: bool, pal
     }
 }
 
+/// Iconos pequeños, dibujados sin una fuente de pictogramas para conservar el
+/// binario y los estados visuales bajo el control del renderer nativo.
+fn draw_toolbar_icon(
+    pixmap: &mut Pixmap,
+    action: AppAction,
+    x: f32,
+    y: f32,
+    size: f32,
+    color: (u8, u8, u8),
+) {
+    let mut paint = Paint {
+        anti_alias: true,
+        ..Default::default()
+    };
+    paint.set_color(Color::from_rgba8(color.0, color.1, color.2, 235));
+    let mut path = tiny_skia::PathBuilder::new();
+    let left = x;
+    let top = y;
+    let right = x + size;
+    let bottom = y + size;
+    let center_x = (left + right) * 0.5;
+    let center_y = (top + bottom) * 0.5;
+
+    match action {
+        AppAction::NewDocument => {
+            path.move_to(center_x, top + 3.0);
+            path.line_to(center_x, bottom - 3.0);
+            path.move_to(left + 3.0, center_y);
+            path.line_to(right - 3.0, center_y);
+        }
+        AppAction::OpenDocument | AppAction::ChooseWorkspace => {
+            path.move_to(left + 2.0, top + 6.0);
+            path.line_to(left + 7.0, top + 6.0);
+            path.line_to(left + 9.0, top + 3.0);
+            path.line_to(right - 2.0, top + 3.0);
+            path.line_to(right - 2.0, bottom - 3.0);
+            path.line_to(left + 2.0, bottom - 3.0);
+            path.close();
+        }
+        AppAction::Save => {
+            path.move_to(left + 3.0, top + 2.0);
+            path.line_to(right - 3.0, top + 2.0);
+            path.line_to(right - 3.0, bottom - 2.0);
+            path.line_to(left + 3.0, bottom - 2.0);
+            path.close();
+            path.move_to(left + 6.0, top + 2.0);
+            path.line_to(left + 6.0, top + 8.0);
+            path.line_to(right - 6.0, top + 8.0);
+        }
+        AppAction::ToggleMode => {
+            path.move_to(left + 4.0, bottom - 4.0);
+            path.line_to(left + 7.0, top + 5.0);
+            path.line_to(right - 4.0, top + 8.0);
+            path.line_to(right - 7.0, bottom - 5.0);
+            path.close();
+        }
+        AppAction::SearchDocument | AppAction::SearchWorkspace => {
+            path.move_to(left + 4.0, top + 4.0);
+            path.line_to(right - 7.0, top + 4.0);
+            path.line_to(right - 5.0, top + 7.0);
+            path.line_to(right - 5.0, center_y);
+            path.line_to(right - 8.0, bottom - 7.0);
+            path.line_to(left + 5.0, bottom - 7.0);
+            path.line_to(left + 3.0, bottom - 10.0);
+            path.line_to(left + 3.0, top + 7.0);
+            path.close();
+            path.move_to(right - 7.0, bottom - 7.0);
+            path.line_to(right - 2.0, bottom - 2.0);
+        }
+        AppAction::CommandPalette => {
+            for dot in [left + 5.0, center_x, right - 5.0] {
+                if let Some(rect) = Rect::from_xywh(dot - 1.5, center_y - 1.5, 3.0, 3.0) {
+                    pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+                }
+            }
+        }
+        AppAction::DocumentOutline => {
+            for row in [top + 5.0, center_y, bottom - 5.0] {
+                path.move_to(left + 4.0, row);
+                path.line_to(right - 3.0, row);
+            }
+        }
+        AppAction::ToggleSection => {
+            path.move_to(left + 5.0, top + 6.0);
+            path.line_to(right - 5.0, center_y);
+            path.line_to(left + 5.0, bottom - 6.0);
+        }
+        AppAction::WorkspaceFiles => {
+            path.move_to(left + 5.0, top + 2.0);
+            path.line_to(right - 5.0, top + 2.0);
+            path.line_to(right - 3.0, top + 5.0);
+            path.line_to(right - 3.0, bottom - 2.0);
+            path.line_to(left + 5.0, bottom - 2.0);
+            path.close();
+            for row in [top + 9.0, top + 13.0] {
+                path.move_to(left + 8.0, row);
+                path.line_to(right - 6.0, row);
+            }
+        }
+        AppAction::Backlinks => {
+            path.move_to(left + 5.0, top + 6.0);
+            path.line_to(right - 5.0, center_y);
+            path.line_to(left + 5.0, bottom - 6.0);
+            for (dot_x, dot_y) in [
+                (left + 5.0, top + 6.0),
+                (right - 5.0, center_y),
+                (left + 5.0, bottom - 6.0),
+            ] {
+                if let Some(rect) = Rect::from_xywh(dot_x - 2.0, dot_y - 2.0, 4.0, 4.0) {
+                    pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+                }
+            }
+        }
+        AppAction::FormatBold => {
+            path.move_to(left + 6.0, top + 3.0);
+            path.line_to(left + 6.0, bottom - 3.0);
+            path.move_to(left + 6.0, top + 3.0);
+            path.line_to(right - 6.0, top + 3.0);
+            path.line_to(right - 3.0, top + 6.0);
+            path.line_to(right - 6.0, center_y);
+            path.line_to(left + 6.0, center_y);
+            path.move_to(left + 6.0, center_y);
+            path.line_to(right - 5.0, center_y);
+            path.line_to(right - 3.0, bottom - 6.0);
+            path.line_to(right - 6.0, bottom - 3.0);
+            path.line_to(left + 6.0, bottom - 3.0);
+        }
+        AppAction::FormatItalic => {
+            path.move_to(left + 9.0, top + 3.0);
+            path.line_to(right - 5.0, top + 3.0);
+            path.move_to(left + 7.0, bottom - 3.0);
+            path.line_to(right - 3.0, bottom - 3.0);
+            path.move_to(right - 8.0, top + 3.0);
+            path.line_to(left + 8.0, bottom - 3.0);
+        }
+        AppAction::InsertHeading => {
+            path.move_to(left + 4.0, top + 3.0);
+            path.line_to(left + 4.0, bottom - 3.0);
+            path.move_to(right - 4.0, top + 3.0);
+            path.line_to(right - 4.0, bottom - 3.0);
+            path.move_to(left + 4.0, center_y);
+            path.line_to(right - 4.0, center_y);
+        }
+        AppAction::InsertBulletList => {
+            for row in [top + 5.0, center_y, bottom - 5.0] {
+                if let Some(rect) = Rect::from_xywh(left + 3.0, row - 1.5, 3.0, 3.0) {
+                    pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+                }
+                path.move_to(left + 9.0, row);
+                path.line_to(right - 3.0, row);
+            }
+        }
+        AppAction::InsertLink => {
+            path.move_to(left + 3.0, center_y);
+            path.line_to(left + 7.0, top + 5.0);
+            path.line_to(center_x, top + 5.0);
+            path.line_to(center_x + 2.0, top + 7.0);
+            path.move_to(center_x - 2.0, bottom - 7.0);
+            path.line_to(center_x, bottom - 5.0);
+            path.line_to(right - 7.0, bottom - 5.0);
+            path.line_to(right - 3.0, center_y);
+            path.move_to(left + 8.0, center_y);
+            path.line_to(right - 8.0, center_y);
+        }
+        AppAction::ToggleSplit => {
+            path.move_to(left + 3.0, top + 3.0);
+            path.line_to(right - 3.0, top + 3.0);
+            path.line_to(right - 3.0, bottom - 3.0);
+            path.line_to(left + 3.0, bottom - 3.0);
+            path.close();
+            path.move_to(center_x, top + 3.0);
+            path.line_to(center_x, bottom - 3.0);
+        }
+        _ => {}
+    }
+
+    if let Some(path) = path.finish() {
+        pixmap.stroke_path(
+            &path,
+            &paint,
+            &tiny_skia::Stroke {
+                width: 1.5,
+                line_cap: tiny_skia::LineCap::Round,
+                line_join: tiny_skia::LineJoin::Round,
+                ..Default::default()
+            },
+            Transform::identity(),
+            None,
+        );
+    }
+}
+
 fn draw_disclosure(pixmap: &mut Pixmap, x: f32, y: f32, size: f32, folded: bool, palette: Palette) {
     let mut path = tiny_skia::PathBuilder::new();
     if folded {
@@ -2678,10 +2848,26 @@ fn layout_width_is_stale(laid_for_width: f32, viewport_width: f32) -> bool {
 
 fn content_layout_width(viewport_width: f32, mode: DocumentMode) -> f32 {
     if mode == DocumentMode::Split {
-        (viewport_width / 2.0).max(1.0)
+        split_pane_widths(viewport_width).0
     } else {
         viewport_width.max(1.0)
     }
+}
+
+fn preview_layout_width(viewport_width: f32, mode: DocumentMode) -> f32 {
+    if mode == DocumentMode::Split {
+        split_pane_widths(viewport_width).1
+    } else {
+        viewport_width.max(1.0)
+    }
+}
+
+fn split_pane_widths(viewport_width: f32) -> (f32, f32) {
+    let viewport_width = viewport_width.max(2.0);
+    let source = (viewport_width * SPLIT_SOURCE_FRACTION)
+        .round()
+        .clamp(1.0, viewport_width - 1.0);
+    (source, viewport_width - source)
 }
 
 fn selection_scroll_delta(pointer_y: f32, viewport_height: f32) -> f32 {
@@ -7920,6 +8106,7 @@ impl App {
         let frame_start = Instant::now();
         let split = self.document.mode == DocumentMode::Split;
         let layout_width = content_layout_width(size.width as f32, self.document.mode);
+        let preview_width = preview_layout_width(size.width as f32, self.document.mode);
         let viewport_height = document_viewport_height(size.height as f32);
 
         // Re-medir solo si cambio el ancho.
@@ -7962,12 +8149,12 @@ impl App {
             ));
         }
 
-        if split && layout_width_is_stale(self.preview_laid_for_width, layout_width) {
+        if split && layout_width_is_stale(self.preview_laid_for_width, preview_width) {
             let (slots, visible_blocks, height) = measure_all(
                 &self.document.rendered_blocks,
                 &mut self.font_cx,
                 &mut self.layout_cx,
-                layout_width,
+                preview_width,
                 self.scale_factor,
                 false,
                 &[],
@@ -7975,7 +8162,7 @@ impl App {
             self.preview_slots = slots;
             self.preview_visible_blocks = visible_blocks;
             self.preview_height = height;
-            self.preview_laid_for_width = layout_width;
+            self.preview_laid_for_width = preview_width;
             self.preview_live.clear();
             self.scroll = self.scroll.min(max_scroll(
                 self.doc_height.max(self.preview_height),
@@ -8062,7 +8249,7 @@ impl App {
                         block,
                         &mut self.font_cx,
                         &mut self.layout_cx,
-                        layout_width,
+                        preview_width,
                         self.scale_factor,
                         self.palette,
                     ))
@@ -8071,7 +8258,7 @@ impl App {
                         block,
                         &mut self.font_cx,
                         &mut self.layout_cx,
-                        layout_width,
+                        preview_width,
                         self.scale_factor,
                         self.palette,
                     )))
@@ -8251,29 +8438,7 @@ impl App {
             &mut self.layout_cx,
             self.palette,
         );
-        let primary_toolbar_layouts = PRIMARY_TOOLBAR_ACTIONS
-            .iter()
-            .map(|action| {
-                build_menu_layout(
-                    action.short_label(self.document.mode),
-                    &mut self.font_cx,
-                    &mut self.layout_cx,
-                    self.palette,
-                )
-            })
-            .collect::<Vec<_>>();
         let contextual_toolbar_actions = contextual_toolbar_actions(self.document.mode);
-        let contextual_toolbar_layouts = contextual_toolbar_actions
-            .iter()
-            .map(|action| {
-                build_menu_layout(
-                    action.short_label(self.document.mode),
-                    &mut self.font_cx,
-                    &mut self.layout_cx,
-                    self.palette,
-                )
-            })
-            .collect::<Vec<_>>();
         let toolbar_focus = self.toolbar_focus;
         let document_mode_label = match self.document.mode {
             DocumentMode::Reading => "Lectura",
@@ -8457,6 +8622,8 @@ impl App {
 
         let ancho_texto =
             (layout_width - MARGIN * *scale_factor * 2.0).min(MAX_MEASURE * *scale_factor);
+        let preview_ancho_texto =
+            (preview_width - MARGIN * *scale_factor * 2.0).min(MAX_MEASURE * *scale_factor);
 
         for i in visible {
             let slot = &slots[i];
@@ -8740,7 +8907,7 @@ impl App {
                 if let CachedBlockLayout::Table(cells) = cached_layout {
                     let columns = cells.len().max(1) as f32;
                     let left = pane_x + slot.x - 6.0;
-                    let table_width = ancho_texto + 12.0;
+                    let table_width = preview_ancho_texto + 12.0;
                     for (x, y, width, height) in [
                         (left, top - 1.0, table_width, 1.0),
                         (left, top + slot.height, table_width, 1.0),
@@ -8757,7 +8924,7 @@ impl App {
                             pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
                         }
                     }
-                    let column_width = ancho_texto / columns;
+                    let column_width = preview_ancho_texto / columns;
                     for (column, layout) in cells.iter().enumerate() {
                         let x = pane_x + slot.x + column as f32 * column_width + TABLE_CELL_PADDING;
                         let y = top + (slot.height - layout.height()).max(0.0) * 0.5;
@@ -8792,7 +8959,7 @@ impl App {
                             && let Some(rect) = Rect::from_xywh(
                                 pane_x + first.x - 12.0,
                                 document_screen_y(first.y, *scroll) - 2.0,
-                                ancho_texto + 24.0,
+                                preview_ancho_texto + 24.0,
                                 last.y + last.height - first.y + 4.0,
                             )
                         {
@@ -8803,7 +8970,7 @@ impl App {
                         if let Some(rect) = Rect::from_xywh(
                             x - 12.0,
                             top - 2.0,
-                            ancho_texto + 24.0,
+                            preview_ancho_texto + 24.0,
                             slot.height + 4.0,
                         ) {
                             pixmap.fill_rect(rect, &elevated_paint, Transform::identity(), None);
@@ -8815,7 +8982,7 @@ impl App {
                         }
                     }
                     Kind::Rule => {
-                        if let Some(rect) = Rect::from_xywh(x, top, ancho_texto, 1.0) {
+                        if let Some(rect) = Rect::from_xywh(x, top, preview_ancho_texto, 1.0) {
                             pixmap.fill_rect(rect, &dim_paint, Transform::identity(), None);
                         }
                         continue;
@@ -8866,7 +9033,7 @@ impl App {
             }
         }
 
-        for (index, layout) in primary_toolbar_layouts.iter().enumerate() {
+        for (index, action) in PRIMARY_TOOLBAR_ACTIONS.iter().copied().enumerate() {
             let x = TOOLBAR_X + index as f32 * TOOLBAR_ITEM_WIDTH;
             let width = TOOLBAR_ITEM_WIDTH - 4.0;
             let right_limit = if custom_window_chrome_enabled() {
@@ -8883,7 +9050,7 @@ impl App {
                     && (TOOLBAR_Y..TOOLBAR_Y + TOOLBAR_HEIGHT).contains(&pointer_y)
             });
             let focused = toolbar_focus == Some(index);
-            let active = toolbar_action_is_active(PRIMARY_TOOLBAR_ACTIONS[index], context_mode);
+            let active = toolbar_action_is_active(action, context_mode);
             if (hovered || focused || active)
                 && let Some(rect) = Rect::from_xywh(x, TOOLBAR_Y, width, TOOLBAR_HEIGHT)
             {
@@ -8901,20 +9068,25 @@ impl App {
             {
                 pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
             }
-            for line in layout.lines() {
-                for entry in line.items() {
-                    if let PositionedLayoutItem::GlyphRun(run) = entry {
-                        draw_run_background(pixmap, &run, x + 9.0, TOOLBAR_Y + 6.0);
-                        draw_glyph_run(pixmap, scale_cx, glyphs, &run, x + 9.0, TOOLBAR_Y + 6.0);
-                    }
-                }
-            }
+            let icon_color = if active || hovered || focused {
+                palette.text
+            } else {
+                palette.dim
+            };
+            draw_toolbar_icon(
+                pixmap,
+                action,
+                x + (width - 18.0) * 0.5,
+                TOOLBAR_Y + 5.0,
+                18.0,
+                icon_color,
+            );
         }
 
         if let Some(rect) = Rect::from_xywh(0.0, CONTEXT_TOOLBAR_Y - 1.0, w.get() as f32, 1.0) {
             pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
         }
-        for (index, layout) in contextual_toolbar_layouts.iter().enumerate() {
+        for (index, action) in contextual_toolbar_actions.iter().copied().enumerate() {
             let x = TOOLBAR_X + index as f32 * CONTEXT_TOOLBAR_ITEM_WIDTH;
             let width = CONTEXT_TOOLBAR_ITEM_WIDTH - 4.0;
             let right_limit = w.get() as f32 - MARGIN;
@@ -8940,7 +9112,7 @@ impl App {
                         .contains(&pointer_y)
             });
             let focused = toolbar_focus == Some(PRIMARY_TOOLBAR_ACTIONS.len() + index);
-            let active = toolbar_action_is_active(contextual_toolbar_actions[index], context_mode);
+            let active = toolbar_action_is_active(action, context_mode);
             if (hovered || focused || active)
                 && let Some(rect) =
                     Rect::from_xywh(x, CONTEXT_TOOLBAR_Y, width, CONTEXT_TOOLBAR_HEIGHT)
@@ -8964,21 +9136,19 @@ impl App {
             {
                 pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
             }
-            for line in layout.lines() {
-                for entry in line.items() {
-                    if let PositionedLayoutItem::GlyphRun(run) = entry {
-                        draw_run_background(pixmap, &run, x + 9.0, CONTEXT_TOOLBAR_Y + 6.0);
-                        draw_glyph_run(
-                            pixmap,
-                            scale_cx,
-                            glyphs,
-                            &run,
-                            x + 9.0,
-                            CONTEXT_TOOLBAR_Y + 6.0,
-                        );
-                    }
-                }
-            }
+            let icon_color = if active || hovered || focused {
+                palette.text
+            } else {
+                palette.dim
+            };
+            draw_toolbar_icon(
+                pixmap,
+                action,
+                x + (width - 18.0) * 0.5,
+                CONTEXT_TOOLBAR_Y + 5.0,
+                18.0,
+                icon_color,
+            );
         }
 
         if custom_window_chrome_enabled() {
@@ -9893,8 +10063,10 @@ mod pruebas {
     }
 
     #[test]
-    fn la_vista_dividida_reserva_la_mitad_sin_cambiar_otros_modos() {
-        assert_eq!(content_layout_width(1200.0, DocumentMode::Split), 600.0);
+    fn la_vista_dividida_prioriza_la_medida_de_lectura() {
+        assert_eq!(content_layout_width(1200.0, DocumentMode::Split), 504.0);
+        assert_eq!(preview_layout_width(1200.0, DocumentMode::Split), 696.0);
+        assert_eq!(split_pane_widths(900.0), (378.0, 522.0));
         assert_eq!(content_layout_width(1200.0, DocumentMode::Reading), 1200.0);
         assert_eq!(
             content_layout_width(1200.0, DocumentMode::SourceEditing),

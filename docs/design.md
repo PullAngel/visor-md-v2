@@ -107,8 +107,9 @@ frecuentes en `Más`.
 Ninguna de las dos franjas dibuja una hilera de botones sólidos en reposo: usa
 superficie solo al pasar el mouse y reserva el acento para la acción de modo
 cuando el documento está en edición o vista dividida. En lectura, `Editar` es
-una acción disponible, no un estado activo. Sus rótulos se reemplazarán por
-iconos accesibles cuando el sistema definitivo de iconos esté integrado.
+una acción disponible, no un estado activo. Los iconos suaves se dibujan de
+forma nativa, sin fuente de pictogramas; la paleta y los atajos conservan el
+nombre completo de cada acción.
 
 La franja inferior contiene pestañas y estado, por lo que forma parte del chrome
 y no del viewport del documento. El scroll debe reservar su altura: la última

@@ -130,6 +130,12 @@ Estas correcciones reducen defectos objetivos; no cierran aún el sprint visual.
   cercas de código vecinas conservan sus fondos y acciones de copia separados.
 - El tamaño inicial se hizo más conservador para que una ventana sin borde no
   esconda su barra inferior en áreas de trabajo reducidas o escaladas.
+- La comparación fuente/vista dejó de dividir el ancho exactamente a la mitad:
+  reserva 42 % para la fuente editable y 58 % para lectura, de modo que la
+  vista renderizada no pierda medida editorial en la ventana inicial.
+- Las dos barras usan ahora iconos suaves dibujados por el renderer nativo en
+  lugar de rótulos provisionales. Los nombres completos permanecen en la
+  paleta y los atajos; no se añade una fuente de iconos ni una dependencia.
 
 Las pruebas cubren la geometría nueva, el rol de tinta de fuente y la separación
 de cercas contiguas. Falta la comparación visual de release después de cada
