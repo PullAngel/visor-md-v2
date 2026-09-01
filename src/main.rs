@@ -7503,7 +7503,7 @@ impl App {
         let text_width = (window.inner_size().width as f32 - MARGIN * self.scale_factor * 2.0)
             .min(MAX_MEASURE * self.scale_factor);
         self.slots.iter().enumerate().find_map(|(index, slot)| {
-            if !matches!(slot.kind, Kind::Code) {
+            if !is_first_code_block(&self.document.blocks, index) {
                 return None;
             }
             let (left, top, width, height) =
@@ -7514,12 +7514,16 @@ impl App {
     }
 
     fn copy_code_block(&mut self, block: usize) {
-        let Some(source) = self.document.blocks.get(block).and_then(|block| {
-            self.document
-                .source
-                .slice_bytes(block.source.start..block.source.end)
-                .ok()
-        }) else {
+        let Some(range) = code_block_source_range(&self.document.blocks, block) else {
+            self.set_notice("no se pudo localizar el bloque de código en la fuente");
+            return;
+        };
+        let Some(source) = self
+            .document
+            .blocks
+            .get(block)
+            .and_then(|_| self.document.source.slice_bytes(range).ok())
+        else {
             self.set_notice("no se pudo localizar el bloque de código en la fuente");
             return;
         };
@@ -8336,7 +8340,7 @@ impl App {
                     ) {
                         pixmap.fill_rect(rect, &paint, Transform::identity(), None);
                     }
-                    if context_mode == DocumentMode::Reading {
+                    if context_mode == DocumentMode::Reading && is_first_code_block(blocks, i) {
                         let (x, y, width, height) =
                             code_copy_bounds(slot, ancho_texto, *scroll, *scale_factor);
                         let ac = palette.accent;
@@ -9043,6 +9047,26 @@ fn code_copy_bounds(slot: &Slot, text_width: f32, scroll: f32, scale: f32) -> (f
         width,
         height,
     )
+}
+
+fn is_first_code_block(blocks: &[Block], index: usize) -> bool {
+    matches!(blocks.get(index).map(|block| block.kind), Some(Kind::Code))
+        && (index == 0 || !matches!(blocks[index - 1].kind, Kind::Code))
+}
+
+fn code_block_source_range(blocks: &[Block], index: usize) -> Option<std::ops::Range<usize>> {
+    if !matches!(blocks.get(index).map(|block| block.kind), Some(Kind::Code)) {
+        return None;
+    }
+    let mut first = index;
+    while first > 0 && matches!(blocks[first - 1].kind, Kind::Code) {
+        first -= 1;
+    }
+    let mut last = index;
+    while last + 1 < blocks.len() && matches!(blocks[last + 1].kind, Kind::Code) {
+        last += 1;
+    }
+    Some(blocks[first].source.start..blocks[last].source.end)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -10646,6 +10670,27 @@ con dos lineas
         assert!(y >= slot.y - 40.0);
         assert!(x + width <= slot.x + 640.0);
         assert!(y + height <= slot.y - 40.0 + slot.height);
+    }
+
+    #[test]
+    fn un_bloque_de_codigo_multilinea_ofrece_un_solo_boton_y_copia_su_rango_completo() {
+        let source = "```rust\nuno();\ndos();\n```\n";
+        let blocks = parse_blocks(source).expect("el código es válido").blocks;
+        let code_indices = blocks
+            .iter()
+            .enumerate()
+            .filter_map(|(index, block)| matches!(block.kind, Kind::Code).then_some(index))
+            .collect::<Vec<_>>();
+        let first = *code_indices.first().expect("hay líneas de código");
+        assert!(is_first_code_block(&blocks, first));
+        assert!(
+            code_indices
+                .iter()
+                .skip(1)
+                .all(|index| !is_first_code_block(&blocks, *index))
+        );
+        let range = code_block_source_range(&blocks, first).expect("el rango existe");
+        assert_eq!(&source[range], "```rust\nuno();\ndos();\n```");
     }
 
     #[test]

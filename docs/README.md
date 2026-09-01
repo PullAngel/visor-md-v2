@@ -41,6 +41,7 @@ Estos documentos deben cambiar cuando cambia el producto o su implementación:
 | [`benchmarks/`](benchmarks/) | Reportes crudos de rendimiento versionados |
 | [`roadmap.md`](roadmap.md) | Secuencia, dependencias y criterios de salida |
 | [`design.md`](design.md) | Sistema visual e interacción |
+| [`design-audit.md`](design-audit.md) | Evidencia y plan vigente de corrección visual |
 | [`decisions.md`](decisions.md) | ADR y decisiones reemplazadas |
 | [`future.md`](future.md) | Ideas fuera del plan activo |
 

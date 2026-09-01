@@ -43,6 +43,7 @@ final de cada hito.
 | Lector completo | En curso | Markdown cotidiano, tablas con copia TSV, notas al pie, autolinks, búsqueda, índice, métricas, plegado y vista previa PNG local presentes; faltan imágenes inline y cierre sistemático del corpus |
 | Editor básico | En curso | Abrir, crear, buffer escalable, edición fuente y dividida, actualización local de líneas con respaldo seguro, guardado atómico, conflictos explícitos y recuperación local configurable; faltan actualización incremental del modelo renderizado y QA manual de edición y diálogos nativos |
 | Chrome | En curso | Pestañas, acciones esenciales y paneles visibles con cierre protegido; el chrome sin borde de Windows conserva mover, redimensionar y controles de ventana, mientras otros sistemas usan fallback nativo; faltan accesibilidad completa y QA por plataforma |
+| Corrección visual | En curso | Retorno verificable a Papel + Tinta: chrome, superficies, iconos, composición editorial y QA visual |
 | Workspace | En curso | Carpeta explícita, VFS, índice acotado/cancelable con actualización que reutiliza notas intactas, árbol plegable, búsqueda y detección externa limitada; falta QA con bóvedas grandes |
 | Obsidian | En curso | Wikilinks, callouts, panel de backlinks y PNG local confirmado contenidos; falta corpus ampliado |
 | Estudio | En curso | Resaltado portable inicial; faltan herramientas portables |
