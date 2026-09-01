@@ -133,6 +133,10 @@ sintaxis frecuente y no crea formatos exclusivos por defecto.
 **Salida:** una bóveda se entiende sin experiencia previa de Obsidian; varias
 pestañas no pierden cambios ni confunden la sesión.
 
+**Añadido:** el estado inferior indica cuando se está indexando una carpeta y el
+hub de espacio de trabajo ofrece cancelar. La cancelación no borra el índice
+anterior: invalida el resultado tardío y conserva la navegación ya disponible.
+
 ## Gates
 
 - pruebas de teclado repetido, cortar, menú fuera, tareas y división;

@@ -49,7 +49,7 @@ contradicen esta fotografía.
 | Editor básico | En curso | Abrir, crear, edición fuente/dividida, historial, guardado atómico, conflictos explícitos y recuperación local están implementados; falta endurecer la sincronización incremental, selección/IME y QA real de archivos y diálogos. |
 | Aplicación diaria | En curso | Pestañas, cierre protegido, acciones comunes, barra de estado, paneles plegables y chrome sin borde de Windows ya existen; el foco actual es su descubribilidad, accesibilidad y QA por plataforma. |
 | Corrección visual | En curso | La composición Papel + Tinta, jerarquía de superficies, tipografía, barras primaria/contextual, iconos nativos, ayuda contextual y paneles fueron realineados con diseño; faltan pulido de estados y QA humano. |
-| Workspace | En curso | Carpeta explícita, VFS, índice acotado/cancelable, árbol, búsqueda y detección externa limitada ya existen; faltan escala, cancelación visible y QA con bóvedas grandes. |
+| Workspace | En curso | Carpeta explícita, VFS, índice acotado/cancelable con cancelación visible, árbol, búsqueda y detección externa limitada ya existen; faltan escala y QA con bóvedas grandes. |
 | Obsidian | En curso | Wikilinks, aliases, encabezados, callouts, backlinks y PNG local confirmado se resuelven dentro de la raíz autorizada; falta corpus de bóvedas, diagnósticos de ambigüedad y QA de compatibilidad. |
 | Estudio | En curso | Resaltado portable inicial; faltan herramientas portables |
 | Exportación | Pendiente | PDF, DOCX y copias preparadas |

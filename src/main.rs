@@ -179,13 +179,14 @@ const EDITING_TOOLBAR_ACTIONS: [AppAction; 16] = [
     AppAction::FormatHighlight,
     AppAction::ToggleSplit,
 ];
-const WORKSPACE_HUB_ACTIONS: [AppAction; 6] = [
+const WORKSPACE_HUB_ACTIONS: [AppAction; 7] = [
     AppAction::ChooseWorkspace,
     AppAction::WorkspaceFiles,
     AppAction::SearchWorkspace,
     AppAction::DocumentOutline,
     AppAction::Backlinks,
     AppAction::RefreshWorkspace,
+    AppAction::CancelWorkspaceIndex,
 ];
 static NEXT_DOCUMENT_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -679,6 +680,7 @@ enum AppAction {
     CopyTableTsv,
     ChooseWorkspace,
     RefreshWorkspace,
+    CancelWorkspaceIndex,
     SearchWorkspace,
     DocumentOutline,
     WorkspaceFiles,
@@ -689,7 +691,7 @@ enum AppAction {
     CommandPalette,
 }
 
-const APP_ACTIONS: [AppAction; 34] = [
+const APP_ACTIONS: [AppAction; 35] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -718,6 +720,7 @@ const APP_ACTIONS: [AppAction; 34] = [
     AppAction::CopyTableTsv,
     AppAction::ChooseWorkspace,
     AppAction::RefreshWorkspace,
+    AppAction::CancelWorkspaceIndex,
     AppAction::SearchWorkspace,
     AppAction::DocumentOutline,
     AppAction::WorkspaceFiles,
@@ -756,6 +759,7 @@ impl AppAction {
             Self::CopyTableTsv => "Copiar tabla seleccionada como TSV",
             Self::ChooseWorkspace => "Abrir carpeta · Ctrl+Shift+O",
             Self::RefreshWorkspace => "Actualizar índice de carpeta · Ctrl+Shift+I",
+            Self::CancelWorkspaceIndex => "Cancelar actualización de carpeta",
             Self::SearchWorkspace => "Buscar en carpeta · Ctrl+Shift+F",
             Self::DocumentOutline => "Índice del documento · Ctrl+Shift+L",
             Self::WorkspaceFiles => "Notas de la carpeta · Ctrl+Shift+T",
@@ -4432,6 +4436,7 @@ impl ApplicationHandler<AppEvent> for App {
                         .push("[workspace] se descartó un índice desactualizado".to_string());
                     return;
                 }
+                self.workspace_cancel = None;
                 let note_count = index.notes.len();
                 let skipped = index.skipped;
                 let truncated = index.truncated;
@@ -4460,6 +4465,7 @@ impl ApplicationHandler<AppEvent> for App {
                         .push("[workspace] se descartó un error desactualizado".to_string());
                     return;
                 }
+                self.workspace_cancel = None;
                 self.log.push(format!("[workspace] {error}"));
                 self.set_notice("no se pudo abrir la carpeta de trabajo");
             }
@@ -5646,6 +5652,7 @@ impl App {
             AppAction::CopyTableTsv => self.copy_current_table_tsv(),
             AppAction::ChooseWorkspace => self.choose_workspace(),
             AppAction::RefreshWorkspace => self.reindex_workspace(),
+            AppAction::CancelWorkspaceIndex => self.cancel_workspace_index(),
             AppAction::SearchWorkspace => self.open_workspace_search(),
             AppAction::DocumentOutline => self.show_document_outline(),
             AppAction::WorkspaceFiles => self.show_workspace_files(),
@@ -7056,6 +7063,19 @@ impl App {
             };
             let _ = proxy.send_event(event);
         });
+    }
+
+    /// La cancelación deja intacto el índice que la persona ya podía usar. El
+    /// resultado tardío se descarta mediante la versión de solicitud.
+    fn cancel_workspace_index(&mut self) {
+        let Some(cancel) = self.workspace_cancel.take() else {
+            self.set_notice("no hay una actualización de carpeta en curso");
+            return;
+        };
+        cancel.store(true, Ordering::Relaxed);
+        self.workspace_request = self.workspace_request.saturating_add(1);
+        self.workspace_check_in_flight = None;
+        self.set_notice("actualización de carpeta cancelada; se conserva el índice anterior");
     }
 
     fn restore_latest_recovery(&mut self) {
@@ -8891,7 +8911,9 @@ impl App {
         } else {
             "guardado"
         };
-        let workspace_state_label = if self.workspace_stale {
+        let workspace_state_label = if self.workspace_cancel.is_some() {
+            "indexando carpeta"
+        } else if self.workspace_stale {
             "carpeta por actualizar"
         } else if self.workspace.is_some() {
             "carpeta activa"
@@ -8899,6 +8921,7 @@ impl App {
             "sin carpeta"
         };
         let workspace_status = match workspace_state_label {
+            "indexando carpeta" => " · indexando carpeta",
             "carpeta por actualizar" => " · carpeta por actualizar",
             "carpeta activa" => " · carpeta activa",
             _ => "",
@@ -10540,9 +10563,9 @@ mod pruebas {
         labels.dedup();
 
         // Incluye operaciones de documento y ayudas editoriales cotidianas sin
-        // convertir la paleta en un menú de IDE. Superar 34 exige revisar la
+        // convertir la paleta en un menú de IDE. Superar 35 exige revisar la
         // jerarquía y no solo ampliar la lista por comodidad de implementación.
-        assert!(original_len <= 34, "el catálogo dejó de ser pequeño");
+        assert!(original_len <= 35, "el catálogo dejó de ser pequeño");
         assert_eq!(labels.len(), original_len);
     }
 
@@ -10599,6 +10622,10 @@ mod pruebas {
         assert_eq!(
             filtered_actions_from(&WORKSPACE_HUB_ACTIONS, "backlinks"),
             vec![AppAction::Backlinks]
+        );
+        assert_eq!(
+            filtered_actions_from(&WORKSPACE_HUB_ACTIONS, "cancelar"),
+            vec![AppAction::CancelWorkspaceIndex]
         );
     }
 
