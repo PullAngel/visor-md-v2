@@ -607,6 +607,12 @@ enum ContextAction {
     CopyTableTsv,
 }
 
+#[derive(Clone, Debug)]
+struct ContextMenu {
+    origin: (f32, f32),
+    actions: Vec<ContextAction>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum AppAction {
     NewDocument,
@@ -724,14 +730,10 @@ impl ContextAction {
     }
 }
 
-fn context_actions(mode: DocumentMode) -> &'static [ContextAction] {
-    match mode {
-        DocumentMode::Reading => &[
-            ContextAction::CopyText,
-            ContextAction::CopyMarkdown,
-            ContextAction::CopyTableTsv,
-        ],
-        DocumentMode::SourceEditing => &[
+fn context_actions(mode: DocumentMode, table_available: bool) -> Vec<ContextAction> {
+    let mut actions = match mode {
+        DocumentMode::Reading => vec![ContextAction::CopyText, ContextAction::CopyMarkdown],
+        DocumentMode::SourceEditing | DocumentMode::Split => vec![
             ContextAction::Paste,
             ContextAction::Bold,
             ContextAction::Italic,
@@ -740,35 +742,23 @@ fn context_actions(mode: DocumentMode) -> &'static [ContextAction] {
             ContextAction::BulletList,
             ContextAction::CopyText,
             ContextAction::CopyMarkdown,
-            ContextAction::CopyTableTsv,
         ],
-        DocumentMode::Split => &[
-            ContextAction::Paste,
-            ContextAction::Bold,
-            ContextAction::Italic,
-            ContextAction::Link,
-            ContextAction::Heading,
-            ContextAction::BulletList,
-            ContextAction::CopyText,
-            ContextAction::CopyMarkdown,
-            ContextAction::CopyTableTsv,
-        ],
+    };
+    if table_available {
+        actions.push(ContextAction::CopyTableTsv);
     }
+    actions
 }
 
-fn context_action_at(
-    menu: (f32, f32),
-    pointer: (f32, f32),
-    mode: DocumentMode,
-) -> Option<ContextAction> {
-    let (_, top) = menu;
+fn context_action_at(menu: &ContextMenu, pointer: (f32, f32)) -> Option<ContextAction> {
+    let (_, top) = menu.origin;
     let (x, y) = pointer;
-    if !(menu.0..=menu.0 + CONTEXT_MENU_WIDTH).contains(&x)
-        || !(top..=top + CONTEXT_MENU_ROW_HEIGHT * context_actions(mode).len() as f32).contains(&y)
+    if !(menu.origin.0..=menu.origin.0 + CONTEXT_MENU_WIDTH).contains(&x)
+        || !(top..=top + CONTEXT_MENU_ROW_HEIGHT * menu.actions.len() as f32).contains(&y)
     {
         return None;
     }
-    context_actions(mode)
+    menu.actions
         .get(((y - top) / CONTEXT_MENU_ROW_HEIGHT) as usize)
         .copied()
 }
@@ -3913,7 +3903,7 @@ struct App {
     focus_destination: Option<String>,
     /// Origen del menú contextual propio. Solo contiene acciones de copia
     /// locales; no usa menús del sistema ni ejecuta destinos del documento.
-    context_menu: Option<(f32, f32)>,
+    context_menu: Option<ContextMenu>,
     /// Consulta efímera del documento abierto. No se persiste ni se comparte.
     search_query: Option<String>,
     search_match: usize,
@@ -4637,9 +4627,10 @@ impl ApplicationHandler<AppEvent> for App {
                         return;
                     }
                     if let Some(menu) = self.context_menu.take() {
-                        if let Some(action) = self.pointer.and_then(|pointer| {
-                            context_action_at(menu, pointer, self.document.mode)
-                        }) {
+                        if let Some(action) = self
+                            .pointer
+                            .and_then(|pointer| context_action_at(&menu, pointer))
+                        {
                             match action {
                                 ContextAction::Paste => self.paste_into_source(),
                                 ContextAction::Bold => self.perform_action(AppAction::FormatBold),
@@ -4851,21 +4842,24 @@ impl ApplicationHandler<AppEvent> for App {
                     );
                     return;
                 }
+                let actions =
+                    context_actions(self.document.mode, self.table_action_is_available_at(x, y));
                 let (x, y) = if let Some(window) = &self.window {
                     let size = window.inner_size();
                     (
                         x.min((size.width as f32 - CONTEXT_MENU_WIDTH).max(0.0)),
                         y.min(
-                            (size.height as f32
-                                - CONTEXT_MENU_ROW_HEIGHT
-                                    * context_actions(self.document.mode).len() as f32)
+                            (size.height as f32 - CONTEXT_MENU_ROW_HEIGHT * actions.len() as f32)
                                 .max(0.0),
                         ),
                     )
                 } else {
                     (x, y)
                 };
-                self.context_menu = Some((x, y));
+                self.context_menu = Some(ContextMenu {
+                    origin: (x, y),
+                    actions,
+                });
                 if let Some(w) = &self.window {
                     w.request_redraw();
                 }
@@ -6911,6 +6905,19 @@ impl App {
         self.copy_text_to_clipboard(text, kind);
     }
 
+    fn table_action_is_available_at(&self, x: f32, y: f32) -> bool {
+        let block = self
+            .cursor_at(x, y)
+            .map(|cursor| cursor.block)
+            .or_else(|| self.selection.map(|selection| selection.focus.block));
+        block.is_some_and(|index| {
+            matches!(
+                self.document.blocks.get(index).map(|block| &block.kind),
+                Some(Kind::TableRow { .. })
+            )
+        })
+    }
+
     fn copy_current_table_tsv(&mut self) {
         let block = self
             .selection
@@ -8334,7 +8341,7 @@ impl App {
             window.request_redraw();
         }
 
-        let menu = self.context_menu;
+        let menu = self.context_menu.clone();
         let menu_pointer = self.pointer;
         let safe_banner = self.document.safe_mode.map(|reason| {
             build_menu_layout(
@@ -8477,8 +8484,8 @@ impl App {
                 })
                 .collect::<Vec<_>>()
         });
-        let menu_layouts = menu.map(|_| {
-            context_actions(self.document.mode)
+        let menu_layouts = menu.as_ref().map(|menu| {
+            menu.actions
                 .iter()
                 .map(|action| {
                     build_menu_layout(
@@ -9502,23 +9509,20 @@ impl App {
             }
         }
 
-        if let (Some((x, y)), Some(layouts)) = (menu, menu_layouts) {
+        if let (Some(menu), Some(layouts)) = (menu.as_ref(), menu_layouts) {
+            let (x, y) = menu.origin;
             if let Some(rect) = Rect::from_xywh(
                 x,
                 y,
                 CONTEXT_MENU_WIDTH,
-                CONTEXT_MENU_ROW_HEIGHT * context_actions(context_mode).len() as f32,
+                CONTEXT_MENU_ROW_HEIGHT * menu.actions.len() as f32,
             ) {
                 pixmap.fill_rect(rect, &floating_paint, Transform::identity(), None);
             }
-            for (row, (action, layout)) in context_actions(context_mode)
-                .iter()
-                .copied()
-                .zip(layouts.iter())
-                .enumerate()
+            for (row, (action, layout)) in
+                menu.actions.iter().copied().zip(layouts.iter()).enumerate()
             {
-                if menu_pointer.and_then(|pointer| context_action_at((x, y), pointer, context_mode))
-                    == Some(action)
+                if menu_pointer.and_then(|pointer| context_action_at(menu, pointer)) == Some(action)
                 {
                     let ac = palette.accent;
                     let mut hover = Paint::default();
@@ -10332,8 +10336,8 @@ mod pruebas {
         assert!(label.chars().count() <= 18);
         assert!(label.is_char_boundary(label.len()));
         assert!(APP_ACTIONS.contains(&AppAction::TogglePinTab));
-        assert!(!context_actions(DocumentMode::Reading).contains(&ContextAction::Paste));
-        assert!(context_actions(DocumentMode::Reading).contains(&ContextAction::CopyText));
+        assert!(!context_actions(DocumentMode::Reading, false).contains(&ContextAction::Paste));
+        assert!(context_actions(DocumentMode::Reading, false).contains(&ContextAction::CopyText));
     }
 
     #[test]
@@ -10762,26 +10766,37 @@ mod pruebas {
 
     #[test]
     fn el_menu_contextual_solo_habilita_pegado_en_el_editor() {
-        let menu = (100.0, 200.0);
-        assert_eq!(context_actions(DocumentMode::Reading).len(), 3);
-        assert_eq!(context_actions(DocumentMode::SourceEditing).len(), 9);
-        assert!(!context_actions(DocumentMode::Reading).contains(&ContextAction::Paste));
+        let reading_menu = ContextMenu {
+            origin: (100.0, 200.0),
+            actions: context_actions(DocumentMode::Reading, false),
+        };
+        let table_menu = ContextMenu {
+            origin: (100.0, 200.0),
+            actions: context_actions(DocumentMode::Reading, true),
+        };
+        let editing_menu = ContextMenu {
+            origin: (100.0, 200.0),
+            actions: context_actions(DocumentMode::SourceEditing, false),
+        };
+        assert_eq!(reading_menu.actions.len(), 2);
+        assert_eq!(table_menu.actions.len(), 3);
+        assert_eq!(editing_menu.actions.len(), 8);
+        assert!(!reading_menu.actions.contains(&ContextAction::Paste));
+        assert!(!reading_menu.actions.contains(&ContextAction::CopyTableTsv));
+        assert!(table_menu.actions.contains(&ContextAction::CopyTableTsv));
         assert_eq!(
-            context_action_at(menu, (110.0, 210.0), DocumentMode::Reading),
+            context_action_at(&reading_menu, (110.0, 210.0)),
             Some(ContextAction::CopyText)
         );
         assert_eq!(
-            context_action_at(menu, (110.0, 250.0), DocumentMode::Reading),
+            context_action_at(&reading_menu, (110.0, 250.0)),
             Some(ContextAction::CopyMarkdown)
         );
         assert_eq!(
-            context_action_at(menu, (110.0, 210.0), DocumentMode::SourceEditing),
+            context_action_at(&editing_menu, (110.0, 210.0)),
             Some(ContextAction::Paste)
         );
-        assert_eq!(
-            context_action_at(menu, (50.0, 210.0), DocumentMode::SourceEditing),
-            None
-        );
+        assert_eq!(context_action_at(&editing_menu, (50.0, 210.0)), None);
         assert!(!ContextAction::CopyText.source_markdown());
         assert!(ContextAction::CopyMarkdown.source_markdown());
     }

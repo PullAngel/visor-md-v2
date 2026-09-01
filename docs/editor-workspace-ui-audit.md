@@ -49,7 +49,7 @@ búsqueda, wikilinks, backlinks y límites de indexación.
 | Hay comandos para negrita, cursiva, enlace, encabezado y lista, por teclado, menú contextual y paleta. | La barra de edición muestra demasiados rótulos seguidos y el menú contextual mezcla edición, archivos, modos y acciones globales. Parece una lista técnica, no una ayuda según el contexto. | Separar acciones de selección de acciones globales. El menú contextual debe mostrar solo lo aplicable; la paleta conserva el catálogo completo. |
 | Fuente, lectura y vista dividida están diferenciadas. | Falta una indicación visual compacta y persistente de qué modo está activo y qué puede hacerse allí. | Reforzar el modo actual en barra de estado y toolbar con una sola acción primaria, sin repetir controles. |
 | Undo/redo, selección Unicode, pegado explícito, BOM/EOL y guardado fiable existen. | El éxito o rechazo se comunica casi siempre en un aviso breve; un conflicto, recuperación o guardado bloqueado merece una explicación recuperable. | Añadir estado de documento con severidad y una acción breve de detalles, sin diálogos intrusivos para éxitos normales. |
-| Copiar Markdown y TSV existen. | `Copiar TSV` aparece aunque la selección no sea una tabla y solo entonces explica que no aplica. | Ocultar o deshabilitar con explicación breve las acciones que no correspondan al contexto. |
+| Copiar Markdown y TSV existen. | `Copiar TSV` solo aparece al abrir el menú sobre una tabla; el resto del menú conserva las operaciones aplicables al modo. | Mantener esta regla al añadir acciones puntuales y ofrecer explicación breve cuando una acción global se rechace. |
 
 No se recomienda añadir numeración de líneas, completado de código o resaltado
 de sintaxis general: serían señales de IDE y no resuelven el problema principal
@@ -102,8 +102,8 @@ navegación de listas largas.
 - **Realizado en la estructura:** separar una barra principal para archivo y
   navegación general de una segunda barra contextual para formato o bóveda;
 - mover operaciones menos frecuentes a `Más` y a la paleta;
-- convertir el menú contextual en acciones dependientes de selección, enlace,
-  tabla o modo;
+- **Realizado para tablas:** ocultar `Copiar TSV` fuera de una tabla; extender
+  la misma regla gradualmente a acciones dependientes de selección o enlace;
 - usar rótulos y futuras iconografías que sigan el sistema suave de diseño, con
   nombres disponibles para teclado y accesibilidad.
 
