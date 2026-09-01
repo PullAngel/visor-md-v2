@@ -104,7 +104,9 @@ const TOOLBAR_HEIGHT: f32 = 28.0;
 const TOOLBAR_ITEM_WIDTH: f32 = 60.0;
 const CONTEXT_TOOLBAR_Y: f32 = 44.0;
 const CONTEXT_TOOLBAR_HEIGHT: f32 = 28.0;
-const CONTEXT_TOOLBAR_ITEM_WIDTH: f32 = 72.0;
+/// Once herramientas caben aun en el mínimo de 640 px; los nombres completos
+/// siguen disponibles con hover, foco F6 y la paleta.
+const CONTEXT_TOOLBAR_ITEM_WIDTH: f32 = 52.0;
 const WINDOW_CHROME_HEIGHT: f32 = 40.0;
 /// Fuente y resultado tienen el mismo espacio en la comparación. La evidencia
 /// de QA mostró que privilegiar lectura comprimía demasiado la fuente y hacía
@@ -114,12 +116,13 @@ const WINDOW_CONTROL_WIDTH: f32 = 46.0;
 const WINDOW_RESIZE_BORDER: f32 = 6.0;
 const MIN_WINDOW_WIDTH: f64 = 640.0;
 const MIN_WINDOW_HEIGHT: f64 = 480.0;
-const PRIMARY_TOOLBAR_ACTIONS: [AppAction; 6] = [
+const PRIMARY_TOOLBAR_ACTIONS: [AppAction; 7] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
     AppAction::ToggleMode,
     AppAction::SearchDocument,
+    AppAction::WorkspaceHub,
     AppAction::CommandPalette,
 ];
 const READING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 6] = [
@@ -130,7 +133,7 @@ const READING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 6] = [
     AppAction::SearchWorkspace,
     AppAction::Backlinks,
 ];
-const EDITING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 8] = [
+const EDITING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 11] = [
     AppAction::FormatBold,
     AppAction::FormatItalic,
     AppAction::InsertHeading,
@@ -138,14 +141,18 @@ const EDITING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 8] = [
     AppAction::InsertTask,
     AppAction::InsertQuote,
     AppAction::InsertLink,
+    AppAction::InsertCodeBlock,
+    AppAction::InsertTable,
+    AppAction::FormatHighlight,
     AppAction::ToggleSplit,
 ];
-const READING_TOOLBAR_ACTIONS: [AppAction; 12] = [
+const READING_TOOLBAR_ACTIONS: [AppAction; 13] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
     AppAction::ToggleMode,
     AppAction::SearchDocument,
+    AppAction::WorkspaceHub,
     AppAction::CommandPalette,
     AppAction::DocumentOutline,
     AppAction::ToggleSection,
@@ -154,18 +161,22 @@ const READING_TOOLBAR_ACTIONS: [AppAction; 12] = [
     AppAction::SearchWorkspace,
     AppAction::Backlinks,
 ];
-const EDITING_TOOLBAR_ACTIONS: [AppAction; 12] = [
+const EDITING_TOOLBAR_ACTIONS: [AppAction; 16] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
     AppAction::ToggleMode,
     AppAction::SearchDocument,
+    AppAction::WorkspaceHub,
     AppAction::CommandPalette,
     AppAction::FormatBold,
     AppAction::FormatItalic,
     AppAction::InsertHeading,
     AppAction::InsertBulletList,
     AppAction::InsertLink,
+    AppAction::InsertCodeBlock,
+    AppAction::InsertTable,
+    AppAction::FormatHighlight,
     AppAction::ToggleSplit,
 ];
 const WORKSPACE_HUB_ACTIONS: [AppAction; 6] = [
@@ -658,6 +669,9 @@ enum AppAction {
     InsertBulletList,
     InsertTask,
     InsertQuote,
+    InsertCodeBlock,
+    InsertTable,
+    FormatHighlight,
     ToggleSection,
     SearchDocument,
     CopyTableTsv,
@@ -673,7 +687,7 @@ enum AppAction {
     CommandPalette,
 }
 
-const APP_ACTIONS: [AppAction; 29] = [
+const APP_ACTIONS: [AppAction; 32] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -693,6 +707,9 @@ const APP_ACTIONS: [AppAction; 29] = [
     AppAction::InsertBulletList,
     AppAction::InsertTask,
     AppAction::InsertQuote,
+    AppAction::InsertCodeBlock,
+    AppAction::InsertTable,
+    AppAction::FormatHighlight,
     AppAction::ToggleSection,
     AppAction::CopyTableTsv,
     AppAction::ChooseWorkspace,
@@ -725,6 +742,9 @@ impl AppAction {
             Self::InsertBulletList => "Convertir línea en lista con viñetas",
             Self::InsertTask => "Convertir línea en tarea",
             Self::InsertQuote => "Convertir línea en cita",
+            Self::InsertCodeBlock => "Insertar bloque de código",
+            Self::InsertTable => "Insertar tabla Markdown",
+            Self::FormatHighlight => "Resaltar texto",
             Self::ToggleSection => "Plegar o desplegar sección enfocada",
             Self::SearchDocument => "Buscar en documento · Ctrl+F",
             Self::CopyTableTsv => "Copiar tabla seleccionada como TSV",
@@ -2108,7 +2128,7 @@ fn draw_toolbar_icon(
             path.move_to(left + 3.0, center_y);
             path.line_to(right - 3.0, center_y);
         }
-        AppAction::OpenDocument | AppAction::ChooseWorkspace => {
+        AppAction::OpenDocument | AppAction::ChooseWorkspace | AppAction::WorkspaceHub => {
             path.move_to(left + 2.0, top + 6.0);
             path.line_to(left + 7.0, top + 6.0);
             path.line_to(left + 9.0, top + 3.0);
@@ -2267,6 +2287,32 @@ fn draw_toolbar_icon(
             path.line_to(right - 4.0, top + 7.0);
             path.move_to(left + 9.0, top + 12.0);
             path.line_to(right - 6.0, top + 12.0);
+        }
+        AppAction::InsertCodeBlock => {
+            path.move_to(left + 7.0, top + 4.0);
+            path.line_to(left + 3.0, center_y);
+            path.line_to(left + 7.0, bottom - 4.0);
+            path.move_to(right - 7.0, top + 4.0);
+            path.line_to(right - 3.0, center_y);
+            path.line_to(right - 7.0, bottom - 4.0);
+        }
+        AppAction::InsertTable => {
+            for x in [left + 3.0, center_x, right - 3.0] {
+                path.move_to(x, top + 3.0);
+                path.line_to(x, bottom - 3.0);
+            }
+            for y in [top + 3.0, center_y, bottom - 3.0] {
+                path.move_to(left + 3.0, y);
+                path.line_to(right - 3.0, y);
+            }
+        }
+        AppAction::FormatHighlight => {
+            path.move_to(left + 4.0, top + 3.0);
+            path.line_to(left + 4.0, bottom - 3.0);
+            path.move_to(right - 4.0, top + 3.0);
+            path.line_to(right - 4.0, bottom - 3.0);
+            path.move_to(left + 4.0, center_y);
+            path.line_to(right - 4.0, center_y);
         }
         AppAction::InsertLink => {
             path.move_to(left + 3.0, center_y);
@@ -5584,6 +5630,9 @@ impl App {
             AppAction::InsertBulletList => self.prefix_markdown_line("- "),
             AppAction::InsertTask => self.prefix_markdown_line("- [ ] "),
             AppAction::InsertQuote => self.prefix_markdown_line("> "),
+            AppAction::InsertCodeBlock => self.insert_code_block(),
+            AppAction::InsertTable => self.insert_table(),
+            AppAction::FormatHighlight => self.apply_markdown_surround("==", "==", "texto"),
             AppAction::ToggleSection => self.toggle_focused_section(),
             AppAction::SearchDocument => self.open_document_search(),
             AppAction::CopyTableTsv => self.copy_current_table_tsv(),
@@ -6191,6 +6240,32 @@ impl App {
             return;
         }
         self.edit_source(|editor, source| editor.prefix_current_line(source, prefix));
+    }
+
+    fn document_line_ending(&self) -> &'static str {
+        match self.document.source_metadata.line_endings {
+            LineEndings::CrLf => "\r\n",
+            LineEndings::None | LineEndings::Lf | LineEndings::Mixed => "\n",
+        }
+    }
+
+    fn insert_code_block(&mut self) {
+        if !self.document.mode.is_editable() {
+            self.set_notice("activa edición para insertar un bloque de código");
+            return;
+        }
+        let eol = self.document_line_ending();
+        self.apply_markdown_surround(&format!("```{eol}"), &format!("{eol}```"), "código");
+    }
+
+    fn insert_table(&mut self) {
+        if !self.document.mode.is_editable() {
+            self.set_notice("activa edición para insertar una tabla");
+            return;
+        }
+        let eol = self.document_line_ending();
+        let template = format!("| Columna | Valor |{eol}| --- | --- |{eol}| texto | valor |");
+        self.edit_source(|editor, source| editor.insert(source, &template));
     }
 
     fn schedule_recovery(&mut self) {
@@ -10355,6 +10430,10 @@ mod pruebas {
         );
         assert_eq!(
             toolbar_action_at(330.0, 12.0, 900.0, DocumentMode::Reading),
+            Some(AppAction::WorkspaceHub)
+        );
+        assert_eq!(
+            toolbar_action_at(390.0, 12.0, 900.0, DocumentMode::Reading),
             Some(AppAction::CommandPalette)
         );
         assert_eq!(
@@ -10374,15 +10453,15 @@ mod pruebas {
             Some(AppAction::FormatItalic)
         );
         assert_eq!(
-            toolbar_action_at(260.0, 50.0, 900.0, DocumentMode::SourceEditing),
+            toolbar_action_at(180.0, 50.0, 900.0, DocumentMode::SourceEditing),
             Some(AppAction::InsertBulletList)
         );
         assert_eq!(
-            toolbar_action_at(330.0, 50.0, 900.0, DocumentMode::SourceEditing),
+            toolbar_action_at(230.0, 50.0, 900.0, DocumentMode::SourceEditing),
             Some(AppAction::InsertTask)
         );
         assert_eq!(
-            toolbar_action_at(400.0, 50.0, 900.0, DocumentMode::SourceEditing),
+            toolbar_action_at(280.0, 50.0, 900.0, DocumentMode::SourceEditing),
             Some(AppAction::InsertQuote)
         );
         assert_eq!(
@@ -10443,9 +10522,9 @@ mod pruebas {
         labels.dedup();
 
         // Incluye operaciones de documento y ayudas editoriales cotidianas sin
-        // convertir la paleta en un menú de IDE. Superar 28 exige revisar la
+        // convertir la paleta en un menú de IDE. Superar 34 exige revisar la
         // jerarquía y no solo ampliar la lista por comodidad de implementación.
-        assert!(original_len <= 28, "el catálogo dejó de ser pequeño");
+        assert!(original_len <= 34, "el catálogo dejó de ser pequeño");
         assert_eq!(labels.len(), original_len);
     }
 

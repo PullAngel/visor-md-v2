@@ -586,7 +586,15 @@ impl SourceEditor {
     pub fn undo(&mut self, source: &mut TextBuffer) -> Result<bool, EditError> {
         let changed = self.history.undo(source)?;
         if changed {
-            self.cursor = self.cursor.min(source.len_bytes());
+            // El cursor pertenece al cambio que se acaba de revertir, no a la
+            // posición posterior que tenía antes de deshacer. Mantener aquella
+            // posición podía hacerlo saltar visualmente hacia delante.
+            self.cursor = self
+                .history
+                .last_change()
+                .map(|change| change.start + change.inserted_bytes)
+                .unwrap_or(0)
+                .min(source.len_bytes());
             self.anchor = self.cursor;
         }
         Ok(changed)
@@ -595,7 +603,12 @@ impl SourceEditor {
     pub fn redo(&mut self, source: &mut TextBuffer) -> Result<bool, EditError> {
         let changed = self.history.redo(source)?;
         if changed {
-            self.cursor = self.cursor.min(source.len_bytes());
+            self.cursor = self
+                .history
+                .last_change()
+                .map(|change| change.start + change.inserted_bytes)
+                .unwrap_or(0)
+                .min(source.len_bytes());
             self.anchor = self.cursor;
         }
         Ok(changed)
@@ -898,6 +911,21 @@ mod tests {
         assert_eq!(source.to_string(), "antes después");
         assert!(editor.undo(&mut source).unwrap());
         assert_eq!(source.to_string(), "antes 日本語 después");
+    }
+
+    #[test]
+    fn deshacer_y_rehacer_reubican_el_cursor_en_el_cambio() {
+        let mut source = buffer("uno dos");
+        let mut editor = SourceEditor::new();
+        editor.set_cursor(&source, "uno ".len(), false).unwrap();
+        editor.insert(&mut source, "🔐").unwrap();
+
+        assert!(editor.undo(&mut source).unwrap());
+        assert_eq!(source.to_string(), "uno dos");
+        assert_eq!(editor.cursor(), "uno ".len());
+        assert!(editor.redo(&mut source).unwrap());
+        assert_eq!(source.to_string(), "uno 🔐dos");
+        assert_eq!(editor.cursor(), "uno 🔐".len());
     }
 
     #[test]

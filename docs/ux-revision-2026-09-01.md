@@ -102,12 +102,13 @@ sienten parte del mismo producto.
 
 ### C. Kit de escritura y toma de notas
 
-- **Primer cierre:** además de negrita, cursiva, encabezado, lista y enlace,
-  la barra, el menú contextual y la paleta ofrecen tarea y cita. Todas escriben
-  sintaxis Markdown estándar al inicio de la línea actual y se deshacen como
-  una edición normal.
-- Pendiente: código, tabla, wikilinks, callouts, resaltado y recursos locales
-  seguros como acciones de escritura completas.
+- **Primer cierre ampliado:** la barra ofrece negrita, cursiva, encabezado,
+  lista, tarea, cita, enlace, bloque de código, tabla, resaltado y comparación.
+  Todas escriben sintaxis Markdown estándar o portable y se deshacen como una
+  edición normal. Los bloques y tablas conservan el tipo de salto de línea del
+  documento.
+- Pendiente: wikilinks, callouts y recursos locales seguros como acciones de
+  escritura completas.
 - Operaciones contextuales para selección y cursor; insertar fecha, símbolos,
   bloques de estudio y fragmentos preparados para IA quedan bajo menús o panel.
 - Herramientas de estudio portables: pregunta/respuesta, ocultación, estados,
@@ -118,11 +119,10 @@ sintaxis frecuente y no crea formatos exclusivos por defecto.
 
 ### D. Espacio de trabajo y ventanas
 
-- **Primer cierre:** `Espacio de trabajo` agrupa abrir carpeta, notas, búsqueda
-  local, índice, backlinks y actualización de índice dentro de `Más acciones`.
-  Es visible al abrir ese menú, está disponible tanto en lectura como en edición
-  y cada destino sigue pasando por VFS. Un panel/rail persistente y plegable
-  continúa pendiente.
+- **Primer cierre:** `Espacio de trabajo` tiene un botón propio y agrupa abrir
+  carpeta, notas, búsqueda local, índice, backlinks y actualización de índice.
+  Está disponible tanto en lectura como en edición y cada destino sigue pasando
+  por VFS. Un panel/rail persistente y plegable continúa pendiente.
 - Pestañas reordenables y arrastrables antes de crear otra ventana.
 - Separación horizontal/vertical y ventanas nuevas son un programa aparte:
   necesitan definir propiedad de documentos, cierre protegido, recuperación,
