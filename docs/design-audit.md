@@ -136,6 +136,12 @@ Estas correcciones reducen defectos objetivos; no cierran aún el sprint visual.
 - Las dos barras usan ahora iconos suaves dibujados por el renderer nativo en
   lugar de rótulos provisionales. Los nombres completos permanecen en la
   paleta y los atajos; no se añade una fuente de iconos ni una dependencia.
+- Al pasar el cursor por un icono, o al recorrer la barra con `F6`, aparece una
+  ayuda breve con nombre y atajo. Así la barra conserva espacio para lectura
+  sin exigir memorizar pictogramas.
+- La franja inferior prioriza modo, estado de guardado y actualización de
+  carpeta. Palabras, tiempo y tokens no compiten de forma permanente con una
+  advertencia de integridad.
 
 Las pruebas cubren la geometría nueva, el rol de tinta de fuente y la separación
 de cercas contiguas. Falta la comparación visual de release después de cada
