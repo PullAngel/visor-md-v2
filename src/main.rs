@@ -27,7 +27,7 @@ mod workspace;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::num::NonZeroU32;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -470,6 +470,16 @@ fn visible_workspace_tree_rows(
             row
         })
         .collect()
+}
+
+fn workspace_panel_title(root: Option<&Path>, note_count: usize) -> String {
+    let name = root
+        .and_then(|path| path.file_name())
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or("Carpeta");
+    let notes = if note_count == 1 { "nota" } else { "notas" };
+    format!("{name} · {note_count} {notes}")
 }
 
 fn toolbar_actions(mode: DocumentMode) -> &'static [AppAction] {
@@ -8388,12 +8398,13 @@ impl App {
         } else if let Some(paths) = self.workspace_paths.as_ref() {
             let selected = self.workspace_path_match % paths.len().max(1);
             let range = panel_window(paths.len(), selected, PANEL_CAPACITY);
-            let note_count = paths
-                .iter()
-                .filter(|row| matches!(row.kind, WorkspaceTreeKind::Note))
-                .count();
+            let (workspace_root, note_count) = self
+                .workspace
+                .as_ref()
+                .map(|(root, index)| (Some(root.root()), index.notes.len()))
+                .unwrap_or((None, 0));
             Some(NavigationPanelRows {
-                title: format!("Notas · {note_count} archivos"),
+                title: workspace_panel_title(workspace_root, note_count),
                 items: range
                     .clone()
                     .map(|index| {
@@ -10264,6 +10275,15 @@ mod pruebas {
                 .iter()
                 .all(|row| row.relative_path != std::path::Path::new("universidad/redes/uno.md"))
         );
+    }
+
+    #[test]
+    fn el_panel_de_notas_identifica_la_carpeta_autorizada() {
+        assert_eq!(
+            workspace_panel_title(Some(Path::new(r"C:\\Apuntes\\Universidad")), 12),
+            "Universidad · 12 notas"
+        );
+        assert_eq!(workspace_panel_title(None, 1), "Carpeta · 1 nota");
     }
 
     #[test]
