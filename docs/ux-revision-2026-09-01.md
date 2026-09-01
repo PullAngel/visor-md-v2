@@ -109,7 +109,9 @@ sienten parte del mismo producto.
   documento.
 - **Añadido:** la paleta permite insertar wikilinks `[[nota]]` y callouts de
   nota de Obsidian sin resolver rutas, abrir archivos ni cambiar preferencias.
-  Pendiente: recursos locales seguros como acciones de escritura completas.
+  El menú contextual de edición ofrece también código, tabla, resaltado, enlace
+  de bóveda y callout, además de cortar, pegar y formato básico. Pendiente:
+  recursos locales seguros como acciones de escritura completas.
 - Operaciones contextuales para selección y cursor; insertar fecha, símbolos,
   bloques de estudio y fragmentos preparados para IA quedan bajo menús o panel.
 - Herramientas de estudio portables: pregunta/respuesta, ocultación, estados,

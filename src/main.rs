@@ -640,6 +640,11 @@ enum ContextAction {
     BulletList,
     Task,
     Quote,
+    CodeBlock,
+    Table,
+    Highlight,
+    WikiLink,
+    Callout,
     CopyText,
     CopyMarkdown,
     CopyTableTsv,
@@ -804,6 +809,11 @@ impl ContextAction {
             Self::BulletList => "Lista con viñetas",
             Self::Task => "Tarea",
             Self::Quote => "Cita",
+            Self::CodeBlock => "Bloque de código",
+            Self::Table => "Tabla Markdown",
+            Self::Highlight => "Resaltar texto",
+            Self::WikiLink => "Enlace de bóveda",
+            Self::Callout => "Callout de nota",
             Self::CopyText => "Copiar texto",
             Self::CopyMarkdown => "Copiar Markdown original",
             Self::CopyTableTsv => "Copiar tabla como TSV",
@@ -828,6 +838,11 @@ fn context_actions(mode: DocumentMode, table_available: bool) -> Vec<ContextActi
             ContextAction::BulletList,
             ContextAction::Task,
             ContextAction::Quote,
+            ContextAction::CodeBlock,
+            ContextAction::Table,
+            ContextAction::Highlight,
+            ContextAction::WikiLink,
+            ContextAction::Callout,
             ContextAction::CopyText,
             ContextAction::CopyMarkdown,
         ],
@@ -4802,6 +4817,19 @@ impl ApplicationHandler<AppEvent> for App {
                                 }
                                 ContextAction::Task => self.perform_action(AppAction::InsertTask),
                                 ContextAction::Quote => self.perform_action(AppAction::InsertQuote),
+                                ContextAction::CodeBlock => {
+                                    self.perform_action(AppAction::InsertCodeBlock)
+                                }
+                                ContextAction::Table => self.perform_action(AppAction::InsertTable),
+                                ContextAction::Highlight => {
+                                    self.perform_action(AppAction::FormatHighlight)
+                                }
+                                ContextAction::WikiLink => {
+                                    self.perform_action(AppAction::InsertWikiLink)
+                                }
+                                ContextAction::Callout => {
+                                    self.perform_action(AppAction::InsertCallout)
+                                }
                                 ContextAction::CopyText | ContextAction::CopyMarkdown => {
                                     self.copy_selection(action.source_markdown());
                                 }
@@ -11215,7 +11243,7 @@ mod pruebas {
         };
         assert_eq!(reading_menu.actions.len(), 2);
         assert_eq!(table_menu.actions.len(), 3);
-        assert_eq!(editing_menu.actions.len(), 11);
+        assert_eq!(editing_menu.actions.len(), 16);
         assert!(!reading_menu.actions.contains(&ContextAction::Paste));
         assert!(!reading_menu.actions.contains(&ContextAction::Cut));
         assert!(!reading_menu.actions.contains(&ContextAction::CopyTableTsv));
@@ -11223,6 +11251,11 @@ mod pruebas {
         assert!(editing_menu.actions.contains(&ContextAction::Cut));
         assert!(editing_menu.actions.contains(&ContextAction::Task));
         assert!(editing_menu.actions.contains(&ContextAction::Quote));
+        assert!(editing_menu.actions.contains(&ContextAction::CodeBlock));
+        assert!(editing_menu.actions.contains(&ContextAction::Table));
+        assert!(editing_menu.actions.contains(&ContextAction::Highlight));
+        assert!(editing_menu.actions.contains(&ContextAction::WikiLink));
+        assert!(editing_menu.actions.contains(&ContextAction::Callout));
         assert_eq!(
             context_action_at(&reading_menu, (110.0, 210.0)),
             Some(ContextAction::CopyText)
