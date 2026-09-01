@@ -886,6 +886,21 @@ mod tests {
     }
 
     #[test]
+    fn borrar_una_seleccion_unicode_es_reversible() {
+        let mut source = buffer("antes 日本語 después");
+        let mut editor = SourceEditor::new();
+        let start = "antes ".len();
+        let end = start + "日本語 ".len();
+        editor.set_cursor(&source, start, false).unwrap();
+        editor.set_cursor(&source, end, true).unwrap();
+
+        assert!(editor.insert(&mut source, "").unwrap());
+        assert_eq!(source.to_string(), "antes después");
+        assert!(editor.undo(&mut source).unwrap());
+        assert_eq!(source.to_string(), "antes 日本語 después");
+    }
+
+    #[test]
     fn fijar_cursor_sin_extender_cancela_la_seleccion() {
         let source = buffer("ábc");
         let mut editor = SourceEditor::new();

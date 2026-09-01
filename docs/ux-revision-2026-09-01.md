@@ -35,6 +35,10 @@ un IDE ni en una réplica de Obsidian.
   en una ventana real.
   los atajos, diálogos y cambios de modo siguen siendo de un único disparo.
   Enter permanece deliberadamente individual hasta revisar agrupación de undo.
+- **Corregido:** `Cortar` está disponible con `Ctrl+X`, menú contextual y la
+  paleta de acciones. Copia primero el rango UTF-8 seleccionado y solo lo
+  elimina cuando el portapapeles confirma la operación; `Ctrl+Z` restaura el
+  cambio como una única edición.
 - El tema alterna con `T`, pero no figura como acción visible y puede ser
   absorbido por la entrada de fuente. La solución es una acción del catálogo,
   no otro atajo oculto.

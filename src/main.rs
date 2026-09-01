@@ -610,6 +610,7 @@ fn abbreviated_label(text: &str, limit: usize) -> String {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ContextAction {
     Paste,
+    Cut,
     Bold,
     Italic,
     Link,
@@ -636,6 +637,7 @@ enum AppAction {
     TogglePinTab,
     ToggleMode,
     ToggleSplit,
+    Cut,
     FormatBold,
     FormatItalic,
     InsertLink,
@@ -655,7 +657,7 @@ enum AppAction {
     CommandPalette,
 }
 
-const APP_ACTIONS: [AppAction; 24] = [
+const APP_ACTIONS: [AppAction; 25] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -664,6 +666,7 @@ const APP_ACTIONS: [AppAction; 24] = [
     AppAction::TogglePinTab,
     AppAction::ToggleMode,
     AppAction::ToggleSplit,
+    AppAction::Cut,
     AppAction::FormatBold,
     AppAction::FormatItalic,
     AppAction::InsertLink,
@@ -693,6 +696,7 @@ impl AppAction {
             Self::TogglePinTab => "Fijar o soltar pestaña",
             Self::ToggleMode => "Alternar lectura y edición · F2",
             Self::ToggleSplit => "Comparar fuente y vista · F3",
+            Self::Cut => "Cortar · Ctrl+X",
             Self::FormatBold => "Aplicar negrita · Ctrl+B",
             Self::FormatItalic => "Aplicar cursiva · Ctrl+I",
             Self::InsertLink => "Insertar enlace · Ctrl+K",
@@ -727,6 +731,7 @@ impl ContextAction {
     fn label(self) -> &'static str {
         match self {
             Self::Paste => "Pegar",
+            Self::Cut => "Cortar",
             Self::Bold => "Negrita",
             Self::Italic => "Cursiva",
             Self::Link => "Insertar enlace",
@@ -748,6 +753,7 @@ fn context_actions(mode: DocumentMode, table_available: bool) -> Vec<ContextActi
         DocumentMode::Reading => vec![ContextAction::CopyText, ContextAction::CopyMarkdown],
         DocumentMode::SourceEditing | DocumentMode::Split => vec![
             ContextAction::Paste,
+            ContextAction::Cut,
             ContextAction::Bold,
             ContextAction::Italic,
             ContextAction::Link,
@@ -4646,6 +4652,7 @@ impl ApplicationHandler<AppEvent> for App {
                         {
                             match action {
                                 ContextAction::Paste => self.paste_into_source(),
+                                ContextAction::Cut => self.perform_action(AppAction::Cut),
                                 ContextAction::Bold => self.perform_action(AppAction::FormatBold),
                                 ContextAction::Italic => {
                                     self.perform_action(AppAction::FormatItalic)
@@ -5494,6 +5501,7 @@ impl App {
                 DocumentMode::Split => self.refresh_reading_async("cerrando vista dividida"),
                 DocumentMode::Reading | DocumentMode::SourceEditing => self.enter_split_mode(),
             },
+            AppAction::Cut => self.cut_source_selection(),
             AppAction::FormatBold => self.apply_markdown_surround("**", "**", "texto"),
             AppAction::FormatItalic => self.apply_markdown_surround("_", "_", "texto"),
             AppAction::InsertLink => self.insert_markdown_link(),
@@ -6306,6 +6314,9 @@ impl App {
             PhysicalKey::Code(KeyCode::KeyC) if self.modifiers.control_key() => {
                 self.copy_selection(false);
             }
+            PhysicalKey::Code(KeyCode::KeyX) if self.modifiers.control_key() => {
+                self.cut_source_selection();
+            }
             PhysicalKey::Code(KeyCode::KeyV) if self.modifiers.control_key() => {
                 self.paste_into_source();
             }
@@ -7024,7 +7035,9 @@ impl App {
         self.copy_text_to_clipboard(text, "tabla copiada como TSV");
     }
 
-    fn copy_text_to_clipboard(&mut self, text: String, kind: &str) {
+    /// Copiar es siempre una acción explícita. El valor booleano permite que
+    /// `Cortar` conserve la fuente si el sistema no aceptó el portapapeles.
+    fn write_text_to_clipboard(&mut self, text: String, kind: &str) -> bool {
         let clipboard = match self.clipboard.as_mut() {
             Some(clipboard) => clipboard,
             None => match Clipboard::new() {
@@ -7033,7 +7046,7 @@ impl App {
                     self.log
                         .push(format!("[portapapeles] no se pudo iniciar: {error}"));
                     self.set_notice("no se pudo acceder al portapapeles");
-                    return;
+                    return false;
                 }
             },
         };
@@ -7041,10 +7054,40 @@ impl App {
             self.log
                 .push(format!("[portapapeles] no se pudo copiar: {error}"));
             self.set_notice("no se pudo copiar");
-            return;
+            return false;
         }
         self.log.push(format!("[portapapeles] {kind}"));
         self.set_notice(kind);
+        true
+    }
+
+    fn copy_text_to_clipboard(&mut self, text: String, kind: &str) {
+        let _ = self.write_text_to_clipboard(text, kind);
+    }
+
+    fn cut_source_selection(&mut self) {
+        if !self.document.mode.is_editable() {
+            self.set_notice("cortar solo está disponible durante la edición");
+            return;
+        }
+        let selection = self.document.source_editor.selection();
+        if selection.is_empty() {
+            self.set_notice("selecciona texto para cortar");
+            return;
+        }
+        let text = match self.document.source.slice_bytes(selection) {
+            Ok(text) => text,
+            Err(_) => {
+                self.set_notice("la selección no corresponde a texto UTF-8 válido");
+                return;
+            }
+        };
+        if !self.write_text_to_clipboard(text, "texto cortado") {
+            return;
+        }
+        self.edit_source(|editor, source| editor.insert(source, ""));
+        self.sync_source_selection();
+        self.set_notice("texto cortado · Ctrl+Z para deshacer");
     }
 
     fn set_notice(&mut self, notice: &str) {
@@ -10902,10 +10945,12 @@ mod pruebas {
         };
         assert_eq!(reading_menu.actions.len(), 2);
         assert_eq!(table_menu.actions.len(), 3);
-        assert_eq!(editing_menu.actions.len(), 8);
+        assert_eq!(editing_menu.actions.len(), 9);
         assert!(!reading_menu.actions.contains(&ContextAction::Paste));
+        assert!(!reading_menu.actions.contains(&ContextAction::Cut));
         assert!(!reading_menu.actions.contains(&ContextAction::CopyTableTsv));
         assert!(table_menu.actions.contains(&ContextAction::CopyTableTsv));
+        assert!(editing_menu.actions.contains(&ContextAction::Cut));
         assert_eq!(
             context_action_at(&reading_menu, (110.0, 210.0)),
             Some(ContextAction::CopyText)
@@ -10917,6 +10962,10 @@ mod pruebas {
         assert_eq!(
             context_action_at(&editing_menu, (110.0, 210.0)),
             Some(ContextAction::Paste)
+        );
+        assert_eq!(
+            context_action_at(&editing_menu, (110.0, 250.0)),
+            Some(ContextAction::Cut)
         );
         assert_eq!(context_action_at(&editing_menu, (50.0, 210.0)), None);
         assert!(!ContextAction::CopyText.source_markdown());
