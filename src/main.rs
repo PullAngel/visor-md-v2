@@ -472,12 +472,16 @@ fn visible_workspace_tree_rows(
         .collect()
 }
 
-fn workspace_panel_title(root: Option<&Path>, note_count: usize) -> String {
-    let name = root
-        .and_then(|path| path.file_name())
+fn workspace_name(root: Option<&Path>) -> String {
+    root.and_then(|path| path.file_name())
         .and_then(|name| name.to_str())
         .filter(|name| !name.is_empty())
-        .unwrap_or("Carpeta");
+        .unwrap_or("Carpeta")
+        .to_string()
+}
+
+fn workspace_panel_title(root: Option<&Path>, note_count: usize) -> String {
+    let name = workspace_name(root);
     let notes = if note_count == 1 { "nota" } else { "notas" };
     format!("{name} · {note_count} {notes}")
 }
@@ -8377,10 +8381,15 @@ impl App {
         ) {
             let selected = self.workspace_search_match % paths.len().max(1);
             let range = panel_window(paths.len(), selected, PANEL_CAPACITY);
+            let workspace_root = self.workspace.as_ref().map(|(root, _)| root.root());
+            let workspace_name = workspace_name(workspace_root);
             let title = if query.is_empty() {
-                "Buscar en carpeta…".to_string()
+                format!("Buscar en {workspace_name}…")
             } else {
-                format!("Buscar: {query} · {} resultados", paths.len())
+                format!(
+                    "Buscar en {workspace_name}: {query} · {} resultados",
+                    paths.len()
+                )
             };
             Some(NavigationPanelRows {
                 title: abbreviated_label(&title, 48),
@@ -10279,6 +10288,10 @@ mod pruebas {
 
     #[test]
     fn el_panel_de_notas_identifica_la_carpeta_autorizada() {
+        assert_eq!(
+            workspace_name(Some(Path::new(r"C:\\Apuntes\\Universidad"))),
+            "Universidad"
+        );
         assert_eq!(
             workspace_panel_title(Some(Path::new(r"C:\\Apuntes\\Universidad")), 12),
             "Universidad · 12 notas"
