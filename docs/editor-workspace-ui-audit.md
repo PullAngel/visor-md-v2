@@ -78,10 +78,10 @@ de escribir Markdown con comodidad.
    correcto para personas expertas, pero demasiado oculto para un flujo central
    de Obsidian. Debe quedar accesible desde `Más` o desde un único punto de
    navegación contextual, no como un nuevo conjunto de botones permanentes.
-4. La barra de estado reúne nombre, modo, guardado, palabras, tiempo, tokens,
-   carpeta y atajos en una sola línea. Es útil como diagnóstico, pero reduce la
-   capacidad de distinguir estado normal de advertencia. Debe priorizar el
-   estado del documento; las métricas deben ser secundarias o plegables.
+4. **Corregido en la barra inferior:** ahora prioriza modo, estado de guardado
+   y actualización de carpeta. Las métricas siguen siendo locales y disponibles
+   para las capacidades que las usan, pero dejaron de competir con advertencias
+   de integridad o de workspace en la franja persistente.
 
 ## Secuencia de corrección propuesta
 

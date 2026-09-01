@@ -8512,15 +8512,10 @@ impl App {
         } else {
             "sin carpeta"
         };
-        let metrics_label = if self.document.metrics.words == 0 {
-            "sin palabras".to_string()
-        } else {
-            format!(
-                "{} palabras · ~{} min · ≈{} tokens",
-                self.document.metrics.words,
-                self.document.metrics.reading_minutes,
-                self.document.metrics.estimated_tokens
-            )
+        let workspace_status = match workspace_state_label {
+            "carpeta por actualizar" => " · carpeta por actualizar",
+            "carpeta activa" => " · carpeta activa",
+            _ => "",
         };
         let tab_width = tab_width(w.get() as f32, self.tab_order.len());
         let tab_label_chars = ((tab_width - 32.0).max(30.0) / 7.5).floor().max(4.0) as usize;
@@ -8563,9 +8558,7 @@ impl App {
             })
             .collect::<Vec<_>>();
         let status_layout = build_menu_layout(
-            &format!(
-                "{document_mode_label} · {document_state_label} · {metrics_label} · {workspace_state_label} · Ctrl+Shift+P acciones"
-            ),
+            &format!("{document_mode_label} · {document_state_label}{workspace_status}"),
             &mut self.font_cx,
             &mut self.layout_cx,
             self.palette,
