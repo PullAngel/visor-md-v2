@@ -88,11 +88,11 @@ const MAX_SEARCH_QUERY_CHARS: usize = 256;
 const MAX_OVERLAY_LABEL_CHARS: usize = 180;
 /// Franja reservada para acciones y controles de ventana. El documento nunca
 /// se dibuja ni recibe scroll dentro de esta zona.
-const DOCUMENT_VIEWPORT_TOP: f32 = 40.0;
+const DOCUMENT_VIEWPORT_TOP: f32 = 76.0;
 const STATUS_HEIGHT: f32 = 28.0;
 const MAX_TAB_WIDTH: f32 = 220.0;
 const PANEL_X: f32 = MARGIN;
-const PANEL_Y: f32 = 80.0;
+const PANEL_Y: f32 = 116.0;
 const PANEL_WIDTH: f32 = 420.0;
 const PANEL_ROW_HEIGHT: f32 = 28.0;
 const PANEL_CAPACITY: usize = 9;
@@ -102,12 +102,15 @@ const TOOLBAR_X: f32 = 12.0;
 const TOOLBAR_Y: f32 = 8.0;
 const TOOLBAR_HEIGHT: f32 = 28.0;
 const TOOLBAR_ITEM_WIDTH: f32 = 60.0;
-const WINDOW_CHROME_HEIGHT: f32 = DOCUMENT_VIEWPORT_TOP;
+const CONTEXT_TOOLBAR_Y: f32 = 44.0;
+const CONTEXT_TOOLBAR_HEIGHT: f32 = 28.0;
+const CONTEXT_TOOLBAR_ITEM_WIDTH: f32 = 72.0;
+const WINDOW_CHROME_HEIGHT: f32 = 40.0;
 const WINDOW_CONTROL_WIDTH: f32 = 46.0;
 const WINDOW_RESIZE_BORDER: f32 = 6.0;
 const MIN_WINDOW_WIDTH: f64 = 640.0;
 const MIN_WINDOW_HEIGHT: f64 = 480.0;
-const READING_TOOLBAR_ACTIONS: [AppAction; 6] = [
+const PRIMARY_TOOLBAR_ACTIONS: [AppAction; 6] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -115,15 +118,49 @@ const READING_TOOLBAR_ACTIONS: [AppAction; 6] = [
     AppAction::SearchDocument,
     AppAction::CommandPalette,
 ];
-const EDITING_TOOLBAR_ACTIONS: [AppAction; 8] = [
-    AppAction::Save,
-    AppAction::ToggleMode,
+const READING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 6] = [
+    AppAction::DocumentOutline,
+    AppAction::ToggleSection,
+    AppAction::ChooseWorkspace,
+    AppAction::WorkspaceFiles,
+    AppAction::SearchWorkspace,
+    AppAction::Backlinks,
+];
+const EDITING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 6] = [
     AppAction::FormatBold,
     AppAction::FormatItalic,
     AppAction::InsertHeading,
     AppAction::InsertBulletList,
     AppAction::InsertLink,
+    AppAction::ToggleSplit,
+];
+const READING_TOOLBAR_ACTIONS: [AppAction; 12] = [
+    AppAction::NewDocument,
+    AppAction::OpenDocument,
+    AppAction::Save,
+    AppAction::ToggleMode,
+    AppAction::SearchDocument,
     AppAction::CommandPalette,
+    AppAction::DocumentOutline,
+    AppAction::ToggleSection,
+    AppAction::ChooseWorkspace,
+    AppAction::WorkspaceFiles,
+    AppAction::SearchWorkspace,
+    AppAction::Backlinks,
+];
+const EDITING_TOOLBAR_ACTIONS: [AppAction; 12] = [
+    AppAction::NewDocument,
+    AppAction::OpenDocument,
+    AppAction::Save,
+    AppAction::ToggleMode,
+    AppAction::SearchDocument,
+    AppAction::CommandPalette,
+    AppAction::FormatBold,
+    AppAction::FormatItalic,
+    AppAction::InsertHeading,
+    AppAction::InsertBulletList,
+    AppAction::InsertLink,
+    AppAction::ToggleSplit,
 ];
 static NEXT_DOCUMENT_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -439,12 +476,27 @@ fn toolbar_actions(mode: DocumentMode) -> &'static [AppAction] {
     }
 }
 
+fn contextual_toolbar_actions(mode: DocumentMode) -> &'static [AppAction] {
+    if mode.is_editable() {
+        &EDITING_CONTEXT_TOOLBAR_ACTIONS
+    } else {
+        &READING_CONTEXT_TOOLBAR_ACTIONS
+    }
+}
+
 fn toolbar_action_at(x: f32, y: f32, window_width: f32, mode: DocumentMode) -> Option<AppAction> {
-    if x < TOOLBAR_X || y < TOOLBAR_Y || y >= TOOLBAR_Y + TOOLBAR_HEIGHT || x >= window_width {
+    if x < TOOLBAR_X || x >= window_width {
         return None;
     }
-    let index = ((x - TOOLBAR_X) / TOOLBAR_ITEM_WIDTH) as usize;
-    toolbar_actions(mode).get(index).copied()
+    if (TOOLBAR_Y..TOOLBAR_Y + TOOLBAR_HEIGHT).contains(&y) {
+        let index = ((x - TOOLBAR_X) / TOOLBAR_ITEM_WIDTH) as usize;
+        return PRIMARY_TOOLBAR_ACTIONS.get(index).copied();
+    }
+    if (CONTEXT_TOOLBAR_Y..CONTEXT_TOOLBAR_Y + CONTEXT_TOOLBAR_HEIGHT).contains(&y) {
+        let index = ((x - TOOLBAR_X) / CONTEXT_TOOLBAR_ITEM_WIDTH) as usize;
+        return contextual_toolbar_actions(mode).get(index).copied();
+    }
+    None
 }
 
 fn adjacent_toolbar_index(current: usize, backwards: bool, action_count: usize) -> usize {
@@ -510,12 +562,6 @@ enum ContextAction {
     CopyText,
     CopyMarkdown,
     CopyTableTsv,
-    Search,
-    ToggleMode,
-    ToggleSplit,
-    Save,
-    SaveAs,
-    PinTab,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -619,8 +665,13 @@ impl AppAction {
             Self::InsertLink => "Enlace",
             Self::InsertHeading => "H2",
             Self::InsertBulletList => "Lista",
-            Self::ToggleSection => "Plegar sección",
+            Self::ToggleSection => "Plegar",
             Self::SearchDocument => "Buscar",
+            Self::ChooseWorkspace => "Carpeta",
+            Self::WorkspaceFiles => "Notas",
+            Self::SearchWorkspace => "Bóveda",
+            Self::DocumentOutline => "Índice",
+            Self::Backlinks => "Vínculos",
             Self::CommandPalette => "Más",
             _ => self.label(),
         }
@@ -648,12 +699,6 @@ impl ContextAction {
             Self::CopyText => "Copiar texto",
             Self::CopyMarkdown => "Copiar Markdown original",
             Self::CopyTableTsv => "Copiar tabla como TSV",
-            Self::Search => "Buscar en documento",
-            Self::ToggleMode => "Alternar lectura y edición",
-            Self::ToggleSplit => "Comparar fuente y vista",
-            Self::Save => "Guardar",
-            Self::SaveAs => "Guardar como",
-            Self::PinTab => "Fijar o soltar pestaña",
         }
     }
 
@@ -668,12 +713,6 @@ fn context_actions(mode: DocumentMode) -> &'static [ContextAction] {
             ContextAction::CopyText,
             ContextAction::CopyMarkdown,
             ContextAction::CopyTableTsv,
-            ContextAction::Search,
-            ContextAction::ToggleMode,
-            ContextAction::ToggleSplit,
-            ContextAction::Save,
-            ContextAction::SaveAs,
-            ContextAction::PinTab,
         ],
         DocumentMode::SourceEditing => &[
             ContextAction::Paste,
@@ -685,12 +724,6 @@ fn context_actions(mode: DocumentMode) -> &'static [ContextAction] {
             ContextAction::CopyText,
             ContextAction::CopyMarkdown,
             ContextAction::CopyTableTsv,
-            ContextAction::Search,
-            ContextAction::ToggleMode,
-            ContextAction::ToggleSplit,
-            ContextAction::Save,
-            ContextAction::SaveAs,
-            ContextAction::PinTab,
         ],
         DocumentMode::Split => &[
             ContextAction::Paste,
@@ -702,12 +735,6 @@ fn context_actions(mode: DocumentMode) -> &'static [ContextAction] {
             ContextAction::CopyText,
             ContextAction::CopyMarkdown,
             ContextAction::CopyTableTsv,
-            ContextAction::Search,
-            ContextAction::ToggleMode,
-            ContextAction::ToggleSplit,
-            ContextAction::Save,
-            ContextAction::SaveAs,
-            ContextAction::PinTab,
         ],
     }
 }
@@ -4395,20 +4422,6 @@ impl ApplicationHandler<AppEvent> for App {
                                     self.copy_selection(action.source_markdown());
                                 }
                                 ContextAction::CopyTableTsv => self.copy_current_table_tsv(),
-                                ContextAction::Search => {
-                                    self.perform_action(AppAction::SearchDocument)
-                                }
-                                ContextAction::ToggleMode => {
-                                    self.perform_action(AppAction::ToggleMode)
-                                }
-                                ContextAction::ToggleSplit => {
-                                    self.perform_action(AppAction::ToggleSplit)
-                                }
-                                ContextAction::Save => self.perform_action(AppAction::Save),
-                                ContextAction::SaveAs => self.perform_action(AppAction::SaveAs),
-                                ContextAction::PinTab => {
-                                    self.perform_action(AppAction::TogglePinTab)
-                                }
                             }
                         }
                         if let Some(w) = &self.window {
@@ -8238,8 +8251,19 @@ impl App {
             &mut self.layout_cx,
             self.palette,
         );
-        let active_toolbar_actions = toolbar_actions(self.document.mode);
-        let toolbar_layouts = active_toolbar_actions
+        let primary_toolbar_layouts = PRIMARY_TOOLBAR_ACTIONS
+            .iter()
+            .map(|action| {
+                build_menu_layout(
+                    action.short_label(self.document.mode),
+                    &mut self.font_cx,
+                    &mut self.layout_cx,
+                    self.palette,
+                )
+            })
+            .collect::<Vec<_>>();
+        let contextual_toolbar_actions = contextual_toolbar_actions(self.document.mode);
+        let contextual_toolbar_layouts = contextual_toolbar_actions
             .iter()
             .map(|action| {
                 build_menu_layout(
@@ -8842,7 +8866,7 @@ impl App {
             }
         }
 
-        for (index, layout) in toolbar_layouts.iter().enumerate() {
+        for (index, layout) in primary_toolbar_layouts.iter().enumerate() {
             let x = TOOLBAR_X + index as f32 * TOOLBAR_ITEM_WIDTH;
             let width = TOOLBAR_ITEM_WIDTH - 4.0;
             let right_limit = if custom_window_chrome_enabled() {
@@ -8859,7 +8883,7 @@ impl App {
                     && (TOOLBAR_Y..TOOLBAR_Y + TOOLBAR_HEIGHT).contains(&pointer_y)
             });
             let focused = toolbar_focus == Some(index);
-            let active = toolbar_action_is_active(active_toolbar_actions[index], context_mode);
+            let active = toolbar_action_is_active(PRIMARY_TOOLBAR_ACTIONS[index], context_mode);
             if (hovered || focused || active)
                 && let Some(rect) = Rect::from_xywh(x, TOOLBAR_Y, width, TOOLBAR_HEIGHT)
             {
@@ -8882,6 +8906,76 @@ impl App {
                     if let PositionedLayoutItem::GlyphRun(run) = entry {
                         draw_run_background(pixmap, &run, x + 9.0, TOOLBAR_Y + 6.0);
                         draw_glyph_run(pixmap, scale_cx, glyphs, &run, x + 9.0, TOOLBAR_Y + 6.0);
+                    }
+                }
+            }
+        }
+
+        if let Some(rect) = Rect::from_xywh(0.0, CONTEXT_TOOLBAR_Y - 1.0, w.get() as f32, 1.0) {
+            pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
+        }
+        for (index, layout) in contextual_toolbar_layouts.iter().enumerate() {
+            let x = TOOLBAR_X + index as f32 * CONTEXT_TOOLBAR_ITEM_WIDTH;
+            let width = CONTEXT_TOOLBAR_ITEM_WIDTH - 4.0;
+            let right_limit = w.get() as f32 - MARGIN;
+            if x + width > right_limit {
+                break;
+            }
+            let begins_group = (context_mode == DocumentMode::Reading && index == 2)
+                || (context_mode.is_editable() && index == 5);
+            if begins_group
+                && let Some(rect) = Rect::from_xywh(
+                    x - 8.0,
+                    CONTEXT_TOOLBAR_Y + 6.0,
+                    1.0,
+                    CONTEXT_TOOLBAR_HEIGHT - 12.0,
+                )
+            {
+                pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
+            }
+            let hovered = menu_pointer.is_some_and(|(pointer_x, pointer_y)| {
+                pointer_x >= x
+                    && pointer_x < x + width
+                    && (CONTEXT_TOOLBAR_Y..CONTEXT_TOOLBAR_Y + CONTEXT_TOOLBAR_HEIGHT)
+                        .contains(&pointer_y)
+            });
+            let focused = toolbar_focus == Some(PRIMARY_TOOLBAR_ACTIONS.len() + index);
+            let active = toolbar_action_is_active(contextual_toolbar_actions[index], context_mode);
+            if (hovered || focused || active)
+                && let Some(rect) =
+                    Rect::from_xywh(x, CONTEXT_TOOLBAR_Y, width, CONTEXT_TOOLBAR_HEIGHT)
+            {
+                if active {
+                    let ac = palette.accent;
+                    let mut active_paint = Paint::default();
+                    active_paint.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 28));
+                    pixmap.fill_rect(rect, &active_paint, Transform::identity(), None);
+                } else {
+                    pixmap.fill_rect(rect, &elevated_paint, Transform::identity(), None);
+                }
+            }
+            if (active || focused)
+                && let Some(rect) = Rect::from_xywh(
+                    x,
+                    CONTEXT_TOOLBAR_Y + CONTEXT_TOOLBAR_HEIGHT - 2.0,
+                    width,
+                    2.0,
+                )
+            {
+                pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
+            }
+            for line in layout.lines() {
+                for entry in line.items() {
+                    if let PositionedLayoutItem::GlyphRun(run) = entry {
+                        draw_run_background(pixmap, &run, x + 9.0, CONTEXT_TOOLBAR_Y + 6.0);
+                        draw_glyph_run(
+                            pixmap,
+                            scale_cx,
+                            glyphs,
+                            &run,
+                            x + 9.0,
+                            CONTEXT_TOOLBAR_Y + 6.0,
+                        );
                     }
                 }
             }
@@ -8959,17 +9053,31 @@ impl App {
 
         if let Some(layout) = safe_banner {
             let banner_width = (layout.width() + 24.0).min(w.get() as f32 - MARGIN * 2.0);
-            if let Some(rect) = Rect::from_xywh(MARGIN, 44.0, banner_width, 28.0) {
+            if let Some(rect) =
+                Rect::from_xywh(MARGIN, DOCUMENT_VIEWPORT_TOP + 4.0, banner_width, 28.0)
+            {
                 pixmap.fill_rect(rect, &floating_paint, Transform::identity(), None);
             }
-            if let Some(rect) = Rect::from_xywh(MARGIN, 44.0, 3.0, 28.0) {
+            if let Some(rect) = Rect::from_xywh(MARGIN, DOCUMENT_VIEWPORT_TOP + 4.0, 3.0, 28.0) {
                 pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
             }
             for line in layout.lines() {
                 for entry in line.items() {
                     if let PositionedLayoutItem::GlyphRun(run) = entry {
-                        draw_run_background(pixmap, &run, MARGIN + 10.0, 49.0);
-                        draw_glyph_run(pixmap, scale_cx, glyphs, &run, MARGIN + 10.0, 49.0);
+                        draw_run_background(
+                            pixmap,
+                            &run,
+                            MARGIN + 10.0,
+                            DOCUMENT_VIEWPORT_TOP + 9.0,
+                        );
+                        draw_glyph_run(
+                            pixmap,
+                            scale_cx,
+                            glyphs,
+                            &run,
+                            MARGIN + 10.0,
+                            DOCUMENT_VIEWPORT_TOP + 9.0,
+                        );
                     }
                 }
             }
@@ -8978,7 +9086,7 @@ impl App {
         let status_y = h.get() as f32 - STATUS_HEIGHT;
         if let Some(layout) = link_peek_layout {
             let peek_width = (layout.width() + 24.0).min(w.get() as f32 - MARGIN * 2.0);
-            let peek_y = (status_y - 32.0).max(TOOLBAR_Y + TOOLBAR_HEIGHT + 4.0);
+            let peek_y = (status_y - 32.0).max(DOCUMENT_VIEWPORT_TOP + 4.0);
             if let Some(rect) = Rect::from_xywh(MARGIN, peek_y, peek_width, 28.0) {
                 pixmap.fill_rect(rect, &floating_paint, Transform::identity(), None);
             }
@@ -9053,14 +9161,21 @@ impl App {
 
         if let Some(layout) = search_overlay {
             let overlay_width = (layout.width() + 24.0).min(w.get() as f32 - MARGIN * 2.0);
-            if let Some(rect) = Rect::from_xywh(MARGIN, 80.0, overlay_width, 28.0) {
+            if let Some(rect) = Rect::from_xywh(MARGIN, PANEL_Y, overlay_width, 28.0) {
                 pixmap.fill_rect(rect, &floating_paint, Transform::identity(), None);
             }
             for line in layout.lines() {
                 for entry in line.items() {
                     if let PositionedLayoutItem::GlyphRun(run) = entry {
-                        draw_run_background(pixmap, &run, MARGIN + 10.0, 85.0);
-                        draw_glyph_run(pixmap, scale_cx, glyphs, &run, MARGIN + 10.0, 85.0);
+                        draw_run_background(pixmap, &run, MARGIN + 10.0, PANEL_Y + 5.0);
+                        draw_glyph_run(
+                            pixmap,
+                            scale_cx,
+                            glyphs,
+                            &run,
+                            MARGIN + 10.0,
+                            PANEL_Y + 5.0,
+                        );
                     }
                 }
             }
@@ -9697,7 +9812,7 @@ mod pruebas {
     }
 
     #[test]
-    fn la_barra_superior_expone_solo_acciones_visibles() {
+    fn las_barras_separan_documento_de_formato_y_navegacion() {
         assert_eq!(
             toolbar_action_at(50.0, 12.0, 900.0, DocumentMode::Reading),
             Some(AppAction::NewDocument)
@@ -9712,7 +9827,7 @@ mod pruebas {
         );
         assert_eq!(
             toolbar_action_at(50.0, 50.0, 900.0, DocumentMode::Reading),
-            None
+            Some(AppAction::DocumentOutline)
         );
         assert_eq!(
             toolbar_action_at(900.0, 12.0, 900.0, DocumentMode::Reading),
@@ -9720,10 +9835,14 @@ mod pruebas {
         );
         assert_eq!(
             toolbar_action_at(170.0, 12.0, 900.0, DocumentMode::SourceEditing),
-            Some(AppAction::FormatBold)
+            Some(AppAction::Save)
         );
         assert_eq!(
-            toolbar_action_at(340.0, 12.0, 900.0, DocumentMode::SourceEditing),
+            toolbar_action_at(100.0, 50.0, 900.0, DocumentMode::SourceEditing),
+            Some(AppAction::FormatItalic)
+        );
+        assert_eq!(
+            toolbar_action_at(260.0, 50.0, 900.0, DocumentMode::SourceEditing),
             Some(AppAction::InsertBulletList)
         );
         assert_eq!(
@@ -9903,7 +10022,8 @@ mod pruebas {
         assert!(label.chars().count() <= 18);
         assert!(label.is_char_boundary(label.len()));
         assert!(APP_ACTIONS.contains(&AppAction::TogglePinTab));
-        assert!(context_actions(DocumentMode::Reading).contains(&ContextAction::PinTab));
+        assert!(!context_actions(DocumentMode::Reading).contains(&ContextAction::Paste));
+        assert!(context_actions(DocumentMode::Reading).contains(&ContextAction::CopyText));
     }
 
     #[test]
@@ -10305,11 +10425,11 @@ mod pruebas {
     fn el_scroll_respeta_el_alto_real_de_la_ventana() {
         assert_eq!(max_scroll(1_000.0, 760.0), 240.0);
         assert_eq!(max_scroll(500.0, 760.0), 0.0);
-        assert_eq!(document_viewport_height(760.0), 692.0);
-        assert_eq!(max_scroll(1_000.0, document_viewport_height(760.0)), 308.0);
+        assert_eq!(document_viewport_height(760.0), 656.0);
+        assert_eq!(max_scroll(1_000.0, document_viewport_height(760.0)), 344.0);
         assert_eq!(document_viewport_height(20.0), 0.0);
-        assert_eq!(document_screen_y(48.0, 0.0), 88.0);
-        assert_eq!(document_screen_y(100.0, 60.0), 80.0);
+        assert_eq!(document_screen_y(48.0, 0.0), 124.0);
+        assert_eq!(document_screen_y(100.0, 60.0), 116.0);
     }
 
     #[test]
@@ -10333,6 +10453,9 @@ mod pruebas {
     #[test]
     fn el_menu_contextual_solo_habilita_pegado_en_el_editor() {
         let menu = (100.0, 200.0);
+        assert_eq!(context_actions(DocumentMode::Reading).len(), 3);
+        assert_eq!(context_actions(DocumentMode::SourceEditing).len(), 9);
+        assert!(!context_actions(DocumentMode::Reading).contains(&ContextAction::Paste));
         assert_eq!(
             context_action_at(menu, (110.0, 210.0), DocumentMode::Reading),
             Some(ContextAction::CopyText)

@@ -94,14 +94,21 @@ en reposo**. En la v1 todos lo llevan y compiten con el documento. Estados:
 | Activo | Fondo del acento al 14 %, borde del acento al 35 %, icono en acento |
 | Inactivo | Icono al 25 % de opacidad, sin fondo |
 
-La barra superior progresiva aplica la misma gramática: en lectura muestra
-Nuevo, Abrir, Guardar, Editar, Buscar y Más; en edición prioriza Guardar, Leer,
-Negrita, Cursiva, H2, Lista, Enlace y Más. No dibuja una hilera de botones
-sólidos en reposo, usa superficie solo al pasar el mouse y reserva el acento
-para la acción de modo cuando el documento está en edición o vista dividida. En
-lectura, `Editar` es una acción disponible, no un estado activo. Sus rótulos se
-reemplazarán por iconos accesibles cuando el sistema definitivo de iconos esté
-integrado.
+La barra superior contiene solo acciones del documento: Nuevo, Abrir, Guardar,
+Editar o Leer, Buscar y Más. Debajo vive una segunda franja contextual, que
+evita mezclar archivo, formato y navegación: en edición muestra Negrita,
+Cursiva, H2, Lista, Enlace y Comparar; en lectura muestra Índice, Plegar,
+Carpeta, Notas, Bóveda y Vínculos. Un separador sobrio distingue acciones del
+documento de las de bóveda, y formato de comparación. La segunda franja no es
+una barra lateral ni un panel permanente: cambia con el modo, da acceso visible
+a las funciones de trabajo diario y deja las variantes y operaciones poco
+frecuentes en `Más`.
+
+Ninguna de las dos franjas dibuja una hilera de botones sólidos en reposo: usa
+superficie solo al pasar el mouse y reserva el acento para la acción de modo
+cuando el documento está en edición o vista dividida. En lectura, `Editar` es
+una acción disponible, no un estado activo. Sus rótulos se reemplazarán por
+iconos accesibles cuando el sistema definitivo de iconos esté integrado.
 
 La franja inferior contiene pestañas y estado, por lo que forma parte del chrome
 y no del viewport del documento. El scroll debe reservar su altura: la última

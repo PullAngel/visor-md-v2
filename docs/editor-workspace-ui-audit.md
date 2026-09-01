@@ -99,8 +99,9 @@ navegación de listas largas.
 
 ### 2. Taxonomía de acciones y edición contextual
 
-- dejar en la barra las acciones frecuentes; mover operaciones menos frecuentes
-  a `Más` y a la paleta;
+- **Realizado en la estructura:** separar una barra principal para archivo y
+  navegación general de una segunda barra contextual para formato o bóveda;
+- mover operaciones menos frecuentes a `Más` y a la paleta;
 - convertir el menú contextual en acciones dependientes de selección, enlace,
   tabla o modo;
 - usar rótulos y futuras iconografías que sigan el sistema suave de diseño, con
