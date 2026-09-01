@@ -120,8 +120,9 @@ sintaxis frecuente y no crea formatos exclusivos por defecto.
 
 - **Primer cierre:** `Espacio de trabajo` agrupa abrir carpeta, notas, búsqueda
   local, índice, backlinks y actualización de índice dentro de `Más acciones`.
-  Está disponible tanto en lectura como en edición y cada destino sigue pasando
-  por VFS. Un panel/rail persistente y plegable continúa pendiente.
+  Es visible al abrir ese menú, está disponible tanto en lectura como en edición
+  y cada destino sigue pasando por VFS. Un panel/rail persistente y plegable
+  continúa pendiente.
 - Pestañas reordenables y arrastrables antes de crear otra ventana.
 - Separación horizontal/vertical y ventanas nuevas son un programa aparte:
   necesitan definir propiedad de documentos, cierre protegido, recuperación,

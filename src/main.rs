@@ -677,12 +677,14 @@ const APP_ACTIONS: [AppAction; 29] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
+    AppAction::ToggleMode,
+    AppAction::SearchDocument,
+    AppAction::WorkspaceHub,
+    AppAction::ToggleTheme,
     AppAction::SaveAs,
     AppAction::CloseDocument,
     AppAction::TogglePinTab,
-    AppAction::ToggleMode,
     AppAction::ToggleSplit,
-    AppAction::ToggleTheme,
     AppAction::Cut,
     AppAction::FormatBold,
     AppAction::FormatItalic,
@@ -692,14 +694,12 @@ const APP_ACTIONS: [AppAction; 29] = [
     AppAction::InsertTask,
     AppAction::InsertQuote,
     AppAction::ToggleSection,
-    AppAction::SearchDocument,
     AppAction::CopyTableTsv,
     AppAction::ChooseWorkspace,
     AppAction::RefreshWorkspace,
     AppAction::SearchWorkspace,
     AppAction::DocumentOutline,
     AppAction::WorkspaceFiles,
-    AppAction::WorkspaceHub,
     AppAction::Backlinks,
     AppAction::RestoreRecovery,
     AppAction::ToggleRecovery,
@@ -10478,6 +10478,14 @@ mod pruebas {
     #[test]
     fn la_paleta_filtra_acciones_sin_inventar_comandos() {
         assert_eq!(filtered_actions("").len(), APP_ACTIONS.len());
+        assert!(
+            filtered_actions("")[..PANEL_CAPACITY].contains(&AppAction::WorkspaceHub),
+            "espacio de trabajo debe ser visible sin escribir una búsqueda"
+        );
+        assert!(
+            filtered_actions("")[..PANEL_CAPACITY].contains(&AppAction::ToggleTheme),
+            "el cambio de tema debe ser visible sin escribir una búsqueda"
+        );
         assert_eq!(filtered_actions("backlinks"), vec![AppAction::Backlinks]);
         assert_eq!(filtered_actions("tema"), vec![AppAction::ToggleTheme]);
         assert!(filtered_actions("GUARDAR").contains(&AppAction::Save));
