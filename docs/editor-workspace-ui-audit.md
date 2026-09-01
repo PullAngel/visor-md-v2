@@ -59,7 +59,7 @@ de escribir Markdown con comodidad.
 
 | Área | Estado real | Problema de UX | Siguiente mejora segura |
 | --- | --- | --- | --- |
-| Índice del documento | Lista encabezados y puede enfocar el bloque. | El panel no expresa posición, total, atajo de salida ni jerarquía suficiente en documentos largos. | Cabecera clara y pie compacto, por ejemplo `3 de 24 · Esc para cerrar`; conservar sangría por nivel. |
+| Índice del documento | Lista encabezados con sangría por nivel, puede enfocar el bloque y el panel ya comunica rango, total y salida con Escape. | Falta QA humano con documentos realmente largos y títulos Unicode para confirmar que la jerarquía siga siendo escaneable. | Mantener esa representación compacta y validar visualmente antes de añadir más controles. |
 | Búsqueda de carpeta | Busca título, ruta, encabezados y contenido indexado; su cabecera identifica la carpeta autorizada y cada resultado muestra título seguido de ruta relativa. | Falta un fragmento o encabezado que explique por qué coincidió una nota cuyo título no contiene la consulta. | Añadir un fragmento o encabezado coincidente, sin guardar contenido fuera del índice ya permitido. |
 | Árbol de notas | Es acotado, abre solo notas validadas por la VFS y permite plegar directorios. | La cabecera ahora identifica la carpeta concedida y el total indexado; aún falta una convención gráfica más clara para carpeta, nota y actualización. | Conservar la cabecera de workspace y añadir símbolos coherentes dentro del panel, no una barra lateral fija. |
 | Backlinks | Se derivan del índice y el destino vuelve a validarse al abrir. Un documento sin referencias abre un panel que lo explica y permite cerrarlo con Escape. | Los estados de documento fuera de raíz o no indexado continúan siendo avisos de seguridad, porque no describen una lista vacía sino una operación bloqueada. | Mantener la distinción y añadir detalle bajo demanda solo si aparece una necesidad real. |
@@ -90,8 +90,8 @@ de escribir Markdown con comodidad.
 - **Realizado:** centralizar rectángulo, cabecera, filas, pie y hit testing;
 - **Realizado:** hacer el ancho y alto responsivos y mostrar total, selección
   y salida por teclado;
-- conservar Escape, flechas y Enter, y añadir foco visible consistente con el
-  sistema de iconos pendiente.
+- **Realizado:** conservar Escape, flechas y Enter; el foco de barra se expone
+  con `F6` y ayuda textual de iconos.
 
 **Cierre verificable:** cada panel acepta clics solo dentro de su rectángulo
 real y comunica selección/total; las pruebas cubren geometría estrecha y
