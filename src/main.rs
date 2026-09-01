@@ -168,6 +168,14 @@ const EDITING_TOOLBAR_ACTIONS: [AppAction; 12] = [
     AppAction::InsertLink,
     AppAction::ToggleSplit,
 ];
+const WORKSPACE_HUB_ACTIONS: [AppAction; 6] = [
+    AppAction::ChooseWorkspace,
+    AppAction::WorkspaceFiles,
+    AppAction::SearchWorkspace,
+    AppAction::DocumentOutline,
+    AppAction::Backlinks,
+    AppAction::RefreshWorkspace,
+];
 static NEXT_DOCUMENT_ID: AtomicU64 = AtomicU64::new(1);
 
 /// Windows recibe chrome propio para realizar la dirección visual aprobada. En
@@ -658,13 +666,14 @@ enum AppAction {
     SearchWorkspace,
     DocumentOutline,
     WorkspaceFiles,
+    WorkspaceHub,
     Backlinks,
     RestoreRecovery,
     ToggleRecovery,
     CommandPalette,
 }
 
-const APP_ACTIONS: [AppAction; 28] = [
+const APP_ACTIONS: [AppAction; 29] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -690,6 +699,7 @@ const APP_ACTIONS: [AppAction; 28] = [
     AppAction::SearchWorkspace,
     AppAction::DocumentOutline,
     AppAction::WorkspaceFiles,
+    AppAction::WorkspaceHub,
     AppAction::Backlinks,
     AppAction::RestoreRecovery,
     AppAction::ToggleRecovery,
@@ -723,6 +733,7 @@ impl AppAction {
             Self::SearchWorkspace => "Buscar en carpeta · Ctrl+Shift+F",
             Self::DocumentOutline => "Índice del documento · Ctrl+Shift+L",
             Self::WorkspaceFiles => "Notas de la carpeta · Ctrl+Shift+T",
+            Self::WorkspaceHub => "Espacio de trabajo",
             Self::Backlinks => "Backlinks · Ctrl+Shift+B",
             Self::RestoreRecovery => "Abrir recuperación · Ctrl+Shift+R",
             Self::ToggleRecovery => "Activar o desactivar recuperación local",
@@ -731,13 +742,24 @@ impl AppAction {
     }
 }
 
-fn filtered_actions(query: &str) -> Vec<AppAction> {
+fn filtered_actions_from(actions: &[AppAction], query: &str) -> Vec<AppAction> {
     let query = query.trim().to_lowercase();
-    APP_ACTIONS
+    actions
         .iter()
         .copied()
         .filter(|action| query.is_empty() || action.label().to_lowercase().contains(&query))
         .collect()
+}
+
+#[cfg(test)]
+fn filtered_actions(query: &str) -> Vec<AppAction> {
+    filtered_actions_from(&APP_ACTIONS, query)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CommandPaletteScope {
+    All,
+    Workspace,
 }
 
 impl ContextAction {
@@ -4002,6 +4024,7 @@ struct App {
     /// contiene datos del documento.
     command_palette: Option<usize>,
     command_palette_query: String,
+    command_palette_scope: CommandPaletteScope,
     /// Foco visible de la barra superior. F6 lo activa; no sustituye los
     /// atajos directos ni simula semántica de lector de pantalla.
     toolbar_focus: Option<usize>,
@@ -5569,6 +5592,7 @@ impl App {
             AppAction::SearchWorkspace => self.open_workspace_search(),
             AppAction::DocumentOutline => self.show_document_outline(),
             AppAction::WorkspaceFiles => self.show_workspace_files(),
+            AppAction::WorkspaceHub => self.open_workspace_hub(),
             AppAction::Backlinks => self.show_backlinks(),
             AppAction::RestoreRecovery => self.restore_latest_recovery(),
             AppAction::ToggleRecovery => self.toggle_recovery(),
@@ -5651,6 +5675,7 @@ impl App {
         self.outline_headings = None;
         self.command_palette = Some(0);
         self.command_palette_query.clear();
+        self.command_palette_scope = CommandPaletteScope::All;
         self.toolbar_focus = None;
         if let Some(window) = &self.window {
             window.request_redraw();
@@ -5710,6 +5735,7 @@ impl App {
             PhysicalKey::Code(KeyCode::Enter) if !actions.is_empty() => {
                 self.command_palette = None;
                 self.command_palette_query.clear();
+                self.command_palette_scope = CommandPaletteScope::All;
                 self.perform_action(actions[selected % actions.len()]);
             }
             _ => {
@@ -5741,7 +5767,28 @@ impl App {
     }
 
     fn command_palette_actions(&self) -> Vec<AppAction> {
-        filtered_actions(&self.command_palette_query)
+        let actions = match self.command_palette_scope {
+            CommandPaletteScope::All => &APP_ACTIONS[..],
+            CommandPaletteScope::Workspace => &WORKSPACE_HUB_ACTIONS[..],
+        };
+        filtered_actions_from(actions, &self.command_palette_query)
+    }
+
+    fn open_workspace_hub(&mut self) {
+        self.context_menu = None;
+        self.search_query = None;
+        self.workspace_search_query = None;
+        self.workspace_paths = None;
+        self.backlink_paths = None;
+        self.outline_headings = None;
+        self.command_palette = Some(0);
+        self.command_palette_query.clear();
+        self.command_palette_scope = CommandPaletteScope::Workspace;
+        self.toolbar_focus = None;
+        self.set_notice("espacio de trabajo · elige una acción");
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
     }
 
     fn navigation_panel_is_open(&self) -> bool {
@@ -5791,6 +5838,7 @@ impl App {
         self.outline_headings = None;
         self.command_palette = None;
         self.command_palette_query.clear();
+        self.command_palette_scope = CommandPaletteScope::All;
     }
 
     fn activate_panel_at(&mut self, x: f32, y: f32) -> bool {
@@ -5808,6 +5856,7 @@ impl App {
             if let Some(index) = panel_item_at(x, y, actions.len(), selected, geometry) {
                 self.command_palette = None;
                 self.command_palette_query.clear();
+                self.command_palette_scope = CommandPaletteScope::All;
                 self.perform_action(actions[index]);
                 return true;
             }
@@ -8575,7 +8624,10 @@ impl App {
             let selected = selected % actions.len().max(1);
             let range = panel_window(actions.len(), selected, PANEL_CAPACITY);
             let title = if self.command_palette_query.is_empty() {
-                "Acciones · escribe para filtrar".to_string()
+                match self.command_palette_scope {
+                    CommandPaletteScope::All => "Acciones · escribe para filtrar".to_string(),
+                    CommandPaletteScope::Workspace => "Espacio de trabajo".to_string(),
+                }
             } else {
                 format!(
                     "Acciones: {} · {} resultados",
@@ -10158,6 +10210,7 @@ fn main() {
         outline_match: 0,
         command_palette: None,
         command_palette_query: String::new(),
+        command_palette_scope: CommandPaletteScope::All,
         toolbar_focus: None,
         clipboard: None,
         notice: Some(if opening_path.is_some() {
@@ -10434,6 +10487,14 @@ mod pruebas {
             vec![AppAction::RefreshWorkspace]
         );
         assert!(filtered_actions("acción inexistente").is_empty());
+        assert_eq!(
+            filtered_actions_from(&WORKSPACE_HUB_ACTIONS, ""),
+            WORKSPACE_HUB_ACTIONS.to_vec()
+        );
+        assert_eq!(
+            filtered_actions_from(&WORKSPACE_HUB_ACTIONS, "backlinks"),
+            vec![AppAction::Backlinks]
+        );
     }
 
     #[test]
