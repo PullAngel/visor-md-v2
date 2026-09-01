@@ -119,6 +119,12 @@ formalmente terminado, pero no paraliza estos frentes independientes. Los
 refactors internos solo se adelantan cuando desbloquean una capacidad de uso
 diario o reducen un riesgo concreto de integridad, seguridad o estabilidad.
 
+La revisión manual del 1 de septiembre detalló un programa de corrección de
+interacción, chrome, kit de escritura y espacio de trabajo en
+[`ux-revision-2026-09-01.md`](ux-revision-2026-09-01.md). Ese documento ordena
+este frente; las ventanas múltiples y splits de documentos son un subprograma
+posterior, no un añadido improvisado.
+
 ## Sprint 0: viabilidad nativa
 
 ### Objetivo
