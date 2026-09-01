@@ -31,6 +31,10 @@ El buffer escalable se prueba también con una edición en el centro de un texto
 Unicode de cientos de KiB, vecinos multibyte, CRLF, línea final vacía y
 reconstrucción exacta después de undo.
 
+Las actualizaciones locales de la vista de fuente se comparan contra la
+reconstrucción completa para inserciones, borrados, Unicode y bordes de línea.
+Los casos que no pueden demostrar rangos válidos deben caer en ese respaldo.
+
 La vista dividida prueba que un resultado de render actualiza la lectura sin
 reemplazar los bloques fuente editables, conserva el modo y reserva una
 geometría independiente. La percepción durante escritura rápida, DPI y ventanas

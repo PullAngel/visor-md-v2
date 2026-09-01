@@ -57,7 +57,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy}
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 use winit::window::{CursorIcon, ResizeDirection, Theme, Window, WindowId};
 
-use editor::{SourceEditor, TextBuffer};
+use editor::{SourceChange, SourceEditor, TextBuffer};
 use files::{
     DEFAULT_DOCUMENT_LIMIT_BYTES, FileIdentity, FileSaveError, LineEndings, TextMetadata,
     changed_on_disk, is_markdown_path, open_explicit_primary, save_explicit_primary,
@@ -2309,16 +2309,29 @@ fn safe_buffer_blocks(source: &TextBuffer) -> Result<Vec<Block>, &'static str> {
         )]);
     }
 
+    safe_buffer_blocks_for_lines(source, 0, source.line_count().saturating_sub(1), MAX_BLOCKS)
+}
+
+fn safe_buffer_blocks_for_lines(
+    source: &TextBuffer,
+    first_line: usize,
+    last_line: usize,
+    block_limit: usize,
+) -> Result<Vec<Block>, &'static str> {
     let mut blocks = Vec::new();
-    let mut start = 0;
-    for line in source.lines() {
-        let raw = line.to_string();
+    let first_line = first_line.min(source.line_count().saturating_sub(1));
+    let last_line = last_line
+        .max(first_line)
+        .min(source.line_count().saturating_sub(1));
+    for line_index in first_line..=last_line {
+        let start = source.line_start_byte(line_index);
+        let raw = source.line_text(line_index);
         let end = start + raw.len();
         let without_lf = raw.strip_suffix('\n').unwrap_or(&raw);
         let text = without_lf.strip_suffix('\r').unwrap_or(without_lf);
         let mut chunk_start = 0;
         while chunk_start < text.len() || (text.is_empty() && chunk_start == 0) {
-            if blocks.len() >= MAX_BLOCKS {
+            if blocks.len() >= block_limit {
                 return Err("demasiadas lineas para la vista segura");
             }
             let mut chunk_end = (chunk_start + MAX_SAFE_LINE_BYTES).min(text.len());
@@ -2349,10 +2362,74 @@ fn safe_buffer_blocks(source: &TextBuffer) -> Result<Vec<Block>, &'static str> {
             }
             chunk_start = chunk_end;
         }
-        start = end;
     }
-    debug_assert_eq!(start, source.len_bytes());
     Ok(blocks)
+}
+
+/// Actualiza la vista de fuente por líneas alrededor de un parche. Todo lo que
+/// queda después conserva el mismo texto y solo desplaza sus rangos. Si la
+/// geometría previa no cumple las invariantes, devolver `None` fuerza el camino
+/// completo y seguro en vez de arriesgar bloques desalineados.
+fn refresh_safe_buffer_blocks_incrementally(
+    previous: &[Block],
+    source: &TextBuffer,
+    change: SourceChange,
+) -> Result<Option<Vec<Block>>, &'static str> {
+    if previous.is_empty() || source.is_empty() {
+        return Ok(None);
+    }
+    let old_end = change.start.saturating_add(change.removed_bytes);
+    let Some(mut first) = previous
+        .iter()
+        .position(|block| block.source.end > change.start)
+    else {
+        return Ok(None);
+    };
+    while first > 0 && !source_block_ends_line(&previous[first - 1]) {
+        first -= 1;
+    }
+    let Some(mut last) = previous.iter().position(|block| block.source.end > old_end) else {
+        return Ok(None);
+    };
+    while last + 1 < previous.len() && !source_block_ends_line(&previous[last]) {
+        last += 1;
+    }
+
+    let first_line = source.line_at_byte(change.start);
+    let new_end = change.start.saturating_add(change.inserted_bytes);
+    let last_line = source.line_at_byte(new_end);
+    let available = MAX_BLOCKS.saturating_sub(previous.len().saturating_sub(last - first + 1));
+    let replacement = safe_buffer_blocks_for_lines(source, first_line, last_line, available)?;
+    let delta = change.inserted_bytes as i128 - change.removed_bytes as i128;
+    let mut blocks = Vec::with_capacity(previous.len() - (last - first + 1) + replacement.len());
+    blocks.extend_from_slice(&previous[..first]);
+    blocks.extend(replacement);
+    for block in &previous[last + 1..] {
+        let mut shifted = block.clone();
+        shifted.source.start = shift_source_offset(shifted.source.start, delta)?;
+        shifted.source.end = shift_source_offset(shifted.source.end, delta)?;
+        if !shifted.source.is_valid_for_buffer(source) {
+            return Ok(None);
+        }
+        blocks.push(shifted);
+    }
+    if blocks.len() > MAX_BLOCKS
+        || !blocks
+            .iter()
+            .all(|block| block.source.is_valid_for_buffer(source))
+    {
+        return Ok(None);
+    }
+    Ok(Some(blocks))
+}
+
+fn source_block_ends_line(block: &Block) -> bool {
+    block.source.end.saturating_sub(block.source.start) > block.text.len()
+}
+
+fn shift_source_offset(offset: usize, delta: i128) -> Result<usize, &'static str> {
+    let shifted = offset as i128 + delta;
+    usize::try_from(shifted).map_err(|_| "rango de fuente fuera de límites")
 }
 
 /// Contenido mínimo de una sesión cuya apertura falló. No incorpora el error
@@ -5453,7 +5530,20 @@ impl App {
     }
 
     fn refresh_source_blocks(&mut self) -> Result<(), &'static str> {
-        self.document.blocks = safe_buffer_blocks(&self.document.source)?;
+        let refreshed = self
+            .document
+            .source_editor
+            .last_change()
+            .map(|change| {
+                refresh_safe_buffer_blocks_incrementally(
+                    &self.document.blocks,
+                    &self.document.source,
+                    change,
+                )
+            })
+            .transpose()?
+            .flatten();
+        self.document.blocks = refreshed.unwrap_or(safe_buffer_blocks(&self.document.source)?);
         self.slots.clear();
         self.live.clear();
         self.laid_for_width = -1.0;
@@ -9567,6 +9657,93 @@ mod pruebas {
 
         assert_eq!(document.blocks[0].text, "lectura");
         assert_eq!(document.rendered_blocks[0].text, "lectura");
+    }
+
+    #[test]
+    fn la_vista_de_fuente_actualiza_solo_lineas_afectadas_y_conserva_rangos() {
+        let mut source = TextBuffer::from_text("uno\nDOS\ntres\n");
+        let previous = safe_buffer_blocks(&source).expect("la fuente inicial es válida");
+        let mut editor = SourceEditor::new();
+        editor.set_cursor(&source, 7, false).unwrap();
+        editor.insert(&mut source, "\ncuatro").unwrap();
+        let change = editor.last_change().expect("la edición deja un parche");
+
+        let refreshed = refresh_safe_buffer_blocks_incrementally(&previous, &source, change)
+            .expect("la actualización es válida")
+            .expect("el vecindario se puede actualizar");
+        let complete = safe_buffer_blocks(&source).expect("el respaldo completo es válido");
+        let signature = |blocks: &[Block]| {
+            blocks
+                .iter()
+                .map(|block| (block.text.clone(), block.source))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(signature(&refreshed), signature(&complete));
+    }
+
+    #[test]
+    fn la_vista_de_fuente_incremental_respeta_unicode_y_borrado_de_lineas() {
+        let mut source = TextBuffer::from_text("áé\nsegunda\ntercera\n");
+        let previous = safe_buffer_blocks(&source).expect("la fuente inicial es válida");
+        let mut editor = SourceEditor::new();
+        editor.set_cursor(&source, "áé\n".len(), false).unwrap();
+        editor
+            .set_cursor(&source, "áé\nsegunda\n".len(), true)
+            .unwrap();
+        editor.backspace(&mut source).unwrap();
+        let change = editor.last_change().expect("el borrado deja un parche");
+
+        let refreshed = refresh_safe_buffer_blocks_incrementally(&previous, &source, change)
+            .expect("la actualización es válida")
+            .expect("el vecindario se puede actualizar");
+        let complete = safe_buffer_blocks(&source).expect("el respaldo completo es válido");
+        assert_eq!(
+            refreshed
+                .iter()
+                .map(|block| (&block.text, block.source))
+                .collect::<Vec<_>>(),
+            complete
+                .iter()
+                .map(|block| (&block.text, block.source))
+                .collect::<Vec<_>>(),
+        );
+    }
+
+    #[test]
+    fn la_vista_de_fuente_incremental_coincide_con_el_respaldo_en_bordes_de_linea() {
+        let original = "α\nbeta\ngamma\n";
+        let cases = [
+            (0, 0, "inicio "),
+            ("α\n".len(), "α\n".len(), "antes de beta\n"),
+            ("α\nbeta".len(), "α\nbeta".len(), "\nmitad"),
+            ("α\n".len(), "α\nbeta\n".len(), ""),
+            ("α\nbeta\ngamma".len(), original.len(), "final"),
+        ];
+
+        for (start, end, inserted) in cases {
+            let mut source = TextBuffer::from_text(original);
+            let previous = safe_buffer_blocks(&source).expect("la fuente inicial es válida");
+            let mut editor = SourceEditor::new();
+            editor.set_cursor(&source, start, false).unwrap();
+            editor.set_cursor(&source, end, true).unwrap();
+            editor.insert(&mut source, inserted).unwrap();
+            let change = editor.last_change().expect("la edición deja un parche");
+            let refreshed = refresh_safe_buffer_blocks_incrementally(&previous, &source, change)
+                .expect("la actualización no falla")
+                .unwrap_or_else(|| safe_buffer_blocks(&source).expect("el respaldo es válido"));
+            let complete = safe_buffer_blocks(&source).expect("el respaldo completo es válido");
+            assert_eq!(
+                refreshed
+                    .iter()
+                    .map(|block| (&block.text, block.source))
+                    .collect::<Vec<_>>(),
+                complete
+                    .iter()
+                    .map(|block| (&block.text, block.source))
+                    .collect::<Vec<_>>(),
+                "caso {start}..{end}"
+            );
+        }
     }
 
     #[test]

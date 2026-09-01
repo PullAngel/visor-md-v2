@@ -99,6 +99,25 @@ impl TextBuffer {
     pub fn lines(&self) -> ropey::iter::Lines<'_> {
         self.rope.lines()
     }
+
+    pub fn line_count(&self) -> usize {
+        self.rope.len_lines()
+    }
+
+    pub fn line_at_byte(&self, byte: usize) -> usize {
+        self.rope.byte_to_line(byte.min(self.len_bytes()))
+    }
+
+    pub fn line_start_byte(&self, line: usize) -> usize {
+        self.rope
+            .line_to_byte(line.min(self.rope.len_lines().saturating_sub(1)))
+    }
+
+    pub fn line_text(&self, line: usize) -> String {
+        self.rope
+            .line(line.min(self.rope.len_lines().saturating_sub(1)))
+            .to_string()
+    }
 }
 
 impl std::fmt::Display for TextBuffer {
@@ -129,6 +148,16 @@ impl Change {
     }
 }
 
+/// Descripción compacta del último parche aplicado al buffer. Permite que una
+/// vista derivada actualice solo su vecindario, sin convertirla en autoridad
+/// sobre la fuente ni guardar snapshots completos.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SourceChange {
+    pub start: usize,
+    pub removed_bytes: usize,
+    pub inserted_bytes: usize,
+}
+
 /// Error de edición que evita partir una secuencia UTF-8 o aplicar historial a
 /// un documento que ya no representa el estado esperado.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -147,6 +176,7 @@ pub struct EditHistory {
     next_revision: u64,
     current_revision: u64,
     saved_revision: u64,
+    last_change: Option<SourceChange>,
 }
 
 impl Default for EditHistory {
@@ -158,6 +188,7 @@ impl Default for EditHistory {
             next_revision: 1,
             current_revision: 0,
             saved_revision: 0,
+            last_change: None,
         }
     }
 }
@@ -216,6 +247,7 @@ impl EditHistory {
         self.clear_redo();
         let before_revision = self.current_revision;
         let after_revision = self.next_revision;
+        let removed_bytes = removed.len();
         self.next_revision = self.next_revision.saturating_add(1);
         source.replace_range(range.clone(), inserted)?;
         let change = Change {
@@ -226,6 +258,11 @@ impl EditHistory {
             after_revision,
         };
         self.current_revision = after_revision;
+        self.last_change = Some(SourceChange {
+            start: range.start,
+            removed_bytes,
+            inserted_bytes: inserted.len(),
+        });
         self.push_new_undo(change);
         Ok(true)
     }
@@ -249,6 +286,11 @@ impl EditHistory {
         }
         source.replace_range(change.start..end, &change.removed)?;
         self.current_revision = change.before_revision;
+        self.last_change = Some(SourceChange {
+            start: change.start,
+            removed_bytes: change.inserted.len(),
+            inserted_bytes: change.removed.len(),
+        });
         self.redo.push(change);
         Ok(true)
     }
@@ -272,6 +314,11 @@ impl EditHistory {
         }
         source.replace_range(change.start..end, &change.inserted)?;
         self.current_revision = change.after_revision;
+        self.last_change = Some(SourceChange {
+            start: change.start,
+            removed_bytes: change.removed.len(),
+            inserted_bytes: change.inserted.len(),
+        });
         // El cambio ya está contabilizado mientras estuvo en `redo`; moverlo
         // de vuelta no puede cobrar memoria dos veces ni expulsar undo válido.
         self.undo.push_back(change);
@@ -293,6 +340,10 @@ impl EditHistory {
             };
             self.history_bytes = self.history_bytes.saturating_sub(oldest.bytes());
         }
+    }
+
+    fn last_change(&self) -> Option<SourceChange> {
+        self.last_change
     }
 }
 
@@ -330,6 +381,10 @@ impl SourceEditor {
 
     pub fn revision(&self) -> u64 {
         self.history.current_revision()
+    }
+
+    pub fn last_change(&self) -> Option<SourceChange> {
+        self.history.last_change()
     }
 
     pub fn mark_saved(&mut self) {

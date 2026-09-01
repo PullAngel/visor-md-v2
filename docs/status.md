@@ -178,6 +178,10 @@ exacto del traspaso.
   Recorre la estructura para descubrir notas agregadas o eliminadas, pero reutiliza
   título, encabezados, wikilinks y texto de búsqueda de notas que siguen intactas.
   Esa reutilización solo ahorra trabajo: la VFS vuelve a validar toda navegación.
+- la vista de fuente aprovecha el parche UTF-8 de edición para regenerar solo
+  sus líneas vecinas y desplazar rangos posteriores. Si no puede demostrar esos
+  rangos, reconstruye toda la representación de fuente; nunca reutiliza datos
+  dudosos.
 - índice del documento, árbol plegable de notas, búsqueda de carpeta y backlinks se
   presentan como paneles plegables de varias filas. Las listas largas mantienen
   visible la selección sin construir layouts para todos los resultados y

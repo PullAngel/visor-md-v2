@@ -239,8 +239,10 @@ añade cursor y selección sin partir caracteres Unicode. `TextBuffer` encapsula
 un Rope y conserva offsets públicos en bytes para que parser, rangos y guardado
 mantengan el mismo contrato. No conserva snapshots completos para el historial;
 solo materializa una `String` en fronteras que necesitan una fotografía estable,
-como parsing, guardado y recuperación. La representación visual de las líneas
-fuente aún se reconstruye completa tras cada cambio.
+como parsing, guardado y recuperación. La representación de fuente actualiza
+las líneas afectadas y desplaza rangos posteriores cuando sus invariantes siguen
+siendo válidas; ante un caso no demostrable vuelve a la reconstrucción completa
+y segura.
 
 La vista dividida conserva dos derivados simultáneos: bloques inertes de fuente
 editables y el último modelo Markdown de la misma revisión. Ambos tienen caches
@@ -459,7 +461,7 @@ nativas reales. macOS permanece como posibilidad futura, no gate actual.
 | Layout | Visible con estimaciones | Geometría para render e interacción |
 | Rendering | Software nativo funcional | Display list validada y accesible |
 | UI | Ventana, tema, pestañas, barra de acciones, menú contextual, paleta, paneles y chrome sin borde en Windows | Semántica accesible completa y QA del fallback por plataforma |
-| Edición | Buffer Rope, fuente alternable, vista dividida, undo/redo, portapapeles explícito, guardado fiel y recuperación local | Actualización incremental de la representación fuente y accesibilidad completa |
+| Edición | Buffer Rope, fuente alternable con actualización local y respaldo completo, vista dividida, undo/redo, portapapeles explícito, guardado fiel y recuperación local | Actualización incremental del modelo renderizado y accesibilidad completa |
 | Workspace | Raíz explícita, VFS, índice cancelable con reutilización de notas intactas, árbol, búsqueda, wikilinks, callouts, backlinks y detección limitada de cambios | QA con bóvedas grandes |
 | Seguridad | Límites, HTML inerte, VFS, guardado, recuperación y PNG local acotado con pruebas | Otros recursos secundarios, campaña de fuzzing y validación de release |
 
