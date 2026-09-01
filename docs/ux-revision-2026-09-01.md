@@ -6,8 +6,9 @@ un IDE ni en una réplica de Obsidian.
 
 ## Hallazgos confirmados
 
-- Un menú contextual abierto no se cierra al pulsar fuera; debe cerrarse con
-  Escape, clic fuera y al cambiar de panel.
+- Las capas temporales no compartían una regla clara de cierre. Deben cerrarse
+  con Escape, clic fuera y al cambiar de panel, sin que el clic alcance el
+  documento que quedó debajo.
 - Falta cortar (`Ctrl+X` y menú contextual), una operación básica del editor.
 - Backspace no repite al mantenerse pulsado; hay que revisar también Delete,
   flechas y selección repetida sin insertar texto de control.
@@ -37,9 +38,10 @@ un IDE ni en una réplica de Obsidian.
 - El tema alterna con `T`, pero no figura como acción visible y puede ser
   absorbido por la entrada de fuente. La solución es una acción del catálogo,
   no otro atajo oculto.
-- El menú contextual se descarta al pulsar, pero paneles y overlays no tienen
-  una política única de cierre al hacer clic fuera. Ese estado debe centralizarse
-  antes de añadir desplegables.
+- **Corregido:** los paneles y la paleta comparten una regla de clic fuera: un
+  clic dentro queda contenido por el marco y un clic fuera descarta la capa sin
+  activar el documento de abajo. La búsqueda dentro del documento se conserva,
+  porque pertenece a la lectura actual y no a una capa de navegación.
 - El split 42/58 fue una corrección visual válida en abstracto, pero el QA
   muestra que empeora la comparación. La fidelidad de correspondencia prevalece
   sobre ese reparto de ancho.

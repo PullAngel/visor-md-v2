@@ -343,6 +343,11 @@ fn panel_item_at(
     (item_offset < range.len()).then_some(range.start + item_offset)
 }
 
+fn panel_contains_point(x: f32, y: f32, geometry: PanelGeometry) -> bool {
+    (geometry.x..geometry.x + geometry.width).contains(&x)
+        && (geometry.y..geometry.y + geometry.height).contains(&y)
+}
+
 #[derive(Clone, Debug)]
 struct NavigationPanelRows {
     title: String,
@@ -4663,10 +4668,21 @@ impl ApplicationHandler<AppEvent> for App {
                         }
                         return;
                     }
-                    if let Some((x, y)) = self.pointer
-                        && self.activate_panel_at(x, y)
-                    {
+                    if self.navigation_panel_is_open() {
+                        let inside = self
+                            .pointer
+                            .is_some_and(|(x, y)| self.navigation_panel_contains(x, y));
+                        if inside {
+                            if let Some((x, y)) = self.pointer {
+                                self.activate_panel_at(x, y);
+                            }
+                        } else {
+                            self.dismiss_navigation_panel();
+                        }
                         self.selecting = false;
+                        if let Some(window) = &self.window {
+                            window.request_redraw();
+                        }
                         return;
                     }
                     let resize_direction = self.window.as_ref().and_then(|window| {
@@ -5650,6 +5666,55 @@ impl App {
 
     fn command_palette_actions(&self) -> Vec<AppAction> {
         filtered_actions(&self.command_palette_query)
+    }
+
+    fn navigation_panel_is_open(&self) -> bool {
+        self.command_palette.is_some()
+            || self.workspace_search_query.is_some()
+            || self.workspace_paths.is_some()
+            || self.backlink_paths.is_some()
+            || self.outline_headings.is_some()
+    }
+
+    fn navigation_panel_contains(&self, x: f32, y: f32) -> bool {
+        let Some(window) = self.window.as_ref() else {
+            return false;
+        };
+        let item_count = if self.command_palette.is_some() {
+            self.command_palette_actions().len()
+        } else if self.workspace_search_query.is_some() {
+            self.workspace_search_matches().len()
+        } else if let Some(paths) = &self.workspace_paths {
+            paths.len()
+        } else if let Some(paths) = &self.backlink_paths {
+            paths.len()
+        } else if let Some(headings) = &self.outline_headings {
+            headings.len()
+        } else {
+            return false;
+        };
+        panel_contains_point(
+            x,
+            y,
+            navigation_panel_geometry(
+                window.inner_size().width as f32,
+                window.inner_size().height as f32,
+                panel_window(item_count, 0, PANEL_CAPACITY).len(),
+            ),
+        )
+    }
+
+    /// Los paneles de navegación son transitorios: un clic fuera de su marco
+    /// los descarta sin activar el contenido que quedó debajo. Se conserva la
+    /// búsqueda dentro del documento porque pertenece a la lectura actual, no
+    /// a este grupo de capas flotantes.
+    fn dismiss_navigation_panel(&mut self) {
+        self.workspace_search_query = None;
+        self.workspace_paths = None;
+        self.backlink_paths = None;
+        self.outline_headings = None;
+        self.command_palette = None;
+        self.command_palette_query.clear();
     }
 
     fn activate_panel_at(&mut self, x: f32, y: f32) -> bool {
@@ -10783,6 +10848,24 @@ mod pruebas {
         assert_eq!(document_viewport_height(20.0), 0.0);
         assert_eq!(document_screen_y(48.0, 0.0), 124.0);
         assert_eq!(document_screen_y(100.0, 60.0), 116.0);
+    }
+
+    #[test]
+    fn el_clic_fuera_del_panel_se_distingue_del_marco_y_las_filas() {
+        let panel = navigation_panel_geometry(1_200.0, 800.0, 4);
+
+        assert!(panel_contains_point(panel.x + 1.0, panel.y + 1.0, panel));
+        assert!(panel_contains_point(
+            panel.x + panel.width - 1.0,
+            panel.y + panel.height - 1.0,
+            panel
+        ));
+        assert!(!panel_contains_point(panel.x - 1.0, panel.y + 4.0, panel));
+        assert!(!panel_contains_point(
+            panel.x + 4.0,
+            panel.y + panel.height,
+            panel
+        ));
     }
 
     #[test]
