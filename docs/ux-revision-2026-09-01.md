@@ -23,6 +23,24 @@ un IDE ni en una réplica de Obsidian.
 - Menús, diálogos y avisos flotantes no comparten aún radio, borde, sombra,
   foco y cierre consistentes.
 
+## Segunda revisión técnica
+
+- La acción de tareas ya existe, pero su área de clic o refresco no coincide con
+  el resultado percibido: es una regresión de interacción, no una función que
+  pueda declararse terminada por tener código.
+- **Corregido:** el editor admite repetición de Backspace, Delete y navegación;
+  los atajos, diálogos y cambios de modo siguen siendo de un único disparo.
+  Enter permanece deliberadamente individual hasta revisar agrupación de undo.
+- El tema alterna con `T`, pero no figura como acción visible y puede ser
+  absorbido por la entrada de fuente. La solución es una acción del catálogo,
+  no otro atajo oculto.
+- El menú contextual se descarta al pulsar, pero paneles y overlays no tienen
+  una política única de cierre al hacer clic fuera. Ese estado debe centralizarse
+  antes de añadir desplegables.
+- El split 42/58 fue una corrección visual válida en abstracto, pero el QA
+  muestra que empeora la comparación. La fidelidad de correspondencia prevalece
+  sobre ese reparto de ancho.
+
 ## Decisiones de jerarquía
 
 1. La barra de edición será un kit Markdown completo, pero en dos niveles:

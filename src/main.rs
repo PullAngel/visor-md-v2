@@ -6149,7 +6149,24 @@ impl App {
             return;
         }
 
-        if event.repeat {
+        // La repetición del sistema es parte de la edición normal. Se admite
+        // solo para navegación y borrado; atajos, diálogos y cambios de modo
+        // permanecen de un único disparo.
+        if event.repeat
+            && !matches!(
+                event.physical_key,
+                PhysicalKey::Code(
+                    KeyCode::Backspace
+                        | KeyCode::Delete
+                        | KeyCode::ArrowLeft
+                        | KeyCode::ArrowRight
+                        | KeyCode::ArrowUp
+                        | KeyCode::ArrowDown
+                        | KeyCode::Home
+                        | KeyCode::End
+                )
+            )
+        {
             return;
         }
         match event.physical_key {
