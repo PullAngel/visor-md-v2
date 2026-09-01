@@ -498,6 +498,14 @@ fn workspace_panel_title(root: Option<&Path>, note_count: usize) -> String {
     format!("{name} · {note_count} {notes}")
 }
 
+fn backlinks_panel_title(count: usize) -> String {
+    if count == 0 {
+        "Backlinks · ninguna nota apunta aquí".to_string()
+    } else {
+        format!("Backlinks · {count} resultados")
+    }
+}
+
 fn toolbar_actions(mode: DocumentMode) -> &'static [AppAction] {
     if mode.is_editable() {
         &EDITING_TOOLBAR_ACTIONS
@@ -7253,16 +7261,16 @@ impl App {
             .into_iter()
             .map(|backlink| backlink.relative_path.clone())
             .collect::<Vec<_>>();
-        if paths.is_empty() {
-            self.set_notice("ninguna nota de la carpeta apunta al documento actual");
-            return;
-        }
         self.search_query = None;
         self.workspace_search_query = None;
         self.workspace_paths = None;
         self.backlink_match = 0;
         self.backlink_paths = Some(paths);
-        self.set_notice("backlinks · flechas eligen, Enter abre, Escape cierra");
+        self.set_notice(if self.backlink_paths.as_ref().is_some_and(Vec::is_empty) {
+            "ninguna nota de la carpeta apunta al documento actual · Escape cierra"
+        } else {
+            "backlinks · flechas eligen, Enter abre, Escape cierra"
+        });
         if let Some(window) = &self.window {
             window.request_redraw();
         }
@@ -8451,7 +8459,7 @@ impl App {
             let selected = self.backlink_match % paths.len().max(1);
             let range = panel_window(paths.len(), selected, PANEL_CAPACITY);
             Some(NavigationPanelRows {
-                title: format!("Backlinks · {} resultados", paths.len()),
+                title: backlinks_panel_title(paths.len()),
                 items: range
                     .clone()
                     .map(|index| {
@@ -10325,6 +10333,15 @@ mod pruebas {
             title: "Redes y seguridad".to_string(),
         };
         assert_eq!(result.label(), "Redes y seguridad · universidad/redes.md");
+    }
+
+    #[test]
+    fn los_backlinks_vacios_explican_el_estado_en_el_panel() {
+        assert_eq!(
+            backlinks_panel_title(0),
+            "Backlinks · ninguna nota apunta aquí"
+        );
+        assert_eq!(backlinks_panel_title(2), "Backlinks · 2 resultados");
     }
 
     #[test]
