@@ -1,6 +1,6 @@
 # Roadmap
 
-Última revisión: 31 de agosto de 2026.
+Última revisión: 1 de septiembre de 2026.
 
 El roadmap ordena dependencias y criterios de salida. No promete fechas. Una
 etapa solo se cierra con evidencia y el producto debe quedar en un punto útil al
@@ -32,20 +32,25 @@ final de cada hito.
   alcance/arquitectura/seguridad/producto, o existe riesgo de pérdida de datos
   o un bloqueo técnico externo.
 
-## Estado
+## Estado operativo actual
+
+La tabla siguiente es la fotografía operativa que guía el trabajo presente. Las
+etapas detalladas más abajo conservan el razonamiento y los criterios
+históricos; no deben interpretarse como una lista de capacidades ausentes si
+contradicen esta fotografía.
 
 | Etapa | Estado | Resultado |
 | --- | --- | --- |
 | Sprint 0 | Cerrado con deuda documental | Prototipo nativo medido |
-| Recuperación | En cierre | Código preservado y estable; falta QA visual |
-| Sprint 1 | Parcial | Lector mínimo profesional |
-| Validación base | Iniciada | Gates Windows, auditoría, SBOM y benchmarks |
-| Lector completo | En curso | Markdown cotidiano, tablas con copia TSV, notas al pie, autolinks, búsqueda, índice, métricas, plegado y vista previa PNG local presentes; faltan imágenes inline y cierre sistemático del corpus |
-| Editor básico | En curso | Abrir, crear, buffer escalable, edición fuente y dividida, actualización local de líneas con respaldo seguro, guardado atómico, conflictos explícitos y recuperación local configurable; faltan actualización incremental del modelo renderizado y QA manual de edición y diálogos nativos |
-| Chrome | En curso | Pestañas, acciones esenciales y paneles visibles con cierre protegido; el chrome sin borde de Windows conserva mover, redimensionar y controles de ventana, mientras otros sistemas usan fallback nativo; faltan accesibilidad completa y QA por plataforma |
-| Corrección visual | En curso | Retorno verificable a Papel + Tinta: chrome, superficies, iconos, composición editorial y QA visual |
-| Workspace | En curso | Carpeta explícita, VFS, índice acotado/cancelable con actualización que reutiliza notas intactas, árbol plegable, búsqueda y detección externa limitada; falta QA con bóvedas grandes |
-| Obsidian | En curso | Wikilinks, callouts, panel de backlinks y PNG local confirmado contenidos; falta corpus ampliado |
+| Recuperación heredada | Cerrada técnicamente | El trabajo de Claude se preservó, se reconstruyó y se integró sin usar sus snapshots como producto; quedan evidencias visuales históricas, no un bloqueo de implementación. |
+| Sprint 1 | Implementado, pendiente de cierre formal | Lector Markdown profesional con CommonMark/GFM anunciado, límites, fuente embebida, tema y regresiones; falta consolidar corpus y QA visual de release. |
+| Validación base | En curso | Gates Windows y pruebas de regresión ya existen; faltan la pasada de cierre de SBOM, advisories, benchmarks y CI multiplataforma. |
+| Lector completo | En curso | Tablas legibles con copia TSV, notas al pie, autolinks, búsqueda, índice, métricas, plegado y placeholder/PNG local confirmado están presentes; faltan corpus sistemático, imágenes inline y accesibilidad de interacción. |
+| Editor básico | En curso | Abrir, crear, edición fuente/dividida, historial, guardado atómico, conflictos explícitos y recuperación local están implementados; falta endurecer la sincronización incremental, selección/IME y QA real de archivos y diálogos. |
+| Aplicación diaria | En curso | Pestañas, cierre protegido, acciones comunes, barra de estado, paneles plegables y chrome sin borde de Windows ya existen; el foco actual es su descubribilidad, accesibilidad y QA por plataforma. |
+| Corrección visual | En curso | La composición Papel + Tinta, jerarquía de superficies, tipografía, barras primaria/contextual, iconos nativos, ayuda contextual y paneles fueron realineados con diseño; faltan pulido de estados y QA humano. |
+| Workspace | En curso | Carpeta explícita, VFS, índice acotado/cancelable, árbol, búsqueda y detección externa limitada ya existen; faltan escala, cancelación visible y QA con bóvedas grandes. |
+| Obsidian | En curso | Wikilinks, aliases, encabezados, callouts, backlinks y PNG local confirmado se resuelven dentro de la raíz autorizada; falta corpus de bóvedas, diagnósticos de ambigüedad y QA de compatibilidad. |
 | Estudio | En curso | Resaltado portable inicial; faltan herramientas portables |
 | Exportación | Pendiente | PDF, DOCX y copias preparadas |
 | Distribución | Pendiente | Windows y Linux profesionales |
@@ -89,25 +94,30 @@ bloques independientes.
 | D. Buen ciudadano de Obsidian y estudio | 5 y 6 | Navegar bóvedas existentes, usar wikilinks/backlinks/callouts y preparar estudio o contenido para IA | No migración ni ruido Git; enlaces contenidos; herramientas de estudio portables o sidecars versionados; cero IA embebida |
 | E. Salida profesional | 7 y 8 | Exportar PDF/DOCX/copia de plataforma y distribuir para Windows/Linux | Exportación aislada; CI y paquetes reproducibles; SBOM, licencias, benchmarks, threat model y matriz de release completos |
 
-### Sprint largo activo: A. Lector seguro y usable
+### Línea activa: aplicación diaria y UX editorial
 
-Se considera en cierre técnico, no terminado: parser, modelo, render, límites,
-selección, copia, menú contextual y apertura externa explícita están presentes.
-Quedan QA visual, DPI/Unicode y evidencia de rendimiento actualizada para su
-cierre formal. El corpus, modo seguro y contrato de edición source-first ya
-permiten avanzar en el Sprint B sin usar rangos ambiguos de enlaces como
-autoridad de escritura.
+Los sprints A, B y buena parte de C ya tienen implementación. El trabajo activo
+no consiste en saltar a funciones nuevas: consolida el documento fiel, las
+pestañas, los paneles de workspace y su interacción hasta que la aplicación sea
+cómoda y segura en una jornada real. En paralelo se cierran los gates formales
+del lector cuando la evidencia correspondiente esté disponible.
+
+La interfaz mantiene dos niveles: una barra primaria para acciones del
+documento y una barra contextual para lectura o edición. Los iconos se apoyan
+en atajos, paleta y ayudas breves para que el minimalismo no reduzca la
+descubribilidad. Los paneles permanecen plegables para no competir con la
+lectura.
 
 ### Orden inmediato
 
-El trabajo activo mantiene abiertos los gates humanos del Sprint A mientras
-construye la aplicación diaria en este orden: documento fiel primero; luego
-pestañas, acciones y cierre protegido; después paneles de carpeta y búsqueda;
-y finalmente la compatibilidad esencial de Obsidian y el pulido de lectura. La
-validación visual de tipografía y allowlist HTML se cierra antes de declarar A
-terminado, pero no paraliza estas tareas independientes. Los refactors internos
-solo se adelantan cuando desbloquean una de esas capacidades o reducen un riesgo
-concreto de integridad, seguridad o estabilidad.
+El orden inmediato es: primero cerrar inconsistencias de interacción en edición
+y lectura; después mejorar descubribilidad, foco y accesibilidad del chrome;
+luego hacer visibles la cancelación, actualización y límites del workspace; y
+por último ampliar el corpus de compatibilidad de Obsidian. La validación visual
+de tipografía, tablas y allowlist HTML se cierra antes de declarar Sprint 1
+formalmente terminado, pero no paraliza estos frentes independientes. Los
+refactors internos solo se adelantan cuando desbloquean una capacidad de uso
+diario o reducen un riesgo concreto de integridad, seguridad o estabilidad.
 
 ## Sprint 0: viabilidad nativa
 
