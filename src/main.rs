@@ -405,6 +405,18 @@ impl WorkspaceTreeRow {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct WorkspaceSearchResult {
+    relative_path: PathBuf,
+    title: String,
+}
+
+impl WorkspaceSearchResult {
+    fn label(&self) -> String {
+        format!("{} · {}", self.title, self.relative_path.display())
+    }
+}
+
 fn workspace_tree_rows(paths: &[PathBuf]) -> Vec<WorkspaceTreeRow> {
     let mut directories = BTreeSet::new();
     for path in paths {
@@ -7532,7 +7544,7 @@ impl App {
         }
     }
 
-    fn workspace_search_matches(&self) -> Vec<PathBuf> {
+    fn workspace_search_matches(&self) -> Vec<WorkspaceSearchResult> {
         let Some(query) = self
             .workspace_search_query
             .as_deref()
@@ -7544,14 +7556,17 @@ impl App {
             index
                 .search(query)
                 .into_iter()
-                .map(|note| note.relative_path.clone())
+                .map(|note| WorkspaceSearchResult {
+                    relative_path: note.relative_path.clone(),
+                    title: note.title.clone(),
+                })
                 .collect()
         })
     }
 
     fn open_workspace_search_match(&mut self) {
         let matches = self.workspace_search_matches();
-        let Some(relative_path) = matches
+        let Some(result) = matches
             .get(self.workspace_search_match % matches.len().max(1))
             .cloned()
         else {
@@ -7561,7 +7576,7 @@ impl App {
         let Some((root, _)) = &self.workspace else {
             return;
         };
-        match root.resolve_existing(&relative_path) {
+        match root.resolve_existing(&result.relative_path) {
             Ok(path) => {
                 self.workspace_search_query = None;
                 self.open_document_path(path);
@@ -8398,7 +8413,7 @@ impl App {
                     .map(|index| {
                         (
                             index == selected,
-                            abbreviated_label(&paths[index].display().to_string(), 48),
+                            abbreviated_label(&paths[index].label(), 48),
                         )
                     })
                     .collect(),
@@ -10297,6 +10312,15 @@ mod pruebas {
             "Universidad · 12 notas"
         );
         assert_eq!(workspace_panel_title(None, 1), "Carpeta · 1 nota");
+    }
+
+    #[test]
+    fn los_resultados_de_busqueda_muestran_titulo_y_ruta_relativa() {
+        let result = WorkspaceSearchResult {
+            relative_path: PathBuf::from("universidad/redes.md"),
+            title: "Redes y seguridad".to_string(),
+        };
+        assert_eq!(result.label(), "Redes y seguridad · universidad/redes.md");
     }
 
     #[test]
