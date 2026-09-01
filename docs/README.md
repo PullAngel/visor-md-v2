@@ -42,6 +42,7 @@ Estos documentos deben cambiar cuando cambia el producto o su implementación:
 | [`roadmap.md`](roadmap.md) | Secuencia, dependencias y criterios de salida |
 | [`design.md`](design.md) | Sistema visual e interacción |
 | [`design-audit.md`](design-audit.md) | Evidencia y plan vigente de corrección visual |
+| [`editor-workspace-ui-audit.md`](editor-workspace-ui-audit.md) | Auditoría y secuencia UX de edición, índice y bóvedas |
 | [`decisions.md`](decisions.md) | ADR y decisiones reemplazadas |
 | [`future.md`](future.md) | Ideas fuera del plan activo |
 
