@@ -107,8 +107,9 @@ sienten parte del mismo producto.
   Todas escriben sintaxis Markdown estándar o portable y se deshacen como una
   edición normal. Los bloques y tablas conservan el tipo de salto de línea del
   documento.
-- Pendiente: wikilinks, callouts y recursos locales seguros como acciones de
-  escritura completas.
+- **Añadido:** la paleta permite insertar wikilinks `[[nota]]` y callouts de
+  nota de Obsidian sin resolver rutas, abrir archivos ni cambiar preferencias.
+  Pendiente: recursos locales seguros como acciones de escritura completas.
 - Operaciones contextuales para selección y cursor; insertar fecha, símbolos,
   bloques de estudio y fragmentos preparados para IA quedan bajo menús o panel.
 - Herramientas de estudio portables: pregunta/respuesta, ocultación, estados,

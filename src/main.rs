@@ -672,6 +672,8 @@ enum AppAction {
     InsertCodeBlock,
     InsertTable,
     FormatHighlight,
+    InsertWikiLink,
+    InsertCallout,
     ToggleSection,
     SearchDocument,
     CopyTableTsv,
@@ -687,7 +689,7 @@ enum AppAction {
     CommandPalette,
 }
 
-const APP_ACTIONS: [AppAction; 32] = [
+const APP_ACTIONS: [AppAction; 34] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -710,6 +712,8 @@ const APP_ACTIONS: [AppAction; 32] = [
     AppAction::InsertCodeBlock,
     AppAction::InsertTable,
     AppAction::FormatHighlight,
+    AppAction::InsertWikiLink,
+    AppAction::InsertCallout,
     AppAction::ToggleSection,
     AppAction::CopyTableTsv,
     AppAction::ChooseWorkspace,
@@ -745,6 +749,8 @@ impl AppAction {
             Self::InsertCodeBlock => "Insertar bloque de código",
             Self::InsertTable => "Insertar tabla Markdown",
             Self::FormatHighlight => "Resaltar texto",
+            Self::InsertWikiLink => "Insertar enlace de bóveda",
+            Self::InsertCallout => "Insertar callout de nota",
             Self::ToggleSection => "Plegar o desplegar sección enfocada",
             Self::SearchDocument => "Buscar en documento · Ctrl+F",
             Self::CopyTableTsv => "Copiar tabla seleccionada como TSV",
@@ -5633,6 +5639,8 @@ impl App {
             AppAction::InsertCodeBlock => self.insert_code_block(),
             AppAction::InsertTable => self.insert_table(),
             AppAction::FormatHighlight => self.apply_markdown_surround("==", "==", "texto"),
+            AppAction::InsertWikiLink => self.apply_markdown_surround("[[", "]]", "nota"),
+            AppAction::InsertCallout => self.insert_callout(),
             AppAction::ToggleSection => self.toggle_focused_section(),
             AppAction::SearchDocument => self.open_document_search(),
             AppAction::CopyTableTsv => self.copy_current_table_tsv(),
@@ -6265,6 +6273,16 @@ impl App {
         }
         let eol = self.document_line_ending();
         let template = format!("| Columna | Valor |{eol}| --- | --- |{eol}| texto | valor |");
+        self.edit_source(|editor, source| editor.insert(source, &template));
+    }
+
+    fn insert_callout(&mut self) {
+        if !self.document.mode.is_editable() {
+            self.set_notice("activa edición para insertar un callout");
+            return;
+        }
+        let eol = self.document_line_ending();
+        let template = format!("> [!NOTE]{eol}> nota");
         self.edit_source(|editor, source| editor.insert(source, &template));
     }
 
