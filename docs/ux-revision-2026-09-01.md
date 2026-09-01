@@ -29,6 +29,9 @@ un IDE ni en una réplica de Obsidian.
   el resultado percibido: es una regresión de interacción, no una función que
   pueda declararse terminada por tener código.
 - **Corregido:** el editor admite repetición de Backspace, Delete y navegación;
+  la casilla de una tarea usa la misma geometría para dibujarse y recibir el
+  clic, incluida la escala DPI. Falta QA humano breve para confirmar el gesto
+  en una ventana real.
   los atajos, diálogos y cambios de modo siguen siendo de un único disparo.
   Enter permanece deliberadamente individual hasta revisar agrupación de undo.
 - El tema alterna con `T`, pero no figura como acción visible y puede ser

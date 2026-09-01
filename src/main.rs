@@ -7891,16 +7891,14 @@ impl App {
 
     fn task_at(&self, x: f32, y: f32) -> Option<usize> {
         self.slots.iter().enumerate().find_map(|(index, slot)| {
-            let top = document_screen_y(slot.y, self.scroll);
             let is_task = matches!(
                 self.document.blocks[index].marker,
                 Some(Marker::Task { .. })
             );
-            let marker_left = slot.x - 28.0 * self.scale_factor;
-            (is_task
-                && (top..=top + slot.height).contains(&y)
-                && (marker_left..=slot.x).contains(&x))
-            .then_some(index)
+            let (left, top, width, height) =
+                task_checkbox_bounds(slot, self.scroll, self.scale_factor);
+            (is_task && (left..=left + width).contains(&x) && (top..=top + height).contains(&y))
+                .then_some(index)
         })
     }
 
@@ -8909,17 +8907,9 @@ impl App {
                         }
                     }
                     CachedMarker::Task { done } => {
-                        let (font_size, _, _, _) = slot.kind.style();
-                        let size = (font_size * *scale_factor * 0.82).max(12.0 * *scale_factor);
-                        let line_box = font_size * *scale_factor * slot.kind.line_height();
-                        draw_checkbox(
-                            pixmap,
-                            slot.x - size - 8.0,
-                            top + (line_box - size).max(0.0) * 0.5,
-                            size,
-                            *done,
-                            *palette,
-                        );
+                        let (left, top, width, _) =
+                            task_checkbox_bounds(slot, *scroll, *scale_factor);
+                        draw_checkbox(pixmap, left, top, width, *done, *palette);
                     }
                 }
             }
@@ -9685,6 +9675,21 @@ fn code_copy_bounds(slot: &Slot, text_width: f32, scroll: f32, scale: f32) -> (f
         document_screen_y(slot.y, scroll) + 4.0 * scale,
         width,
         height,
+    )
+}
+
+/// El área interactiva comparte la misma geometría que el dibujo. Mantenerla
+/// en una función evita que un ajuste visual convierta una casilla visible en
+/// un objetivo imposible de pulsar.
+fn task_checkbox_bounds(slot: &Slot, scroll: f32, scale: f32) -> (f32, f32, f32, f32) {
+    let (font_size, _, _, _) = slot.kind.style();
+    let size = (font_size * scale * 0.82).max(12.0 * scale);
+    let line_box = font_size * scale * slot.kind.line_height();
+    (
+        slot.x - size - 8.0 * scale,
+        document_screen_y(slot.y, scroll) + (line_box - size).max(0.0) * 0.5,
+        size,
+        size,
     )
 }
 
@@ -12284,6 +12289,23 @@ Pagina 14 de 14"#;
         assert_eq!(task_marker_replacement("- [x] terminada"), Some((3, " ")));
         assert_eq!(task_marker_replacement("- [X] terminada"), Some((3, " ")));
         assert_eq!(task_marker_replacement("- [nota] sin tarea"), None);
+    }
+
+    #[test]
+    fn la_casilla_y_su_objetivo_de_clic_comparten_geometria() {
+        let slot = Slot {
+            x: 84.0,
+            y: 120.0,
+            height: 28.0,
+            kind: Kind::Item(0),
+        };
+        let (left, top, width, height) = task_checkbox_bounds(&slot, 40.0, 1.25);
+
+        assert!(width >= 15.0);
+        assert_eq!(width, height);
+        assert!(left + width < slot.x, "la casilla invadió el texto");
+        assert!(top >= document_screen_y(slot.y, 40.0));
+        assert!(top + height <= document_screen_y(slot.y, 40.0) + slot.height);
     }
 
     #[test]
