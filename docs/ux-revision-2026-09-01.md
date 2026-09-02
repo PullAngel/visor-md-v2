@@ -112,6 +112,9 @@ sienten parte del mismo producto.
   El menú contextual de edición ofrece también código, tabla, resaltado, enlace
   de bóveda y callout, además de cortar, pegar y formato básico. Pendiente:
   recursos locales seguros como acciones de escritura completas.
+- Un menú contextual largo reduce moderadamente su altura de fila en la ventana
+  mínima en vez de quedar fuera de pantalla; conserva objetivos de puntero de
+  al menos 28 px y usa el tamaño normal cuando hay espacio.
 - Operaciones contextuales para selección y cursor; insertar fecha, símbolos,
   bloques de estudio y fragmentos preparados para IA quedan bajo menús o panel.
 - Herramientas de estudio portables: pregunta/respuesta, ocultación, estados,

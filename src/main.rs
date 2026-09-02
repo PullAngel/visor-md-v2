@@ -654,6 +654,9 @@ enum ContextAction {
 struct ContextMenu {
     origin: (f32, f32),
     actions: Vec<ContextAction>,
+    /// Los menús largos conservan objetivos de puntero razonables incluso en
+    /// la ventana mínima, sin quedar recortados fuera del área visible.
+    row_height: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -853,16 +856,22 @@ fn context_actions(mode: DocumentMode, table_available: bool) -> Vec<ContextActi
     actions
 }
 
+fn context_menu_row_height(window_height: f32, action_count: usize) -> f32 {
+    (window_height / action_count.max(1) as f32)
+        .min(CONTEXT_MENU_ROW_HEIGHT)
+        .max(28.0)
+}
+
 fn context_action_at(menu: &ContextMenu, pointer: (f32, f32)) -> Option<ContextAction> {
     let (_, top) = menu.origin;
     let (x, y) = pointer;
     if !(menu.origin.0..=menu.origin.0 + CONTEXT_MENU_WIDTH).contains(&x)
-        || !(top..=top + CONTEXT_MENU_ROW_HEIGHT * menu.actions.len() as f32).contains(&y)
+        || !(top..=top + menu.row_height * menu.actions.len() as f32).contains(&y)
     {
         return None;
     }
     menu.actions
-        .get(((y - top) / CONTEXT_MENU_ROW_HEIGHT) as usize)
+        .get(((y - top) / menu.row_height) as usize)
         .copied()
 }
 
@@ -5041,21 +5050,21 @@ impl ApplicationHandler<AppEvent> for App {
                 }
                 let actions =
                     context_actions(self.document.mode, self.table_action_is_available_at(x, y));
-                let (x, y) = if let Some(window) = &self.window {
+                let (x, y, row_height) = if let Some(window) = &self.window {
                     let size = window.inner_size();
+                    let row_height = context_menu_row_height(size.height as f32, actions.len());
                     (
                         x.min((size.width as f32 - CONTEXT_MENU_WIDTH).max(0.0)),
-                        y.min(
-                            (size.height as f32 - CONTEXT_MENU_ROW_HEIGHT * actions.len() as f32)
-                                .max(0.0),
-                        ),
+                        y.min((size.height as f32 - row_height * actions.len() as f32).max(0.0)),
+                        row_height,
                     )
                 } else {
-                    (x, y)
+                    (x, y, CONTEXT_MENU_ROW_HEIGHT)
                 };
                 self.context_menu = Some(ContextMenu {
                     origin: (x, y),
                     actions,
+                    row_height,
                 });
                 if let Some(w) = &self.window {
                     w.request_redraw();
@@ -9902,7 +9911,7 @@ impl App {
                 x,
                 y,
                 CONTEXT_MENU_WIDTH,
-                CONTEXT_MENU_ROW_HEIGHT * menu.actions.len() as f32,
+                menu.row_height * menu.actions.len() as f32,
             ) {
                 pixmap.fill_rect(rect, &floating_paint, Transform::identity(), None);
             }
@@ -9916,9 +9925,9 @@ impl App {
                     hover.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 38));
                     if let Some(rect) = Rect::from_xywh(
                         x,
-                        y + row as f32 * CONTEXT_MENU_ROW_HEIGHT,
+                        y + row as f32 * menu.row_height,
                         CONTEXT_MENU_WIDTH,
-                        CONTEXT_MENU_ROW_HEIGHT,
+                        menu.row_height,
                     ) {
                         pixmap.fill_rect(rect, &hover, Transform::identity(), None);
                     }
@@ -9930,7 +9939,7 @@ impl App {
                                 pixmap,
                                 &run,
                                 x + CONTEXT_MENU_PADDING,
-                                y + row as f32 * CONTEXT_MENU_ROW_HEIGHT + 9.0,
+                                y + row as f32 * menu.row_height + 9.0,
                             );
                             draw_glyph_run(
                                 pixmap,
@@ -9938,7 +9947,7 @@ impl App {
                                 glyphs,
                                 &run,
                                 x + CONTEXT_MENU_PADDING,
-                                y + row as f32 * CONTEXT_MENU_ROW_HEIGHT + 9.0,
+                                y + row as f32 * menu.row_height + 9.0,
                             );
                         }
                     }
@@ -11232,14 +11241,17 @@ mod pruebas {
         let reading_menu = ContextMenu {
             origin: (100.0, 200.0),
             actions: context_actions(DocumentMode::Reading, false),
+            row_height: CONTEXT_MENU_ROW_HEIGHT,
         };
         let table_menu = ContextMenu {
             origin: (100.0, 200.0),
             actions: context_actions(DocumentMode::Reading, true),
+            row_height: CONTEXT_MENU_ROW_HEIGHT,
         };
         let editing_menu = ContextMenu {
             origin: (100.0, 200.0),
             actions: context_actions(DocumentMode::SourceEditing, false),
+            row_height: CONTEXT_MENU_ROW_HEIGHT,
         };
         assert_eq!(reading_menu.actions.len(), 2);
         assert_eq!(table_menu.actions.len(), 3);
@@ -11256,6 +11268,9 @@ mod pruebas {
         assert!(editing_menu.actions.contains(&ContextAction::Highlight));
         assert!(editing_menu.actions.contains(&ContextAction::WikiLink));
         assert!(editing_menu.actions.contains(&ContextAction::Callout));
+        let editing_height = context_menu_row_height(480.0, editing_menu.actions.len());
+        assert!(editing_height * editing_menu.actions.len() as f32 <= 480.0);
+        assert!(editing_height >= 28.0);
         assert_eq!(
             context_action_at(&reading_menu, (110.0, 210.0)),
             Some(ContextAction::CopyText)
