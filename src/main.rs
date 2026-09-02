@@ -4133,6 +4133,9 @@ struct App {
     palette: Palette,
     /// Punto actual del cursor dentro de la ventana, en pixeles físicos.
     pointer: Option<(f32, f32)>,
+    /// Texto que un IME todavía está componiendo. No forma parte de la fuente
+    /// ni puede llegar al guardado hasta que Windows emite un `Commit`.
+    ime_preedit: Option<String>,
     /// Pestaña que se está arrastrando dentro de la barra de sesión.
     tab_drag_id: Option<u64>,
     /// Mientras está activo, mover el mouse extiende la selección del bloque.
@@ -4875,6 +4878,7 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::Focused(false) => {
                 self.selecting = false;
                 self.tab_drag_id = None;
+                self.ime_preedit = None;
                 self.modifiers = ModifiersState::empty();
             }
             WindowEvent::Focused(true) => {
@@ -5164,6 +5168,15 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
             WindowEvent::ModifiersChanged(modifiers) => self.modifiers = modifiers.state(),
+            WindowEvent::Ime(Ime::Preedit(text, _)) if self.document.mode.is_editable() => {
+                self.ime_preedit = (!text.is_empty()).then_some(text);
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+            }
+            WindowEvent::Ime(Ime::Disabled) => {
+                self.ime_preedit = None;
+            }
             WindowEvent::Ime(Ime::Commit(text)) if self.workspace_search_query.is_some() => {
                 self.append_workspace_search_text(&text);
             }
@@ -5174,6 +5187,7 @@ impl ApplicationHandler<AppEvent> for App {
                 self.append_command_palette_text(&text);
             }
             WindowEvent::Ime(Ime::Commit(text)) if self.document.mode.is_editable() => {
+                self.ime_preedit = None;
                 self.edit_source(|editor, source| editor.insert(source, text.as_str()));
             }
             WindowEvent::KeyboardInput { event, .. } if self.command_palette.is_some() => {
@@ -9101,7 +9115,9 @@ impl App {
             DocumentMode::SourceEditing => "Edición",
             DocumentMode::Split => "Fuente + lectura",
         };
-        let document_state_label = if self.open_requests.contains_key(&self.document.id) {
+        let document_state_label = if self.ime_preedit.is_some() {
+            "componiendo texto"
+        } else if self.open_requests.contains_key(&self.document.id) {
             "abriendo"
         } else if self.view_requests.contains_key(&self.document.id) {
             "actualizando vista"
@@ -10506,6 +10522,7 @@ fn main() {
         log,
         palette: NIGHT,
         pointer: None,
+        ime_preedit: None,
         tab_drag_id: None,
         selecting: false,
         selection: None,
