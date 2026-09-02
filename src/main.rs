@@ -179,12 +179,13 @@ const EDITING_TOOLBAR_ACTIONS: [AppAction; 16] = [
     AppAction::FormatHighlight,
     AppAction::ToggleSplit,
 ];
-const WORKSPACE_HUB_ACTIONS: [AppAction; 7] = [
+const WORKSPACE_HUB_ACTIONS: [AppAction; 8] = [
     AppAction::ChooseWorkspace,
     AppAction::WorkspaceFiles,
     AppAction::SearchWorkspace,
     AppAction::DocumentOutline,
     AppAction::Backlinks,
+    AppAction::WikiLinkDiagnostics,
     AppAction::RefreshWorkspace,
     AppAction::CancelWorkspaceIndex,
 ];
@@ -709,12 +710,13 @@ enum AppAction {
     WorkspaceFiles,
     WorkspaceHub,
     Backlinks,
+    WikiLinkDiagnostics,
     RestoreRecovery,
     ToggleRecovery,
     CommandPalette,
 }
 
-const APP_ACTIONS: [AppAction; 35] = [
+const APP_ACTIONS: [AppAction; 36] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -748,6 +750,7 @@ const APP_ACTIONS: [AppAction; 35] = [
     AppAction::DocumentOutline,
     AppAction::WorkspaceFiles,
     AppAction::Backlinks,
+    AppAction::WikiLinkDiagnostics,
     AppAction::RestoreRecovery,
     AppAction::ToggleRecovery,
 ];
@@ -788,6 +791,7 @@ impl AppAction {
             Self::WorkspaceFiles => "Notas de la carpeta · Ctrl+Shift+T",
             Self::WorkspaceHub => "Espacio de trabajo",
             Self::Backlinks => "Backlinks · Ctrl+Shift+B",
+            Self::WikiLinkDiagnostics => "Revisar enlaces de bóveda",
             Self::RestoreRecovery => "Abrir recuperación · Ctrl+Shift+R",
             Self::ToggleRecovery => "Activar o desactivar recuperación local",
             Self::CommandPalette => "Más acciones · Ctrl+Shift+P",
@@ -1230,6 +1234,28 @@ fn target_label(kind: InlineTargetKind, destination: &str) -> &'static str {
             LinkDestinationKind::Blocked => "destino bloqueado",
         },
     }
+}
+
+fn wikilink_diagnostic_counts(blocks: &[Block], index: &WorkspaceIndex) -> (usize, usize, usize) {
+    let mut found = 0;
+    let mut missing = 0;
+    let mut ambiguous = 0;
+    for target in blocks.iter().flat_map(|block| &block.targets) {
+        if target.kind != InlineTargetKind::WikiLink {
+            continue;
+        }
+        let note = target.destination.split_once('#').map_or(target.destination.as_str(), |(note, _)| note);
+        if note.trim().is_empty() {
+            found += 1;
+        } else {
+            match index.resolve_wikilink(note) {
+                WikiResolution::Found(_) => found += 1,
+                WikiResolution::Missing => missing += 1,
+                WikiResolution::Ambiguous => ambiguous += 1,
+            }
+        }
+    }
+    (found, missing, ambiguous)
 }
 
 /// El destino cambia la señal visual, pero no concede ninguna capacidad. El
@@ -5731,6 +5757,7 @@ impl App {
             AppAction::WorkspaceFiles => self.show_workspace_files(),
             AppAction::WorkspaceHub => self.open_workspace_hub(),
             AppAction::Backlinks => self.show_backlinks(),
+            AppAction::WikiLinkDiagnostics => self.show_wikilink_diagnostics(),
             AppAction::RestoreRecovery => self.restore_latest_recovery(),
             AppAction::ToggleRecovery => self.toggle_recovery(),
             AppAction::CommandPalette => self.open_command_palette(),
@@ -7702,6 +7729,19 @@ impl App {
         if let Some(window) = &self.window {
             window.request_redraw();
         }
+    }
+
+    /// Resume los destinos ya presentes en el modelo actual. No relee archivos
+    /// ni intenta abrir enlaces: es evidencia local para corregir una nota.
+    fn show_wikilink_diagnostics(&mut self) {
+        let Some((_, index)) = self.workspace.as_ref() else {
+            self.set_notice("abre una carpeta de trabajo para revisar enlaces de bóveda");
+            return;
+        };
+        let (found, missing, ambiguous) = wikilink_diagnostic_counts(&self.document.blocks, index);
+        self.set_notice(&format!(
+            "enlaces de bóveda: {found} resueltos, {missing} ausentes, {ambiguous} ambiguos"
+        ));
     }
 
     fn open_backlink_match(&mut self) {
@@ -10648,9 +10688,9 @@ mod pruebas {
         labels.dedup();
 
         // Incluye operaciones de documento y ayudas editoriales cotidianas sin
-        // convertir la paleta en un menú de IDE. Superar 35 exige revisar la
+        // convertir la paleta en un menú de IDE. Superar 36 exige revisar la
         // jerarquía y no solo ampliar la lista por comodidad de implementación.
-        assert!(original_len <= 35, "el catálogo dejó de ser pequeño");
+        assert!(original_len <= 36, "el catálogo dejó de ser pequeño");
         assert_eq!(labels.len(), original_len);
     }
 
