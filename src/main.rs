@@ -12419,6 +12419,29 @@ mod pruebas_inline {
     }
 
     #[test]
+    fn el_diagnostico_de_wikilinks_explica_destinos_sin_abrirlos() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/obsidian-vault");
+        let vfs = WorkspaceRoot::open(&root).expect("la fixture debe estar contenida");
+        let index = workspace::index_workspace(&vfs, WorkspaceLimits::default());
+        let blocks = aplanar(include_str!(
+            "../tests/fixtures/obsidian-vault/clases/redes.md"
+        ));
+
+        assert_eq!(wikilink_diagnostic_counts(&blocks, &index), (2, 3, 1));
+        assert_eq!(
+            wikilink_diagnostics(&blocks, &index),
+            vec![
+                "resuelto · [[seguridad.md]]",
+                "ambiguo · [[seguridad#Modelo]]",
+                "resuelto · [[archivo/seguridad]]",
+                "ausente · [[../secreto]]",
+                "ausente · [[\\\\servidor\\recurso]]",
+                "ausente · [[nota inexistente]]",
+            ]
+        );
+    }
+
+    #[test]
     fn wikilinks_defectuosos_se_conservan_como_texto() {
         let block = &aplanar("[[ ]] y [[sin cierre")[0];
         assert_eq!(block.text, "[[ ]] y [[sin cierre");
