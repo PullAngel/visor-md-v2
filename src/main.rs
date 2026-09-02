@@ -290,6 +290,21 @@ fn tab_close_index_at(
     (local_x >= (width - 26.0).max(0.0)).then_some(index)
 }
 
+/// Reordena solo la sesión visible. Las pestañas conservan su identidad y sus
+/// buffers; moverlas no toca archivos ni modifica cuál documento está activo.
+fn move_tab_order(order: &mut Vec<u64>, document_id: u64, target_index: usize) -> bool {
+    let Some(from) = order.iter().position(|id| *id == document_id) else {
+        return false;
+    };
+    let target = target_index.min(order.len().saturating_sub(1));
+    if from == target {
+        return false;
+    }
+    let id = order.remove(from);
+    order.insert(target, id);
+    true
+}
+
 fn adjacent_tab_id(order: &[u64], current: u64, backwards: bool) -> Option<u64> {
     if order.len() < 2 {
         return None;
@@ -4065,6 +4080,8 @@ struct App {
     palette: Palette,
     /// Punto actual del cursor dentro de la ventana, en pixeles físicos.
     pointer: Option<(f32, f32)>,
+    /// Pestaña que se está arrastrando dentro de la barra de sesión.
+    tab_drag_id: Option<u64>,
     /// Mientras está activo, mover el mouse extiende la selección del bloque.
     selecting: bool,
     selection: Option<DocumentSelection>,
@@ -4698,6 +4715,19 @@ impl ApplicationHandler<AppEvent> for App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.pointer = Some((position.x as f32, position.y as f32));
+                if let (Some(document_id), Some(window)) = (self.tab_drag_id, &self.window) {
+                    let size = window.inner_size();
+                    if let Some(target) = tab_index_at(
+                        position.x as f32,
+                        position.y as f32,
+                        size.width as f32,
+                        size.height as f32,
+                        self.tab_order.len(),
+                    ) && move_tab_order(&mut self.tab_order, document_id, target)
+                    {
+                        window.request_redraw();
+                    }
+                }
                 let toolbar_hover = self.window.as_ref().is_some_and(|window| {
                     toolbar_action_at(
                         position.x as f32,
@@ -4775,6 +4805,7 @@ impl ApplicationHandler<AppEvent> for App {
             }
             WindowEvent::CursorLeft { .. } => {
                 self.pointer = None;
+                self.tab_drag_id = None;
                 self.selecting = false;
                 self.text_cursor_hover = false;
                 self.hover_destination = None;
@@ -4786,6 +4817,7 @@ impl ApplicationHandler<AppEvent> for App {
             }
             WindowEvent::Focused(false) => {
                 self.selecting = false;
+                self.tab_drag_id = None;
                 self.modifiers = ModifiersState::empty();
             }
             WindowEvent::Focused(true) => {
@@ -4949,6 +4981,7 @@ impl ApplicationHandler<AppEvent> for App {
                         ) && let Some(document_id) = self.tab_order.get(index).copied()
                         {
                             self.activate_document_tab(document_id);
+                            self.tab_drag_id = Some(document_id);
                             self.selecting = false;
                             return;
                         }
@@ -5014,7 +5047,10 @@ impl ApplicationHandler<AppEvent> for App {
                         w.request_redraw();
                     }
                 }
-                ElementState::Released => self.selecting = false,
+                ElementState::Released => {
+                    self.selecting = false;
+                    self.tab_drag_id = None;
+                }
             },
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,
@@ -10342,6 +10378,7 @@ fn main() {
         log,
         palette: NIGHT,
         pointer: None,
+        tab_drag_id: None,
         selecting: false,
         selection: None,
         modifiers: ModifiersState::empty(),
@@ -10438,6 +10475,17 @@ mod pruebas {
         assert_eq!(tab_index_at(590.0, 580.0, 600.0, 600.0, 2), None);
         assert_eq!(tab_close_index_at(190.0, 580.0, 600.0, 600.0, 3), Some(0));
         assert_eq!(tab_close_index_at(170.0, 580.0, 600.0, 600.0, 3), None);
+    }
+
+    #[test]
+    fn arrastrar_una_pestana_reordena_solo_la_sesion() {
+        let mut order = vec![11, 22, 33];
+        assert!(move_tab_order(&mut order, 11, 2));
+        assert_eq!(order, vec![22, 33, 11]);
+        assert!(move_tab_order(&mut order, 33, 0));
+        assert_eq!(order, vec![33, 22, 11]);
+        assert!(!move_tab_order(&mut order, 99, 0));
+        assert!(!move_tab_order(&mut order, 33, 0));
     }
 
     #[test]

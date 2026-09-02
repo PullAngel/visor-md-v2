@@ -129,7 +129,9 @@ sintaxis frecuente y no crea formatos exclusivos por defecto.
   carpeta, notas, búsqueda local, índice, backlinks y actualización de índice.
   Está disponible tanto en lectura como en edición y cada destino sigue pasando
   por VFS. Un panel/rail persistente y plegable continúa pendiente.
-- Pestañas reordenables y arrastrables antes de crear otra ventana.
+- **Añadido:** las pestañas se reordenan al arrastrarlas dentro de la franja
+  inferior. El gesto solo cambia el orden de sesión; no mueve archivos, no
+  guarda y no altera la protección de cierre.
 - Separación horizontal/vertical y ventanas nuevas son un programa aparte:
   necesitan definir propiedad de documentos, cierre protegido, recuperación,
   foco, DPI y comportamiento entre monitores. No se implementarán como un
