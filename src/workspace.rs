@@ -573,10 +573,12 @@ mod tests {
         let index = index_workspace(&vfs, WorkspaceLimits::default());
 
         assert_eq!(index.notes.len(), 4);
-        assert!(index
-            .notes
-            .iter()
-            .all(|note| !note.relative_path.starts_with(".obsidian")));
+        assert!(
+            index
+                .notes
+                .iter()
+                .all(|note| !note.relative_path.starts_with(".obsidian"))
+        );
         assert!(matches!(
             index.resolve_wikilink("seguridad"),
             WikiResolution::Ambiguous
