@@ -562,6 +562,39 @@ mod tests {
         root
     }
 
+    fn obsidian_fixture_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/obsidian-vault")
+    }
+
+    #[test]
+    fn la_boveda_fixture_conserva_aliases_callouts_y_bloquea_ambiguedades() {
+        let root = obsidian_fixture_root();
+        let vfs = WorkspaceRoot::open(&root).expect("la fixture está contenida");
+        let index = index_workspace(&vfs, WorkspaceLimits::default());
+
+        assert_eq!(index.notes.len(), 4);
+        assert!(index
+            .notes
+            .iter()
+            .all(|note| !note.relative_path.starts_with(".obsidian")));
+        assert!(matches!(
+            index.resolve_wikilink("seguridad"),
+            WikiResolution::Ambiguous
+        ));
+        assert!(matches!(
+            index.resolve_wikilink("archivo/seguridad"),
+            WikiResolution::Found(note) if note.title == "Seguridad archivada"
+        ));
+        let seguridad = index
+            .note_at_relative(Path::new("seguridad.md"))
+            .expect("la nota existe");
+        assert_eq!(index.backlinks_to(seguridad).len(), 1);
+        assert!(matches!(
+            index.resolve_wikilink("../secreto"),
+            WikiResolution::Missing
+        ));
+    }
+
     #[test]
     fn indexa_notas_y_extrae_titulos_enlaces_y_backlinks() {
         let root = fixture_root();
