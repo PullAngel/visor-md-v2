@@ -106,6 +106,8 @@ Se reserva para percepción y entornos difíciles de automatizar:
 - IME;
 - alto contraste;
 - varios DPI y monitores;
+- comparación fuente/vista lado a lado y apilada, sin interacción en la vista
+  previa ni texto que cruce su separador;
 - sensación de arranque y scroll.
 
 Cada sesión manual usa una lista corta, registra plataforma y deja resultado. No

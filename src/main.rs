@@ -104,7 +104,7 @@ const TOOLBAR_HEIGHT: f32 = 28.0;
 const TOOLBAR_ITEM_WIDTH: f32 = 60.0;
 const CONTEXT_TOOLBAR_Y: f32 = 44.0;
 const CONTEXT_TOOLBAR_HEIGHT: f32 = 28.0;
-/// Once herramientas caben aun en el mínimo de 640 px; los nombres completos
+/// Doce herramientas caben aun en el mínimo de 640 px; los nombres completos
 /// siguen disponibles con hover, foco F6 y la paleta.
 const CONTEXT_TOOLBAR_ITEM_WIDTH: f32 = 52.0;
 const WINDOW_CHROME_HEIGHT: f32 = 40.0;
@@ -133,7 +133,7 @@ const READING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 6] = [
     AppAction::SearchWorkspace,
     AppAction::Backlinks,
 ];
-const EDITING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 11] = [
+const EDITING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 12] = [
     AppAction::FormatBold,
     AppAction::FormatItalic,
     AppAction::InsertHeading,
@@ -145,6 +145,7 @@ const EDITING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 11] = [
     AppAction::InsertTable,
     AppAction::FormatHighlight,
     AppAction::ToggleSplit,
+    AppAction::ToggleSplitOrientation,
 ];
 const READING_TOOLBAR_ACTIONS: [AppAction; 13] = [
     AppAction::NewDocument,
@@ -685,6 +686,7 @@ enum AppAction {
     TogglePinTab,
     ToggleMode,
     ToggleSplit,
+    ToggleSplitOrientation,
     ToggleTheme,
     Cut,
     FormatBold,
@@ -716,7 +718,7 @@ enum AppAction {
     CommandPalette,
 }
 
-const APP_ACTIONS: [AppAction; 36] = [
+const APP_ACTIONS: [AppAction; 37] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -728,6 +730,7 @@ const APP_ACTIONS: [AppAction; 36] = [
     AppAction::CloseDocument,
     AppAction::TogglePinTab,
     AppAction::ToggleSplit,
+    AppAction::ToggleSplitOrientation,
     AppAction::Cut,
     AppAction::FormatBold,
     AppAction::FormatItalic,
@@ -766,6 +769,7 @@ impl AppAction {
             Self::TogglePinTab => "Fijar o soltar pestaña",
             Self::ToggleMode => "Alternar lectura y edición · F2",
             Self::ToggleSplit => "Comparar fuente y vista · F3",
+            Self::ToggleSplitOrientation => "Alternar disposición de comparación",
             Self::ToggleTheme => "Cambiar tema día o noche · T en lectura",
             Self::Cut => "Cortar · Ctrl+X",
             Self::FormatBold => "Aplicar negrita · Ctrl+B",
@@ -876,9 +880,7 @@ fn context_actions(mode: DocumentMode, table_available: bool) -> Vec<ContextActi
 }
 
 fn context_menu_row_height(window_height: f32, action_count: usize) -> f32 {
-    (window_height / action_count.max(1) as f32)
-        .min(CONTEXT_MENU_ROW_HEIGHT)
-        .max(28.0)
+    (window_height / action_count.max(1) as f32).clamp(28.0, CONTEXT_MENU_ROW_HEIGHT)
 }
 
 fn context_action_at(menu: &ContextMenu, pointer: (f32, f32)) -> Option<ContextAction> {
@@ -998,6 +1000,30 @@ enum DocumentMode {
     Reading,
     SourceEditing,
     Split,
+}
+
+/// La comparación conserva una sola fuente y cambia únicamente la disposición
+/// de sus dos vistas. No representa una segunda pestaña ni un segundo buffer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SplitOrientation {
+    SideBySide,
+    Stacked,
+}
+
+impl SplitOrientation {
+    fn toggled(self) -> Self {
+        match self {
+            Self::SideBySide => Self::Stacked,
+            Self::Stacked => Self::SideBySide,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::SideBySide => "lado a lado",
+            Self::Stacked => "apilada",
+        }
+    }
 }
 
 impl DocumentMode {
@@ -2437,6 +2463,15 @@ fn draw_toolbar_icon(
             path.move_to(center_x, top + 3.0);
             path.line_to(center_x, bottom - 3.0);
         }
+        AppAction::ToggleSplitOrientation => {
+            path.move_to(left + 3.0, top + 3.0);
+            path.line_to(right - 3.0, top + 3.0);
+            path.line_to(right - 3.0, bottom - 3.0);
+            path.line_to(left + 3.0, bottom - 3.0);
+            path.close();
+            path.move_to(left + 3.0, center_y);
+            path.line_to(right - 3.0, center_y);
+        }
         _ => {}
     }
 
@@ -3119,28 +3154,99 @@ fn layout_width_is_stale(laid_for_width: f32, viewport_width: f32) -> bool {
     (laid_for_width - viewport_width).abs() > 0.5
 }
 
-fn content_layout_width(viewport_width: f32, mode: DocumentMode) -> f32 {
-    if mode == DocumentMode::Split {
-        split_pane_widths(viewport_width).0
-    } else {
-        viewport_width.max(1.0)
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct PaneGeometry {
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+}
+
+impl PaneGeometry {
+    fn contains(self, x: f32, y: f32) -> bool {
+        (self.x..self.x + self.width).contains(&x) && (self.y..self.y + self.height).contains(&y)
     }
 }
 
-fn preview_layout_width(viewport_width: f32, mode: DocumentMode) -> f32 {
-    if mode == DocumentMode::Split {
-        split_pane_widths(viewport_width).1
-    } else {
-        viewport_width.max(1.0)
-    }
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct SplitGeometry {
+    source: PaneGeometry,
+    preview: PaneGeometry,
 }
 
-fn split_pane_widths(viewport_width: f32) -> (f32, f32) {
+fn split_geometry(
+    viewport_width: f32,
+    viewport_height: f32,
+    orientation: SplitOrientation,
+) -> SplitGeometry {
     let viewport_width = viewport_width.max(2.0);
-    let source = (viewport_width * SPLIT_SOURCE_FRACTION)
-        .round()
-        .clamp(1.0, viewport_width - 1.0);
-    (source, viewport_width - source)
+    let viewport_height = viewport_height.max(2.0);
+    match orientation {
+        SplitOrientation::SideBySide => {
+            let source_width = (viewport_width * SPLIT_SOURCE_FRACTION)
+                .round()
+                .clamp(1.0, viewport_width - 1.0);
+            SplitGeometry {
+                source: PaneGeometry {
+                    x: 0.0,
+                    y: 0.0,
+                    width: source_width,
+                    height: viewport_height,
+                },
+                preview: PaneGeometry {
+                    x: source_width,
+                    y: 0.0,
+                    width: viewport_width - source_width,
+                    height: viewport_height,
+                },
+            }
+        }
+        SplitOrientation::Stacked => {
+            let source_height = (viewport_height * SPLIT_SOURCE_FRACTION)
+                .round()
+                .clamp(1.0, viewport_height - 1.0);
+            SplitGeometry {
+                source: PaneGeometry {
+                    x: 0.0,
+                    y: 0.0,
+                    width: viewport_width,
+                    height: source_height,
+                },
+                preview: PaneGeometry {
+                    x: 0.0,
+                    y: source_height,
+                    width: viewport_width,
+                    height: viewport_height - source_height,
+                },
+            }
+        }
+    }
+}
+
+fn document_pane_geometry(
+    viewport_width: f32,
+    viewport_height: f32,
+    mode: DocumentMode,
+    orientation: SplitOrientation,
+) -> SplitGeometry {
+    if mode == DocumentMode::Split {
+        split_geometry(viewport_width, viewport_height, orientation)
+    } else {
+        let source = PaneGeometry {
+            x: 0.0,
+            y: 0.0,
+            width: viewport_width.max(1.0),
+            height: viewport_height.max(1.0),
+        };
+        SplitGeometry {
+            source,
+            preview: source,
+        }
+    }
+}
+
+fn pane_screen_y(document_y: f32, scroll: f32, pane: PaneGeometry) -> f32 {
+    DOCUMENT_VIEWPORT_TOP + pane.y + document_y - scroll
 }
 
 fn selection_scroll_delta(pointer_y: f32, viewport_height: f32) -> f32 {
@@ -3843,6 +3949,7 @@ struct DocumentState {
     source_baseline_bytes: Option<Vec<u8>>,
     source_editor: SourceEditor,
     mode: DocumentMode,
+    split_orientation: SplitOrientation,
     /// Último modelo Markdown correspondiente a la revisión aceptada. En
     /// edición se conserva separado de la representación inerte de la fuente
     /// para que la vista dividida nunca se convierta en autoridad de guardado.
@@ -3880,6 +3987,7 @@ impl DocumentState {
             source_baseline_bytes: None,
             source_editor: SourceEditor::new(),
             mode: DocumentMode::SourceEditing,
+            split_orientation: SplitOrientation::SideBySide,
             rendered_blocks: Vec::new(),
             metrics: DocumentMetrics::default(),
             blocks: Vec::new(),
@@ -5135,13 +5243,18 @@ impl ApplicationHandler<AppEvent> for App {
                     }
                 }
                 if self.document.mode == DocumentMode::Split
-                    && self
-                        .window
-                        .as_ref()
-                        .is_some_and(|window| x >= window.inner_size().width as f32 / 2.0)
+                    && self.window.as_ref().is_some_and(|window| {
+                        let size = window.inner_size();
+                        let panes = split_geometry(
+                            size.width as f32,
+                            document_viewport_height(size.height as f32),
+                            self.document.split_orientation,
+                        );
+                        panes.preview.contains(x, y - DOCUMENT_VIEWPORT_TOP)
+                    })
                 {
                     self.set_notice(
-                        "la vista derecha es de lectura; edita la fuente a la izquierda",
+                        "la vista previa es de lectura; edita la fuente en el otro panel",
                     );
                     return;
                 }
@@ -5780,6 +5893,24 @@ impl App {
                 DocumentMode::Split => self.refresh_reading_async("cerrando vista dividida"),
                 DocumentMode::Reading | DocumentMode::SourceEditing => self.enter_split_mode(),
             },
+            AppAction::ToggleSplitOrientation => {
+                if self.document.mode != DocumentMode::Split {
+                    self.document.split_orientation = self.document.split_orientation.toggled();
+                    self.enter_split_mode();
+                    return;
+                }
+                self.document.split_orientation = self.document.split_orientation.toggled();
+                self.invalidate_document_layout();
+                self.preview_laid_for_width = -1.0;
+                self.preview_live.clear();
+                self.set_notice(&format!(
+                    "comparación {}",
+                    self.document.split_orientation.label()
+                ));
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+            }
             AppAction::ToggleTheme => self.toggle_theme(),
             AppAction::Cut => self.cut_source_selection(),
             AppAction::FormatBold => self.apply_markdown_surround("**", "**", "texto"),
@@ -8404,13 +8535,17 @@ impl App {
     }
 
     fn cursor_at(&self, x: f32, y: f32) -> Option<BlockCursor> {
-        if self.document.mode == DocumentMode::Split
-            && self
-                .window
-                .as_ref()
-                .is_some_and(|window| x >= window.inner_size().width as f32 / 2.0)
-        {
-            return None;
+        if self.document.mode == DocumentMode::Split {
+            let window = self.window.as_ref()?;
+            let size = window.inner_size();
+            let panes = split_geometry(
+                size.width as f32,
+                document_viewport_height(size.height as f32),
+                self.document.split_orientation,
+            );
+            if !panes.source.contains(x, y - DOCUMENT_VIEWPORT_TOP) {
+                return None;
+            }
         }
         self.slots.iter().enumerate().find_map(|(block, slot)| {
             let top = document_screen_y(slot.y, self.scroll);
@@ -8432,6 +8567,18 @@ impl App {
     }
 
     fn task_at(&self, x: f32, y: f32) -> Option<usize> {
+        if self.document.mode == DocumentMode::Split {
+            let window = self.window.as_ref()?;
+            let size = window.inner_size();
+            let panes = split_geometry(
+                size.width as f32,
+                document_viewport_height(size.height as f32),
+                self.document.split_orientation,
+            );
+            if !panes.source.contains(x, y - DOCUMENT_VIEWPORT_TOP) {
+                return None;
+            }
+        }
         self.slots.iter().enumerate().find_map(|(index, slot)| {
             let is_task = matches!(
                 self.document.blocks[index].marker,
@@ -8446,6 +8593,17 @@ impl App {
 
     fn code_copy_at(&self, x: f32, y: f32) -> Option<usize> {
         let window = self.window.as_ref()?;
+        if self.document.mode == DocumentMode::Split {
+            let size = window.inner_size();
+            let panes = split_geometry(
+                size.width as f32,
+                document_viewport_height(size.height as f32),
+                self.document.split_orientation,
+            );
+            if !panes.source.contains(x, y - DOCUMENT_VIEWPORT_TOP) {
+                return None;
+            }
+        }
         let text_width = (window.inner_size().width as f32 - MARGIN * self.scale_factor * 2.0)
             .min(MAX_MEASURE * self.scale_factor);
         self.slots.iter().enumerate().find_map(|(index, slot)| {
@@ -8729,9 +8887,15 @@ impl App {
 
         let frame_start = Instant::now();
         let split = self.document.mode == DocumentMode::Split;
-        let layout_width = content_layout_width(size.width as f32, self.document.mode);
-        let preview_width = preview_layout_width(size.width as f32, self.document.mode);
-        let viewport_height = document_viewport_height(size.height as f32);
+        let panes = document_pane_geometry(
+            size.width as f32,
+            document_viewport_height(size.height as f32),
+            self.document.mode,
+            self.document.split_orientation,
+        );
+        let layout_width = panes.source.width;
+        let preview_width = panes.preview.width;
+        let viewport_height = panes.source.height;
 
         // Re-medir solo si cambio el ancho.
         if self.exact_after_edit || layout_width_is_stale(self.laid_for_width, layout_width) {
@@ -9549,13 +9713,30 @@ impl App {
         }
 
         if split {
-            let pane_x = layout_width;
+            let preview_pane = panes.preview;
             if let Some(rect) = Rect::from_xywh(
-                pane_x - 1.0,
-                DOCUMENT_VIEWPORT_TOP,
-                1.0,
-                document_viewport_height(h.get() as f32),
+                preview_pane.x,
+                DOCUMENT_VIEWPORT_TOP + preview_pane.y,
+                preview_pane.width,
+                preview_pane.height,
             ) {
+                pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+            }
+            let divider = match document.split_orientation {
+                SplitOrientation::SideBySide => Rect::from_xywh(
+                    preview_pane.x - 1.0,
+                    DOCUMENT_VIEWPORT_TOP,
+                    1.0,
+                    document_viewport_height(h.get() as f32),
+                ),
+                SplitOrientation::Stacked => Rect::from_xywh(
+                    0.0,
+                    DOCUMENT_VIEWPORT_TOP + preview_pane.y - 1.0,
+                    w.get() as f32,
+                    1.0,
+                ),
+            };
+            if let Some(rect) = divider {
                 pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
             }
             for index in preview_visible {
@@ -9563,10 +9744,10 @@ impl App {
                 let Some((cached_layout, marker)) = preview_live.get(&index) else {
                     continue;
                 };
-                let top = document_screen_y(slot.y, *scroll);
+                let top = pane_screen_y(slot.y, *scroll, preview_pane);
                 if let CachedBlockLayout::Table(cells) = cached_layout {
                     let columns = cells.len().max(1) as f32;
-                    let left = pane_x + slot.x - 6.0;
+                    let left = preview_pane.x + slot.x - 6.0;
                     let table_width = preview_ancho_texto + 12.0;
                     for (x, y, width, height) in [
                         (left, top - 1.0, table_width, 1.0),
@@ -9586,7 +9767,10 @@ impl App {
                     }
                     let column_width = preview_ancho_texto / columns;
                     for (column, layout) in cells.iter().enumerate() {
-                        let x = pane_x + slot.x + column as f32 * column_width + TABLE_CELL_PADDING;
+                        let x = preview_pane.x
+                            + slot.x
+                            + column as f32 * column_width
+                            + TABLE_CELL_PADDING;
                         let y = top + (slot.height - layout.height()).max(0.0) * 0.5;
                         for line in layout.lines() {
                             for entry in line.items() {
@@ -9603,7 +9787,7 @@ impl App {
                 let CachedBlockLayout::Text(layout) = cached_layout else {
                     continue;
                 };
-                let x = pane_x + slot.x;
+                let x = preview_pane.x + slot.x;
                 match slot.kind {
                     Kind::Code => {
                         if is_visible_code_group_start(
@@ -9617,8 +9801,8 @@ impl App {
                                 preview_slots.get(range.end.saturating_sub(1)),
                             )
                             && let Some(rect) = Rect::from_xywh(
-                                pane_x + first.x - 12.0,
-                                document_screen_y(first.y, *scroll) - 2.0,
+                                preview_pane.x + first.x - 12.0,
+                                pane_screen_y(first.y, *scroll, preview_pane) - 2.0,
                                 preview_ancho_texto + 24.0,
                                 last.y + last.height - first.y + 4.0,
                             )
@@ -10460,6 +10644,7 @@ fn main() {
             } else {
                 DocumentMode::SourceEditing
             },
+            split_orientation: SplitOrientation::SideBySide,
             rendered_blocks: Vec::new(),
             metrics: DocumentMetrics::default(),
             blocks: Vec::new(),
@@ -10795,22 +10980,41 @@ mod pruebas {
         labels.dedup();
 
         // Incluye operaciones de documento y ayudas editoriales cotidianas sin
-        // convertir la paleta en un menú de IDE. Superar 36 exige revisar la
+        // convertir la paleta en un menú de IDE. Superar 37 exige revisar la
         // jerarquía y no solo ampliar la lista por comodidad de implementación.
-        assert!(original_len <= 36, "el catálogo dejó de ser pequeño");
+        assert!(original_len <= 37, "el catálogo dejó de ser pequeño");
         assert_eq!(labels.len(), original_len);
     }
 
     #[test]
     fn la_vista_dividida_reserva_la_misma_medida_para_ambos_paneles() {
-        assert_eq!(content_layout_width(1200.0, DocumentMode::Split), 600.0);
-        assert_eq!(preview_layout_width(1200.0, DocumentMode::Split), 600.0);
-        assert_eq!(split_pane_widths(900.0), (450.0, 450.0));
-        assert_eq!(content_layout_width(1200.0, DocumentMode::Reading), 1200.0);
+        let side_by_side = split_geometry(1200.0, 800.0, SplitOrientation::SideBySide);
+        assert_eq!(side_by_side.source.width, 600.0);
+        assert_eq!(side_by_side.preview.width, 600.0);
+        assert_eq!(side_by_side.source.height, 800.0);
+        assert_eq!(side_by_side.preview.x, 600.0);
+
+        let stacked = split_geometry(1200.0, 800.0, SplitOrientation::Stacked);
+        assert_eq!(stacked.source.width, 1200.0);
+        assert_eq!(stacked.preview.width, 1200.0);
+        assert_eq!(stacked.source.height, 400.0);
+        assert_eq!(stacked.preview.y, 400.0);
+        assert!(stacked.source.contains(600.0, 200.0));
+        assert!(stacked.preview.contains(600.0, 600.0));
         assert_eq!(
-            content_layout_width(1200.0, DocumentMode::SourceEditing),
-            1200.0
+            SplitOrientation::SideBySide.toggled(),
+            SplitOrientation::Stacked
         );
+        assert_eq!(SplitOrientation::Stacked.label(), "apilada");
+
+        let reading = document_pane_geometry(
+            1200.0,
+            800.0,
+            DocumentMode::Reading,
+            SplitOrientation::Stacked,
+        );
+        assert_eq!(reading.source, reading.preview);
+        assert_eq!(reading.source.width, 1200.0);
         assert!(DocumentMode::Split.is_editable());
         assert!(!DocumentMode::Reading.is_editable());
     }
@@ -10985,6 +11189,11 @@ mod pruebas {
         assert!(label.chars().count() <= 18);
         assert!(label.is_char_boundary(label.len()));
         assert!(APP_ACTIONS.contains(&AppAction::TogglePinTab));
+        assert!(APP_ACTIONS.contains(&AppAction::ToggleSplitOrientation));
+        assert!(
+            contextual_toolbar_actions(DocumentMode::Split)
+                .contains(&AppAction::ToggleSplitOrientation)
+        );
         assert!(!context_actions(DocumentMode::Reading, false).contains(&ContextAction::Paste));
         assert!(context_actions(DocumentMode::Reading, false).contains(&ContextAction::CopyText));
     }

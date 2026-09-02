@@ -247,9 +247,11 @@ y segura.
 La vista dividida conserva dos derivados simultáneos: bloques inertes de fuente
 editables y el último modelo Markdown de la misma revisión. Ambos tienen caches
 de layout independientes y comparten desplazamiento, pero solo `TextBuffer` se
-guarda. El parsing se difiere brevemente durante escritura continua y cada
-resultado lleva documento y revisión, por lo que una respuesta vieja no puede
-reemplazar otra pestaña ni una edición más nueva.
+guarda. Puede disponerse lado a lado o apilada; esa elección cambia rectángulos
+de vista e hit testing, no duplica el documento, el historial ni la recuperación.
+El parsing se difiere brevemente durante escritura continua y cada resultado
+lleva documento y revisión, por lo que una respuesta vieja no puede reemplazar
+otra pestaña ni una edición más nueva.
 
 `DocumentState` concentra la identidad, fuente, metadatos de preservación,
 editor, modo, bloques renderizables y degradación de cada documento. La

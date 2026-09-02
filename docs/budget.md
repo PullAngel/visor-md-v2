@@ -31,11 +31,31 @@ compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
 | **Copia TSV y modo por documento** | **3.459.072 bytes, 3,299 MiB** |
 | **Plegado de secciones** | **3.464.704 bytes, 3,304 MiB** |
 | **UX editorial y navegación contextual** | **3.486.720 bytes, 3,325 MiB** |
+| **Comparación apilada de fuente y vista** | **3.497.984 bytes, 3,336 MiB** |
 
 Superar 8 MB exige medición, explicación y aprobación. El límite no se usa para
 recortar seguridad, estabilidad, accesibilidad, Unicode o funciones esenciales.
 Mermaid, correctores y otros componentes pesados no tienen permiso automático
 para ampliar el núcleo.
+
+### Comparación apilada de fuente y vista del 2 de septiembre de 2026
+
+Este checkpoint introduce una geometría única para las dos disposiciones de la
+comparación: lado a lado y apilada. La fuente sigue siendo el único buffer; la
+vista no adquiere un segundo historial, recuperación ni acceso a archivos. El
+incremento corresponde al código de geometría e interacción, sin dependencias,
+red, formatos nuevos ni permisos adicionales.
+
+| Medida | Resultado |
+| --- | --- |
+| Binario Windows | 3.497.984 bytes, 3,336 MiB |
+| SHA-256 | `99D5954A9C47C372239E2C8729E86E8E84D2B1362062A76156E0F576529BC7AC` |
+| Variación frente al checkpoint anterior | +11.264 bytes |
+| Margen frente al límite deseado | 4,664 MiB |
+
+Formato, Clippy estricto y 190 pruebas unitarias/regresiones quedaron verdes.
+Falta QA visual focalizado de ambas disposiciones, DPI y selección sostenida;
+esa evidencia no se sustituye con el build release.
 
 ### UX editorial y navegación contextual del 1 de septiembre de 2026
 
