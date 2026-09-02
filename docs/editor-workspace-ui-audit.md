@@ -27,9 +27,11 @@ estado y descubribilidad.
   binario release actual;
 - pruebas automáticas existentes de editor, rutas, índice, backlinks y paneles.
 
-No se usó una bóveda personal. Falta todavía una bóveda de fixture versionada,
-pequeña y anonimizada para validar visualmente los flujos completos de árbol,
-búsqueda, wikilinks, backlinks y límites de indexación.
+No se usó una bóveda personal. La fixture versionada
+[`../tests/fixtures/obsidian-vault/`](../tests/fixtures/obsidian-vault/) cubre
+aliases, callouts, destinos ambiguos, rutas hostiles y estructura profunda. Falta
+su recorrido visual de árbol, búsqueda, wikilinks, backlinks y límites de
+indexación en una ventana real.
 
 ## Lo que conviene conservar
 
@@ -63,7 +65,7 @@ de escribir Markdown con comodidad.
 | Búsqueda de carpeta | Busca título, ruta, encabezados y contenido indexado; su cabecera identifica la carpeta autorizada y cada resultado muestra título seguido de ruta relativa. | Falta un fragmento o encabezado que explique por qué coincidió una nota cuyo título no contiene la consulta. | Añadir un fragmento o encabezado coincidente, sin guardar contenido fuera del índice ya permitido. |
 | Árbol de notas | Es acotado, abre solo notas validadas por la VFS y permite plegar directorios. | La cabecera ahora identifica la carpeta concedida y el total indexado; aún falta una convención gráfica más clara para carpeta, nota y actualización. | Conservar la cabecera de workspace y añadir símbolos coherentes dentro del panel, no una barra lateral fija. |
 | Backlinks | Se derivan del índice y el destino vuelve a validarse al abrir. Un documento sin referencias abre un panel que lo explica y permite cerrarlo con Escape. | Los estados de documento fuera de raíz o no indexado continúan siendo avisos de seguridad, porque no describen una lista vacía sino una operación bloqueada. | Mantener la distinción y añadir detalle bajo demanda solo si aparece una necesidad real. |
-| Wikilinks | Soporta destino, alias y encabezado, con ambigüedad bloqueada. | Los diagnósticos seguros desaparecen pronto y no hay una vista de enlaces rotos o ambiguos. | Incorporar un diagnóstico contextual de solo lectura, limitado al documento actual, después de estabilizar la navegación base. |
+| Wikilinks | Soporta destino, alias y encabezado, con ambigüedad bloqueada; la fixture fija que una coincidencia corta ambigua no genera backlink. | Los diagnósticos seguros desaparecen pronto y no hay una vista de enlaces rotos o ambiguos. | Incorporar un diagnóstico contextual de solo lectura, limitado al documento actual, después de estabilizar la navegación base. |
 
 ## Defectos de interacción a corregir antes de ampliar funciones
 
@@ -126,8 +128,6 @@ bloqueados.
 
 ### 4. Diagnóstico y QA de bóveda
 
-- añadir fixture de bóveda anonimizada que incluya alias, encabezados, enlaces
-  rotos, ambigüedad, callouts, rutas hostiles y una estructura profunda;
 - ejecutar un recorrido manual visual de árbol, búsqueda, breadcrumbs/estado,
   wikilinks y backlinks;
 - documentar cualquier límite mostrado a la persona en `security.md` y
