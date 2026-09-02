@@ -1244,7 +1244,10 @@ fn wikilink_diagnostic_counts(blocks: &[Block], index: &WorkspaceIndex) -> (usiz
         if target.kind != InlineTargetKind::WikiLink {
             continue;
         }
-        let note = target.destination.split_once('#').map_or(target.destination.as_str(), |(note, _)| note);
+        let note = target
+            .destination
+            .split_once('#')
+            .map_or(target.destination.as_str(), |(note, _)| note);
         if note.trim().is_empty() {
             found += 1;
         } else {
@@ -1256,6 +1259,30 @@ fn wikilink_diagnostic_counts(blocks: &[Block], index: &WorkspaceIndex) -> (usiz
         }
     }
     (found, missing, ambiguous)
+}
+
+fn wikilink_diagnostics(blocks: &[Block], index: &WorkspaceIndex) -> Vec<String> {
+    blocks
+        .iter()
+        .flat_map(|block| &block.targets)
+        .filter(|target| target.kind == InlineTargetKind::WikiLink)
+        .map(|target| {
+            let note = target
+                .destination
+                .split_once('#')
+                .map_or(target.destination.as_str(), |(note, _)| note);
+            let state = if note.trim().is_empty() {
+                "encabezado local"
+            } else {
+                match index.resolve_wikilink(note) {
+                    WikiResolution::Found(_) => "resuelto",
+                    WikiResolution::Missing => "ausente",
+                    WikiResolution::Ambiguous => "ambiguo",
+                }
+            };
+            format!("{state} · [[{}]]", target.destination)
+        })
+        .collect()
 }
 
 /// El destino cambia la señal visual, pero no concede ninguna capacidad. El
@@ -4139,6 +4166,10 @@ struct App {
     /// se persisten ni se resuelven contra el disco hasta pulsar Enter.
     backlink_paths: Option<Vec<PathBuf>>,
     backlink_match: usize,
+    /// Diagnóstico efímero de wikilinks del documento abierto. No consulta
+    /// disco y se descarta al cerrar el panel o cambiar de documento.
+    link_diagnostics: Option<Vec<String>>,
+    link_diagnostic_match: usize,
     /// Índice efímero del documento abierto. Mantiene el número de bloque, no
     /// una ruta ni una copia de contenido, y se descarta al navegar.
     outline_headings: Option<Vec<(usize, String)>>,
@@ -5157,6 +5188,9 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::KeyboardInput { event, .. } if self.backlink_paths.is_some() => {
                 self.handle_backlink_key(&event);
             }
+            WindowEvent::KeyboardInput { event, .. } if self.link_diagnostics.is_some() => {
+                self.handle_link_diagnostics_key(&event);
+            }
             WindowEvent::KeyboardInput { event, .. } if self.outline_headings.is_some() => {
                 self.handle_outline_key(&event);
             }
@@ -5960,6 +5994,7 @@ impl App {
             || self.workspace_search_query.is_some()
             || self.workspace_paths.is_some()
             || self.backlink_paths.is_some()
+            || self.link_diagnostics.is_some()
             || self.outline_headings.is_some()
     }
 
@@ -5975,6 +6010,8 @@ impl App {
             paths.len()
         } else if let Some(paths) = &self.backlink_paths {
             paths.len()
+        } else if let Some(rows) = &self.link_diagnostics {
+            rows.len()
         } else if let Some(headings) = &self.outline_headings {
             headings.len()
         } else {
@@ -5999,6 +6036,7 @@ impl App {
         self.workspace_search_query = None;
         self.workspace_paths = None;
         self.backlink_paths = None;
+        self.link_diagnostics = None;
         self.outline_headings = None;
         self.command_palette = None;
         self.command_palette_query.clear();
@@ -6059,6 +6097,17 @@ impl App {
             if let Some(index) = panel_item_at(x, y, paths.len(), selected, geometry) {
                 self.backlink_match = index;
                 self.open_backlink_match();
+                return true;
+            }
+        } else if let Some(rows) = &self.link_diagnostics {
+            let selected = self.link_diagnostic_match;
+            let geometry = navigation_panel_geometry(
+                size.width as f32,
+                size.height as f32,
+                panel_window(rows.len(), selected, PANEL_CAPACITY).len(),
+            );
+            if let Some(index) = panel_item_at(x, y, rows.len(), selected, geometry) {
+                self.link_diagnostic_match = index;
                 return true;
             }
         } else if let Some(headings) = &self.outline_headings
@@ -7738,10 +7787,38 @@ impl App {
             self.set_notice("abre una carpeta de trabajo para revisar enlaces de bóveda");
             return;
         };
+        let rows = wikilink_diagnostics(&self.document.blocks, index);
         let (found, missing, ambiguous) = wikilink_diagnostic_counts(&self.document.blocks, index);
+        self.backlink_paths = None;
+        self.outline_headings = None;
+        self.link_diagnostic_match = 0;
+        self.link_diagnostics = Some(rows);
         self.set_notice(&format!(
-            "enlaces de bóveda: {found} resueltos, {missing} ausentes, {ambiguous} ambiguos"
+            "enlaces de bóveda: {found} resueltos, {missing} ausentes, {ambiguous} ambiguos · Escape cierra"
         ));
+    }
+
+    fn handle_link_diagnostics_key(&mut self, event: &KeyEvent) {
+        if event.state != ElementState::Pressed || event.repeat {
+            return;
+        }
+        let count = self.link_diagnostics.as_ref().map_or(0, Vec::len);
+        match event.physical_key {
+            PhysicalKey::Code(KeyCode::Escape) => {
+                self.link_diagnostics = None;
+                self.set_notice("diagnóstico de enlaces cerrado");
+            }
+            PhysicalKey::Code(KeyCode::ArrowDown) if count > 0 => {
+                self.link_diagnostic_match = (self.link_diagnostic_match + 1) % count;
+            }
+            PhysicalKey::Code(KeyCode::ArrowUp) if count > 0 => {
+                self.link_diagnostic_match = (self.link_diagnostic_match + count - 1) % count;
+            }
+            _ => return,
+        }
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
     }
 
     fn open_backlink_match(&mut self) {
@@ -8939,6 +9016,17 @@ impl App {
                     })
                     .collect(),
                 footer: panel_footer(paths.len(), range),
+            })
+        } else if let Some(rows) = self.link_diagnostics.as_ref() {
+            let selected = self.link_diagnostic_match % rows.len().max(1);
+            let range = panel_window(rows.len(), selected, PANEL_CAPACITY);
+            Some(NavigationPanelRows {
+                title: format!("Enlaces de bóveda · {}", rows.len()),
+                items: range
+                    .clone()
+                    .map(|index| (index == selected, abbreviated_label(&rows[index], 48)))
+                    .collect(),
+                footer: panel_footer(rows.len(), range),
             })
         } else if let Some(headings) = self.outline_headings.as_ref() {
             let selected = self.outline_match % headings.len().max(1);
@@ -10436,6 +10524,8 @@ fn main() {
         collapsed_workspace_dirs: HashSet::new(),
         backlink_paths: None,
         backlink_match: 0,
+        link_diagnostics: None,
+        link_diagnostic_match: 0,
         outline_headings: None,
         outline_match: 0,
         command_palette: None,
