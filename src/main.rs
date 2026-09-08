@@ -1615,19 +1615,64 @@ fn rendered_block_prefix(block: &Block) -> String {
 /// conserva el resto del Markdown portable y vuelve legible cada enlace local.
 fn platform_ready_markdown(markdown: &str) -> String {
     let mut prepared = String::with_capacity(markdown.len());
-    let mut fenced_code = false;
+    let mut fenced_code = None;
     for line in markdown.split_inclusive('\n') {
-        let trimmed = line.trim_start();
-        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
-            fenced_code = !fenced_code;
+        if let Some(opening) = fenced_code {
+            if markdown_fence_closes(line, opening) {
+                fenced_code = None;
+            }
             prepared.push_str(line);
-        } else if fenced_code {
+        } else if let Some(fence) = markdown_fence(line) {
+            fenced_code = Some(fence);
             prepared.push_str(line);
         } else {
             prepared.push_str(&platform_ready_inline(line));
         }
     }
     prepared
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct MarkdownFence {
+    marker: u8,
+    length: usize,
+}
+
+/// Reconoce cercas CommonMark con hasta tres espacios iniciales. La identidad
+/// de la cerca se conserva para que ``` y ~~~ no se cierren entre sí durante
+/// una copia local.
+fn markdown_fence(line: &str) -> Option<MarkdownFence> {
+    let bytes = line.as_bytes();
+    let indent = bytes.iter().take_while(|byte| **byte == b' ').count();
+    if indent > 3 {
+        return None;
+    }
+    let marker = *bytes.get(indent)?;
+    if marker != b'`' && marker != b'~' {
+        return None;
+    }
+    let length = bytes[indent..]
+        .iter()
+        .take_while(|byte| **byte == marker)
+        .count();
+    (length >= 3).then_some(MarkdownFence { marker, length })
+}
+
+fn markdown_fence_closes(line: &str, opening: MarkdownFence) -> bool {
+    let Some(fence) = markdown_fence(line) else {
+        return false;
+    };
+    if fence.marker != opening.marker || fence.length < opening.length {
+        return false;
+    }
+    let indent = line
+        .as_bytes()
+        .iter()
+        .take_while(|byte| **byte == b' ')
+        .count();
+    line.as_bytes()[indent + fence.length..]
+        .iter()
+        .all(|byte| matches!(*byte, b' ' | b'\t' | b'\r' | b'\n'))
 }
 
 /// Convierte wikilinks fuera de código. Los tramos entre delimitadores de
@@ -12676,6 +12721,12 @@ con dos lineas
         assert_eq!(
             platform_ready_markdown("Usar `[[literal]]` y [[nota]].\n```md\n[[ejemplo]]\n```"),
             "Usar `[[literal]]` y nota.\n```md\n[[ejemplo]]\n```"
+        );
+        assert_eq!(
+            platform_ready_markdown(
+                "````md\n~~~ no cierra esta cerca\n``` tampoco\n[[literal]]\n````\n[[nota]]"
+            ),
+            "````md\n~~~ no cierra esta cerca\n``` tampoco\n[[literal]]\n````\nnota"
         );
     }
 
