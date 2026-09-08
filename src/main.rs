@@ -3312,6 +3312,59 @@ fn table_adjacent_visible_offset(block: &Block, offset: usize, forward: bool) ->
     }
 }
 
+/// Ubica la celda que contiene el caret y conserva su desplazamiento local. Si
+/// el caret llega desde una selección antigua sobre un separador sintético, se
+/// usa la celda anterior: nunca se inventa una posición que no pueda dibujarse.
+fn table_cell_at_visible_offset(block: &Block, offset: usize) -> Option<(usize, usize)> {
+    (0..block.table_cells.len()).find_map(|column| {
+        let range = table_cell_flat_range(block, column)?;
+        if range.contains(&offset) || offset == range.end {
+            Some((column, offset.saturating_sub(range.start).min(range.len())))
+        } else {
+            None
+        }
+    })
+}
+
+fn previous_char_boundary(text: &str, offset: usize) -> usize {
+    let mut boundary = offset.min(text.len());
+    while boundary > 0 && !text.is_char_boundary(boundary) {
+        boundary -= 1;
+    }
+    boundary
+}
+
+/// Sube o baja una fila de la misma tabla manteniendo columna y posición
+/// Unicode dentro de la celda. Al llegar al borde, no abandona la tabla de
+/// forma inesperada: eso se mantiene como una acción explícita de navegación.
+fn table_vertical_visible_cursor(
+    blocks: &[Block],
+    cursor: BlockCursor,
+    down: bool,
+) -> Option<BlockCursor> {
+    let current = blocks.get(cursor.block)?;
+    if !matches!(current.kind, Kind::TableRow { .. }) {
+        return None;
+    }
+    let (column, local_offset) = table_cell_at_visible_offset(current, cursor.offset)?;
+    let target_index = if down {
+        cursor.block.checked_add(1)?
+    } else {
+        cursor.block.checked_sub(1)?
+    };
+    let target = blocks.get(target_index)?;
+    if !matches!(target.kind, Kind::TableRow { .. }) {
+        return None;
+    }
+    let target_range = table_cell_flat_range(target, column)?;
+    let target_cell = target.table_cells.get(column)?;
+    let local_offset = previous_char_boundary(&target_cell.text, local_offset);
+    Some(BlockCursor {
+        block: target_index,
+        offset: target_range.start + local_offset,
+    })
+}
+
 fn table_cell_advance(width: f32, scale: f32, columns: usize) -> f32 {
     let table_width = (width - MARGIN * scale * 2.0).min(MAX_MEASURE * scale);
     ((table_width / columns.max(1) as f32) - TABLE_CELL_PADDING * 2.0).max(1.0)
@@ -9228,6 +9281,29 @@ impl App {
             self.selection = Some(DocumentSelection::collapsed(boundary));
             return;
         }
+        if matches!(
+            self.live.get(&selection.focus.block),
+            Some((CachedBlockLayout::Table(_), _))
+        ) {
+            let focus = if !extend && selection.anchor != selection.focus {
+                if down {
+                    selection.anchor.max(selection.focus)
+                } else {
+                    selection.anchor.min(selection.focus)
+                }
+            } else {
+                selection.focus
+            };
+            let Some(next) = table_vertical_visible_cursor(&self.document.blocks, focus, down)
+            else {
+                return;
+            };
+            self.selection = Some(DocumentSelection {
+                anchor: if extend { selection.anchor } else { next },
+                focus: next,
+            });
+            return;
+        }
         let Some((CachedBlockLayout::Text(layout), _)) = self.live.get(&selection.focus.block)
         else {
             return;
@@ -13780,6 +13856,54 @@ Pagina 14 de 14"#;
         assert_eq!(
             table_adjacent_visible_offset(row, second.end, true),
             second.end
+        );
+    }
+
+    #[test]
+    fn las_flechas_verticales_de_tabla_conservan_columna_y_unicode() {
+        let blocks =
+            aplanar("| primera | segunda |\n| --- | --- |\n| áéí | destino |\n| x | último |");
+        let header = blocks
+            .iter()
+            .position(|block| matches!(block.kind, Kind::TableRow { header: true }))
+            .expect("encabezado de tabla");
+        let first_row = header + 1;
+        let second_row = first_row + 1;
+        let header_range = table_cell_flat_range(&blocks[header], 0).expect("celda de encabezado");
+        let source_range = table_cell_flat_range(&blocks[first_row], 0).expect("celda de origen");
+        let target_range = table_cell_flat_range(&blocks[second_row], 0).expect("celda de destino");
+        let cursor = BlockCursor {
+            block: first_row,
+            offset: source_range.start + "á".len(),
+        };
+
+        assert_eq!(
+            table_vertical_visible_cursor(&blocks, cursor, true),
+            Some(BlockCursor {
+                block: second_row,
+                offset: target_range.start + "x".len(),
+            })
+        );
+        assert_eq!(
+            table_vertical_visible_cursor(
+                &blocks,
+                BlockCursor {
+                    block: second_row,
+                    offset: target_range.start,
+                },
+                false,
+            ),
+            Some(BlockCursor {
+                block: first_row,
+                offset: source_range.start,
+            })
+        );
+        assert_eq!(
+            table_vertical_visible_cursor(&blocks, cursor, false),
+            Some(BlockCursor {
+                block: header,
+                offset: header_range.start + "pr".len(),
+            })
         );
     }
 
