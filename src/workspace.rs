@@ -562,6 +562,25 @@ mod tests {
         root
     }
 
+    fn synthetic_workspace_root(note_count: usize, body_bytes: usize) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("el reloj es válido")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("visor-md-workspace-scale-{nonce}"));
+        let body = "á".repeat(body_bytes / "á".len());
+        for index in 0..note_count {
+            let directory = root.join(format!("materia-{:02}", index % 8));
+            fs::create_dir_all(&directory).expect("se crea la carpeta sintética");
+            fs::write(
+                directory.join(format!("nota-{index:03}.md")),
+                format!("# Nota {index}\n\nconsulta única {index}\n\n{body}"),
+            )
+            .expect("se crea la nota sintética");
+        }
+        root
+    }
+
     fn obsidian_fixture_root() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/obsidian-vault")
     }
@@ -781,6 +800,31 @@ mod tests {
         );
         assert!(small_scan_limit.scan_truncated);
         assert!(small_scan_limit.notes.is_empty());
+    }
+
+    #[test]
+    fn el_indice_sintetico_acota_contenido_y_conserva_busqueda_de_rutas() {
+        let root = synthetic_workspace_root(64, 2_048);
+        let vfs = WorkspaceRoot::open(&root).expect("la raíz sintética es válida");
+        let index = index_workspace(
+            &vfs,
+            WorkspaceLimits {
+                max_files: 64,
+                max_indexed_content_bytes: 32 * 1024,
+                ..WorkspaceLimits::default()
+            },
+        );
+
+        assert_eq!(index.notes.len(), 64);
+        assert!(index.content_truncated);
+        assert!(index.indexed_content_bytes <= 32 * 1024);
+        assert_eq!(index.search("consulta única 63").len(), 1);
+        assert!(
+            index
+                .note_paths()
+                .iter()
+                .all(|path| vfs.resolve_existing(path).is_ok())
+        );
     }
 
     #[test]

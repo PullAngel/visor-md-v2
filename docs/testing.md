@@ -75,6 +75,11 @@ estructura incompleta. Es una red de regresión barata que comprueba ausencia de
 `panic` en cada suite normal. No se presenta como fuzzing ni sustituye una
 campaña de fuzzing con corpus, cobertura y duración registrados.
 
+El índice de workspace tiene además una fixture sintética de 64 notas en ocho
+carpetas. Verifica que búsqueda y rutas siguen funcionando cuando el contenido
+retenido llega a un presupuesto pequeño, sin convertir esa prueba unitaria en
+un benchmark de una bóveda real grande.
+
 ### Fuzzing
 
 Un fuzzer genera entradas inesperadas continuamente. Busca panic, bloqueos,
