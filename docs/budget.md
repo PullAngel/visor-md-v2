@@ -32,11 +32,30 @@ compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
 | **Plegado de secciones** | **3.464.704 bytes, 3,304 MiB** |
 | **UX editorial y navegación contextual** | **3.486.720 bytes, 3,325 MiB** |
 | **Comparación apilada de fuente y vista** | **3.497.984 bytes, 3,336 MiB** |
+| **Interacción de tablas y flujos portables** | **3.505.664 bytes, 3,343 MiB** |
 
 Superar 8 MB exige medición, explicación y aprobación. El límite no se usa para
 recortar seguridad, estabilidad, accesibilidad, Unicode o funciones esenciales.
 Mermaid, correctores y otros componentes pesados no tienen permiso automático
 para ampliar el núcleo.
+
+### Interacción de tablas y flujos portables del 8 de septiembre de 2026
+
+Este checkpoint incorpora selección y flechas horizontales dentro de tablas sin
+asignar geometría a separadores sintéticos, estados de estudio expresados como
+callouts compatibles y copia explícita preparada para Discord o correo. No
+añade dependencias, red, formatos persistentes ni capacidades de filesystem.
+
+| Medida | Resultado |
+| --- | --- |
+| Binario Windows | 3.505.664 bytes, 3,343 MiB |
+| SHA-256 | `3E51E5DD185360A2977FBD7C4D9DDB14087F0B8BF756F35928E7E3D02BCA6EEF` |
+| Variación frente al checkpoint anterior | +7.680 bytes |
+| Margen frente al límite deseado | 4,656 MiB |
+
+La suite completa ejecutó 196 pruebas y Clippy estricto quedó verde. El
+checkpoint confirma tamaño, no sustituye QA visual de selección de tablas,
+destinos de copiado, IME, DPI ni accesibilidad.
 
 ### Comparación apilada de fuente y vista del 2 de septiembre de 2026
 
