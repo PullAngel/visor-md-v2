@@ -1612,6 +1612,54 @@ fn rendered_block_prefix(block: &Block) -> String {
 /// conserva el resto del Markdown portable y vuelve legible cada enlace local.
 fn platform_ready_markdown(markdown: &str) -> String {
     let mut prepared = String::with_capacity(markdown.len());
+    let mut fenced_code = false;
+    for line in markdown.split_inclusive('\n') {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            fenced_code = !fenced_code;
+            prepared.push_str(line);
+        } else if fenced_code {
+            prepared.push_str(line);
+        } else {
+            prepared.push_str(&platform_ready_inline(line));
+        }
+    }
+    prepared
+}
+
+/// Convierte wikilinks fuera de código. Los tramos entre delimitadores de
+/// código permanecen literales para que una copia no altere ejemplos técnicos.
+fn platform_ready_inline(markdown: &str) -> String {
+    let mut prepared = String::with_capacity(markdown.len());
+    let mut cursor = 0;
+    let mut inline_code = false;
+    while let Some(relative_tick) = markdown[cursor..].find('`') {
+        let start = cursor + relative_tick;
+        let mut end = start + 1;
+        while markdown.as_bytes().get(end) == Some(&b'`') {
+            end += 1;
+        }
+        let segment = &markdown[cursor..start];
+        if inline_code {
+            prepared.push_str(segment);
+        } else {
+            prepared.push_str(&platform_ready_wikilinks(segment));
+        }
+        prepared.push_str(&markdown[start..end]);
+        inline_code = !inline_code;
+        cursor = end;
+    }
+    let remaining = &markdown[cursor..];
+    if inline_code {
+        prepared.push_str(remaining);
+    } else {
+        prepared.push_str(&platform_ready_wikilinks(remaining));
+    }
+    prepared
+}
+
+fn platform_ready_wikilinks(markdown: &str) -> String {
+    let mut prepared = String::with_capacity(markdown.len());
     let mut remaining = markdown;
     while let Some(open) = remaining.find("[[") {
         prepared.push_str(&remaining[..open]);
@@ -12526,6 +12574,10 @@ con dos lineas
         );
         assert_eq!(platform_ready_markdown("[[sin cerrar"), "[[sin cerrar");
         assert_eq!(platform_ready_markdown("[[]]"), "[[]]");
+        assert_eq!(
+            platform_ready_markdown("Usar `[[literal]]` y [[nota]].\n```md\n[[ejemplo]]\n```"),
+            "Usar `[[literal]]` y nota.\n```md\n[[ejemplo]]\n```"
+        );
     }
 
     #[test]
