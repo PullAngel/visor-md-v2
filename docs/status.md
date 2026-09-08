@@ -119,8 +119,9 @@ exacto del traspaso.
   fuente y entra al mismo historial reversible que el editor.
 - cada fila GFM se representa como celdas con layouts, estilos y alineación
   independientes; los bordes y el encabezado ya no dependen de dibujar una
-  línea aplanada con caracteres `|`. La selección de rangos dentro de una celda
-  sigue pendiente: se desactiva antes que devolver offsets falsos.
+  línea aplanada con caracteres `|`. El clic y arrastre dentro de una celda se
+  traducen a su rango visible y el resaltado omite los separadores sintéticos;
+  falta navegación completa de teclado y QA manual de tablas estrechas.
 - guardar compara la identidad y los bytes base antes del reemplazo atómico.
   Ante un conflicto externo, no sobrescribe: permite conservar la edición,
   elegir una copia o recargar solo después de escribir una recuperación local.

@@ -2713,7 +2713,7 @@ fn flatten<'a>(
                     let local_spans = cell_spans.clone();
                     let local_targets = cell_targets.clone();
                     if !text.is_empty() {
-                        text.push_str("  |  ");
+                        text.push_str(TABLE_CELL_SEPARATOR);
                     }
                     let offset = text.len();
                     text.push_str(&cell_text);
@@ -3129,6 +3129,43 @@ enum CachedBlockLayout {
 }
 
 const TABLE_CELL_PADDING: f32 = 8.0;
+const TABLE_CELL_SEPARATOR: &str = "  |  ";
+
+/// Rango del texto visible de una celda dentro de la fila aplanada. Los
+/// separadores solo sirven a copia y selección; nunca se dibujan como texto.
+fn table_cell_flat_range(block: &Block, column: usize) -> Option<std::ops::Range<usize>> {
+    let cell = block.table_cells.get(column)?;
+    let start = block
+        .table_cells
+        .iter()
+        .take(column)
+        .map(|previous| previous.text.len() + TABLE_CELL_SEPARATOR.len())
+        .sum();
+    Some(start..start + cell.text.len())
+}
+
+/// Traduce una selección visible de fila al rango local de una celda. Una
+/// selección colapsada conserva el caret solamente dentro de una celda real,
+/// nunca sobre el separador sintético de la fila.
+fn table_cell_selection_range(
+    selection: DocumentSelection,
+    block_index: usize,
+    block: &Block,
+    column: usize,
+) -> Option<std::ops::Range<usize>> {
+    let (selected_start, selected_end) = selection.range_for(block_index, block.text.len())?;
+    let cell = table_cell_flat_range(block, column)?;
+    if selected_start == selected_end {
+        if selection.focus.block != block_index || !cell.contains(&selection.focus.offset) {
+            return None;
+        }
+        let offset = selection.focus.offset - cell.start;
+        return Some(offset..offset);
+    }
+    let start = selected_start.max(cell.start);
+    let end = selected_end.min(cell.end);
+    (start < end).then_some((start - cell.start)..(end - cell.start))
+}
 
 fn table_cell_advance(width: f32, scale: f32, columns: usize) -> f32 {
     let table_width = (width - MARGIN * scale * 2.0).min(MAX_MEASURE * scale);
@@ -8691,27 +8728,44 @@ impl App {
     }
 
     fn cursor_at(&self, x: f32, y: f32) -> Option<BlockCursor> {
-        if self.document.mode == DocumentMode::Split {
-            let window = self.window.as_ref()?;
-            let size = window.inner_size();
-            let panes = split_geometry(
-                size.width as f32,
-                document_viewport_height(size.height as f32),
-                self.document.split_orientation,
-            );
-            if !panes.source.contains(x, y - DOCUMENT_VIEWPORT_TOP) {
-                return None;
-            }
+        let window = self.window.as_ref()?;
+        let size = window.inner_size();
+        let panes = document_pane_geometry(
+            size.width as f32,
+            document_viewport_height(size.height as f32),
+            self.document.mode,
+            self.document.split_orientation,
+        );
+        if self.document.mode == DocumentMode::Split
+            && !panes.source.contains(x, y - DOCUMENT_VIEWPORT_TOP)
+        {
+            return None;
         }
+        let table_width = (panes.source.width - MARGIN * self.scale_factor * 2.0)
+            .min(MAX_MEASURE * self.scale_factor);
         self.slots.iter().enumerate().find_map(|(block, slot)| {
             let top = document_screen_y(slot.y, self.scroll);
             if y < top || y > top + slot.height {
                 return None;
             }
-            let (CachedBlockLayout::Text(layout), _) = self.live.get(&block)? else {
-                // La selección por celda requiere mapear rangos de fuente y
-                // geometría independientes. Hasta incorporarlo, no mentimos
-                // devolviendo el offset del texto aplanado de una tabla.
+            let (cached, _) = self.live.get(&block)?;
+            if let CachedBlockLayout::Table(cells) = cached {
+                let columns = cells.len().max(1);
+                let cell_width = table_width / columns as f32;
+                let relative_x = x - slot.x;
+                if relative_x < 0.0 || relative_x >= table_width {
+                    return None;
+                }
+                let column = (relative_x / cell_width).floor() as usize;
+                let layout = cells.get(column)?;
+                let cell_x = slot.x + column as f32 * cell_width + TABLE_CELL_PADDING;
+                let cell_y = top + (slot.height - layout.height()).max(0.0) * 0.5;
+                let cursor = Cursor::from_point(layout, x - cell_x, y - cell_y);
+                let offset = table_cell_flat_range(&self.document.blocks[block], column)?.start
+                    + cursor.index();
+                return Some(BlockCursor { block, offset });
+            }
+            let CachedBlockLayout::Text(layout) = cached else {
                 return None;
             };
             let cursor = Cursor::from_point(layout, x - slot.x, y - top);
@@ -9658,6 +9712,41 @@ impl App {
                 for (column, layout) in cells.iter().enumerate() {
                     let x = slot.x + column as f32 * column_width + TABLE_CELL_PADDING;
                     let y = top + (slot.height - layout.height()).max(0.0) * 0.5;
+                    if let Some(range) = selection.and_then(|selection| {
+                        table_cell_selection_range(selection, i, &blocks[i], column)
+                    }) {
+                        let ac = palette.accent;
+                        let mut selection_paint = Paint::default();
+                        selection_paint.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 92));
+                        let geometry = if range.is_empty() {
+                            vec![(
+                                (Cursor::from_byte_index(
+                                    layout,
+                                    range.start,
+                                    Affinity::Downstream,
+                                )
+                                .geometry(layout, 1.25)),
+                                0,
+                            )]
+                        } else {
+                            Selection::new(
+                                Cursor::from_byte_index(layout, range.start, Affinity::Downstream),
+                                Cursor::from_byte_index(layout, range.end, Affinity::Downstream),
+                            )
+                            .geometry(layout)
+                        };
+                        for (rect, _) in geometry {
+                            let Some(rect) = Rect::from_xywh(
+                                x + rect.x0 as f32,
+                                y + rect.y0 as f32,
+                                rect.width() as f32,
+                                rect.height() as f32,
+                            ) else {
+                                continue;
+                            };
+                            pixmap.fill_rect(rect, &selection_paint, Transform::identity(), None);
+                        }
+                    }
                     for line in layout.lines() {
                         for entry in line.items() {
                             if let PositionedLayoutItem::GlyphRun(run) = entry {
@@ -13362,6 +13451,62 @@ Pagina 14 de 14"#;
         assert!(
             cells.iter().all(|layout| layout.width() < 360.0),
             "una celda no debe ocupar toda la fila"
+        );
+    }
+
+    #[test]
+    fn la_seleccion_de_tabla_traduce_cada_celda_sin_incluir_separadores() {
+        let blocks = aplanar("| Uno | Dos |\n| --- | --- |\n| tres | cuatro |");
+        let row_index = blocks
+            .iter()
+            .position(|block| {
+                matches!(block.kind, Kind::TableRow { header: false })
+                    && block
+                        .table_cells
+                        .first()
+                        .is_some_and(|cell| cell.text == "tres")
+            })
+            .expect("fila de tabla");
+        let row = &blocks[row_index];
+        let first = table_cell_flat_range(row, 0).expect("primera celda");
+        let second = table_cell_flat_range(row, 1).expect("segunda celda");
+        assert_eq!(&row.text[first.clone()], "tres");
+        assert_eq!(&row.text[second.clone()], "cuatro");
+
+        let selection = DocumentSelection {
+            anchor: BlockCursor {
+                block: row_index,
+                offset: 2,
+            },
+            focus: BlockCursor {
+                block: row_index,
+                offset: second.start + 2,
+            },
+        };
+        assert_eq!(
+            table_cell_selection_range(selection, row_index, row, 0),
+            Some(2..first.len())
+        );
+        assert_eq!(
+            table_cell_selection_range(selection, row_index, row, 1),
+            Some(0..2)
+        );
+
+        let caret = DocumentSelection::collapsed(BlockCursor {
+            block: row_index,
+            offset: second.start + 1,
+        });
+        assert_eq!(
+            table_cell_selection_range(caret, row_index, row, 1),
+            Some(1..1)
+        );
+        let separator = DocumentSelection::collapsed(BlockCursor {
+            block: row_index,
+            offset: first.end + 1,
+        });
+        assert_eq!(
+            table_cell_selection_range(separator, row_index, row, 0),
+            None
         );
     }
 

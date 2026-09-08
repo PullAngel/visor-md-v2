@@ -281,7 +281,8 @@ ampliar el producto.
 
 - documentos GitHub y Obsidian elegidos se leen sin pérdida importante;
 - imágenes pasan VFS y límites;
-- tablas se copian por celdas; la selección parcial de celdas queda pendiente;
+- tablas se copian por celdas y la selección parcial se traduce a sus rangos
+  visibles, sin seleccionar los separadores sintéticos; falta QA manual;
 - navegación por teclado completa;
 - documentos grandes mantienen presupuesto;
 - toda sintaxis soportada tiene corpus y UX de error.
