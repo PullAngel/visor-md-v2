@@ -704,6 +704,7 @@ enum AppAction {
     InsertWikiLink,
     InsertCallout,
     InsertStudyQuestion,
+    InsertStudyConceptList,
     InsertStudyUnderstood,
     InsertStudyDoubt,
     InsertStudyPending,
@@ -725,7 +726,7 @@ enum AppAction {
     CommandPalette,
 }
 
-const APP_ACTIONS: [AppAction; 42] = [
+const APP_ACTIONS: [AppAction; 43] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -752,6 +753,7 @@ const APP_ACTIONS: [AppAction; 42] = [
     AppAction::InsertWikiLink,
     AppAction::InsertCallout,
     AppAction::InsertStudyQuestion,
+    AppAction::InsertStudyConceptList,
     AppAction::InsertStudyUnderstood,
     AppAction::InsertStudyDoubt,
     AppAction::InsertStudyPending,
@@ -797,6 +799,7 @@ impl AppAction {
             Self::InsertWikiLink => "Insertar enlace de bóveda",
             Self::InsertCallout => "Insertar callout de nota",
             Self::InsertStudyQuestion => "Insertar pregunta de estudio",
+            Self::InsertStudyConceptList => "Insertar lista de conceptos",
             Self::InsertStudyUnderstood => "Marcar contenido como entendido",
             Self::InsertStudyDoubt => "Marcar contenido como dudoso",
             Self::InsertStudyPending => "Marcar contenido como pendiente",
@@ -2269,6 +2272,14 @@ impl StudyState {
         };
         format!("> [!{kind}] {title}{eol}> {body}")
     }
+}
+
+/// Una lista de conceptos se guarda como Markdown común para poder reutilizarla
+/// en Obsidian, Git o cualquier lector sin conocer estado privado de Visor MD.
+fn study_concept_list_template(eol: &str) -> String {
+    format!(
+        "## Conceptos clave{eol}{eol}- **Concepto:** definición breve y precisa{eol}- **Concepto:** relación o ejemplo"
+    )
 }
 
 fn remove_rendered_prefix(block: &mut Block, prefix: usize) {
@@ -6190,6 +6201,7 @@ impl App {
             AppAction::InsertWikiLink => self.apply_markdown_surround("[[", "]]", "nota"),
             AppAction::InsertCallout => self.insert_callout(),
             AppAction::InsertStudyQuestion => self.insert_study_question(),
+            AppAction::InsertStudyConceptList => self.insert_study_concept_list(),
             AppAction::InsertStudyUnderstood => self.insert_study_state(StudyState::Understood),
             AppAction::InsertStudyDoubt => self.insert_study_state(StudyState::Doubt),
             AppAction::InsertStudyPending => self.insert_study_state(StudyState::Pending),
@@ -6863,6 +6875,16 @@ impl App {
         }
         let eol = self.document_line_ending();
         let template = format!("> [!QUESTION]- Pregunta{eol}>{eol}> Escribí aquí la respuesta");
+        self.edit_source(|editor, source| editor.insert(source, &template));
+    }
+
+    fn insert_study_concept_list(&mut self) {
+        if !self.document.mode.is_editable() {
+            self.set_notice("activa edición para insertar una lista de conceptos");
+            return;
+        }
+        let eol = self.document_line_ending();
+        let template = study_concept_list_template(eol);
         self.edit_source(|editor, source| editor.insert(source, &template));
     }
 
@@ -11421,10 +11443,10 @@ mod pruebas {
         labels.dedup();
 
         // Incluye operaciones de documento y ayudas editoriales cotidianas sin
-        // convertir la paleta en un menú de IDE. Los estados portables y una
-        // copia de plataforma completan el kit mínimo; superar 42 exige revisar
-        // jerarquía.
-        assert!(original_len <= 42, "el catálogo dejó de ser pequeño");
+        // convertir la paleta en un menú de IDE. Los estados portables, una
+        // copia de plataforma y la lista de conceptos completan el kit mínimo;
+        // superar 43 exige revisar jerarquía.
+        assert!(original_len <= 43, "el catálogo dejó de ser pequeño");
         assert_eq!(labels.len(), original_len);
     }
 
@@ -11633,6 +11655,7 @@ mod pruebas {
         assert!(APP_ACTIONS.contains(&AppAction::TogglePinTab));
         assert!(APP_ACTIONS.contains(&AppAction::ToggleSplitOrientation));
         assert!(APP_ACTIONS.contains(&AppAction::InsertStudyQuestion));
+        assert!(APP_ACTIONS.contains(&AppAction::InsertStudyConceptList));
         assert!(APP_ACTIONS.contains(&AppAction::InsertStudyUnderstood));
         assert!(APP_ACTIONS.contains(&AppAction::InsertStudyDoubt));
         assert!(APP_ACTIONS.contains(&AppAction::InsertStudyPending));
@@ -13312,6 +13335,22 @@ mod pruebas_inline {
             assert!(matches!(first.kind, Kind::Callout));
             assert!(matches!(&first.marker, Some(Marker::Text(label)) if label == expected_label));
         }
+    }
+
+    #[test]
+    fn la_lista_de_conceptos_es_markdown_portable_y_conserva_el_eol() {
+        let template = study_concept_list_template("\r\n");
+        assert_eq!(
+            template,
+            "## Conceptos clave\r\n\r\n- **Concepto:** definición breve y precisa\r\n- **Concepto:** relación o ejemplo"
+        );
+        let blocks = aplanar(&template);
+        assert!(matches!(blocks[0].kind, Kind::Heading(2)));
+        assert!(
+            blocks
+                .iter()
+                .any(|block| block.text.contains("definición breve"))
+        );
     }
 
     #[test]

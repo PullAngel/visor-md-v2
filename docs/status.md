@@ -149,6 +149,10 @@ exacto del traspaso.
   el menú contextual o la paleta. La operación es explícita y local: conserva
   Markdown portable y sustituye wikilinks de Obsidian por su alias o destino
   legible, sin resolverlos, abrirlos ni modificar la fuente.
+- la paleta y el menú de edición pueden insertar una lista de conceptos como
+  encabezado y viñetas Markdown. La plantilla conserva el EOL del documento y
+  no introduce metadatos privados: se puede reutilizar tal cual en Obsidian,
+  Git u otro lector Markdown.
 - una pestaña puede fijarse desde la paleta o el menú contextual. La marca `•`
   es solo de sesión, no se escribe ni se guarda en el Markdown, y evita su
   cierre hasta liberarla explícitamente.

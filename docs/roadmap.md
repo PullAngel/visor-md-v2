@@ -51,7 +51,7 @@ contradicen esta fotografía.
 | Corrección visual | En curso | La composición Papel + Tinta, jerarquía de superficies, tipografía, barras primaria/contextual, iconos nativos, ayuda contextual y paneles fueron realineados con diseño; faltan pulido de estados y QA humano. |
 | Workspace | En curso | Carpeta explícita, VFS, índice acotado/cancelable con cancelación visible, árbol, búsqueda y detección externa limitada ya existen; faltan escala y QA con bóvedas grandes. |
 | Obsidian | En curso | Wikilinks, aliases, encabezados, callouts, backlinks y PNG local confirmado se resuelven dentro de la raíz autorizada; una bóveda fixture cubre alias, callouts, ambigüedad y rutas hostiles; falta ampliar corpus y realizar QA de compatibilidad. |
-| Estudio | En curso | Resaltado portable, preguntas plegables, estados mediante callouts y copia inicial para Discord/correo; faltan conceptos, resúmenes, fragmentación y comparación. |
+| Estudio | En curso | Resaltado portable, preguntas plegables, estados mediante callouts, lista de conceptos Markdown y copia inicial para Discord/correo; faltan extracción de conceptos, resúmenes, fragmentación y comparación. |
 | Exportación | Pendiente | PDF, DOCX y copias preparadas |
 | Distribución | Pendiente | Windows y Linux profesionales |
 
