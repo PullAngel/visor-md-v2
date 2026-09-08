@@ -145,6 +145,10 @@ exacto del traspaso.
   (`[!SUCCESS]`), duda (`[!WARNING]`) y pendiente (`[!TODO]`). Se renderizan como
   callouts nativos, pueden plegarse en lectura y permanecen como Markdown
   comprensible para Obsidian; no crean sidecars ni estado oculto.
+- una selección de lectura se puede copiar preparada para Discord o correo desde
+  el menú contextual o la paleta. La operación es explícita y local: conserva
+  Markdown portable y sustituye wikilinks de Obsidian por su alias o destino
+  legible, sin resolverlos, abrirlos ni modificar la fuente.
 - una pestaña puede fijarse desde la paleta o el menú contextual. La marca `•`
   es solo de sesión, no se escribe ni se guarda en el Markdown, y evita su
   cierre hasta liberarla explícitamente.

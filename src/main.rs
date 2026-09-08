@@ -665,6 +665,7 @@ enum ContextAction {
     StudyQuestion,
     CopyText,
     CopyMarkdown,
+    CopyPlatform,
     CopyTableTsv,
 }
 
@@ -706,6 +707,7 @@ enum AppAction {
     InsertStudyUnderstood,
     InsertStudyDoubt,
     InsertStudyPending,
+    CopyPlatform,
     ToggleSection,
     SearchDocument,
     CopyTableTsv,
@@ -723,7 +725,7 @@ enum AppAction {
     CommandPalette,
 }
 
-const APP_ACTIONS: [AppAction; 41] = [
+const APP_ACTIONS: [AppAction; 42] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -753,6 +755,7 @@ const APP_ACTIONS: [AppAction; 41] = [
     AppAction::InsertStudyUnderstood,
     AppAction::InsertStudyDoubt,
     AppAction::InsertStudyPending,
+    AppAction::CopyPlatform,
     AppAction::ToggleSection,
     AppAction::CopyTableTsv,
     AppAction::ChooseWorkspace,
@@ -797,6 +800,7 @@ impl AppAction {
             Self::InsertStudyUnderstood => "Marcar contenido como entendido",
             Self::InsertStudyDoubt => "Marcar contenido como dudoso",
             Self::InsertStudyPending => "Marcar contenido como pendiente",
+            Self::CopyPlatform => "Copiar para Discord o correo",
             Self::ToggleSection => "Plegar o desplegar sección enfocada",
             Self::SearchDocument => "Buscar en documento · Ctrl+F",
             Self::CopyTableTsv => "Copiar tabla seleccionada como TSV",
@@ -856,6 +860,7 @@ impl ContextAction {
             Self::StudyQuestion => "Pregunta de estudio",
             Self::CopyText => "Copiar texto",
             Self::CopyMarkdown => "Copiar Markdown original",
+            Self::CopyPlatform => "Copiar para Discord o correo",
             Self::CopyTableTsv => "Copiar tabla como TSV",
         }
     }
@@ -867,7 +872,11 @@ impl ContextAction {
 
 fn context_actions(mode: DocumentMode, table_available: bool) -> Vec<ContextAction> {
     let mut actions = match mode {
-        DocumentMode::Reading => vec![ContextAction::CopyText, ContextAction::CopyMarkdown],
+        DocumentMode::Reading => vec![
+            ContextAction::CopyText,
+            ContextAction::CopyMarkdown,
+            ContextAction::CopyPlatform,
+        ],
         DocumentMode::SourceEditing | DocumentMode::Split => vec![
             ContextAction::Paste,
             ContextAction::Cut,
@@ -1596,6 +1605,37 @@ fn rendered_block_prefix(block: &Block) -> String {
         None if matches!(block.kind, Kind::Quote) => "> ".repeat(block.quote_depth.max(1) as usize),
         None => String::new(),
     }
+}
+
+/// Prepara Markdown para plataformas que no entienden wikilinks de Obsidian.
+/// El resultado no se guarda ni se interpreta: es una copia explícita que
+/// conserva el resto del Markdown portable y vuelve legible cada enlace local.
+fn platform_ready_markdown(markdown: &str) -> String {
+    let mut prepared = String::with_capacity(markdown.len());
+    let mut remaining = markdown;
+    while let Some(open) = remaining.find("[[") {
+        prepared.push_str(&remaining[..open]);
+        let after_open = &remaining[open + 2..];
+        let Some(close) = after_open.find("]]") else {
+            prepared.push_str(&remaining[open..]);
+            return prepared;
+        };
+        let raw = &after_open[..close];
+        let (target, alias) = raw
+            .split_once('|')
+            .map_or((raw, None), |(target, alias)| (target, Some(alias)));
+        let readable = alias.unwrap_or(target).trim();
+        if readable.is_empty() {
+            prepared.push_str("[[");
+            prepared.push_str(raw);
+            prepared.push_str("]]");
+        } else {
+            prepared.push_str(readable);
+        }
+        remaining = &after_open[close + 2..];
+    }
+    prepared.push_str(remaining);
+    prepared
 }
 
 fn table_tsv_at(blocks: &[Block], block_index: usize) -> Option<String> {
@@ -5210,6 +5250,7 @@ impl ApplicationHandler<AppEvent> for App {
                                 ContextAction::CopyText | ContextAction::CopyMarkdown => {
                                     self.copy_selection(action.source_markdown());
                                 }
+                                ContextAction::CopyPlatform => self.copy_selection_for_platform(),
                                 ContextAction::CopyTableTsv => self.copy_current_table_tsv(),
                             }
                         }
@@ -6104,6 +6145,7 @@ impl App {
             AppAction::InsertStudyUnderstood => self.insert_study_state(StudyState::Understood),
             AppAction::InsertStudyDoubt => self.insert_study_state(StudyState::Doubt),
             AppAction::InsertStudyPending => self.insert_study_state(StudyState::Pending),
+            AppAction::CopyPlatform => self.copy_selection_for_platform(),
             AppAction::ToggleSection => self.toggle_focused_section(),
             AppAction::SearchDocument => self.open_document_search(),
             AppAction::CopyTableTsv => self.copy_current_table_tsv(),
@@ -7727,6 +7769,20 @@ impl App {
             "texto copiado"
         };
         self.copy_text_to_clipboard(text, kind);
+    }
+
+    fn copy_selection_for_platform(&mut self) {
+        let source = self.document.source.to_string();
+        let text = self.selection.and_then(|selection| {
+            selection
+                .source_blocks(&source, &self.document.blocks)
+                .map(|markdown| platform_ready_markdown(&markdown))
+        });
+        let Some(text) = text else {
+            self.set_notice("selecciona contenido antes de preparar una copia");
+            return;
+        };
+        self.copy_text_to_clipboard(text, "copia preparada para Discord o correo");
     }
 
     fn table_action_is_available_at(&self, x: f32, y: f32) -> bool {
@@ -11317,9 +11373,10 @@ mod pruebas {
         labels.dedup();
 
         // Incluye operaciones de documento y ayudas editoriales cotidianas sin
-        // convertir la paleta en un menú de IDE. Los tres estados portables de
-        // estudio completan el kit mínimo; superar 41 exige revisar jerarquía.
-        assert!(original_len <= 41, "el catálogo dejó de ser pequeño");
+        // convertir la paleta en un menú de IDE. Los estados portables y una
+        // copia de plataforma completan el kit mínimo; superar 42 exige revisar
+        // jerarquía.
+        assert!(original_len <= 42, "el catálogo dejó de ser pequeño");
         assert_eq!(labels.len(), original_len);
     }
 
@@ -11531,6 +11588,7 @@ mod pruebas {
         assert!(APP_ACTIONS.contains(&AppAction::InsertStudyUnderstood));
         assert!(APP_ACTIONS.contains(&AppAction::InsertStudyDoubt));
         assert!(APP_ACTIONS.contains(&AppAction::InsertStudyPending));
+        assert!(APP_ACTIONS.contains(&AppAction::CopyPlatform));
         assert!(
             contextual_toolbar_actions(DocumentMode::Split)
                 .contains(&AppAction::ToggleSplitOrientation)
@@ -11998,8 +12056,8 @@ mod pruebas {
             actions: context_actions(DocumentMode::SourceEditing, false),
             row_height: CONTEXT_MENU_ROW_HEIGHT,
         };
-        assert_eq!(reading_menu.actions.len(), 2);
-        assert_eq!(table_menu.actions.len(), 3);
+        assert_eq!(reading_menu.actions.len(), 3);
+        assert_eq!(table_menu.actions.len(), 4);
         assert_eq!(editing_menu.actions.len(), 17);
         assert!(!reading_menu.actions.contains(&ContextAction::Paste));
         assert!(!reading_menu.actions.contains(&ContextAction::Cut));
@@ -12024,6 +12082,10 @@ mod pruebas {
         assert_eq!(
             context_action_at(&reading_menu, (110.0, 250.0)),
             Some(ContextAction::CopyMarkdown)
+        );
+        assert_eq!(
+            context_action_at(&reading_menu, (110.0, 280.0)),
+            Some(ContextAction::CopyPlatform)
         );
         assert_eq!(
             context_action_at(&editing_menu, (110.0, 210.0)),
@@ -12452,6 +12514,18 @@ con dos lineas
             selection.source_blocks(source, &blocks).as_deref(),
             Some("**primero**\n\nsegundo")
         );
+    }
+
+    #[test]
+    fn la_copia_de_plataforma_vuelve_legibles_los_wikilinks_sin_tocar_lo_demas() {
+        let source = "# Apuntes\n\nVer [[redes#Modelo|la guía]] y [[seguridad]].\n\n**Importante**";
+        let prepared = platform_ready_markdown(source);
+        assert_eq!(
+            prepared,
+            "# Apuntes\n\nVer la guía y seguridad.\n\n**Importante**"
+        );
+        assert_eq!(platform_ready_markdown("[[sin cerrar"), "[[sin cerrar");
+        assert_eq!(platform_ready_markdown("[[]]"), "[[]]");
     }
 
     #[test]

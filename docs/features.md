@@ -147,7 +147,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | --- | --- | --- |
 | PDF fiel | Planificado | Tipografía, paginado y seguridad |
 | DOCX | Planificado con investigación | Compatibilidad y coste cerrados |
-| Copia para plataformas | Planificado | Discord y correo priorizados |
+| Copia para plataformas | Parcial | Desde lectura, el menú contextual y la paleta copian Markdown de bloques seleccionados y vuelven legibles los wikilinks de Obsidian para Discord o correo; faltan variantes de formato y QA con destinos reales. |
 | HTML autónomo | Futuro | Sin recursos remotos ni scripts |
 | Instalador Windows | Planificado | Firma, asociación y desinstalación |
 | Paquete Linux | Planificado | Integración de escritorio y licencias |
