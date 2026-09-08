@@ -3167,6 +3167,52 @@ fn table_cell_selection_range(
     (start < end).then_some((start - cell.start)..(end - cell.start))
 }
 
+/// Mueve el cursor entre caracteres visibles de una tabla. Los separadores de
+/// la representación plana no son contenido de la celda ni tienen geometría,
+/// por lo que las flechas los saltan en vez de dejar un caret invisible.
+fn table_adjacent_visible_offset(block: &Block, offset: usize, forward: bool) -> usize {
+    let cells = (0..block.table_cells.len())
+        .filter_map(|column| table_cell_flat_range(block, column))
+        .collect::<Vec<_>>();
+    if forward {
+        for (index, cell) in cells.iter().enumerate() {
+            if offset < cell.start {
+                return cell.start;
+            }
+            if (cell.start..cell.end).contains(&offset) {
+                let next = block.text[offset..]
+                    .chars()
+                    .next()
+                    .map_or(cell.end, |character| offset + character.len_utf8());
+                return next.min(cell.end);
+            }
+            if offset == cell.end {
+                return cells.get(index + 1).map_or(cell.end, |next| next.start);
+            }
+        }
+        cells.last().map_or(offset, |cell| cell.end)
+    } else {
+        for (index, cell) in cells.iter().enumerate().rev() {
+            if offset > cell.end {
+                return cell.end;
+            }
+            if (cell.start + 1..=cell.end).contains(&offset) {
+                return block.text[..offset]
+                    .char_indices()
+                    .next_back()
+                    .map_or(cell.start, |(index, _)| index.max(cell.start));
+            }
+            if offset == cell.start {
+                return index
+                    .checked_sub(1)
+                    .and_then(|previous| cells.get(previous))
+                    .map_or(cell.start, |previous| previous.end);
+            }
+        }
+        cells.first().map_or(offset, |cell| cell.start)
+    }
+}
+
 fn table_cell_advance(width: f32, scale: f32, columns: usize) -> f32 {
     let table_width = (width - MARGIN * scale * 2.0).min(MAX_MEASURE * scale);
     ((table_width / columns.max(1) as f32) - TABLE_CELL_PADDING * 2.0).max(1.0)
@@ -8965,8 +9011,38 @@ impl App {
             self.selection = Some(DocumentSelection::collapsed(boundary));
             return;
         }
-        let Some((CachedBlockLayout::Text(layout), _)) = self.live.get(&selection.focus.block)
-        else {
+        let Some((cached, _)) = self.live.get(&selection.focus.block) else {
+            return;
+        };
+        if matches!(cached, CachedBlockLayout::Table(_)) {
+            let block = &self.document.blocks[selection.focus.block];
+            let focus = if !extend && selection.anchor != selection.focus {
+                if forward {
+                    selection.anchor.max(selection.focus).offset
+                } else {
+                    selection.anchor.min(selection.focus).offset
+                }
+            } else {
+                selection.focus.offset
+            };
+            let next = table_adjacent_visible_offset(block, focus, forward);
+            self.selection = Some(DocumentSelection {
+                anchor: if extend {
+                    selection.anchor
+                } else {
+                    BlockCursor {
+                        block: selection.focus.block,
+                        offset: next,
+                    }
+                },
+                focus: BlockCursor {
+                    block: selection.focus.block,
+                    offset: next,
+                },
+            });
+            return;
+        }
+        let CachedBlockLayout::Text(layout) = cached else {
             return;
         };
         let current = Selection::new(
@@ -13507,6 +13583,38 @@ Pagina 14 de 14"#;
         assert_eq!(
             table_cell_selection_range(separator, row_index, row, 0),
             None
+        );
+    }
+
+    #[test]
+    fn las_flechas_de_tabla_saltan_separadores_y_conservan_unicode() {
+        let blocks = aplanar("| á | dos |\n| --- | --- |");
+        let row = blocks
+            .iter()
+            .find(|block| matches!(block.kind, Kind::TableRow { header: true }))
+            .expect("fila de tabla");
+        let first = table_cell_flat_range(row, 0).expect("primera celda");
+        let second = table_cell_flat_range(row, 1).expect("segunda celda");
+
+        assert_eq!(
+            table_adjacent_visible_offset(row, first.start, true),
+            first.end
+        );
+        assert_eq!(
+            table_adjacent_visible_offset(row, first.end, true),
+            second.start
+        );
+        assert_eq!(
+            table_adjacent_visible_offset(row, second.start, false),
+            first.end
+        );
+        assert_eq!(
+            table_adjacent_visible_offset(row, first.end, false),
+            first.start
+        );
+        assert_eq!(
+            table_adjacent_visible_offset(row, second.end, true),
+            second.end
         );
     }
 

@@ -121,7 +121,9 @@ exacto del traspaso.
   independientes; los bordes y el encabezado ya no dependen de dibujar una
   línea aplanada con caracteres `|`. El clic y arrastre dentro de una celda se
   traducen a su rango visible y el resaltado omite los separadores sintéticos;
-  falta navegación completa de teclado y QA manual de tablas estrechas.
+  Las flechas izquierda y derecha recorren caracteres reales de la fila y
+  saltan separadores sin geometría; faltan navegación vertical y QA manual de
+  tablas estrechas.
 - guardar compara la identidad y los bytes base antes del reemplazo atómico.
   Ante un conflicto externo, no sobrescribe: permite conservar la edición,
   elegir una copia o recargar solo después de escribir una recuperación local.

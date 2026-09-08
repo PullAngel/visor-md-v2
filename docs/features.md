@@ -29,7 +29,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Task list checkboxes | Parcial | Dibujo nativo, clic reversible y pruebas; falta QA de plataforma |
 | CommonMark aplicable | Parcial | Corpus versionado de sintaxis soportada y política HTML; falta suite oficial seleccionada |
 | GFM elegido | Parcial | Tablas, tachado, tareas, autolinks y notas al pie; falta corpus sistemático |
-| Copia de tablas | Parcial | Menú y paleta copian la tabla elegida como TSV desde celdas semánticas; la selección parcial visible ya respeta las celdas y omite separadores, pero falta QA manual y teclado completo. |
+| Copia de tablas | Parcial | Menú y paleta copian la tabla elegida como TSV desde celdas semánticas; la selección parcial visible y las flechas izquierda/derecha respetan celdas y omiten separadores, pero falta navegación vertical y QA manual. |
 | Índice de encabezados | Parcial | `Ctrl+Shift+L` muestra y enfoca encabezados; falta panel filtrable y accesible |
 | Plegado de secciones | Parcial | Triángulo nativo en encabezados, estado por pestaña y fuente intacta; falta QA visual y accesibilidad ampliada |
 | Búsqueda en documento | Parcial | `Ctrl+F` local, Unicode sin distinción de mayúsculas, recorrido por cada coincidencia, término activo resaltado y marcas globales por bloque; falta QA visual |
