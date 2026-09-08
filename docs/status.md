@@ -138,6 +138,10 @@ exacto del traspaso.
   baseline o la limpieza de recuperación. Aperturas y renders también llevan
   identidad y versión propias: pueden completar una pestaña inactiva sin
   congelar ni reemplazar la activa.
+- la paleta de comandos permite insertar estados de estudio portables: entendido
+  (`[!SUCCESS]`), duda (`[!WARNING]`) y pendiente (`[!TODO]`). Se renderizan como
+  callouts nativos, pueden plegarse en lectura y permanecen como Markdown
+  comprensible para Obsidian; no crean sidecars ni estado oculto.
 - una pestaña puede fijarse desde la paleta o el menú contextual. La marca `•`
   es solo de sesión, no se escribe ni se guarda en el Markdown, y evita su
   cierre hasta liberarla explícitamente.

@@ -122,9 +122,9 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | --- | --- | --- |
 | Resaltado `==texto==` | Parcial | Render nativo y fuente preservada; falta corpus de compatibilidad y QA visual |
 | Sidecar para datos no portables | Planificado | Formato versionado y recuperable |
-| Preguntas y respuestas | Planificado | Sintaxis portable elegida |
-| Ocultar respuesta | Planificado | Accesible y sin alterar fuente |
-| Estados de aprendizaje | Planificado | Convención visible y editable |
+| Preguntas y respuestas | Parcial | Inserta un callout `[!QUESTION]-` portable y permite plegar su respuesta solo en lectura; falta QA de accesibilidad y corpus de compatibilidad. |
+| Ocultar respuesta | Parcial | Las respuestas de preguntas se pliegan en lectura sin alterar la fuente; faltan variantes de práctica y QA accesible. |
+| Estados de aprendizaje | Parcial | La paleta inserta callouts portables `[!SUCCESS]`, `[!WARNING]` y `[!TODO]` para entendido, duda y pendiente; falta edición contextual de estados ya existentes y QA visual. |
 | Lista de conceptos | Planificado | Exportable |
 | Repaso espaciado simple | Planificado tardío | Estado separado y sincronización segura |
 | Pomodoro | Futuro | Solo si no distrae ni infla producto |

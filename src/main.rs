@@ -703,6 +703,9 @@ enum AppAction {
     InsertWikiLink,
     InsertCallout,
     InsertStudyQuestion,
+    InsertStudyUnderstood,
+    InsertStudyDoubt,
+    InsertStudyPending,
     ToggleSection,
     SearchDocument,
     CopyTableTsv,
@@ -720,7 +723,7 @@ enum AppAction {
     CommandPalette,
 }
 
-const APP_ACTIONS: [AppAction; 38] = [
+const APP_ACTIONS: [AppAction; 41] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -747,6 +750,9 @@ const APP_ACTIONS: [AppAction; 38] = [
     AppAction::InsertWikiLink,
     AppAction::InsertCallout,
     AppAction::InsertStudyQuestion,
+    AppAction::InsertStudyUnderstood,
+    AppAction::InsertStudyDoubt,
+    AppAction::InsertStudyPending,
     AppAction::ToggleSection,
     AppAction::CopyTableTsv,
     AppAction::ChooseWorkspace,
@@ -788,6 +794,9 @@ impl AppAction {
             Self::InsertWikiLink => "Insertar enlace de bóveda",
             Self::InsertCallout => "Insertar callout de nota",
             Self::InsertStudyQuestion => "Insertar pregunta de estudio",
+            Self::InsertStudyUnderstood => "Marcar contenido como entendido",
+            Self::InsertStudyDoubt => "Marcar contenido como dudoso",
+            Self::InsertStudyPending => "Marcar contenido como pendiente",
             Self::ToggleSection => "Plegar o desplegar sección enfocada",
             Self::SearchDocument => "Buscar en documento · Ctrl+F",
             Self::CopyTableTsv => "Copiar tabla seleccionada como TSV",
@@ -2105,6 +2114,8 @@ enum CalloutKind {
     Info,
     Tip,
     Question,
+    Todo,
+    Success,
     Warning,
     Danger,
 }
@@ -2116,6 +2127,8 @@ impl CalloutKind {
             Self::Info => "Info",
             Self::Tip => "Consejo",
             Self::Question => "Pregunta",
+            Self::Todo => "Pendiente",
+            Self::Success => "Entendido",
             Self::Warning => "Atención",
             Self::Danger => "Peligro",
         }
@@ -2133,6 +2146,8 @@ fn callout_prefix(text: &str) -> Option<(CalloutKind, usize)> {
         "info" => CalloutKind::Info,
         "tip" => CalloutKind::Tip,
         "question" => CalloutKind::Question,
+        "todo" => CalloutKind::Todo,
+        "success" | "check" | "done" => CalloutKind::Success,
         "warning" | "caution" => CalloutKind::Warning,
         "danger" | "important" => CalloutKind::Danger,
         _ => return None,
@@ -2145,6 +2160,27 @@ fn callout_prefix(text: &str) -> Option<(CalloutKind, usize)> {
         prefix += 1;
     }
     Some((kind, prefix))
+}
+
+/// Los estados de estudio se expresan con callouts que Obsidian ya entiende.
+/// No crean metadatos privados ni cambian el documento fuera de la inserción
+/// explícita de la persona.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StudyState {
+    Understood,
+    Doubt,
+    Pending,
+}
+
+impl StudyState {
+    fn callout_template(self, eol: &str) -> String {
+        let (kind, title, body) = match self {
+            Self::Understood => ("SUCCESS", "Entendido", "Anotá por qué quedó claro"),
+            Self::Doubt => ("WARNING", "Duda", "Anotá qué falta verificar"),
+            Self::Pending => ("TODO", "Pendiente", "Anotá el próximo paso"),
+        };
+        format!("> [!{kind}] {title}{eol}> {body}")
+    }
 }
 
 fn remove_rendered_prefix(block: &mut Block, prefix: usize) {
@@ -5982,6 +6018,9 @@ impl App {
             AppAction::InsertWikiLink => self.apply_markdown_surround("[[", "]]", "nota"),
             AppAction::InsertCallout => self.insert_callout(),
             AppAction::InsertStudyQuestion => self.insert_study_question(),
+            AppAction::InsertStudyUnderstood => self.insert_study_state(StudyState::Understood),
+            AppAction::InsertStudyDoubt => self.insert_study_state(StudyState::Doubt),
+            AppAction::InsertStudyPending => self.insert_study_state(StudyState::Pending),
             AppAction::ToggleSection => self.toggle_focused_section(),
             AppAction::SearchDocument => self.open_document_search(),
             AppAction::CopyTableTsv => self.copy_current_table_tsv(),
@@ -6651,6 +6690,16 @@ impl App {
         }
         let eol = self.document_line_ending();
         let template = format!("> [!QUESTION]- Pregunta{eol}>{eol}> Escribí aquí la respuesta");
+        self.edit_source(|editor, source| editor.insert(source, &template));
+    }
+
+    fn insert_study_state(&mut self, state: StudyState) {
+        if !self.document.mode.is_editable() {
+            self.set_notice("activa edición para marcar el estado de estudio");
+            return;
+        }
+        let eol = self.document_line_ending();
+        let template = state.callout_template(eol);
         self.edit_source(|editor, source| editor.insert(source, &template));
     }
 
@@ -11103,9 +11152,9 @@ mod pruebas {
         labels.dedup();
 
         // Incluye operaciones de documento y ayudas editoriales cotidianas sin
-        // convertir la paleta en un menú de IDE. Superar 38 exige revisar la
-        // jerarquía y no solo ampliar la lista por comodidad de implementación.
-        assert!(original_len <= 38, "el catálogo dejó de ser pequeño");
+        // convertir la paleta en un menú de IDE. Los tres estados portables de
+        // estudio completan el kit mínimo; superar 41 exige revisar jerarquía.
+        assert!(original_len <= 41, "el catálogo dejó de ser pequeño");
         assert_eq!(labels.len(), original_len);
     }
 
@@ -11314,6 +11363,9 @@ mod pruebas {
         assert!(APP_ACTIONS.contains(&AppAction::TogglePinTab));
         assert!(APP_ACTIONS.contains(&AppAction::ToggleSplitOrientation));
         assert!(APP_ACTIONS.contains(&AppAction::InsertStudyQuestion));
+        assert!(APP_ACTIONS.contains(&AppAction::InsertStudyUnderstood));
+        assert!(APP_ACTIONS.contains(&AppAction::InsertStudyDoubt));
+        assert!(APP_ACTIONS.contains(&AppAction::InsertStudyPending));
         assert!(
             contextual_toolbar_actions(DocumentMode::Split)
                 .contains(&AppAction::ToggleSplitOrientation)
@@ -11783,7 +11835,7 @@ mod pruebas {
         };
         assert_eq!(reading_menu.actions.len(), 2);
         assert_eq!(table_menu.actions.len(), 3);
-        assert_eq!(editing_menu.actions.len(), 16);
+        assert_eq!(editing_menu.actions.len(), 17);
         assert!(!reading_menu.actions.contains(&ContextAction::Paste));
         assert!(!reading_menu.actions.contains(&ContextAction::Cut));
         assert!(!reading_menu.actions.contains(&ContextAction::CopyTableTsv));
@@ -11796,6 +11848,7 @@ mod pruebas {
         assert!(editing_menu.actions.contains(&ContextAction::Highlight));
         assert!(editing_menu.actions.contains(&ContextAction::WikiLink));
         assert!(editing_menu.actions.contains(&ContextAction::Callout));
+        assert!(editing_menu.actions.contains(&ContextAction::StudyQuestion));
         let editing_height = context_menu_row_height(480.0, editing_menu.actions.len());
         assert!(editing_height * editing_menu.actions.len() as f32 <= 480.0);
         assert!(editing_height >= 28.0);
@@ -12943,6 +12996,31 @@ mod pruebas_inline {
             source,
             "> [!QUESTION]- ¿Capital de Argentina?\n>\n> Buenos Aires."
         );
+    }
+
+    #[test]
+    fn los_estados_de_estudio_son_callouts_portables_y_reconocibles() {
+        let eol = "\r\n";
+        let cases = [
+            (
+                StudyState::Understood,
+                "> [!SUCCESS] Entendido",
+                "Entendido",
+            ),
+            (StudyState::Doubt, "> [!WARNING] Duda", "Atención"),
+            (StudyState::Pending, "> [!TODO] Pendiente", "Pendiente"),
+        ];
+
+        for (state, expected_source, expected_label) in cases {
+            let source = state.callout_template(eol);
+            assert!(source.starts_with(expected_source));
+            assert!(source.contains("\r\n"), "debe preservar el EOL solicitado");
+
+            let blocks = aplanar(&source);
+            let first = blocks.first().expect("el callout debe crear un bloque");
+            assert!(matches!(first.kind, Kind::Callout));
+            assert!(matches!(&first.marker, Some(Marker::Text(label)) if label == expected_label));
+        }
     }
 
     #[test]
