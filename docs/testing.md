@@ -108,6 +108,7 @@ Se reserva para percepción y entornos difíciles de automatizar:
 - varios DPI y monitores;
 - comparación fuente/vista lado a lado y apilada, sin interacción en la vista
   previa ni texto que cruce su separador;
+- plegado y despliegue de preguntas de estudio sin modificar su fuente;
 - sensación de arranque y scroll.
 
 Cada sesión manual usa una lista corta, registra plataforma y deja resultado. No

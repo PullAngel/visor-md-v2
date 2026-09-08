@@ -98,7 +98,8 @@ Visor MD aprovecha el propio documento antes de crear sistemas paralelos.
 Funciones buscadas:
 
 - resaltado portable;
-- preguntas y respuestas;
+- preguntas y respuestas mediante callouts portables de Obsidian, plegables en
+  lectura sin modificar la fuente;
 - contenido ocultable para practicar memoria;
 - estados entendido, dudoso o pendiente;
 - resúmenes;

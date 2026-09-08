@@ -662,6 +662,7 @@ enum ContextAction {
     Highlight,
     WikiLink,
     Callout,
+    StudyQuestion,
     CopyText,
     CopyMarkdown,
     CopyTableTsv,
@@ -701,6 +702,7 @@ enum AppAction {
     FormatHighlight,
     InsertWikiLink,
     InsertCallout,
+    InsertStudyQuestion,
     ToggleSection,
     SearchDocument,
     CopyTableTsv,
@@ -718,7 +720,7 @@ enum AppAction {
     CommandPalette,
 }
 
-const APP_ACTIONS: [AppAction; 37] = [
+const APP_ACTIONS: [AppAction; 38] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -744,6 +746,7 @@ const APP_ACTIONS: [AppAction; 37] = [
     AppAction::FormatHighlight,
     AppAction::InsertWikiLink,
     AppAction::InsertCallout,
+    AppAction::InsertStudyQuestion,
     AppAction::ToggleSection,
     AppAction::CopyTableTsv,
     AppAction::ChooseWorkspace,
@@ -784,6 +787,7 @@ impl AppAction {
             Self::FormatHighlight => "Resaltar texto",
             Self::InsertWikiLink => "Insertar enlace de bóveda",
             Self::InsertCallout => "Insertar callout de nota",
+            Self::InsertStudyQuestion => "Insertar pregunta de estudio",
             Self::ToggleSection => "Plegar o desplegar sección enfocada",
             Self::SearchDocument => "Buscar en documento · Ctrl+F",
             Self::CopyTableTsv => "Copiar tabla seleccionada como TSV",
@@ -840,6 +844,7 @@ impl ContextAction {
             Self::Highlight => "Resaltar texto",
             Self::WikiLink => "Enlace de bóveda",
             Self::Callout => "Callout de nota",
+            Self::StudyQuestion => "Pregunta de estudio",
             Self::CopyText => "Copiar texto",
             Self::CopyMarkdown => "Copiar Markdown original",
             Self::CopyTableTsv => "Copiar tabla como TSV",
@@ -869,6 +874,7 @@ fn context_actions(mode: DocumentMode, table_available: bool) -> Vec<ContextActi
             ContextAction::Highlight,
             ContextAction::WikiLink,
             ContextAction::Callout,
+            ContextAction::StudyQuestion,
             ContextAction::CopyText,
             ContextAction::CopyMarkdown,
         ],
@@ -2098,6 +2104,7 @@ enum CalloutKind {
     Note,
     Info,
     Tip,
+    Question,
     Warning,
     Danger,
 }
@@ -2108,6 +2115,7 @@ impl CalloutKind {
             Self::Note => "Nota",
             Self::Info => "Info",
             Self::Tip => "Consejo",
+            Self::Question => "Pregunta",
             Self::Warning => "Atención",
             Self::Danger => "Peligro",
         }
@@ -2124,6 +2132,7 @@ fn callout_prefix(text: &str) -> Option<(CalloutKind, usize)> {
         "note" => CalloutKind::Note,
         "info" => CalloutKind::Info,
         "tip" => CalloutKind::Tip,
+        "question" => CalloutKind::Question,
         "warning" | "caution" => CalloutKind::Warning,
         "danger" | "important" => CalloutKind::Danger,
         _ => return None,
@@ -3113,7 +3122,15 @@ fn visible_order_range(
 /// Determina qué bloques quedan cubiertos por encabezados plegados. La clave
 /// es el inicio del encabezado en la fuente: si una edición la invalida, el
 /// plegado desaparece de forma segura en vez de ocultar otra sección.
-fn folded_block_mask(blocks: &[Block], folded_headings: &HashSet<usize>) -> Vec<bool> {
+fn is_callout_start(block: &Block) -> bool {
+    matches!(block.kind, Kind::Callout) && matches!(block.marker, Some(Marker::Text(_)))
+}
+
+fn folded_block_mask(
+    blocks: &[Block],
+    folded_headings: &HashSet<usize>,
+    folded_callouts: &HashSet<usize>,
+) -> Vec<bool> {
     let mut hidden = vec![false; blocks.len()];
     let mut folded_level = None;
 
@@ -3130,6 +3147,21 @@ fn folded_block_mask(blocks: &[Block], folded_headings: &HashSet<usize>) -> Vec<
                 folded_level = Some(level);
             }
         } else if folded_level.is_some() {
+            hidden[index] = true;
+        }
+    }
+
+    let mut callout_is_folded = false;
+    for (index, block) in blocks.iter().enumerate() {
+        if !matches!(block.kind, Kind::Callout) {
+            callout_is_folded = false;
+            continue;
+        }
+        if is_callout_start(block) {
+            callout_is_folded = folded_callouts.contains(&block.source.start);
+            continue;
+        }
+        if callout_is_folded {
             hidden[index] = true;
         }
     }
@@ -3972,6 +4004,9 @@ struct DocumentState {
     /// Encabezados plegados solo en la representación. La fuente, el historial
     /// y la selección permanecen intactos y el estado viaja con su pestaña.
     folded_headings: HashSet<usize>,
+    /// Callouts plegados solo para lectura. Una pregunta puede ocultar su
+    /// respuesta sin alterar el Markdown que comparte con Obsidian.
+    folded_callouts: HashSet<usize>,
     last_recovery: Instant,
 }
 
@@ -3997,6 +4032,7 @@ impl DocumentState {
             pending_heading: None,
             pending_block: None,
             folded_headings: HashSet::new(),
+            folded_callouts: HashSet::new(),
             last_recovery: Instant::now(),
         }
     }
@@ -4074,6 +4110,15 @@ fn apply_view_outcome(document: &mut DocumentState, outcome: ParseOutcome) {
     document
         .folded_headings
         .retain(|start| heading_starts.contains(start));
+    let callout_starts = document
+        .rendered_blocks
+        .iter()
+        .filter(|block| is_callout_start(block))
+        .map(|block| block.source.start)
+        .collect::<HashSet<_>>();
+    document
+        .folded_callouts
+        .retain(|start| callout_starts.contains(start));
     document.safe_mode = outcome.degradation;
 }
 
@@ -5040,6 +5085,9 @@ impl ApplicationHandler<AppEvent> for App {
                                 ContextAction::Callout => {
                                     self.perform_action(AppAction::InsertCallout)
                                 }
+                                ContextAction::StudyQuestion => {
+                                    self.perform_action(AppAction::InsertStudyQuestion)
+                                }
                                 ContextAction::CopyText | ContextAction::CopyMarkdown => {
                                     self.copy_selection(action.source_markdown());
                                 }
@@ -5169,6 +5217,14 @@ impl ApplicationHandler<AppEvent> for App {
                         .and_then(|(x, y)| self.heading_disclosure_at(x, y))
                     {
                         self.toggle_section(block);
+                        self.selecting = false;
+                        return;
+                    }
+                    if let Some(block) = self
+                        .pointer
+                        .and_then(|(x, y)| self.callout_disclosure_at(x, y))
+                    {
+                        self.toggle_callout(block);
                         self.selecting = false;
                         return;
                     }
@@ -5925,6 +5981,7 @@ impl App {
             AppAction::FormatHighlight => self.apply_markdown_surround("==", "==", "texto"),
             AppAction::InsertWikiLink => self.apply_markdown_surround("[[", "]]", "nota"),
             AppAction::InsertCallout => self.insert_callout(),
+            AppAction::InsertStudyQuestion => self.insert_study_question(),
             AppAction::ToggleSection => self.toggle_focused_section(),
             AppAction::SearchDocument => self.open_document_search(),
             AppAction::CopyTableTsv => self.copy_current_table_tsv(),
@@ -6584,6 +6641,16 @@ impl App {
         }
         let eol = self.document_line_ending();
         let template = format!("> [!NOTE]{eol}> nota");
+        self.edit_source(|editor, source| editor.insert(source, &template));
+    }
+
+    fn insert_study_question(&mut self) {
+        if !self.document.mode.is_editable() {
+            self.set_notice("activa edición para insertar una pregunta de estudio");
+            return;
+        }
+        let eol = self.document_line_ending();
+        let template = format!("> [!QUESTION]- Pregunta{eol}>{eol}> Escribí aquí la respuesta");
         self.edit_source(|editor, source| editor.insert(source, &template));
     }
 
@@ -8431,6 +8498,21 @@ impl App {
         })
     }
 
+    fn callout_disclosure_at(&self, x: f32, y: f32) -> Option<usize> {
+        if self.document.mode != DocumentMode::Reading {
+            return None;
+        }
+        self.slots.iter().enumerate().find_map(|(index, slot)| {
+            let block = self.document.blocks.get(index)?;
+            if slot.height <= 0.0 || !is_callout_start(block) {
+                return None;
+            }
+            let top = document_screen_y(slot.y, self.scroll);
+            let left = slot.x - 24.0 * self.scale_factor;
+            ((top..=top + slot.height).contains(&y) && (left..slot.x).contains(&x)).then_some(index)
+        })
+    }
+
     fn toggle_focused_section(&mut self) {
         if self.document.mode != DocumentMode::Reading {
             self.set_notice("el plegado de secciones está disponible en lectura");
@@ -8491,6 +8573,31 @@ impl App {
             "sección plegada; la fuente permanece intacta"
         } else {
             "sección desplegada"
+        });
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    fn toggle_callout(&mut self, callout: usize) {
+        let Some(block) = self.document.blocks.get(callout) else {
+            return;
+        };
+        if !is_callout_start(block) {
+            return;
+        }
+        let source_start = block.source.start;
+        let folded = if self.document.folded_callouts.remove(&source_start) {
+            false
+        } else {
+            self.document.folded_callouts.insert(source_start);
+            true
+        };
+        self.invalidate_document_layout();
+        self.set_notice(if folded {
+            "respuesta plegada; el Markdown permanece intacto"
+        } else {
+            "respuesta desplegada"
         });
         if let Some(window) = &self.window {
             window.request_redraw();
@@ -8901,7 +9008,11 @@ impl App {
         if self.exact_after_edit || layout_width_is_stale(self.laid_for_width, layout_width) {
             let t = Instant::now();
             let hidden = if self.document.mode == DocumentMode::Reading {
-                folded_block_mask(&self.document.blocks, &self.document.folded_headings)
+                folded_block_mask(
+                    &self.document.blocks,
+                    &self.document.folded_headings,
+                    &self.document.folded_callouts,
+                )
             } else {
                 Vec::new()
             };
@@ -9522,6 +9633,17 @@ impl App {
                     top + (slot.height - size).max(0.0) * 0.5,
                     size,
                     document.folded_headings.contains(&blocks[i].source.start),
+                    *palette,
+                );
+            }
+            if context_mode == DocumentMode::Reading && is_callout_start(&blocks[i]) {
+                let size = 11.0 * *scale_factor;
+                draw_disclosure(
+                    pixmap,
+                    slot.x - 21.0 * *scale_factor,
+                    top + (slot.height - size).max(0.0) * 0.5,
+                    size,
+                    document.folded_callouts.contains(&blocks[i].source.start),
                     *palette,
                 );
             }
@@ -10654,6 +10776,7 @@ fn main() {
             pending_heading: None,
             pending_block: None,
             folded_headings: HashSet::new(),
+            folded_callouts: HashSet::new(),
             last_recovery: Instant::now(),
         },
         inactive_documents: Vec::new(),
@@ -10980,9 +11103,9 @@ mod pruebas {
         labels.dedup();
 
         // Incluye operaciones de documento y ayudas editoriales cotidianas sin
-        // convertir la paleta en un menú de IDE. Superar 37 exige revisar la
+        // convertir la paleta en un menú de IDE. Superar 38 exige revisar la
         // jerarquía y no solo ampliar la lista por comodidad de implementación.
-        assert!(original_len <= 37, "el catálogo dejó de ser pequeño");
+        assert!(original_len <= 38, "el catálogo dejó de ser pequeño");
         assert_eq!(labels.len(), original_len);
     }
 
@@ -11190,6 +11313,7 @@ mod pruebas {
         assert!(label.is_char_boundary(label.len()));
         assert!(APP_ACTIONS.contains(&AppAction::TogglePinTab));
         assert!(APP_ACTIONS.contains(&AppAction::ToggleSplitOrientation));
+        assert!(APP_ACTIONS.contains(&AppAction::InsertStudyQuestion));
         assert!(
             contextual_toolbar_actions(DocumentMode::Split)
                 .contains(&AppAction::ToggleSplitOrientation)
@@ -11568,7 +11692,7 @@ mod pruebas {
             .unwrap();
         let folded = HashSet::from([blocks[first].source.start]);
 
-        let hidden = folded_block_mask(&blocks, &folded);
+        let hidden = folded_block_mask(&blocks, &folded, &HashSet::new());
 
         assert!(!hidden[first]);
         assert!(hidden[first + 1..second].iter().all(|hidden| *hidden));
@@ -11582,7 +11706,7 @@ mod pruebas {
         let blocks = aplanar(markdown);
         let folded = HashSet::from([blocks[0].source.start]);
 
-        let hidden = folded_block_mask(&blocks, &folded);
+        let hidden = folded_block_mask(&blocks, &folded, &HashSet::new());
 
         assert_eq!(blocks.len(), hidden.len());
         let source = blocks[1].source;
@@ -12800,6 +12924,25 @@ mod pruebas_inline {
             Some(Marker::Text(ref label)) if label == "Atención"
         ));
         assert!(source.contains("[!WARNING]"));
+    }
+
+    #[test]
+    fn una_pregunta_portable_puede_plegar_solo_su_respuesta() {
+        let source = "> [!QUESTION]- ¿Capital de Argentina?\n>\n> Buenos Aires.";
+        let blocks = aplanar(source);
+        assert!(matches!(blocks[0].kind, Kind::Callout));
+        assert!(matches!(blocks[0].marker, Some(Marker::Text(ref label)) if label == "Pregunta"));
+        assert_eq!(blocks[0].text, "¿Capital de Argentina?");
+        assert_eq!(blocks[1].text, "Buenos Aires.");
+
+        let folded = HashSet::from([blocks[0].source.start]);
+        let hidden = folded_block_mask(&blocks, &HashSet::new(), &folded);
+        assert!(!hidden[0], "la pregunta debe seguir visible");
+        assert!(hidden[1], "la respuesta debe quedar ocultable");
+        assert_eq!(
+            source,
+            "> [!QUESTION]- ¿Capital de Argentina?\n>\n> Buenos Aires."
+        );
     }
 
     #[test]
