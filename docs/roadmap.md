@@ -122,8 +122,41 @@ diario o reducen un riesgo concreto de integridad, seguridad o estabilidad.
 La revisión manual del 1 de septiembre detalló un programa de corrección de
 interacción, chrome, kit de escritura y espacio de trabajo en
 [`ux-revision-2026-09-01.md`](ux-revision-2026-09-01.md). Ese documento ordena
-este frente; las ventanas múltiples y splits de documentos son un subprograma
-posterior, no un añadido improvisado.
+este frente. Las ventanas múltiples y splits de documentos siguen el
+subprograma explícito que aparece a continuación, no un añadido improvisado.
+
+### Subprograma: vistas de documentos, paneles y movimiento
+
+Este frente convierte las pestañas actuales en una superficie de trabajo sin
+duplicar documentos, buffers, historial, guardados ni recuperaciones. Cada
+panel solo referencia un documento que continúa teniendo una única propiedad
+lógica dentro de la sesión.
+
+1. **Modelo seguro de paneles.** Introducir un árbol binario de paneles con
+   hojas que referencian identificadores de documento y divisiones horizontal o
+   vertical. Probar sus invariantes: una división conserva los documentos,
+   evita IDs ausentes, mantiene proporciones acotadas y no crea una segunda
+   recuperación ni buffer.
+2. **Interacción y dibujo por panel.** Asignar foco, scroll, selección y
+   geometría a cada panel; permitir dividir la pestaña activa y elegir qué
+   documento muestra cada lado. Las pestañas siguen siendo la lista de
+   documentos, no una lista de copias de vistas.
+3. **Cierre, reordenación y restauración.** Cerrar o mover un documento debe
+   actualizar todos los paneles que lo referencian sin perder cambios. Una
+   división vacía se colapsa de manera predecible; recuperación, guardados y
+   conflictos conservan su identidad documental.
+4. **Ventanas nativas separadas.** Solo después de cerrar los puntos previos,
+   permitir sacar una vista a otra ventana. La ventana secundaria comparte la
+   sesión, no duplica autoridad de guardado; su cierre, DPI, foco y retorno a
+   la ventana principal tendrán pruebas propias.
+5. **Movimiento y reducción de movimiento.** Aplicar transiciones breves a
+   pestañas, toggles, paneles y divisiones sin mover el texto ni retrasar la
+   entrada. Respeta la preferencia de reducción de movimiento cuando la
+   plataforma la expone y conserva una ruta instantánea accesible.
+
+El primer bloque activo es el modelo seguro de paneles. Las animaciones se
+integran sobre geometría estable: no se añadirán efectos que oculten errores de
+foco, scroll o disposición.
 
 ## Sprint 0: viabilidad nativa
 
