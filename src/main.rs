@@ -120,15 +120,36 @@ const WINDOW_CONTROL_WIDTH: f32 = 46.0;
 const WINDOW_RESIZE_BORDER: f32 = 6.0;
 const MIN_WINDOW_WIDTH: f64 = 640.0;
 const MIN_WINDOW_HEIGHT: f64 = 480.0;
-const PRIMARY_TOOLBAR_ACTIONS: [AppAction; 7] = [
+const MODE_SWITCH_X: f32 = 380.0;
+const MODE_SWITCH_WIDTH: f32 = 108.0;
+const MODE_SWITCH_HEIGHT: f32 = 28.0;
+const PRIMARY_TOOLBAR_ACTIONS: [AppAction; 6] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
-    AppAction::ToggleMode,
     AppAction::SearchDocument,
     AppAction::WorkspaceHub,
     AppAction::CommandPalette,
 ];
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ModeTarget {
+    Reading,
+    Editing,
+    Compare,
+}
+
+fn mode_target_at(x: f32, y: f32) -> Option<ModeTarget> {
+    if !(MODE_SWITCH_X..MODE_SWITCH_X + MODE_SWITCH_WIDTH).contains(&x)
+        || !(TOOLBAR_Y..TOOLBAR_Y + MODE_SWITCH_HEIGHT).contains(&y)
+    {
+        return None;
+    }
+    match ((x - MODE_SWITCH_X) / (MODE_SWITCH_WIDTH / 3.0)) as usize {
+        0 => Some(ModeTarget::Reading),
+        1 => Some(ModeTarget::Editing),
+        _ => Some(ModeTarget::Compare),
+    }
+}
 const READING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 6] = [
     AppAction::DocumentOutline,
     AppAction::ToggleSection,
@@ -151,11 +172,10 @@ const EDITING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 12] = [
     AppAction::ToggleSplit,
     AppAction::ToggleSplitOrientation,
 ];
-const READING_TOOLBAR_ACTIONS: [AppAction; 13] = [
+const READING_TOOLBAR_ACTIONS: [AppAction; 12] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
-    AppAction::ToggleMode,
     AppAction::SearchDocument,
     AppAction::WorkspaceHub,
     AppAction::CommandPalette,
@@ -166,11 +186,10 @@ const READING_TOOLBAR_ACTIONS: [AppAction; 13] = [
     AppAction::SearchWorkspace,
     AppAction::Backlinks,
 ];
-const EDITING_TOOLBAR_ACTIONS: [AppAction; 16] = [
+const EDITING_TOOLBAR_ACTIONS: [AppAction; 15] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
-    AppAction::ToggleMode,
     AppAction::SearchDocument,
     AppAction::WorkspaceHub,
     AppAction::CommandPalette,
@@ -272,6 +291,7 @@ fn titlebar_drag_at(x: f32, y: f32, window_width: f32, mode: DocumentMode) -> bo
         && (0.0..WINDOW_CHROME_HEIGHT).contains(&y)
         && window_control_at(x, y, window_width).is_none()
         && toolbar_action_at(x, y, window_width, mode).is_none()
+        && mode_target_at(x, y).is_none()
 }
 
 fn tab_width(window_width: f32, tab_count: usize) -> f32 {
@@ -5642,6 +5662,7 @@ impl ApplicationHandler<AppEvent> for App {
                         self.document.mode,
                     )
                     .is_some()
+                        || mode_target_at(position.x as f32, position.y as f32).is_some()
                 });
                 if (self.context_menu.is_some() || toolbar_hover)
                     && let Some(w) = &self.window
@@ -5864,6 +5885,11 @@ impl ApplicationHandler<AppEvent> for App {
                     }
                     if let (Some((x, y)), Some(window)) = (self.pointer, &self.window) {
                         let size = window.inner_size();
+                        if let Some(target) = mode_target_at(x, y) {
+                            self.select_mode(target);
+                            self.selecting = false;
+                            return;
+                        }
                         if let Some(action) =
                             toolbar_action_at(x, y, size.width as f32, self.document.mode)
                         {
@@ -6629,6 +6655,21 @@ impl ApplicationHandler<AppEvent> for App {
 }
 
 impl App {
+    fn select_mode(&mut self, target: ModeTarget) {
+        match target {
+            ModeTarget::Reading if self.document.mode != DocumentMode::Reading => {
+                self.refresh_reading_async("vista de lectura")
+            }
+            ModeTarget::Editing if self.document.mode != DocumentMode::SourceEditing => {
+                self.enter_source_mode()
+            }
+            ModeTarget::Compare if self.document.mode != DocumentMode::Split => {
+                self.enter_split_mode()
+            }
+            _ => {}
+        }
+    }
+
     fn perform_action(&mut self, action: AppAction) {
         match action {
             AppAction::NewDocument => self.create_new_document(),
@@ -11161,6 +11202,55 @@ impl App {
                 icon_color,
             );
         }
+        if let Some(rect) = Rect::from_xywh(
+            MODE_SWITCH_X,
+            TOOLBAR_Y,
+            MODE_SWITCH_WIDTH,
+            MODE_SWITCH_HEIGHT,
+        ) {
+            pixmap.fill_rect(rect, &elevated_paint, Transform::identity(), None);
+        }
+        let accent = palette.accent;
+        let mut mode_active_paint = Paint::default();
+        mode_active_paint.set_color(Color::from_rgba8(accent.0, accent.1, accent.2, 36));
+        for separator in 1..3 {
+            if let Some(rect) = Rect::from_xywh(
+                MODE_SWITCH_X + separator as f32 * (MODE_SWITCH_WIDTH / 3.0),
+                TOOLBAR_Y + 5.0,
+                1.0,
+                MODE_SWITCH_HEIGHT - 10.0,
+            ) {
+                pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
+            }
+        }
+        for (index, (target, icon)) in [
+            (ModeTarget::Reading, AppAction::ToggleMode),
+            (ModeTarget::Editing, AppAction::FormatItalic),
+            (ModeTarget::Compare, AppAction::ToggleSplit),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let width = MODE_SWITCH_WIDTH / 3.0;
+            let x = MODE_SWITCH_X + index as f32 * width;
+            let active = matches!(
+                (target, context_mode),
+                (ModeTarget::Reading, DocumentMode::Reading)
+                    | (ModeTarget::Editing, DocumentMode::SourceEditing)
+                    | (ModeTarget::Compare, DocumentMode::Split)
+            );
+            if active && let Some(rect) = Rect::from_xywh(x, TOOLBAR_Y, width, MODE_SWITCH_HEIGHT) {
+                pixmap.fill_rect(rect, &mode_active_paint, Transform::identity(), None);
+            }
+            draw_toolbar_icon(
+                pixmap,
+                icon,
+                x + (width - 18.0) * 0.5,
+                TOOLBAR_Y + 5.0,
+                18.0,
+                if active { palette.accent } else { palette.dim },
+            );
+        }
 
         if let Some(rect) = Rect::from_xywh(0.0, CONTEXT_TOOLBAR_Y - 1.0, w.get() as f32, 1.0) {
             pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
@@ -12124,6 +12214,12 @@ mod pruebas {
             DocumentMode::SourceEditing
         ));
         assert!(!titlebar_drag_at(
+            390.0,
+            20.0,
+            640.0,
+            DocumentMode::SourceEditing
+        ));
+        assert!(!titlebar_drag_at(
             635.0,
             20.0,
             640.0,
@@ -12142,13 +12238,18 @@ mod pruebas {
             Some(AppAction::OpenDocument)
         );
         assert_eq!(
-            toolbar_action_at(330.0, 12.0, 900.0, DocumentMode::Reading),
+            toolbar_action_at(270.0, 12.0, 900.0, DocumentMode::Reading),
             Some(AppAction::WorkspaceHub)
         );
         assert_eq!(
-            toolbar_action_at(390.0, 12.0, 900.0, DocumentMode::Reading),
+            toolbar_action_at(330.0, 12.0, 900.0, DocumentMode::Reading),
             Some(AppAction::CommandPalette)
         );
+        assert_eq!(mode_target_at(390.0, 12.0), Some(ModeTarget::Reading));
+        assert_eq!(mode_target_at(425.0, 12.0), Some(ModeTarget::Editing));
+        assert_eq!(mode_target_at(470.0, 12.0), Some(ModeTarget::Compare));
+        assert_eq!(mode_target_at(379.0, 12.0), None);
+        assert_eq!(mode_target_at(488.0, 12.0), None);
         assert_eq!(
             toolbar_action_at(50.0, 50.0, 900.0, DocumentMode::Reading),
             Some(AppAction::DocumentOutline)

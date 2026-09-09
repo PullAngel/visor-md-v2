@@ -95,7 +95,10 @@ en reposo**. En la v1 todos lo llevan y compiten con el documento. Estados:
 | Inactivo | Icono al 25 % de opacidad, sin fondo |
 
 La barra superior contiene solo acciones del documento: Nuevo, Abrir, Guardar,
-Editar o Leer, Buscar, Espacio de trabajo y Más. Debajo vive una segunda franja contextual, que
+Buscar, Espacio de trabajo y Más. A continuación incorpora un selector segmentado
+de tres estados, claramente separado: Leer, Editar y Comparar. El selector muestra
+el estado actual con fondo del acento al 14 %, icono en acento y separadores sobrios;
+cada segmento es un destino directo, no un botón que obliga a recorrer modos. Debajo vive una segunda franja contextual, que
 evita mezclar archivo, formato y navegación: en edición muestra Negrita,
 Cursiva, H2, Lista, Tarea, Cita, Enlace, Código, Tabla, Resaltado y Comparar;
 en lectura muestra Índice, Plegar, Carpeta, Notas, Bóveda y Vínculos. Un separador sobrio distingue
@@ -105,9 +108,9 @@ a las funciones de trabajo diario y deja las variantes y operaciones poco
 frecuentes en `Más`.
 
 Ninguna de las dos franjas dibuja una hilera de botones sólidos en reposo: usa
-superficie solo al pasar el mouse y reserva el acento para la acción de modo
-cuando el documento está en edición o vista dividida. En lectura, `Editar` es
-una acción disponible, no un estado activo. Los iconos suaves se dibujan de
+superficie solo al pasar el mouse y reserva el acento para el selector de modo
+activo. En lectura, el segmento Leer informa el estado actual y Editar sigue
+siendo un destino disponible. Los iconos suaves se dibujan de
 forma nativa, sin fuente de pictogramas; la paleta y los atajos conservan el
 nombre completo de cada acción.
 
