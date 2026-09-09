@@ -40,6 +40,8 @@ exacto del traspaso.
 - virtualización inicial;
 - tema claro y oscuro;
 - detección del tema del sistema;
+- transición de 200 ms entre paletas, temporizada por el event loop y sin
+  animar posición, scroll ni fuente del documento;
 - fuentes embebidas;
 - perfiles release orientados a tamaño;
 - mediciones iniciales de apertura, scroll y memoria.
@@ -326,7 +328,7 @@ causa porque todavía no se controlan caché, carga y planificación del sistema
   informe ambos resultados, el workflow es configuración revisada, no evidencia
   de compatibilidad multiplataforma;
 
-- verificación visual de task lists, decoraciones, temas y cursiva;
+- verificación visual de task lists, decoraciones, transición de tema y cursiva;
 - QA manual focalizado de tablas con celdas largas, alineación y de la primera
   vuelta lectura-edición-lectura tras una edición grande;
 - selección de ejemplos de la suite oficial CommonMark y ampliación GFM sistemática;

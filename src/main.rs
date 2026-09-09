@@ -108,6 +108,10 @@ const CONTEXT_TOOLBAR_HEIGHT: f32 = 28.0;
 /// siguen disponibles con hover, foco F6 y la paleta.
 const CONTEXT_TOOLBAR_ITEM_WIDTH: f32 = 52.0;
 const WINDOW_CHROME_HEIGHT: f32 = 40.0;
+/// La transición no desplaza contenido ni mantiene un render continuo: el
+/// event loop despierta solo los cuadros necesarios durante este intervalo.
+const THEME_TRANSITION_DURATION: Duration = Duration::from_millis(200);
+const THEME_TRANSITION_FRAME: Duration = Duration::from_millis(16);
 /// Fuente y resultado tienen el mismo espacio en la comparación. La evidencia
 /// de QA mostró que privilegiar lectura comprimía demasiado la fuente y hacía
 /// que ambas columnas dejaran de corresponder visualmente.
@@ -4800,6 +4804,9 @@ struct App {
     /// Tema activo. Arranca siguiendo al sistema operativo (`Window::theme`);
     /// `T` lo alterna a mano. Ver docs/design.md.
     palette: Palette,
+    /// Transición breve entre dos paletas completas. No contiene datos del
+    /// documento ni altera su fuente, selección, scroll o modo de lectura.
+    theme_transition: Option<ThemeTransition>,
     /// Punto actual del cursor dentro de la ventana, en pixeles físicos.
     pointer: Option<(f32, f32)>,
     /// Texto que un IME todavía está componiendo. No forma parte de la fuente
@@ -4866,7 +4873,53 @@ struct App {
     fatal_error: bool,
 }
 
+#[derive(Clone, Copy)]
+struct ThemeTransition {
+    from: Palette,
+    to: Palette,
+    started: Instant,
+}
+
+impl ThemeTransition {
+    fn palette_at(self, now: Instant) -> Palette {
+        let elapsed = now.saturating_duration_since(self.started);
+        let progress = elapsed.as_secs_f32() / THEME_TRANSITION_DURATION.as_secs_f32();
+        self.from.interpolate(self.to, progress)
+    }
+
+    fn finished(self, now: Instant) -> bool {
+        now.saturating_duration_since(self.started) >= THEME_TRANSITION_DURATION
+    }
+
+    fn next_frame_at(self, now: Instant) -> Instant {
+        let elapsed = now.saturating_duration_since(self.started);
+        let elapsed_frames = elapsed.as_nanos() / THEME_TRANSITION_FRAME.as_nanos();
+        self.started + THEME_TRANSITION_FRAME.mul_f64((elapsed_frames + 1) as f64)
+    }
+}
+
 impl ApplicationHandler<AppEvent> for App {
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let Some(transition) = self.theme_transition else {
+            return;
+        };
+        let now = Instant::now();
+        if transition.finished(now) {
+            if let Some(window) = &self.window {
+                window.request_redraw();
+            }
+            return;
+        }
+        let next = transition.next_frame_at(now);
+        if now >= next {
+            if let Some(window) = &self.window {
+                window.request_redraw();
+            }
+        } else {
+            event_loop.set_control_flow(ControlFlow::WaitUntil(next));
+        }
+    }
+
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: AppEvent) {
         match event {
             AppEvent::ViewRequested {
@@ -5416,13 +5469,12 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
             WindowEvent::ThemeChanged(theme) => {
-                self.palette = if matches!(theme, Theme::Light) {
+                let target = if matches!(theme, Theme::Light) {
                     DAY
                 } else {
                     NIGHT
                 };
-                self.live.clear();
-                self.preview_live.clear();
+                self.begin_theme_transition(target);
                 if let Some(w) = &self.window {
                     w.request_redraw();
                 }
@@ -6523,16 +6575,58 @@ impl App {
     }
 
     fn toggle_theme(&mut self) {
-        self.palette = if self.palette.bg == NIGHT.bg {
-            DAY
-        } else {
-            NIGHT
-        };
-        self.live.clear();
-        self.preview_live.clear();
+        // Si se pulsa T a mitad de transición, alternar desde el destino que
+        // la persona pidió, no desde un color intermedio que no es un tema.
+        let current_target = self
+            .theme_transition
+            .map(|transition| transition.to)
+            .unwrap_or(self.palette);
+        let target = if current_target == NIGHT { DAY } else { NIGHT };
+        self.begin_theme_transition(target);
         self.set_notice("tema actualizado");
         if let Some(window) = &self.window {
             window.request_redraw();
+        }
+    }
+
+    fn begin_theme_transition(&mut self, target: Palette) {
+        let now = Instant::now();
+        let from = self
+            .theme_transition
+            .map(|transition| transition.palette_at(now))
+            .unwrap_or(self.palette);
+        if from == target {
+            self.theme_transition = None;
+            self.palette = target;
+            return;
+        }
+        self.palette = from;
+        self.theme_transition = Some(ThemeTransition {
+            from,
+            to: target,
+            started: now,
+        });
+        self.live.clear();
+        self.preview_live.clear();
+    }
+
+    /// Aplica un escalón de color solo al comenzar un cuadro. Como las
+    /// cachés de texto contienen el color de cada tramo, se invalidan los
+    /// bloques visibles, nunca el modelo Markdown ni la medición geométrica.
+    fn advance_theme_transition(&mut self) {
+        let Some(transition) = self.theme_transition else {
+            return;
+        };
+        let now = Instant::now();
+        let palette = transition.palette_at(now);
+        if palette != self.palette {
+            self.palette = palette;
+            self.live.clear();
+            self.preview_live.clear();
+        }
+        if transition.finished(now) {
+            self.palette = transition.to;
+            self.theme_transition = None;
         }
     }
 
@@ -9621,6 +9715,7 @@ impl App {
     }
 
     fn redraw(&mut self) -> Result<(), String> {
+        self.advance_theme_transition();
         let Some(window) = self.window.clone() else {
             return Ok(());
         };
@@ -11502,6 +11597,7 @@ fn main() {
         exact_after_edit: false,
         log,
         palette: NIGHT,
+        theme_transition: None,
         pointer: None,
         ime_preedit: None,
         tab_drag_id: None,
@@ -12116,6 +12212,28 @@ mod pruebas {
         assert_eq!(split_pane_extent(1.0, 0.5), 1.0);
         assert_eq!(split_pane_extent(10.0, -9.0), 3.0);
         assert_eq!(split_pane_extent(10.0, 9.0), 8.0);
+    }
+
+    #[test]
+    fn la_transicion_de_tema_es_acotada_y_alcanza_su_destino() {
+        let started = Instant::now();
+        let transition = ThemeTransition {
+            from: NIGHT,
+            to: DAY,
+            started,
+        };
+
+        assert_eq!(transition.palette_at(started), NIGHT);
+        assert!(!transition.finished(started));
+        assert!(transition.finished(started + THEME_TRANSITION_DURATION));
+        assert_eq!(
+            transition.palette_at(started + THEME_TRANSITION_DURATION),
+            DAY
+        );
+        assert!(
+            transition.next_frame_at(started) > started,
+            "un cuadro futuro evita redibujar en bucle"
+        );
     }
 
     #[test]

@@ -1,6 +1,6 @@
 /// Paleta Papel y tinta. El acento cambia entre temas porque el verde que
 /// conserva contraste sobre negro pierde fuerza sobre el fondo claro.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Palette {
     pub(crate) bg: (u8, u8, u8),
     /// Base del documento. Se separa del fondo de ventana sin usar sombras.
@@ -60,5 +60,55 @@ impl Palette {
             Role::Text => self.text,
             Role::Dim => self.dim,
         }
+    }
+
+    /// Interpolación corta para una transición visual. El modelo documental no
+    /// participa: solo se transforma la paleta de dibujo entre dos estados ya
+    /// válidos.
+    pub(crate) fn interpolate(self, target: Self, progress: f32) -> Self {
+        let progress = progress.clamp(0.0, 1.0);
+        let mix = |from: (u8, u8, u8), to: (u8, u8, u8)| {
+            (
+                (from.0 as f32 + (to.0 as f32 - from.0 as f32) * progress).round() as u8,
+                (from.1 as f32 + (to.1 as f32 - from.1 as f32) * progress).round() as u8,
+                (from.2 as f32 + (to.2 as f32 - from.2 as f32) * progress).round() as u8,
+            )
+        };
+        Self {
+            bg: mix(self.bg, target.bg),
+            surface: mix(self.surface, target.surface),
+            elevated: mix(self.elevated, target.elevated),
+            floating: mix(self.floating, target.floating),
+            border: mix(self.border, target.border),
+            text: mix(self.text, target.text),
+            dim: mix(self.dim, target.dim),
+            accent: mix(self.accent, target.accent),
+            external_link: mix(self.external_link, target.external_link),
+            mark: mix(self.mark, target.mark),
+            kbd: mix(self.kbd, target.kbd),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DAY, NIGHT};
+
+    #[test]
+    fn la_interpolacion_conserva_los_extremos_exactos() {
+        assert_eq!(NIGHT.interpolate(DAY, -1.0), NIGHT);
+        assert_eq!(NIGHT.interpolate(DAY, 0.0), NIGHT);
+        assert_eq!(NIGHT.interpolate(DAY, 1.0), DAY);
+        assert_eq!(NIGHT.interpolate(DAY, 2.0), DAY);
+    }
+
+    #[test]
+    fn la_interpolacion_mezcla_todos_los_roles_de_color() {
+        let middle = NIGHT.interpolate(DAY, 0.5);
+        assert_ne!(middle.bg, NIGHT.bg);
+        assert_ne!(middle.bg, DAY.bg);
+        assert_ne!(middle.text, NIGHT.text);
+        assert_ne!(middle.accent, DAY.accent);
+        assert_ne!(middle.external_link, NIGHT.external_link);
     }
 }

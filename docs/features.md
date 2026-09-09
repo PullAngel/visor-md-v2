@@ -21,7 +21,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | --- | --- | --- |
 | Apertura de `.md` por argumento | Estable | Muestra ventana y contenido |
 | Parsing Markdown básico | Estable | Casos actuales del prototipo |
-| Tema claro y oscuro | Estable | Sistema y alternancia manual |
+| Tema claro y oscuro | Parcial | Sistema y alternancia manual con transición nativa de 200 ms, sin mover contenido; falta conectar la preferencia de reducir movimiento |
 | Tipografía embebida | Parcial | Reproducción verificada; falta matriz Unicode y fallback |
 | Virtualización inicial | Parcial | Debe eliminar recorridos O(n) por frame |
 | Formato inline real | Parcial | Modelo, layout y dibujo nativos; falta corpus y QA visual sistemáticos |
