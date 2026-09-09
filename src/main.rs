@@ -1172,6 +1172,60 @@ impl DocumentPaneTree {
             },
         }
     }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn layout(&self, available: PaneGeometry, output: &mut Vec<DocumentPaneLayout>) {
+        match self {
+            Self::Leaf { document_id } => output.push(DocumentPaneLayout {
+                document_id: *document_id,
+                geometry: available,
+            }),
+            Self::Split {
+                axis,
+                fraction,
+                first,
+                second,
+            } => {
+                let fraction = fraction.clamp(0.25, 0.75);
+                let (first_geometry, second_geometry) = match axis {
+                    DocumentPaneAxis::Vertical => {
+                        let first_width = (available.width * fraction)
+                            .round()
+                            .clamp(1.0, available.width - 1.0);
+                        (
+                            PaneGeometry {
+                                width: first_width,
+                                ..available
+                            },
+                            PaneGeometry {
+                                x: available.x + first_width,
+                                width: available.width - first_width,
+                                ..available
+                            },
+                        )
+                    }
+                    DocumentPaneAxis::Horizontal => {
+                        let first_height = (available.height * fraction)
+                            .round()
+                            .clamp(1.0, available.height - 1.0);
+                        (
+                            PaneGeometry {
+                                height: first_height,
+                                ..available
+                            },
+                            PaneGeometry {
+                                y: available.y + first_height,
+                                height: available.height - first_height,
+                                ..available
+                            },
+                        )
+                    }
+                };
+                first.layout(first_geometry, output);
+                second.layout(second_geometry, output);
+            }
+        }
+    }
 }
 
 impl DocumentMode {
@@ -3629,6 +3683,12 @@ struct PaneGeometry {
     y: f32,
     width: f32,
     height: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct DocumentPaneLayout {
+    document_id: u64,
+    geometry: PaneGeometry,
 }
 
 impl PaneGeometry {
@@ -11962,6 +12022,44 @@ mod pruebas {
             .without_document(10)
             .expect("el panel restante se conserva");
         assert_eq!(collapsed, DocumentPaneTree::single(20));
+    }
+
+    #[test]
+    fn la_geometria_de_paneles_cubre_el_area_sin_solaparse() {
+        let mut panes = DocumentPaneTree::single(1);
+        assert!(panes.split_document(1, 2, DocumentPaneAxis::Vertical));
+        assert!(panes.split_document(2, 3, DocumentPaneAxis::Horizontal));
+        let available = PaneGeometry {
+            x: 10.0,
+            y: 20.0,
+            width: 1_000.0,
+            height: 600.0,
+        };
+        let mut layout = Vec::new();
+        panes.layout(available, &mut layout);
+        assert_eq!(layout.len(), 3);
+        assert_eq!(layout[0].document_id, 1);
+        assert_eq!(layout[0].geometry.width, 500.0);
+        assert_eq!(layout[1].document_id, 2);
+        assert_eq!(
+            layout[1].geometry,
+            PaneGeometry {
+                x: 510.0,
+                y: 20.0,
+                width: 500.0,
+                height: 300.0,
+            }
+        );
+        assert_eq!(layout[2].document_id, 3);
+        assert_eq!(
+            layout[2].geometry,
+            PaneGeometry {
+                x: 510.0,
+                y: 320.0,
+                width: 500.0,
+                height: 300.0,
+            }
+        );
     }
 
     #[test]

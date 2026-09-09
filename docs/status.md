@@ -160,8 +160,9 @@ exacto del traspaso.
 - la sesión ya conserva un árbol interno de paneles preparado para dividir
   documentos sin copiar buffers, historial, guardados ni recuperaciones. Por
   ahora contiene una sola hoja visible y se actualiza al abrir, cambiar o
-  cerrar pestañas; el dibujo y foco de divisiones horizontal/vertical son el
-  siguiente bloque, no una función declarada antes de estar completa.
+  cerrar pestañas. Su geometría horizontal/vertical acota proporciones y cubre
+  el área sin solaparse; el dibujo y foco de esas divisiones son el siguiente
+  bloque, no una función declarada antes de estar completa.
 - una barra superior sobria adapta la jerarquía al modo. En lectura hace visibles
   Nuevo, Abrir, Guardar, Editar, Buscar y Más; en edición muestra Guardar, Leer,
   Negrita, Cursiva, H2, Lista, Enlace y Más. Usa las mismas acciones que atajos,
