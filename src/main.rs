@@ -1500,10 +1500,14 @@ fn target_label(kind: InlineTargetKind, destination: &str) -> &'static str {
     }
 }
 
-fn wikilink_diagnostic_counts(blocks: &[Block], index: &WorkspaceIndex) -> (usize, usize, usize) {
+fn wikilink_diagnostic_counts(
+    blocks: &[Block],
+    index: &WorkspaceIndex,
+) -> (usize, usize, usize, usize) {
     let mut found = 0;
     let mut missing = 0;
     let mut ambiguous = 0;
+    let mut blocked = 0;
     for target in blocks.iter().flat_map(|block| &block.targets) {
         if target.kind != InlineTargetKind::WikiLink {
             continue;
@@ -1519,10 +1523,11 @@ fn wikilink_diagnostic_counts(blocks: &[Block], index: &WorkspaceIndex) -> (usiz
                 WikiResolution::Found(_) => found += 1,
                 WikiResolution::Missing => missing += 1,
                 WikiResolution::Ambiguous => ambiguous += 1,
+                WikiResolution::Blocked => blocked += 1,
             }
         }
     }
-    (found, missing, ambiguous)
+    (found, missing, ambiguous, blocked)
 }
 
 fn wikilink_diagnostics(blocks: &[Block], index: &WorkspaceIndex) -> Vec<String> {
@@ -1542,6 +1547,7 @@ fn wikilink_diagnostics(blocks: &[Block], index: &WorkspaceIndex) -> Vec<String>
                     WikiResolution::Found(_) => "resuelto",
                     WikiResolution::Missing => "ausente",
                     WikiResolution::Ambiguous => "ambiguo",
+                    WikiResolution::Blocked => "bloqueado",
                 }
             };
             format!("{state} · [[{}]]", target.destination)
@@ -8680,6 +8686,10 @@ impl App {
                 self.set_notice("el enlace de bóveda es ambiguo; usa una ruta más precisa");
                 return;
             }
+            WikiResolution::Blocked => {
+                self.set_notice("el enlace de bóveda fue bloqueado por la política de archivos");
+                return;
+            }
         };
         match path {
             Ok(path) => {
@@ -8745,13 +8755,14 @@ impl App {
             return;
         };
         let rows = wikilink_diagnostics(&self.document.blocks, index);
-        let (found, missing, ambiguous) = wikilink_diagnostic_counts(&self.document.blocks, index);
+        let (found, missing, ambiguous, blocked) =
+            wikilink_diagnostic_counts(&self.document.blocks, index);
         self.backlink_paths = None;
         self.outline_headings = None;
         self.link_diagnostic_match = 0;
         self.link_diagnostics = Some(rows);
         self.set_notice(&format!(
-            "enlaces de bóveda: {found} resueltos, {missing} ausentes, {ambiguous} ambiguos · Escape cierra"
+            "enlaces de bóveda: {found} resueltos, {missing} ausentes, {ambiguous} ambiguos, {blocked} bloqueados · Escape cierra"
         ));
     }
 
@@ -13781,15 +13792,15 @@ mod pruebas_inline {
             "../tests/fixtures/obsidian-vault/clases/redes.md"
         ));
 
-        assert_eq!(wikilink_diagnostic_counts(&blocks, &index), (2, 3, 1));
+        assert_eq!(wikilink_diagnostic_counts(&blocks, &index), (2, 1, 1, 2));
         assert_eq!(
             wikilink_diagnostics(&blocks, &index),
             vec![
                 "resuelto · [[seguridad.md]]",
                 "ambiguo · [[seguridad#Modelo]]",
                 "resuelto · [[archivo/seguridad]]",
-                "ausente · [[../secreto]]",
-                "ausente · [[\\\\servidor\\recurso]]",
+                "bloqueado · [[../secreto]]",
+                "bloqueado · [[\\\\servidor\\recurso]]",
                 "ausente · [[nota inexistente]]",
             ]
         );

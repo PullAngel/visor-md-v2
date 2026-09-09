@@ -109,7 +109,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Abrir carpeta o bóveda | Parcial | Sin migración ni cambios implícitos; al recuperar foco compara fuera de UI hasta 1.024 rutas ya indexadas y sugiere `Ctrl+Shift+I` si cambiaron |
 | Lista de notas | Parcial | Panel plegable con árbol del índice; abre solo tras resolver dentro de VFS y señala cambios externos limitados |
 | Búsqueda de bóveda | Parcial | Panel con resultados múltiples del índice en memoria; falta actualización incremental |
-| Wikilinks | Parcial | Resolución contenida y explícita; el índice ignora wikilinks literales en código o escapados para no crear navegación ni backlinks falsos; falta panel de diagnóstico |
+| Wikilinks | Parcial | Resolución contenida y explícita; el índice ignora wikilinks literales en código o escapados y diagnostica rutas absolutas, UNC, `file:` o traversal como bloqueadas, no ausentes; falta panel de diagnóstico |
 | Backlinks | Parcial | Panel plegable muestra y navega backlinks contenidos; falta incrementalidad |
 | Callouts | Parcial | Sintaxis Obsidian elegida y render nativo; falta corpus de bóvedas |
 | Etiquetas y frontmatter | Planificado | Lectura sin reescritura |

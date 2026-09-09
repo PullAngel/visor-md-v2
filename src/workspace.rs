@@ -112,6 +112,9 @@ pub(crate) enum WikiResolution<'a> {
     Found(&'a WorkspaceNote),
     Missing,
     Ambiguous,
+    /// El texto declara una ruta que nunca puede obtener capacidad desde una
+    /// nota: absoluta, UNC, `file:` o con salida léxica de la bóveda.
+    Blocked,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -159,6 +162,9 @@ impl WorkspaceIndex {
     /// Resuelve la parte de nota de un wikilink sin tocar el filesystem. El
     /// resultado siempre proviene del índice ya contenido por la VFS.
     pub(crate) fn resolve_wikilink(&self, target: &str) -> WikiResolution<'_> {
+        if blocked_wikilink_target(target) {
+            return WikiResolution::Blocked;
+        }
         let target_declares_path =
             target.contains(['/', '\\']) || target.trim().to_ascii_lowercase().ends_with(".md");
         let target = normalized_note_key(target);
@@ -229,6 +235,15 @@ impl WorkspaceIndex {
             })
             .collect()
     }
+}
+
+fn blocked_wikilink_target(target: &str) -> bool {
+    let target = target.trim();
+    let lowered = target.to_ascii_lowercase();
+    lowered.starts_with("file:")
+        || target.starts_with(['/', '\\'])
+        || target.contains(':')
+        || target.split(['/', '\\']).any(|component| component == "..")
 }
 
 /// Recorre únicamente rutas ya contenidas. `.git` y `.obsidian` son metadatos
@@ -681,7 +696,15 @@ mod tests {
         assert_eq!(index.backlinks_to(seguridad).len(), 1);
         assert!(matches!(
             index.resolve_wikilink("../secreto"),
-            WikiResolution::Missing
+            WikiResolution::Blocked
+        ));
+        assert!(matches!(
+            index.resolve_wikilink(r"\\servidor\recurso"),
+            WikiResolution::Blocked
+        ));
+        assert!(matches!(
+            index.resolve_wikilink("file:///secreto.md"),
+            WikiResolution::Blocked
         ));
     }
 

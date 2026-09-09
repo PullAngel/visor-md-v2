@@ -227,6 +227,10 @@ se muestran como bloqueo visible. El destino final pasa igualmente por la VFS
 canonicalizada. Así un documento no puede usar el orden del índice para hacer
 que la persona abra una nota diferente de la declarada.
 
+Los diagnósticos diferencian una nota ausente de un destino bloqueado por la
+política. Una ruta absoluta, UNC, `file:` o con `..` sigue visible como texto
+del documento, pero se etiqueta como bloqueada y no se intenta resolver.
+
 Antes de cambiar al documento resuelto, la aplicación rechaza la navegación si
 el documento actual tiene cambios sin guardar. La recuperación local sigue
 disponible como red de seguridad, pero no se usa como excusa para reemplazar una
