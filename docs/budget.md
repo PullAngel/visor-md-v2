@@ -36,7 +36,7 @@ compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
 | **Núcleo de edición y seguridad de workspace** | **3.515.392 bytes, 3,353 MiB** |
 | **Herramientas de estudio derivadas** | **3.516.928 bytes, 3,354 MiB** |
 | **Interacción fiable de tareas** | **3.522.560 bytes, 3,359 MiB** |
-| **Selector directo de modo** | **3.523.072 bytes, 3,360 MiB** |
+| **Selector directo de modo** | **3.524.096 bytes, 3,361 MiB** |
 
 Superar 8 MB exige medición, explicación y aprobación. El límite no se usa para
 recortar seguridad, estabilidad, accesibilidad, Unicode o funciones esenciales.
@@ -52,10 +52,10 @@ atajos. No añade dependencias, permisos ni persistencia.
 
 | Medida | Resultado |
 | --- | --- |
-| Binario Windows | 3.523.072 bytes, 3,360 MiB |
-| SHA-256 | `95FA31D9CD2D9C6653481A44B1280B6E9D356FD22BBD006E33EC792DADC409C3` |
-| Variación frente al checkpoint anterior | +512 bytes |
-| Margen frente al límite deseado | 4,640 MiB |
+| Binario Windows | 3.524.096 bytes, 3,361 MiB |
+| SHA-256 | `D4576C277D99F0490AB065F63D411B451FA12457438945A99DF1F2FB9AF633F3` |
+| Variación frente al checkpoint anterior | +1.536 bytes |
+| Margen frente al límite deseado | 4,639 MiB |
 
 Las pruebas unitarias de geometría y foco, la suite completa de 218 pruebas,
 Clippy estricto y la verificación de enlaces de documentación quedaron verdes.

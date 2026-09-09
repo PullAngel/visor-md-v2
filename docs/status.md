@@ -12,7 +12,7 @@ VFS acotada. La referencia anterior a Codex permanece intacta en
 
 El lector y el editor tienen gates automáticos verdes: la suite local actual
 reúne 218 regresiones. El gate de Windows del 9 de septiembre también verificó
-Clippy, SBOM, documentación y un release de 3.523.072 bytes (3,360 MiB).
+Clippy, SBOM, documentación y un release de 3.524.096 bytes (3,361 MiB).
 Permanecen pendientes el QA humano acumulado, la
 actualización incremental de algunos modelos visibles, accesibilidad completa,
 exportación y distribución.
