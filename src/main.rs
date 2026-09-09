@@ -1053,6 +1053,127 @@ impl SplitOrientation {
     }
 }
 
+/// Dirección de una división entre documentos. Es distinta de la comparación
+/// fuente/vista: cada hoja del árbol solo referencia un documento de sesión.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(not(test), allow(dead_code))]
+enum DocumentPaneAxis {
+    Vertical,
+    Horizontal,
+}
+
+/// Modelo de disposición de documentos para las futuras vistas divididas.
+/// No posee buffers ni recuperación: esos datos continúan perteneciendo a la
+/// pestaña identificada por cada hoja.
+#[derive(Clone, Debug, PartialEq)]
+enum DocumentPaneTree {
+    Leaf {
+        document_id: u64,
+    },
+    Split {
+        axis: DocumentPaneAxis,
+        fraction: f32,
+        first: Box<DocumentPaneTree>,
+        second: Box<DocumentPaneTree>,
+    },
+}
+
+impl DocumentPaneTree {
+    fn single(document_id: u64) -> Self {
+        Self::Leaf { document_id }
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn document_ids(&self, output: &mut Vec<u64>) {
+        match self {
+            Self::Leaf { document_id } => output.push(*document_id),
+            Self::Split { first, second, .. } => {
+                first.document_ids(output);
+                second.document_ids(output);
+            }
+        }
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn references_only(&self, document_ids: &HashSet<u64>) -> bool {
+        match self {
+            Self::Leaf { document_id } => document_ids.contains(document_id),
+            Self::Split { first, second, .. } => {
+                first.references_only(document_ids) && second.references_only(document_ids)
+            }
+        }
+    }
+
+    fn replace_document(&mut self, from: u64, to: u64) -> bool {
+        match self {
+            Self::Leaf { document_id } if *document_id == from => {
+                *document_id = to;
+                true
+            }
+            Self::Leaf { .. } => false,
+            Self::Split { first, second, .. } => {
+                first.replace_document(from, to) || second.replace_document(from, to)
+            }
+        }
+    }
+
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn split_document(
+        &mut self,
+        document_id: u64,
+        adjacent_id: u64,
+        axis: DocumentPaneAxis,
+    ) -> bool {
+        if document_id == adjacent_id {
+            return false;
+        }
+        match self {
+            Self::Leaf {
+                document_id: current,
+            } if *current == document_id => {
+                *self = Self::Split {
+                    axis,
+                    fraction: 0.5,
+                    first: Box::new(Self::single(document_id)),
+                    second: Box::new(Self::single(adjacent_id)),
+                };
+                true
+            }
+            Self::Leaf { .. } => false,
+            Self::Split { first, second, .. } => {
+                first.split_document(document_id, adjacent_id, axis)
+                    || second.split_document(document_id, adjacent_id, axis)
+            }
+        }
+    }
+
+    fn without_document(&self, document_id: u64) -> Option<Self> {
+        match self {
+            Self::Leaf {
+                document_id: current,
+            } => (*current != document_id).then(|| self.clone()),
+            Self::Split {
+                axis,
+                fraction,
+                first,
+                second,
+            } => match (
+                first.without_document(document_id),
+                second.without_document(document_id),
+            ) {
+                (Some(first), Some(second)) => Some(Self::Split {
+                    axis: *axis,
+                    fraction: fraction.clamp(0.25, 0.75),
+                    first: Box::new(first),
+                    second: Box::new(second),
+                }),
+                (Some(remaining), None) | (None, Some(remaining)) => Some(remaining),
+                (None, None) => None,
+            },
+        }
+    }
+}
+
 impl DocumentMode {
     fn is_editable(self) -> bool {
         matches!(self, Self::SourceEditing | Self::Split)
@@ -4523,6 +4644,10 @@ struct App {
     /// Orden visible estable de las pestañas, independiente de cuál esté
     /// activa. Los identificadores existen solo durante la sesión.
     tab_order: Vec<u64>,
+    /// Preparada para vistas divididas de documentos. Hoy conserva una única
+    /// hoja visible; las futuras divisiones referenciarán IDs sin copiar el
+    /// estado documental ni sus recuperaciones.
+    document_panes: DocumentPaneTree,
     external_checks_in_flight: HashSet<u64>,
     /// Identifica las pestañas con una escritura atómica pendiente. El resto
     /// de la sesión puede seguir usándose sin atribuir el resultado a otro
@@ -6703,6 +6828,7 @@ impl App {
 
     fn open_document_in_tab(&mut self, document: DocumentState) {
         let new_id = document.id;
+        let current_id = self.document.id;
         self.document.scroll = self.scroll;
         if self.document.mode == DocumentMode::Reading {
             self.document.reading_selection = self.selection;
@@ -6715,6 +6841,7 @@ impl App {
             recovery: current_recovery,
         });
         self.tab_order.push(new_id);
+        let _ = self.document_panes.replace_document(current_id, new_id);
         self.reset_document_view();
     }
 
@@ -6744,6 +6871,7 @@ impl App {
             return;
         };
         let next = self.inactive_documents.remove(index);
+        let current_id = self.document.id;
         self.document.scroll = self.scroll;
         if self.document.mode == DocumentMode::Reading {
             self.document.reading_selection = self.selection;
@@ -6754,6 +6882,9 @@ impl App {
             document: current,
             recovery: current_recovery,
         });
+        let _ = self
+            .document_panes
+            .replace_document(current_id, document_id);
         self.reset_document_view();
         self.refresh_title();
         if let Some(window) = &self.window {
@@ -6773,6 +6904,7 @@ impl App {
         if !self.request_close_current() {
             return;
         }
+        let closing_id = self.document.id;
         let active_position = self
             .tab_order
             .iter()
@@ -6798,6 +6930,10 @@ impl App {
             self.recovery = self.new_recovery_session();
             self.tab_order.push(self.document.id);
         }
+        self.document_panes = self
+            .document_panes
+            .without_document(closing_id)
+            .unwrap_or_else(|| DocumentPaneTree::single(self.document.id));
         self.reset_document_view();
         self.set_notice("pestaña cerrada");
         if let Some(window) = &self.window {
@@ -11242,6 +11378,7 @@ fn main() {
         },
         inactive_documents: Vec::new(),
         tab_order: vec![initial_document_id],
+        document_panes: DocumentPaneTree::single(initial_document_id),
         external_checks_in_flight: HashSet::new(),
         saves_in_flight: HashSet::new(),
         settings,
@@ -11808,6 +11945,23 @@ mod pruebas {
         ];
 
         assert_eq!(dirty_document_count(&active, &inactive), 1);
+    }
+
+    #[test]
+    fn los_paneles_referencian_documentos_sin_duplicar_su_estado() {
+        let mut panes = DocumentPaneTree::single(10);
+        assert!(panes.split_document(10, 20, DocumentPaneAxis::Vertical));
+        assert!(!panes.split_document(10, 10, DocumentPaneAxis::Horizontal));
+        let mut ids = Vec::new();
+        panes.document_ids(&mut ids);
+        assert_eq!(ids, vec![10, 20]);
+        assert!(panes.references_only(&HashSet::from([10, 20])));
+        assert!(!panes.references_only(&HashSet::from([10])));
+
+        let collapsed = panes
+            .without_document(10)
+            .expect("el panel restante se conserva");
+        assert_eq!(collapsed, DocumentPaneTree::single(20));
     }
 
     #[test]

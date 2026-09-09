@@ -157,6 +157,11 @@ exacto del traspaso.
 - una pestaña puede fijarse desde la paleta o el menú contextual. La marca `•`
   es solo de sesión, no se escribe ni se guarda en el Markdown, y evita su
   cierre hasta liberarla explícitamente.
+- la sesión ya conserva un árbol interno de paneles preparado para dividir
+  documentos sin copiar buffers, historial, guardados ni recuperaciones. Por
+  ahora contiene una sola hoja visible y se actualiza al abrir, cambiar o
+  cerrar pestañas; el dibujo y foco de divisiones horizontal/vertical son el
+  siguiente bloque, no una función declarada antes de estar completa.
 - una barra superior sobria adapta la jerarquía al modo. En lectura hace visibles
   Nuevo, Abrir, Guardar, Editar, Buscar y Más; en edición muestra Guardar, Leer,
   Negrita, Cursiva, H2, Lista, Enlace y Más. Usa las mismas acciones que atajos,
