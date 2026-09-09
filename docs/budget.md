@@ -36,11 +36,30 @@ compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
 | **Núcleo de edición y seguridad de workspace** | **3.515.392 bytes, 3,353 MiB** |
 | **Herramientas de estudio derivadas** | **3.516.928 bytes, 3,354 MiB** |
 | **Interacción fiable de tareas** | **3.522.560 bytes, 3,359 MiB** |
+| **Selector directo de modo** | **3.523.072 bytes, 3,360 MiB** |
 
 Superar 8 MB exige medición, explicación y aprobación. El límite no se usa para
 recortar seguridad, estabilidad, accesibilidad, Unicode o funciones esenciales.
 Mermaid, correctores y otros componentes pesados no tienen permiso automático
 para ampliar el núcleo.
+
+### Selector directo de modo del 9 de septiembre de 2026
+
+Este checkpoint separa las acciones de archivo del cambio de vista: Leer,
+Editar y Comparar pasan a ser destinos directos. El control no invoca arrastre
+de ventana y mantiene una ayuda efímera para que sus iconos no exijan memorizar
+atajos. No añade dependencias, permisos ni persistencia.
+
+| Medida | Resultado |
+| --- | --- |
+| Binario Windows | 3.523.072 bytes, 3,360 MiB |
+| SHA-256 | `95FA31D9CD2D9C6653481A44B1280B6E9D356FD22BBD006E33EC792DADC409C3` |
+| Variación frente al checkpoint anterior | +512 bytes |
+| Margen frente al límite deseado | 4,640 MiB |
+
+Las pruebas unitarias de geometría y foco, la suite completa de 218 pruebas,
+Clippy estricto y la verificación de enlaces de documentación quedaron verdes.
+Sigue pendiente el QA visual humano de contraste y descubribilidad.
 
 ### Interacción fiable de tareas del 9 de septiembre de 2026
 

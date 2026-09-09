@@ -11,8 +11,8 @@ VFS acotada. La referencia anterior a Codex permanece intacta en
 `archive/claude-pre-codex`.
 
 El lector y el editor tienen gates automáticos verdes: la suite local actual
-reúne 214 regresiones. El gate de Windows del 9 de septiembre también verificó
-Clippy, SBOM, documentación y un release de 3.515.392 bytes (3,353 MiB).
+reúne 218 regresiones. El gate de Windows del 9 de septiembre también verificó
+Clippy, SBOM, documentación y un release de 3.523.072 bytes (3,360 MiB).
 Permanecen pendientes el QA humano acumulado, la
 actualización incremental de algunos modelos visibles, accesibilidad completa,
 exportación y distribución.
@@ -183,12 +183,13 @@ exacto del traspaso.
   cerrar pestañas. Su geometría horizontal/vertical acota proporciones y cubre
   el área sin solaparse; el dibujo y foco de esas divisiones son el siguiente
   bloque, no una función declarada antes de estar completa.
-- una barra superior sobria adapta la jerarquía al modo. En lectura hace visibles
-  Nuevo, Abrir, Guardar, Editar, Buscar y Más; en edición muestra Guardar, Leer,
-  Negrita, Cursiva, H2, Lista, Enlace y Más. Usa las mismas acciones que atajos,
-  menú y paleta, para evitar comportamientos distintos según cómo se invoque una
-  operación. El acento de modo solo aparece durante edición o vista dividida;
-  en lectura, `Editar` vuelve al reposo.
+- una barra superior sobria separa archivo de estado y navegación: Nuevo, Abrir,
+  Guardar, Buscar, Espacio de trabajo y Más conservan su sitio; un selector
+  segmentado lleva directamente a Leer, Editar o Comparar. Cada segmento expone
+  una ayuda breve al pasar el mouse y el estado activo usa el acento de forma
+  tenue. La segunda franja conserva formato en edición y navegación en lectura.
+  Todas las rutas comparten catálogo, atajo, menú y paleta, para evitar
+  comportamientos distintos según cómo se invoque una operación.
 - el viewport reserva la franja inferior completa. El final del documento ya no
   queda bajo pestañas o estado, y bordes de tablas, separadores de pestañas y la
   división de la vista usan el color estructural definido por el sistema visual.
