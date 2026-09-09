@@ -194,6 +194,16 @@ const WORKSPACE_HUB_ACTIONS: [AppAction; 8] = [
     AppAction::RefreshWorkspace,
     AppAction::CancelWorkspaceIndex,
 ];
+/// Herramientas de estudio reunidas fuera del menú contextual plano. Comparten
+/// paleta, teclado y la misma fuente Markdown portable que el resto del editor.
+const STUDY_ACTIONS: [AppAction; 6] = [
+    AppAction::InsertStudyQuestion,
+    AppAction::InsertStudySummary,
+    AppAction::InsertStudyConceptList,
+    AppAction::InsertStudyUnderstood,
+    AppAction::InsertStudyDoubt,
+    AppAction::InsertStudyPending,
+];
 static NEXT_DOCUMENT_ID: AtomicU64 = AtomicU64::new(1);
 
 /// Windows recibe chrome propio para realizar la dirección visual aprobada. En
@@ -666,8 +676,7 @@ enum ContextAction {
     Highlight,
     WikiLink,
     Callout,
-    StudyQuestion,
-    StudySummary,
+    StudyTools,
     CopyText,
     CopyMarkdown,
     CopyPlatform,
@@ -852,6 +861,7 @@ fn filtered_actions(query: &str) -> Vec<AppAction> {
 enum CommandPaletteScope {
     All,
     Workspace,
+    Study,
 }
 
 impl ContextAction {
@@ -871,8 +881,7 @@ impl ContextAction {
             Self::Highlight => "Resaltar texto",
             Self::WikiLink => "Enlace de bóveda",
             Self::Callout => "Callout de nota",
-            Self::StudyQuestion => "Pregunta de estudio",
-            Self::StudySummary => "Resumen de estudio",
+            Self::StudyTools => "Herramientas de estudio",
             Self::CopyText => "Copiar texto",
             Self::CopyMarkdown => "Copiar Markdown original",
             Self::CopyPlatform => "Copiar para Discord o correo",
@@ -907,8 +916,7 @@ fn context_actions(mode: DocumentMode, table_available: bool) -> Vec<ContextActi
             ContextAction::Highlight,
             ContextAction::WikiLink,
             ContextAction::Callout,
-            ContextAction::StudyQuestion,
-            ContextAction::StudySummary,
+            ContextAction::StudyTools,
             ContextAction::CopyText,
             ContextAction::CopyMarkdown,
         ],
@@ -5673,12 +5681,7 @@ impl ApplicationHandler<AppEvent> for App {
                                 ContextAction::Callout => {
                                     self.perform_action(AppAction::InsertCallout)
                                 }
-                                ContextAction::StudyQuestion => {
-                                    self.perform_action(AppAction::InsertStudyQuestion)
-                                }
-                                ContextAction::StudySummary => {
-                                    self.perform_action(AppAction::InsertStudySummary)
-                                }
+                                ContextAction::StudyTools => self.open_study_actions(),
                                 ContextAction::CopyText | ContextAction::CopyMarkdown => {
                                     self.copy_selection(action.source_markdown());
                                 }
@@ -6840,6 +6843,7 @@ impl App {
         let actions = match self.command_palette_scope {
             CommandPaletteScope::All => &APP_ACTIONS[..],
             CommandPaletteScope::Workspace => &WORKSPACE_HUB_ACTIONS[..],
+            CommandPaletteScope::Study => &STUDY_ACTIONS[..],
         };
         filtered_actions_from(actions, &self.command_palette_query)
     }
@@ -6856,6 +6860,23 @@ impl App {
         self.command_palette_scope = CommandPaletteScope::Workspace;
         self.toolbar_focus = None;
         self.set_notice("espacio de trabajo · elige una acción");
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    fn open_study_actions(&mut self) {
+        self.context_menu = None;
+        self.search_query = None;
+        self.workspace_search_query = None;
+        self.workspace_paths = None;
+        self.backlink_paths = None;
+        self.outline_headings = None;
+        self.command_palette = Some(0);
+        self.command_palette_query.clear();
+        self.command_palette_scope = CommandPaletteScope::Study;
+        self.toolbar_focus = None;
+        self.set_notice("estudio · elegí una herramienta portable");
         if let Some(window) = &self.window {
             window.request_redraw();
         }
@@ -10014,6 +10035,7 @@ impl App {
                 match self.command_palette_scope {
                     CommandPaletteScope::All => "Acciones · escribe para filtrar".to_string(),
                     CommandPaletteScope::Workspace => "Espacio de trabajo".to_string(),
+                    CommandPaletteScope::Study => "Herramientas de estudio".to_string(),
                 }
             } else {
                 format!(
@@ -11936,11 +11958,11 @@ mod pruebas {
         labels.sort_unstable();
         labels.dedup();
 
-        // Incluye operaciones de documento y ayudas editoriales cotidianas sin
-        // convertir la paleta en un menú de IDE. Los estados portables, una
-        // copia de plataforma y la lista de conceptos completan el kit mínimo;
-        // superar 43 exige revisar jerarquía.
-        assert!(original_len <= 43, "el catálogo dejó de ser pequeño");
+        // Incluye documento, workspace, estudio y accesibilidad sin convertir
+        // la paleta en un menú de IDE: las familias densas también tienen
+        // ámbitos propios desde el menú contextual. Superar 48 exige revisar
+        // esa jerarquía antes de añadir otra acción.
+        assert!(original_len <= 48, "el catálogo dejó de ser pequeño");
         assert_eq!(labels.len(), original_len);
     }
 
@@ -12020,6 +12042,14 @@ mod pruebas {
         assert_eq!(
             filtered_actions_from(&WORKSPACE_HUB_ACTIONS, "cancelar"),
             vec![AppAction::CancelWorkspaceIndex]
+        );
+        assert_eq!(
+            filtered_actions_from(&STUDY_ACTIONS, "resumen"),
+            vec![AppAction::InsertStudySummary]
+        );
+        assert_eq!(
+            filtered_actions_from(&STUDY_ACTIONS, ""),
+            STUDY_ACTIONS.to_vec()
         );
     }
 
@@ -12164,7 +12194,7 @@ mod pruebas {
         assert!(context_actions(DocumentMode::Reading, false).contains(&ContextAction::CopyText));
         assert!(
             context_actions(DocumentMode::SourceEditing, false)
-                .contains(&ContextAction::StudySummary)
+                .contains(&ContextAction::StudyTools)
         );
     }
 
@@ -12760,7 +12790,7 @@ mod pruebas {
         assert!(editing_menu.actions.contains(&ContextAction::Highlight));
         assert!(editing_menu.actions.contains(&ContextAction::WikiLink));
         assert!(editing_menu.actions.contains(&ContextAction::Callout));
-        assert!(editing_menu.actions.contains(&ContextAction::StudyQuestion));
+        assert!(editing_menu.actions.contains(&ContextAction::StudyTools));
         let editing_height = context_menu_row_height(480.0, editing_menu.actions.len());
         assert!(editing_height * editing_menu.actions.len() as f32 <= 480.0);
         assert!(editing_height >= 28.0);
