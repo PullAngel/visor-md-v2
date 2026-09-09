@@ -26,7 +26,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Virtualización inicial | Parcial | Debe eliminar recorridos O(n) por frame |
 | Formato inline real | Parcial | Modelo, layout y dibujo nativos; falta corpus y QA visual sistemáticos |
 | Listas, citas y reglas | Parcial | Casos anidados cubiertos; falta corpus y QA visual ampliados |
-| Task list checkboxes | Parcial | Dibujo nativo, clic reversible y pruebas; falta QA de plataforma |
+| Task list checkboxes | Parcial | Dibujo nativo, objetivo de clic ampliado sin invadir el texto, cursor de enlace y cambio reversible del marcador; falta QA de plataforma |
 | CommonMark aplicable | Parcial | Corpus versionado de sintaxis soportada y política HTML; falta suite oficial seleccionada |
 | GFM elegido | Parcial | Tablas, tachado, tareas, autolinks y notas al pie; falta corpus sistemático |
 | Copia de tablas | Parcial | Menú y paleta copian la tabla elegida como TSV desde celdas semánticas; la selección parcial visible y las flechas respetan celdas, omiten separadores y conservan columna al subir o bajar. Falta QA manual. |

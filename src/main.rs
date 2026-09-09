@@ -3030,6 +3030,12 @@ fn flatten<'a>(
                     };
                     let marker = marker_for(&list, index, task);
                     let antes = out.len();
+                    // Comrak sitúa el párrafo de una tarea después de `[ ]`.
+                    // La interacción necesita, en cambio, el rango completo
+                    // del item para poder cambiar solo el byte central del
+                    // marcador. No afecta tramos inline, que mantienen sus
+                    // propios rangos precisos dentro de ese item.
+                    let item_source = source_index.range_of(item);
                     flatten(
                         item,
                         depth.saturating_add(1),
@@ -3041,6 +3047,9 @@ fn flatten<'a>(
                     // El marcador va al primer bloque que produjo el item.
                     if let Some(primero) = out.get_mut(antes) {
                         primero.marker = Some(marker);
+                        if task.is_some() {
+                            primero.source = item_source;
+                        }
                     }
                 }
             }
@@ -5649,6 +5658,7 @@ impl ApplicationHandler<AppEvent> for App {
                     && self
                         .cursor_at(position.x as f32, position.y as f32)
                         .is_some();
+                let task_hover = self.task_at(position.x as f32, position.y as f32).is_some();
                 let disclosure_hover = self
                     .heading_disclosure_at(position.x as f32, position.y as f32)
                     .is_some();
@@ -5684,6 +5694,7 @@ impl ApplicationHandler<AppEvent> for App {
                     } else if chrome_control.is_some()
                         || self.hover_destination.is_some()
                         || disclosure_hover
+                        || task_hover
                         || toolbar_hover
                     {
                         CursorIcon::Pointer
@@ -9704,7 +9715,7 @@ impl App {
                 Some(Marker::Task { .. })
             );
             let (left, top, width, height) =
-                task_checkbox_bounds(slot, self.scroll, self.scale_factor);
+                task_checkbox_hit_bounds(slot, self.scroll, self.scale_factor);
             (is_task && (left..=left + width).contains(&x) && (top..=top + height).contains(&y))
                 .then_some(index)
         })
@@ -11659,6 +11670,21 @@ fn task_checkbox_bounds(slot: &Slot, scroll: f32, scale: f32) -> (f32, f32, f32,
         document_screen_y(slot.y, scroll) + (line_box - size).max(0.0) * 0.5,
         size,
         size,
+    )
+}
+
+/// El dibujo conserva su tamaño editorial; el objetivo de puntero es algo más
+/// generoso para que una casilla pequeña sea utilizable en DPI alto. El margen
+/// extra queda antes del texto, así un clic sobre la frase sigue iniciando una
+/// selección en lugar de cambiar una tarea por accidente.
+fn task_checkbox_hit_bounds(slot: &Slot, scroll: f32, scale: f32) -> (f32, f32, f32, f32) {
+    let (left, top, width, height) = task_checkbox_bounds(slot, scroll, scale);
+    let padding = 5.0 * scale;
+    (
+        left - padding,
+        top - padding,
+        width + padding * 2.0,
+        height + padding * 2.0,
     )
 }
 
@@ -14838,6 +14864,33 @@ Pagina 14 de 14"#;
         assert!(left + width < slot.x, "la casilla invadió el texto");
         assert!(top >= document_screen_y(slot.y, 40.0));
         assert!(top + height <= document_screen_y(slot.y, 40.0) + slot.height);
+
+        let (hit_left, hit_top, hit_width, hit_height) =
+            task_checkbox_hit_bounds(&slot, 40.0, 1.25);
+        assert!(hit_left < left && hit_top < top);
+        assert!(hit_width > width && hit_height > height);
+        assert!(
+            hit_left + hit_width < slot.x,
+            "el objetivo de clic invadió el texto de la tarea"
+        );
+    }
+
+    #[test]
+    fn una_tarea_interactiva_solo_reemplaza_el_caracter_de_su_marcador() {
+        let source = "- [ ] pendiente\n- [x] hecha";
+        let outcome = parse_blocks(source).expect("el Markdown de prueba es válido");
+        let task = outcome
+            .blocks
+            .iter()
+            .find(|block| matches!(block.marker, Some(Marker::Task { done: false })))
+            .expect("falta la tarea pendiente");
+        let text = &source[task.source.start..task.source.end];
+        let (offset, replacement) = task_marker_replacement(text).expect("marcador editable");
+        let mut changed = source.to_owned();
+        let position = task.source.start + offset;
+        changed.replace_range(position..position + 1, replacement);
+
+        assert_eq!(changed, "- [x] pendiente\n- [x] hecha");
     }
 
     #[test]

@@ -35,11 +35,29 @@ compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
 | **Interacción de tablas y flujos portables** | **3.505.664 bytes, 3,343 MiB** |
 | **Núcleo de edición y seguridad de workspace** | **3.515.392 bytes, 3,353 MiB** |
 | **Herramientas de estudio derivadas** | **3.516.928 bytes, 3,354 MiB** |
+| **Interacción fiable de tareas** | **3.522.560 bytes, 3,359 MiB** |
 
 Superar 8 MB exige medición, explicación y aprobación. El límite no se usa para
 recortar seguridad, estabilidad, accesibilidad, Unicode o funciones esenciales.
 Mermaid, correctores y otros componentes pesados no tienen permiso automático
 para ampliar el núcleo.
+
+### Interacción fiable de tareas del 9 de septiembre de 2026
+
+Este checkpoint corrige el rango fuente de cada tarea para incluir el marcador
+Markdown completo, y amplía su objetivo de puntero sin invadir el texto. La
+corrección cambia un único byte de `[ ]` o `[x]`, es reversible y no añade
+dependencias, capacidades ni persistencia.
+
+| Medida | Resultado |
+| --- | --- |
+| Binario Windows | 3.522.560 bytes, 3,359 MiB |
+| SHA-256 | `6DD7FE57ED17E5355C09A4ED1D70F8EDF757B5D34CCE710253B5EBB59BF20EE3` |
+| Variación frente al checkpoint anterior | +5.632 bytes |
+| Margen frente al límite deseado | 4,641 MiB |
+
+La suite completa verificó 218 pruebas, Clippy estricto y enlaces de
+documentación. Falta la confirmación visual humana en pantallas y DPI reales.
 
 ### Herramientas de estudio derivadas del 9 de septiembre de 2026
 
