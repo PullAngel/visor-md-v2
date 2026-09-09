@@ -196,13 +196,14 @@ const WORKSPACE_HUB_ACTIONS: [AppAction; 8] = [
 ];
 /// Herramientas de estudio reunidas fuera del menú contextual plano. Comparten
 /// paleta, teclado y la misma fuente Markdown portable que el resto del editor.
-const STUDY_ACTIONS: [AppAction; 7] = [
+const STUDY_ACTIONS: [AppAction; 8] = [
     AppAction::InsertStudyQuestion,
     AppAction::InsertStudySummary,
     AppAction::InsertStudyConceptList,
     AppAction::InsertStudyUnderstood,
     AppAction::InsertStudyDoubt,
     AppAction::InsertStudyPending,
+    AppAction::PrepareStudySummary,
     AppAction::PrepareAiFragments,
 ];
 static NEXT_DOCUMENT_ID: AtomicU64 = AtomicU64::new(1);
@@ -725,6 +726,7 @@ enum AppAction {
     InsertStudyUnderstood,
     InsertStudyDoubt,
     InsertStudyPending,
+    PrepareStudySummary,
     PrepareAiFragments,
     CopyPlatform,
     ToggleSection,
@@ -744,7 +746,7 @@ enum AppAction {
     CommandPalette,
 }
 
-const APP_ACTIONS: [AppAction; 46] = [
+const APP_ACTIONS: [AppAction; 47] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -777,6 +779,7 @@ const APP_ACTIONS: [AppAction; 46] = [
     AppAction::InsertStudyUnderstood,
     AppAction::InsertStudyDoubt,
     AppAction::InsertStudyPending,
+    AppAction::PrepareStudySummary,
     AppAction::PrepareAiFragments,
     AppAction::CopyPlatform,
     AppAction::ToggleSection,
@@ -826,6 +829,7 @@ impl AppAction {
             Self::InsertStudyUnderstood => "Marcar contenido como entendido",
             Self::InsertStudyDoubt => "Marcar contenido como dudoso",
             Self::InsertStudyPending => "Marcar contenido como pendiente",
+            Self::PrepareStudySummary => "Preparar resumen desde selección",
             Self::PrepareAiFragments => "Preparar fragmentos para IA",
             Self::CopyPlatform => "Copiar para Discord o correo",
             Self::ToggleSection => "Plegar o desplegar sección enfocada",
@@ -2553,6 +2557,17 @@ fn study_concept_list_template(eol: &str) -> String {
 fn study_summary_template(eol: &str) -> String {
     format!(
         "## Resumen{eol}{eol}- **Idea principal:** {eol}- **Explicación o evidencia:** {eol}- **Pregunta abierta:** "
+    )
+}
+
+/// Prepara una nota de estudio a partir de texto que la persona ya eligió.
+/// No pretende resumir automáticamente ni interpreta el contenido: deja una
+/// estructura Markdown portable y una copia literal de la fuente para que la
+/// persona la complete, comparta o guarde donde prefiera.
+fn study_summary_from_selection(selection: &str, eol: &str) -> String {
+    format!(
+        "{}{eol}{eol}### Fuente seleccionada{eol}{eol}{selection}",
+        study_summary_template(eol)
     )
 }
 
@@ -6649,6 +6664,7 @@ impl App {
             AppAction::InsertStudyUnderstood => self.insert_study_state(StudyState::Understood),
             AppAction::InsertStudyDoubt => self.insert_study_state(StudyState::Doubt),
             AppAction::InsertStudyPending => self.insert_study_state(StudyState::Pending),
+            AppAction::PrepareStudySummary => self.prepare_study_summary(),
             AppAction::PrepareAiFragments => self.prepare_ai_fragments(),
             AppAction::CopyPlatform => self.copy_selection_for_platform(),
             AppAction::ToggleSection => self.toggle_focused_section(),
@@ -7470,6 +7486,63 @@ impl App {
         }
         self.open_document_in_tab(document);
         self.set_notice("fragmentos preparados en una pestaña nueva · no se modificó el original");
+    }
+
+    /// Abre una nota derivada y editable con una plantilla de resumen. La
+    /// selección se copia desde la única autoridad disponible en cada modo:
+    /// el buffer en edición y los bloques de fuente completos en lectura.
+    fn prepare_study_summary(&mut self) {
+        let selected = if self.document.mode.is_editable() {
+            match self
+                .document
+                .source_editor
+                .selected_text(&self.document.source)
+            {
+                Ok(Some(text)) => text,
+                Ok(None) => {
+                    self.set_notice("selecciona texto antes de preparar un resumen");
+                    return;
+                }
+                Err(error) => {
+                    self.log
+                        .push(format!("[estudio] selección de fuente inválida: {error:?}"));
+                    self.set_notice("no se pudo preparar la selección");
+                    return;
+                }
+            }
+        } else {
+            let source = self.document.source.to_string();
+            match self
+                .selection
+                .and_then(|selection| selection.source_blocks(&source, &self.document.blocks))
+            {
+                Some(text) => text,
+                None => {
+                    self.set_notice("selecciona texto antes de preparar un resumen");
+                    return;
+                }
+            }
+        };
+
+        let prepared = study_summary_from_selection(&selected, self.document_line_ending());
+        let mut document = DocumentState::untitled();
+        document.path = "resumen de selección.md".to_string();
+        document.source = TextBuffer::from_text(&prepared);
+        document.source_editor.mark_recovered();
+        match safe_buffer_blocks(&document.source) {
+            Ok(blocks) => {
+                document.metrics = DocumentMetrics::from_blocks(&blocks);
+                document.rendered_blocks = blocks.clone();
+                document.blocks = blocks;
+                document.mode = DocumentMode::SourceEditing;
+            }
+            Err(_) => {
+                self.set_notice("no se pudo preparar un resumen seguro");
+                return;
+            }
+        }
+        self.open_document_in_tab(document);
+        self.set_notice("resumen preparado en una pestaña nueva · no se modificó el original");
     }
 
     fn insert_study_state(&mut self, state: StudyState) {
@@ -12191,7 +12264,10 @@ mod pruebas {
         );
         assert_eq!(
             filtered_actions_from(&STUDY_ACTIONS, "resumen"),
-            vec![AppAction::InsertStudySummary]
+            vec![
+                AppAction::InsertStudySummary,
+                AppAction::PrepareStudySummary,
+            ]
         );
         assert_eq!(
             filtered_actions_from(&STUDY_ACTIONS, ""),
@@ -14167,6 +14243,17 @@ mod pruebas_inline {
                 .iter()
                 .any(|block| block.text.contains("Pregunta abierta"))
         );
+    }
+
+    #[test]
+    fn preparar_resumen_desde_seleccion_conserva_literalmente_la_fuente() {
+        let selected = "texto con **énfasis**\r\n\r\n- [ ] tarea";
+        let prepared = study_summary_from_selection(selected, "\r\n");
+
+        assert!(prepared.starts_with("## Resumen\r\n\r\n"));
+        assert!(prepared.contains("### Fuente seleccionada\r\n\r\n"));
+        assert!(prepared.ends_with(selected));
+        assert!(prepared.contains("**énfasis**"));
     }
 
     #[test]

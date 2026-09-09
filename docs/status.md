@@ -21,6 +21,11 @@ Las herramientas de estudio ya pueden generar una pestaña de fragmentos para
 IA a partir de bloques completos. Es una copia local y explícita: no escribe el
 documento origen ni intenta calcular tokens de un proveedor.
 
+También pueden preparar un resumen desde una selección en una pestaña derivada.
+La aplicación conserva literalmente la fuente elegida y aporta solo una
+plantilla Markdown para que la persona redacte el resumen: no hay inferencia,
+red, telemetría ni modificación del documento origen.
+
 ## Git
 
 - Rama principal: `main` y `origin/main`, con el estado validado de Codex.
