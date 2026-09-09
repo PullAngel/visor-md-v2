@@ -7587,12 +7587,24 @@ impl App {
             PhysicalKey::Code(KeyCode::ArrowLeft) => {
                 let shift = self.modifiers.shift_key();
                 let document = &mut self.document;
-                let _ = document.source_editor.move_left(&document.source, shift);
+                let _ = if self.modifiers.control_key() {
+                    document
+                        .source_editor
+                        .move_word(&document.source, false, shift)
+                } else {
+                    document.source_editor.move_left(&document.source, shift)
+                };
             }
             PhysicalKey::Code(KeyCode::ArrowRight) => {
                 let shift = self.modifiers.shift_key();
                 let document = &mut self.document;
-                let _ = document.source_editor.move_right(&document.source, shift);
+                let _ = if self.modifiers.control_key() {
+                    document
+                        .source_editor
+                        .move_word(&document.source, true, shift)
+                } else {
+                    document.source_editor.move_right(&document.source, shift)
+                };
             }
             PhysicalKey::Code(KeyCode::ArrowUp) => {
                 let shift = self.modifiers.shift_key();

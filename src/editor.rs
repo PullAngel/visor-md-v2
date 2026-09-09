@@ -82,6 +82,12 @@ impl TextBuffer {
             .char_to_byte((character + 1).min(self.rope.len_chars()))
     }
 
+    fn char_at_byte(&self, byte: usize) -> Option<char> {
+        (byte < self.len_bytes())
+            .then(|| self.rope.get_char(self.rope.byte_to_char(byte)))
+            .flatten()
+    }
+
     fn line_start(&self, byte: usize) -> usize {
         self.rope.line_to_byte(self.rope.byte_to_line(byte))
     }
@@ -601,6 +607,50 @@ impl SourceEditor {
         self.set_cursor(source, target, extend)
     }
 
+    /// Navegación semántica pequeña y local: letras, números y guion bajo
+    /// forman una palabra. No necesita segmentadores externos y conserva la
+    /// garantía de no ubicar el cursor dentro de UTF-8 o CRLF.
+    pub fn move_word(
+        &mut self,
+        source: &TextBuffer,
+        forward: bool,
+        extend: bool,
+    ) -> Result<(), EditError> {
+        let mut target = self.cursor;
+        if forward {
+            while source.char_at_byte(target).is_some_and(is_word_character) {
+                target = source.next_boundary(target);
+            }
+            while source
+                .char_at_byte(target)
+                .is_some_and(|character| !is_word_character(character))
+            {
+                target = source.next_boundary(target);
+            }
+        } else {
+            while target > 0 {
+                let previous = source.previous_boundary(target);
+                if source
+                    .char_at_byte(previous)
+                    .is_some_and(|character| !is_word_character(character))
+                {
+                    target = previous;
+                } else {
+                    break;
+                }
+            }
+            while target > 0 {
+                let previous = source.previous_boundary(target);
+                if source.char_at_byte(previous).is_some_and(is_word_character) {
+                    target = previous;
+                } else {
+                    break;
+                }
+            }
+        }
+        self.set_cursor(source, target, extend)
+    }
+
     /// Va al límite del documento sin usar bytes intermedios de una secuencia
     /// UTF-8 ni del CRLF. `Shift` conserva el ancla para la selección habitual
     /// de Ctrl+Inicio y Ctrl+Fin.
@@ -644,6 +694,10 @@ impl SourceEditor {
         }
         Ok(changed)
     }
+}
+
+fn is_word_character(character: char) -> bool {
+    character.is_alphanumeric() || character == '_'
 }
 
 #[cfg(test)]
@@ -949,6 +1003,26 @@ mod tests {
             .unwrap();
         assert_eq!(editor.cursor(), 0);
         assert_eq!(editor.anchor(), 0);
+    }
+
+    #[test]
+    fn navegacion_por_palabras_respeta_unicode_crlf_y_seleccion() {
+        let source = buffer("uno áé, dos\r\n🔒_clave final");
+        let mut editor = SourceEditor::new();
+        editor.set_cursor(&source, 0, false).unwrap();
+
+        editor.move_word(&source, true, false).unwrap();
+        assert_eq!(editor.cursor(), "uno ".len());
+        editor.move_word(&source, true, true).unwrap();
+        assert_eq!(editor.selection(), "uno ".len().."uno áé, ".len());
+
+        editor.move_word(&source, true, false).unwrap();
+        assert_eq!(editor.cursor(), "uno áé, dos\r\n🔒".len());
+        editor.move_word(&source, false, true).unwrap();
+        assert_eq!(
+            editor.selection(),
+            "uno áé, ".len().."uno áé, dos\r\n🔒".len()
+        );
     }
 
     #[test]
