@@ -34,11 +34,31 @@ compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
 | **Comparación apilada de fuente y vista** | **3.497.984 bytes, 3,336 MiB** |
 | **Interacción de tablas y flujos portables** | **3.505.664 bytes, 3,343 MiB** |
 | **Núcleo de edición y seguridad de workspace** | **3.515.392 bytes, 3,353 MiB** |
+| **Herramientas de estudio derivadas** | **3.516.928 bytes, 3,354 MiB** |
 
 Superar 8 MB exige medición, explicación y aprobación. El límite no se usa para
 recortar seguridad, estabilidad, accesibilidad, Unicode o funciones esenciales.
 Mermaid, correctores y otros componentes pesados no tienen permiso automático
 para ampliar el núcleo.
+
+### Herramientas de estudio derivadas del 9 de septiembre de 2026
+
+Este checkpoint añade pestañas locales de resumen y conceptos a partir de una
+selección. Copian la fuente elegida y agregan solo plantillas Markdown
+portables: no incorporan IA, red, acceso adicional al filesystem ni formato
+privado. El aumento de 1.536 bytes conserva un margen muy amplio frente al
+límite deseado.
+
+| Medida | Resultado |
+| --- | --- |
+| Binario Windows | 3.516.928 bytes, 3,354 MiB |
+| SHA-256 | `5A764FFDC42567BD10AEC993A412E1AEF92BA9AEC4CA434CAB4A44C78AF26DC7` |
+| Variación frente al checkpoint anterior | +1.536 bytes |
+| Margen frente al límite deseado | 4,646 MiB |
+
+El gate completo verificó formato, Clippy estricto, 217 pruebas, SBOM,
+documentación y build release. Sigue pendiente la evidencia humana de
+descubribilidad y la validación de release en Linux.
 
 ### Núcleo de edición y seguridad de workspace del 9 de septiembre de 2026
 
