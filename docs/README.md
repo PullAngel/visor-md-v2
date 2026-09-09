@@ -43,6 +43,7 @@ Estos documentos deben cambiar cuando cambia el producto o su implementación:
 | [`design.md`](design.md) | Sistema visual e interacción |
 | [`design-audit.md`](design-audit.md) | Evidencia y plan vigente de corrección visual |
 | [`editor-workspace-ui-audit.md`](editor-workspace-ui-audit.md) | Auditoría y secuencia UX de edición, índice y bóvedas |
+| [`research/08-export-evaluation.md`](research/08-export-evaluation.md) | Evaluación de dependencias y aislamiento para PDF/DOCX antes de incorporarlas |
 | [`decisions.md`](decisions.md) | ADR y decisiones reemplazadas |
 | [`future.md`](future.md) | Ideas fuera del plan activo |
 
