@@ -33,11 +33,30 @@ compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
 | **UX editorial y navegación contextual** | **3.486.720 bytes, 3,325 MiB** |
 | **Comparación apilada de fuente y vista** | **3.497.984 bytes, 3,336 MiB** |
 | **Interacción de tablas y flujos portables** | **3.505.664 bytes, 3,343 MiB** |
+| **Núcleo de edición y seguridad de workspace** | **3.515.392 bytes, 3,353 MiB** |
 
 Superar 8 MB exige medición, explicación y aprobación. El límite no se usa para
 recortar seguridad, estabilidad, accesibilidad, Unicode o funciones esenciales.
 Mermaid, correctores y otros componentes pesados no tienen permiso automático
 para ampliar el núcleo.
+
+### Núcleo de edición y seguridad de workspace del 9 de septiembre de 2026
+
+Este checkpoint incorpora navegación Unicode por palabras y por documento,
+copia exacta desde el buffer de fuente y diagnósticos que distinguen wikilinks
+ausentes de rutas bloqueadas. Amplía además la bóveda adversarial sin añadir
+dependencias, red, permisos, formatos persistentes ni recursos secundarios.
+
+| Medida | Resultado |
+| --- | --- |
+| Binario Windows | 3.515.392 bytes, 3,353 MiB |
+| SHA-256 | `69F9828858160E0CD6DE3EB631F85CF0BC6DCC9C79F6EF4551C51EE3C8E86641` |
+| Variación frente al checkpoint anterior | +9.728 bytes |
+| Margen frente al límite deseado | 4,647 MiB |
+
+El gate completo verificó formato, Clippy estricto, 214 pruebas, SBOM,
+documentación y build release. Confirma integración local; no sustituye QA
+manual, CI Linux, benchmarks de arranque o auditoría de release.
 
 ### Interacción de tablas y flujos portables del 8 de septiembre de 2026
 

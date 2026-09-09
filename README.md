@@ -6,9 +6,9 @@ Está pensada para estudio, documentos producidos por IA y bóvedas existentes d
 
 ## Estado real
 
-Es una versión de desarrollo avanzada, no una v2.0 distribuible todavía. Ya abre, lee, edita, compara fuente y vista, guarda de forma atómica, usa pestañas y navega una carpeta autorizada. Incluye búsqueda, índice, wikilinks, backlinks, callouts, recuperación local explícita y límites para contenido patológico.
+Es una versión de desarrollo avanzada, no una v2.0 distribuible todavía. Ya abre, lee, edita, compara fuente y vista, guarda de forma atómica, usa pestañas y navega una carpeta autorizada. Incluye búsqueda, índice, wikilinks, backlinks, callouts, recuperación local explícita y límites para contenido patológico. Los diagnósticos de bóveda distinguen una nota ausente de una ruta bloqueada por la política de archivos.
 
-Faltan QA humano sistemático, accesibilidad completa, corpus ampliado de bóvedas, herramientas de estudio, exportación PDF/DOCX, empaquetado y validación final de plataformas. Ver [`docs/status.md`](docs/status.md) y [`docs/roadmap.md`](docs/roadmap.md).
+Faltan QA humano sistemático, accesibilidad completa, divisiones reales de documentos y ventanas separadas, corpus ampliado de bóvedas, herramientas de estudio, exportación PDF/DOCX, empaquetado y validación final de plataformas. Ver [`docs/status.md`](docs/status.md) y [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Principios
 
@@ -22,15 +22,15 @@ Faltan QA humano sistemático, accesibilidad completa, corpus ampliado de bóved
 ## Capacidades actuales
 
 - CommonMark y GFM esencial, lectura, fuente y comparación.
-- Edición Unicode con IME, selección, undo/redo, pegado explícito y ayudas Markdown reversibles.
+- Edición Unicode con IME, selección, navegación por carácter, palabra o documento, undo/redo, pegado y copia explícitos, y ayudas Markdown reversibles.
 - Guardado atómico, conflictos externos, recuperación y preservación de UTF-8, BOM y EOL.
-- Pestañas, búsqueda, índice, workspace en memoria, árbol, wikilinks y backlinks sin escribir en `.obsidian`.
+- Pestañas, búsqueda, índice, workspace en memoria, árbol, wikilinks y backlinks sin escribir en `.obsidian`; rutas UNC, absolutas, `file:` o con escapes se conservan visibles pero se bloquean.
 
 ## Seguridad y desarrollo
 
 El contenido no ejecuta scripts ni carga recursos remotos automáticamente. Las rutas externas, absolutas, UNC o fuera de la raíz se bloquean; entradas que exceden límites degradan a fuente inerte visible. Ver [`docs/security.md`](docs/security.md) y [`docs/threat-model.md`](docs/threat-model.md).
 
-Requiere Rust estable con MSVC en Windows. Gate local:
+El último gate local verificó 214 pruebas, Clippy, SBOM, documentación y build release de Windows: 3.515.392 bytes (3,353 MiB). Requiere Rust estable con MSVC en Windows. Gate local:
 
 ```powershell
 .\scripts\check.ps1

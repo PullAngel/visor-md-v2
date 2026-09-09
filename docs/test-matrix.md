@@ -55,7 +55,7 @@ Estados permitidos:
 
 | Propiedad | Nivel | Windows | Linux | Evidencia actual |
 | --- | --- | --- | --- | --- |
-| Tema claro y oscuro | Unitario y visual | Parcial | Pendiente | Paletas interpolan todos sus roles y la transición termina en 200 ms sin bucle permanente; falta QA visual y preferencia de reducir movimiento |
+| Tema claro y oscuro | Unitario y visual | Parcial | Pendiente | Paletas interpolan todos sus roles y la transición termina en 200 ms sin bucle permanente; la preferencia de reducir movimiento la vuelve instantánea y falta QA visual |
 | Reducir movimiento | Unitario y configuración | Parcial | Pendiente | La preferencia local versionada migra desde formatos anteriores y evita la transición de tema; falta QA visual y extensión al resto de animaciones |
 | Resize sin layout corrupto | Integración | Parcial | Pendiente | Prototipo |
 | Chrome y controles de ventana | Unitario y manual | Parcial | Pendiente | Geometría de controles, drag y resize cubierta; falta QA manual de Windows sin borde y fallback nativo |
@@ -63,14 +63,14 @@ Estados permitidos:
 | Árbol de paneles de documentos | Unitario y adversarial | Parcial | Pendiente | Referencias sin duplicar buffers, colapso al cerrar, geometría horizontal/vertical, tamaños transitorios, fracciones inválidas e IDs ausentes probados; falta dibujo, foco, scroll y QA visual de divisiones. |
 | DPI y zoom | Unitario, manual y visual | Parcial | Pendiente | El layout escala cuerpo, márgenes, sangrías y marcadores a partir de `Window::scale_factor`; `la_escala_dpi_aumenta_la_tipografia_sin_cambiar_el_ancho_logico` verifica la propiedad geométrica. Falta QA en monitores con distintas escalas y el futuro zoom explícito. |
 | Selección con mouse | Integración y visual | Parcial | Pendiente | Hit testing y geometría de Parley comparten el layout; autoscroll y copia unitaria probados, falta QA manual |
-| Copia al portapapeles | Integración y seguridad | Parcial | Pendiente | `Ctrl+C` y `Ctrl+Shift+C` distinguen vista y fuente en pruebas de selección; falta QA con otras aplicaciones y plataformas |
+| Copia al portapapeles | Integración y seguridad | Parcial | Pendiente | En lectura, `Ctrl+C` y `Ctrl+Shift+C` distinguen vista y fuente; en edición la selección sale directamente del buffer Unicode, no de un render atrasado. Falta QA con otras aplicaciones y plataformas |
 | Cursor de texto sobre contenido | Manual | Parcial | Pendiente | Cambia con el mismo hit testing de selección; requiere QA visual |
 | Pérdida de foco durante selección | Manual | Parcial | Pendiente | Cancela arrastre y modificadores, conserva selección; requiere QA manual |
-| Selección con teclado | Accesibilidad | Parcial | Pendiente | Flechas verticales y horizontales, Shift+flechas, Ctrl+A y Escape funcionan; falta foco y atajos de línea completos |
-| Menú contextual | End to end | Bloqueado | Bloqueado | Referencia en v1 |
-| IME | Manual | Bloqueado | Bloqueado | Editor pendiente |
+| Selección con teclado | Accesibilidad | Parcial | Pendiente | Flechas, Ctrl+flechas por palabra, Inicio/Fin, Ctrl+Inicio/Fin, Shift, Ctrl+A y Escape funcionan; falta QA de foco y plataforma |
+| Menú contextual | End to end | Parcial | Pendiente | Menú propio contextualiza copiar, pegar, cortar, formato, tablas y estudio; falta QA manual de cierre, foco y estados deshabilitados |
+| IME | Manual | Parcial | Pendiente | Los commits IME llegan al buffer Unicode; falta QA multilingüe por plataforma |
 | Lector de pantalla | Accesibilidad | Bloqueado | Bloqueado | Estrategia pendiente |
-| Reduce motion | Manual y unitario | Bloqueado | Bloqueado | Chrome pendiente |
+| Reduce motion | Manual y unitario | Parcial | Pendiente | Preferencia local versionada elimina la transición de tema; falta aplicarla a futuras transiciones de paneles y pestañas |
 
 ## Rendimiento
 
@@ -81,7 +81,7 @@ Estados permitidos:
 | Documento de 5 MB | Benchmark | Verificado en Sprint 0 | Pendiente | `budget.md` |
 | Scroll proporcional a visible | Unitario y benchmark | Parcial | Pendiente | Rango visible por búsqueda binaria; 4,4 ms medidos |
 | Memoria estable | Benchmark | Parcial | Pendiente | Medición inicial |
-| Binario menor de 8 MB | Release | Verificado | Pendiente | 3.473.920 bytes, 3,313 MiB, release posterior al chrome de Windows |
+| Binario menor de 8 MB | Release | Verificado | Pendiente | 3.515.392 bytes, 3,353 MiB, release del 9 de septiembre de 2026 |
 
 ## Cadena de suministro
 

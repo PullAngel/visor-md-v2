@@ -11,7 +11,9 @@ VFS acotada. La referencia anterior a Codex permanece intacta en
 `archive/claude-pre-codex`.
 
 El lector y el editor tienen gates automáticos verdes: la suite local actual
-reúne 211 regresiones. Permanecen pendientes el QA humano acumulado, la
+reúne 214 regresiones. El gate de Windows del 9 de septiembre también verificó
+Clippy, SBOM, documentación y un release de 3.515.392 bytes (3,353 MiB).
+Permanecen pendientes el QA humano acumulado, la
 actualización incremental de algunos modelos visibles, accesibilidad completa,
 exportación y distribución.
 
@@ -260,7 +262,7 @@ Evidencia actual en Windows:
   El smoke `--bench=0` abrió y pintó la fixture de 23 bloques sin error; sus
   tiempos de 682 ms de ventana visible y 1.764 ms de primer pintado son una
   muestra aislada bajo carga de compilación, no una serie de rendimiento;
-- release Windows actual: 3.471.360 bytes, 3,310 MiB, SHA-256
+- release Windows de un checkpoint anterior: 3.471.360 bytes, 3,310 MiB, SHA-256
   `FB61E47AA8EC50ECD823202D9AF047E4065C7780DDA1B1536FD1C658D9FF3D2E`;
 - smoke test release con `--bench=0` y la fixture visual: salida 0, ventana
   visible en 359 ms y primer cuadro con 23 bloques en 907 ms. Es una muestra
