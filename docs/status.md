@@ -17,6 +17,10 @@ Permanecen pendientes el QA humano acumulado, la
 actualización incremental de algunos modelos visibles, accesibilidad completa,
 exportación y distribución.
 
+Las herramientas de estudio ya pueden generar una pestaña de fragmentos para
+IA a partir de bloques completos. Es una copia local y explícita: no escribe el
+documento origen ni intenta calcular tokens de un proveedor.
+
 ## Git
 
 - Rama principal: `main` y `origin/main`, con el estado validado de Codex.

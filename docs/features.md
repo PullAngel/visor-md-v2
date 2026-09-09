@@ -95,7 +95,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Función | Estado | Criterio mínimo |
 | --- | --- | --- |
 | Copiar Markdown de un bloque | Parcial | `Ctrl+Shift+C` conserva la fuente de bloques completos |
-| Fragmentar documento largo | Planificado | No corta estructuras de forma destructiva |
+| Fragmentar documento largo | Parcial | La paleta de estudio prepara una pestaña nueva con bloques completos bajo un límite orientativo; no altera el original ni corta una estructura para cumplirlo. Falta elegir, copiar o guardar cada fragmento desde un panel dedicado |
 | Comparar versiones | Planificado | Diferencias legibles y no destructivas |
 | Archivo listo para adjuntar | Planificado | Markdown portable |
 | Copia para Discord o correo | Parcial | Desde lectura, el menú contextual y la paleta preparan bloques seleccionados sin abrir ni resolver enlaces; faltan variantes y QA con destinos reales |

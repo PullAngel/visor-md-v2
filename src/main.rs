@@ -196,13 +196,14 @@ const WORKSPACE_HUB_ACTIONS: [AppAction; 8] = [
 ];
 /// Herramientas de estudio reunidas fuera del menú contextual plano. Comparten
 /// paleta, teclado y la misma fuente Markdown portable que el resto del editor.
-const STUDY_ACTIONS: [AppAction; 6] = [
+const STUDY_ACTIONS: [AppAction; 7] = [
     AppAction::InsertStudyQuestion,
     AppAction::InsertStudySummary,
     AppAction::InsertStudyConceptList,
     AppAction::InsertStudyUnderstood,
     AppAction::InsertStudyDoubt,
     AppAction::InsertStudyPending,
+    AppAction::PrepareAiFragments,
 ];
 static NEXT_DOCUMENT_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -724,6 +725,7 @@ enum AppAction {
     InsertStudyUnderstood,
     InsertStudyDoubt,
     InsertStudyPending,
+    PrepareAiFragments,
     CopyPlatform,
     ToggleSection,
     SearchDocument,
@@ -742,7 +744,7 @@ enum AppAction {
     CommandPalette,
 }
 
-const APP_ACTIONS: [AppAction; 45] = [
+const APP_ACTIONS: [AppAction; 46] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -775,6 +777,7 @@ const APP_ACTIONS: [AppAction; 45] = [
     AppAction::InsertStudyUnderstood,
     AppAction::InsertStudyDoubt,
     AppAction::InsertStudyPending,
+    AppAction::PrepareAiFragments,
     AppAction::CopyPlatform,
     AppAction::ToggleSection,
     AppAction::CopyTableTsv,
@@ -823,6 +826,7 @@ impl AppAction {
             Self::InsertStudyUnderstood => "Marcar contenido como entendido",
             Self::InsertStudyDoubt => "Marcar contenido como dudoso",
             Self::InsertStudyPending => "Marcar contenido como pendiente",
+            Self::PrepareAiFragments => "Preparar fragmentos para IA",
             Self::CopyPlatform => "Copiar para Discord o correo",
             Self::ToggleSection => "Plegar o desplegar sección enfocada",
             Self::SearchDocument => "Buscar en documento · Ctrl+F",
@@ -4698,6 +4702,58 @@ impl DocumentMetrics {
     }
 }
 
+/// Límite orientativo para una copia de trabajo. No equivale a tokens de un
+/// proveedor ni obliga a cortar una estructura Markdown para cumplirlo.
+const AI_FRAGMENT_TARGET_BYTES: usize = 12_000;
+
+fn markdown_fragments(source: &str, blocks: &[Block], target_bytes: usize) -> Vec<String> {
+    if source.is_empty() {
+        return Vec::new();
+    }
+    let target_bytes = target_bytes.max(1);
+    let mut fragments = Vec::new();
+    let mut current = String::new();
+    let mut consumed = 0;
+    for block in blocks {
+        let end = block.source.end.min(source.len());
+        if end < consumed || !source.is_char_boundary(consumed) || !source.is_char_boundary(end) {
+            continue;
+        }
+        let piece = &source[consumed..end];
+        if !current.is_empty() && current.len().saturating_add(piece.len()) > target_bytes {
+            fragments.push(std::mem::take(&mut current));
+        }
+        current.push_str(piece);
+        consumed = end;
+    }
+    if consumed < source.len() && source.is_char_boundary(consumed) {
+        let tail = &source[consumed..];
+        if !current.is_empty() && current.len().saturating_add(tail.len()) > target_bytes {
+            fragments.push(std::mem::take(&mut current));
+        }
+        current.push_str(tail);
+    }
+    if !current.is_empty() {
+        fragments.push(current);
+    }
+    if fragments.is_empty() {
+        vec![source.to_owned()]
+    } else {
+        fragments
+    }
+}
+
+fn ai_fragment_document(source: &str, blocks: &[Block]) -> String {
+    let fragments = markdown_fragments(source, blocks, AI_FRAGMENT_TARGET_BYTES);
+    let total = fragments.len();
+    fragments
+        .into_iter()
+        .enumerate()
+        .map(|(index, fragment)| format!("## Fragmento {} de {total}\n\n{fragment}", index + 1))
+        .collect::<Vec<_>>()
+        .join("\n\n---\n\n")
+}
+
 fn paths_refer_to_same_file(left: &std::path::Path, right: &std::path::Path) -> bool {
     if left == right {
         return true;
@@ -6593,6 +6649,7 @@ impl App {
             AppAction::InsertStudyUnderstood => self.insert_study_state(StudyState::Understood),
             AppAction::InsertStudyDoubt => self.insert_study_state(StudyState::Doubt),
             AppAction::InsertStudyPending => self.insert_study_state(StudyState::Pending),
+            AppAction::PrepareAiFragments => self.prepare_ai_fragments(),
             AppAction::CopyPlatform => self.copy_selection_for_platform(),
             AppAction::ToggleSection => self.toggle_focused_section(),
             AppAction::SearchDocument => self.open_document_search(),
@@ -7383,6 +7440,36 @@ impl App {
         let eol = self.document_line_ending();
         let template = study_concept_list_template(eol);
         self.edit_source(|editor, source| editor.insert(source, &template));
+    }
+
+    /// Crea una pestaña derivada para copiar o guardar fragmentos. El archivo
+    /// original no se edita, no se consulta red y cada fragmento conserva
+    /// bloques enteros aunque uno de ellos exceda el tamaño orientativo.
+    fn prepare_ai_fragments(&mut self) {
+        let source = self.document.source.to_string();
+        let blocks = match safe_buffer_blocks(&self.document.source) {
+            Ok(blocks) => blocks,
+            Err(_) => self.document.blocks.clone(),
+        };
+        let prepared = ai_fragment_document(&source, &blocks);
+        let mut document = DocumentState::untitled();
+        document.path = "fragmentos para IA.md".to_string();
+        document.source = TextBuffer::from_text(&prepared);
+        document.source_editor.mark_recovered();
+        match safe_buffer_blocks(&document.source) {
+            Ok(blocks) => {
+                document.metrics = DocumentMetrics::from_blocks(&blocks);
+                document.rendered_blocks = blocks.clone();
+                document.blocks = blocks;
+                document.mode = DocumentMode::Reading;
+            }
+            Err(_) => {
+                self.set_notice("no se pudieron preparar fragmentos seguros");
+                return;
+            }
+        }
+        self.open_document_in_tab(document);
+        self.set_notice("fragmentos preparados en una pestaña nueva · no se modificó el original");
     }
 
     fn insert_study_state(&mut self, state: StudyState) {
@@ -14080,6 +14167,20 @@ mod pruebas_inline {
                 .iter()
                 .any(|block| block.text.contains("Pregunta abierta"))
         );
+    }
+
+    #[test]
+    fn los_fragmentos_para_ia_conservan_bloques_y_fuente_completa() {
+        let source = "# Uno\n\nprimer bloque\n\n## Dos\n\nsegundo bloque largo";
+        let outcome = parse_blocks(source).expect("el Markdown es válido");
+        let fragments = markdown_fragments(source, &outcome.blocks, 20);
+
+        assert!(fragments.len() > 1);
+        assert_eq!(fragments.concat(), source);
+        assert!(fragments.iter().any(|fragment| fragment.contains("## Dos")));
+        let prepared = ai_fragment_document(source, &outcome.blocks);
+        assert!(prepared.contains("## Fragmento 1 de"));
+        assert!(prepared.contains("segundo bloque largo"));
     }
 
     #[test]
