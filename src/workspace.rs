@@ -499,33 +499,102 @@ fn headings_in(source: &str) -> Vec<Heading> {
 
 fn wikilinks_in(source: &str) -> Vec<WikiLink> {
     let mut links = Vec::new();
-    let mut rest = source;
-    while let Some(start) = rest.find("[[") {
-        let after_open = &rest[start + 2..];
-        let Some(end) = after_open.find("]]") else {
-            break;
-        };
-        let raw = after_open[..end].trim();
-        if !raw.is_empty() {
-            let (target, alias) = raw.split_once('|').map_or((raw, None), |(target, alias)| {
-                (target.trim(), Some(alias.trim().to_owned()))
-            });
-            let (note, heading) = target
-                .split_once('#')
-                .map_or((target.trim().to_owned(), None), |(note, heading)| {
-                    (note.trim().to_owned(), Some(heading.trim().to_owned()))
-                });
-            if !note.is_empty() {
-                links.push(WikiLink {
-                    note,
-                    alias: alias.filter(|alias| !alias.is_empty()),
-                    heading: heading.filter(|heading| !heading.is_empty()),
-                });
+    let mut fenced = None;
+    let mut inline_backticks = None;
+    for line in source.lines() {
+        let trimmed = line.trim_start();
+        if let Some((marker, length)) = fenced {
+            if is_fence_line(trimmed, marker, length) {
+                fenced = None;
             }
+            continue;
         }
-        rest = &after_open[end + 2..];
+        if let Some(marker) = fence_open_marker(trimmed) {
+            fenced = Some(marker);
+            continue;
+        }
+
+        let mut index = 0;
+        while index < line.len() {
+            let remaining = &line[index..];
+            if remaining.starts_with('`') {
+                let run = remaining.bytes().take_while(|byte| *byte == b'`').count();
+                match inline_backticks {
+                    Some(open) if open == run => inline_backticks = None,
+                    None => inline_backticks = Some(run),
+                    Some(_) => {}
+                }
+                index += run;
+                continue;
+            }
+            if inline_backticks.is_some()
+                || !remaining.starts_with("[[")
+                || escaped_by_backslash(line, index)
+            {
+                let character = remaining.chars().next().expect("el índice es válido");
+                index += character.len_utf8();
+                continue;
+            }
+            let after_open = &line[index + 2..];
+            let Some(end) = after_open.find("]]") else {
+                break;
+            };
+            // Una comilla invertida antes del cierre abre código inline. Se
+            // vuelve a procesar en la próxima vuelta en vez de atribuirle un
+            // enlace literal al índice de la bóveda.
+            if let Some(backtick) = after_open.find('`')
+                && backtick < end
+            {
+                index += 2 + backtick;
+                continue;
+            }
+            push_wikilink(&mut links, &after_open[..end]);
+            index += 2 + end + 2;
+        }
     }
     links
+}
+
+fn fence_open_marker(line: &str) -> Option<(u8, usize)> {
+    let marker = *line.as_bytes().first()?;
+    let length = line.bytes().take_while(|byte| *byte == marker).count();
+    (matches!(marker, b'`' | b'~') && length >= 3).then_some((marker, length))
+}
+
+fn is_fence_line(line: &str, marker: u8, open_length: usize) -> bool {
+    line.bytes().take_while(|byte| *byte == marker).count() >= open_length
+}
+
+fn escaped_by_backslash(line: &str, index: usize) -> bool {
+    line.as_bytes()[..index]
+        .iter()
+        .rev()
+        .take_while(|byte| **byte == b'\\')
+        .count()
+        % 2
+        == 1
+}
+
+fn push_wikilink(links: &mut Vec<WikiLink>, raw: &str) {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return;
+    }
+    let (target, alias) = raw.split_once('|').map_or((raw, None), |(target, alias)| {
+        (target.trim(), Some(alias.trim().to_owned()))
+    });
+    let (note, heading) = target
+        .split_once('#')
+        .map_or((target.trim().to_owned(), None), |(note, heading)| {
+            (note.trim().to_owned(), Some(heading.trim().to_owned()))
+        });
+    if !note.is_empty() {
+        links.push(WikiLink {
+            note,
+            alias: alias.filter(|alias| !alias.is_empty()),
+            heading: heading.filter(|heading| !heading.is_empty()),
+        });
+    }
 }
 
 fn normalized_note_key(note: &str) -> String {
@@ -830,6 +899,43 @@ mod tests {
     #[test]
     fn wikilinks_defectuosos_no_crean_destinos_vacios() {
         assert_eq!(wikilinks_in("[[ ]] [[abierta"), Vec::<WikiLink>::new());
+    }
+
+    #[test]
+    fn no_indexa_wikilinks_literales_en_codigo_ni_escapados() {
+        let links = wikilinks_in(
+            r#"[[nota|visible]] \[[literal]] `[[inline]]`
+```
+[[cerca]]
+```
+~~~rust
+[[otra-cerca]]
+~~~
+[[destino#Sección]]"#,
+        );
+
+        assert_eq!(links.len(), 2);
+        assert_eq!(links[0].note, "nota");
+        assert_eq!(links[0].alias.as_deref(), Some("visible"));
+        assert_eq!(links[1].note, "destino");
+        assert_eq!(links[1].heading.as_deref(), Some("Sección"));
+    }
+
+    #[test]
+    fn un_codigo_inline_multilinea_no_crea_backlinks_falsos() {
+        let links = wikilinks_in("`` [[no]]\nni aquí]] ``\n[[sí]]");
+
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].note, "sí");
+    }
+
+    #[test]
+    fn una_cerca_corta_no_cierra_una_apertura_mas_larga() {
+        let links =
+            wikilinks_in("````\n[[sigue-en-codigo]]\n```\n[[todavia-codigo]]\n````\n[[sí]]");
+
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].note, "sí");
     }
 
     #[test]
