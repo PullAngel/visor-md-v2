@@ -1163,7 +1163,7 @@ impl DocumentPaneTree {
             ) {
                 (Some(first), Some(second)) => Some(Self::Split {
                     axis: *axis,
-                    fraction: fraction.clamp(0.25, 0.75),
+                    fraction: normalized_pane_fraction(*fraction),
                     first: Box::new(first),
                     second: Box::new(second),
                 }),
@@ -1186,12 +1186,10 @@ impl DocumentPaneTree {
                 first,
                 second,
             } => {
-                let fraction = fraction.clamp(0.25, 0.75);
+                let fraction = normalized_pane_fraction(*fraction);
                 let (first_geometry, second_geometry) = match axis {
                     DocumentPaneAxis::Vertical => {
-                        let first_width = (available.width * fraction)
-                            .round()
-                            .clamp(1.0, available.width - 1.0);
+                        let first_width = split_pane_extent(available.width, fraction);
                         (
                             PaneGeometry {
                                 width: first_width,
@@ -1205,9 +1203,7 @@ impl DocumentPaneTree {
                         )
                     }
                     DocumentPaneAxis::Horizontal => {
-                        let first_height = (available.height * fraction)
-                            .round()
-                            .clamp(1.0, available.height - 1.0);
+                        let first_height = split_pane_extent(available.height, fraction);
                         (
                             PaneGeometry {
                                 height: first_height,
@@ -1225,6 +1221,25 @@ impl DocumentPaneTree {
                 second.layout(second_geometry, output);
             }
         }
+    }
+}
+
+/// Reparte una dimensión incluso cuando una llamada de plataforma entrega un
+/// tamaño transitorio de cero o uno durante un resize. No se crea geometría
+/// negativa ni se usa `clamp` con límites invertidos.
+fn split_pane_extent(total: f32, fraction: f32) -> f32 {
+    let total = total.max(0.0);
+    let minimum = if total >= 2.0 { 1.0 } else { 0.0 };
+    (total * normalized_pane_fraction(fraction))
+        .round()
+        .clamp(minimum, total - minimum)
+}
+
+fn normalized_pane_fraction(fraction: f32) -> f32 {
+    if fraction.is_finite() {
+        fraction.clamp(0.25, 0.75)
+    } else {
+        0.5
     }
 }
 
@@ -12060,6 +12075,47 @@ mod pruebas {
                 height: 300.0,
             }
         );
+    }
+
+    #[test]
+    fn los_paneles_degradan_tamanos_y_referencias_patologicas_sin_panico() {
+        let mut panes = DocumentPaneTree::single(1);
+        assert!(!panes.split_document(99, 2, DocumentPaneAxis::Vertical));
+        assert_eq!(panes, DocumentPaneTree::single(1));
+        assert!(panes.split_document(1, 2, DocumentPaneAxis::Horizontal));
+        assert!(panes.without_document(99).is_some());
+        assert!(panes.without_document(1).is_some());
+        assert!(DocumentPaneTree::single(1).without_document(1).is_none());
+
+        let malformed = DocumentPaneTree::Split {
+            axis: DocumentPaneAxis::Vertical,
+            fraction: f32::NAN,
+            first: Box::new(DocumentPaneTree::single(1)),
+            second: Box::new(DocumentPaneTree::single(2)),
+        };
+        let mut layout = Vec::new();
+        malformed.layout(
+            PaneGeometry {
+                x: 0.0,
+                y: 0.0,
+                width: 0.0,
+                height: 1.0,
+            },
+            &mut layout,
+        );
+        assert_eq!(layout.len(), 2);
+        assert!(layout.iter().all(|pane| {
+            pane.geometry.x.is_finite()
+                && pane.geometry.y.is_finite()
+                && pane.geometry.width.is_finite()
+                && pane.geometry.height.is_finite()
+                && pane.geometry.width >= 0.0
+                && pane.geometry.height >= 0.0
+        }));
+        assert_eq!(split_pane_extent(0.0, 0.5), 0.0);
+        assert_eq!(split_pane_extent(1.0, 0.5), 1.0);
+        assert_eq!(split_pane_extent(10.0, -9.0), 3.0);
+        assert_eq!(split_pane_extent(10.0, 9.0), 8.0);
     }
 
     #[test]

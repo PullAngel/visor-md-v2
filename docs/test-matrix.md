@@ -59,6 +59,7 @@ Estados permitidos:
 | Resize sin layout corrupto | Integración | Parcial | Pendiente | Prototipo |
 | Chrome y controles de ventana | Unitario y manual | Parcial | Pendiente | Geometría de controles, drag y resize cubierta; falta QA manual de Windows sin borde y fallback nativo |
 | Pestañas, fijado y cierre protegido | Unitario e integración | Parcial | Pendiente | Cambio, envoltura, identidad separada y protección de pestaña fijada probados; falta QA con mouse y documentos reales |
+| Árbol de paneles de documentos | Unitario y adversarial | Parcial | Pendiente | Referencias sin duplicar buffers, colapso al cerrar, geometría horizontal/vertical, tamaños transitorios, fracciones inválidas e IDs ausentes probados; falta dibujo, foco, scroll y QA visual de divisiones. |
 | DPI y zoom | Unitario, manual y visual | Parcial | Pendiente | El layout escala cuerpo, márgenes, sangrías y marcadores a partir de `Window::scale_factor`; `la_escala_dpi_aumenta_la_tipografia_sin_cambiar_el_ancho_logico` verifica la propiedad geométrica. Falta QA en monitores con distintas escalas y el futuro zoom explícito. |
 | Selección con mouse | Integración y visual | Parcial | Pendiente | Hit testing y geometría de Parley comparten el layout; autoscroll y copia unitaria probados, falta QA manual |
 | Copia al portapapeles | Integración y seguridad | Parcial | Pendiente | `Ctrl+C` y `Ctrl+Shift+C` distinguen vista y fuente en pruebas de selección; falta QA con otras aplicaciones y plataformas |
