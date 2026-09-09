@@ -154,9 +154,11 @@ lógica dentro de la sesión.
    entrada. Respeta la preferencia de reducción de movimiento cuando la
    plataforma la expone y conserva una ruta instantánea accesible.
 
-El primer bloque activo es el modelo seguro de paneles. Las animaciones se
-integran sobre geometría estable: no se añadirán efectos que oculten errores de
-foco, scroll o disposición.
+El modelo seguro de paneles ya existe con pruebas de identidad, colapso y
+geometría. El siguiente bloque activo es conectarlo a dibujo, foco, scroll y
+selección reales sin convertir esas pruebas de base en una función declarada
+antes de tiempo. Las animaciones se integran sobre geometría estable: no se
+añadirán efectos que oculten errores de foco, scroll o disposición.
 
 ## Sprint 0: viabilidad nativa
 
