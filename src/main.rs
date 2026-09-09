@@ -667,6 +667,7 @@ enum ContextAction {
     WikiLink,
     Callout,
     StudyQuestion,
+    StudySummary,
     CopyText,
     CopyMarkdown,
     CopyPlatform,
@@ -708,6 +709,7 @@ enum AppAction {
     InsertWikiLink,
     InsertCallout,
     InsertStudyQuestion,
+    InsertStudySummary,
     InsertStudyConceptList,
     InsertStudyUnderstood,
     InsertStudyDoubt,
@@ -730,7 +732,7 @@ enum AppAction {
     CommandPalette,
 }
 
-const APP_ACTIONS: [AppAction; 43] = [
+const APP_ACTIONS: [AppAction; 44] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -757,6 +759,7 @@ const APP_ACTIONS: [AppAction; 43] = [
     AppAction::InsertWikiLink,
     AppAction::InsertCallout,
     AppAction::InsertStudyQuestion,
+    AppAction::InsertStudySummary,
     AppAction::InsertStudyConceptList,
     AppAction::InsertStudyUnderstood,
     AppAction::InsertStudyDoubt,
@@ -803,6 +806,7 @@ impl AppAction {
             Self::InsertWikiLink => "Insertar enlace de bóveda",
             Self::InsertCallout => "Insertar callout de nota",
             Self::InsertStudyQuestion => "Insertar pregunta de estudio",
+            Self::InsertStudySummary => "Insertar resumen de estudio",
             Self::InsertStudyConceptList => "Insertar lista de conceptos",
             Self::InsertStudyUnderstood => "Marcar contenido como entendido",
             Self::InsertStudyDoubt => "Marcar contenido como dudoso",
@@ -865,6 +869,7 @@ impl ContextAction {
             Self::WikiLink => "Enlace de bóveda",
             Self::Callout => "Callout de nota",
             Self::StudyQuestion => "Pregunta de estudio",
+            Self::StudySummary => "Resumen de estudio",
             Self::CopyText => "Copiar texto",
             Self::CopyMarkdown => "Copiar Markdown original",
             Self::CopyPlatform => "Copiar para Discord o correo",
@@ -900,6 +905,7 @@ fn context_actions(mode: DocumentMode, table_available: bool) -> Vec<ContextActi
             ContextAction::WikiLink,
             ContextAction::Callout,
             ContextAction::StudyQuestion,
+            ContextAction::StudySummary,
             ContextAction::CopyText,
             ContextAction::CopyMarkdown,
         ],
@@ -2518,6 +2524,14 @@ impl StudyState {
 fn study_concept_list_template(eol: &str) -> String {
     format!(
         "## Conceptos clave{eol}{eol}- **Concepto:** definición breve y precisa{eol}- **Concepto:** relación o ejemplo"
+    )
+}
+
+/// Un resumen es una estructura portable de texto, no un campo oculto ni un
+/// formato propio. Se puede completar, mover o leer igual en Obsidian y Git.
+fn study_summary_template(eol: &str) -> String {
+    format!(
+        "## Resumen{eol}{eol}- **Idea principal:** {eol}- **Explicación o evidencia:** {eol}- **Pregunta abierta:** "
     )
 }
 
@@ -5656,6 +5670,9 @@ impl ApplicationHandler<AppEvent> for App {
                                 ContextAction::StudyQuestion => {
                                     self.perform_action(AppAction::InsertStudyQuestion)
                                 }
+                                ContextAction::StudySummary => {
+                                    self.perform_action(AppAction::InsertStudySummary)
+                                }
                                 ContextAction::CopyText | ContextAction::CopyMarkdown => {
                                     self.copy_selection(action.source_markdown());
                                 }
@@ -6551,6 +6568,7 @@ impl App {
             AppAction::InsertWikiLink => self.apply_markdown_surround("[[", "]]", "nota"),
             AppAction::InsertCallout => self.insert_callout(),
             AppAction::InsertStudyQuestion => self.insert_study_question(),
+            AppAction::InsertStudySummary => self.insert_study_summary(),
             AppAction::InsertStudyConceptList => self.insert_study_concept_list(),
             AppAction::InsertStudyUnderstood => self.insert_study_state(StudyState::Understood),
             AppAction::InsertStudyDoubt => self.insert_study_state(StudyState::Doubt),
@@ -7278,6 +7296,15 @@ impl App {
         }
         let eol = self.document_line_ending();
         let template = format!("> [!QUESTION]- Pregunta{eol}>{eol}> Escribí aquí la respuesta");
+        self.edit_source(|editor, source| editor.insert(source, &template));
+    }
+
+    fn insert_study_summary(&mut self) {
+        if !self.document.mode.is_editable() {
+            self.set_notice("activa edición para insertar un resumen de estudio");
+            return;
+        }
+        let template = study_summary_template(self.document_line_ending());
         self.edit_source(|editor, source| editor.insert(source, &template));
     }
 
@@ -12084,6 +12111,7 @@ mod pruebas {
         assert!(APP_ACTIONS.contains(&AppAction::TogglePinTab));
         assert!(APP_ACTIONS.contains(&AppAction::ToggleSplitOrientation));
         assert!(APP_ACTIONS.contains(&AppAction::InsertStudyQuestion));
+        assert!(APP_ACTIONS.contains(&AppAction::InsertStudySummary));
         assert!(APP_ACTIONS.contains(&AppAction::InsertStudyConceptList));
         assert!(APP_ACTIONS.contains(&AppAction::InsertStudyUnderstood));
         assert!(APP_ACTIONS.contains(&AppAction::InsertStudyDoubt));
@@ -12095,6 +12123,10 @@ mod pruebas {
         );
         assert!(!context_actions(DocumentMode::Reading, false).contains(&ContextAction::Paste));
         assert!(context_actions(DocumentMode::Reading, false).contains(&ContextAction::CopyText));
+        assert!(
+            context_actions(DocumentMode::SourceEditing, false)
+                .contains(&ContextAction::StudySummary)
+        );
     }
 
     #[test]
@@ -13903,6 +13935,22 @@ mod pruebas_inline {
             blocks
                 .iter()
                 .any(|block| block.text.contains("definición breve"))
+        );
+    }
+
+    #[test]
+    fn el_resumen_de_estudio_es_markdown_portable_y_conserva_el_eol() {
+        let template = study_summary_template("\r\n");
+        assert_eq!(
+            template,
+            "## Resumen\r\n\r\n- **Idea principal:** \r\n- **Explicación o evidencia:** \r\n- **Pregunta abierta:** "
+        );
+        let blocks = aplanar(&template);
+        assert!(matches!(blocks[0].kind, Kind::Heading(2)));
+        assert!(
+            blocks
+                .iter()
+                .any(|block| block.text.contains("Pregunta abierta"))
         );
     }
 
