@@ -21,7 +21,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | --- | --- | --- |
 | Apertura de `.md` por argumento | Estable | Muestra ventana y contenido |
 | Parsing Markdown básico | Estable | Casos actuales del prototipo |
-| Tema claro y oscuro | Parcial | Sistema y alternancia manual con transición nativa de 200 ms, sin mover contenido; falta conectar la preferencia de reducir movimiento |
+| Tema claro y oscuro | Parcial | Sistema y alternancia manual con transición nativa de 200 ms, sin mover contenido; la preferencia local de reducir movimiento la vuelve instantánea |
 | Tipografía embebida | Parcial | Reproducción verificada; falta matriz Unicode y fallback |
 | Virtualización inicial | Parcial | Debe eliminar recorridos O(n) por frame |
 | Formato inline real | Parcial | Modelo, layout y dibujo nativos; falta corpus y QA visual sistemáticos |
@@ -42,7 +42,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Función | Estado | Criterio mínimo |
 | --- | --- | --- |
 | Modo fuente | Parcial | Buffer Rope, selección, IME, undo y atajos; navegación vertical por caracteres Unicode y `Fin` fuera de CRLF; falta actualización incremental de la vista fuente |
-| Ayudas de formato | Parcial | Negrita, cursiva, enlace, encabezado H2 y viñeta editan fuente Unicode como un único cambio reversible desde atajo, menú o paleta; falta barra visual y variantes |
+| Ayudas de formato | Parcial | Negrita, cursiva, enlace, encabezado, viñeta, tarea, cita, código, tabla, resaltado, wikilink y callout editan fuente Unicode como cambios reversibles desde atajo, menú, barra o paleta; faltan QA de descubribilidad y variantes contextuales |
 | Vista dividida | Parcial | `F3` compara fuente editable y render de la misma revisión; falta QA de edición prolongada, DPI y accesibilidad |
 | Modo por documento | Parcial | Recuerda lectura, edición o vista dividida mediante hasta 128 claves hash locales; falta QA de reinicio |
 | Guardado atómico | Parcial | Sin corrupción ante fallo y conflictos probados; falta QA multiplataforma |
@@ -53,9 +53,9 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Varios documentos y pestañas | Parcial | Barra visible, cambio y cierre por mouse/teclado, `Ctrl+Tab`, `Ctrl+PageUp/PageDown`, pestañas fijables por sesión, estado, historial, scroll, selección, plegado, anclas y recuperación separados; aperturas, renders y guardados se dirigen por pestaña sin congelar las demás; falta accesibilidad completa |
 | Menú contextual | Parcial | Copia y pegado explícito según modo, búsqueda, cambio de vista y guardado; faltan acciones de workspace y estados deshabilitados visibles |
 | Paleta de comandos | Parcial | `Ctrl+Shift+P` muestra el catálogo compartido, filtra por nombre y ejecuta por teclado o mouse; falta accesibilidad semántica completa |
-| Barra de acciones | Parcial | En lectura prioriza archivo, modo y búsqueda; en edición muestra guardar y las cinco ayudas Markdown actuales. Mouse y F6 comparten acciones; 640 × 480 lógicos evita controles ocultos; falta semántica de lector de pantalla |
+| Barra de acciones | Parcial | En lectura prioriza archivo, modo y búsqueda; en edición muestra guardar y ayudas Markdown esenciales. Mouse y F6 comparten acciones; 640 × 480 lógicos evita controles ocultos; falta semántica de lector de pantalla |
 | Chrome de ventana | Parcial | En Windows no hay borde del sistema: minimizar, maximizar o restaurar, cerrar, arrastrar y redimensionar usan `winit`; otras plataformas conservan controles nativos hasta completar QA accesible |
-| Reducir movimiento | Parcial | Acción persistente local que vuelve instantáneo el cambio de tema; no guarda contenido, rutas ni permisos y falta aplicarla a paneles y pestañas futuras |
+| Reducir movimiento | Parcial | Acción persistente local que vuelve instantáneo el cambio de tema; no guarda contenido, rutas ni permisos. Debe cubrir paneles, pestañas y futuras divisiones cuando tengan transición visual |
 | Paneles plegables | Parcial | Índice, árbol plegable de notas, búsqueda de carpeta y backlinks muestran listas acotadas con selección visible, navegación por teclado o mouse y cierre con Escape; falta accesibilidad completa |
 | Actualizar workspace | Parcial | El catálogo y `Ctrl+Shift+I` reconstruyen de forma explícita el índice cancelable cuando la carpeta cambió; falta invalidación más precisa por archivo |
 | `.txt` y otros textos inertes | Parcial | Extensiones no Markdown se muestran como texto inerte; falta QA y reconocimiento UX |
@@ -85,7 +85,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Copiar bloque o documento | Parcial | `Ctrl+C` copia texto visible; `Ctrl+Shift+C` copia Markdown de bloques completos |
 | Barra de estado | Parcial | Muestra modo, cambios sin guardar y estado de carpeta sin ocupar herramientas permanentes |
 | Alto contraste | Planificado | Matriz Windows y Linux |
-| Reduce motion | Planificado | Todas las transiciones respetan preferencia |
+| Reduce motion | Parcial | La preferencia local ya elimina la transición de tema; debe cubrir toda transición futura |
 | IME | Parcial | Commits de IME insertan en el buffer Unicode; falta QA multilingüe por plataforma |
 | Unicode y fallback | Parcial | Corpus multilingüe y fallback de glifos presentes; falta QA visual sistemático |
 | Lector de pantalla | Planificado | Semántica accesible demostrada |
@@ -98,7 +98,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Fragmentar documento largo | Planificado | No corta estructuras de forma destructiva |
 | Comparar versiones | Planificado | Diferencias legibles y no destructivas |
 | Archivo listo para adjuntar | Planificado | Markdown portable |
-| Copia para Discord o correo | Planificado | Resultado previsible |
+| Copia para Discord o correo | Parcial | Desde lectura, el menú contextual y la paleta preparan bloques seleccionados sin abrir ni resolver enlaces; faltan variantes y QA con destinos reales |
 | Estimación de tokens | Parcial | Aproximación local por caracteres visibles, sin tokenizer ni red; sirve para orientar, no para cotizar un proveedor |
 | IA propia | Descartado | No pertenece a Visor MD |
 
@@ -109,7 +109,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Abrir carpeta o bóveda | Parcial | Sin migración ni cambios implícitos; al recuperar foco compara fuera de UI hasta 1.024 rutas ya indexadas y sugiere `Ctrl+Shift+I` si cambiaron |
 | Lista de notas | Parcial | Panel plegable con árbol del índice; abre solo tras resolver dentro de VFS y señala cambios externos limitados |
 | Búsqueda de bóveda | Parcial | Panel con resultados múltiples del índice en memoria; falta actualización incremental |
-| Wikilinks | Parcial | Resolución contenida y explícita; el índice ignora wikilinks literales en código o escapados y diagnostica rutas absolutas, UNC, `file:` o traversal como bloqueadas, no ausentes; falta panel de diagnóstico |
+| Wikilinks | Parcial | Resolución contenida y explícita; el índice ignora wikilinks literales en código o escapados y el panel de diagnóstico distingue rutas absolutas, UNC, `file:` o traversal bloqueadas de notas ausentes |
 | Backlinks | Parcial | Panel plegable muestra y navega backlinks contenidos; falta incrementalidad |
 | Callouts | Parcial | Sintaxis Obsidian elegida y render nativo; falta corpus de bóvedas |
 | Etiquetas y frontmatter | Planificado | Lectura sin reescritura |

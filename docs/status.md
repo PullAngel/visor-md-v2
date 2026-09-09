@@ -1,6 +1,6 @@
 # Estado actual
 
-Última revisión: 30 de agosto de 2026.
+Última revisión: 9 de septiembre de 2026.
 
 ## Resumen
 
@@ -10,9 +10,10 @@ conflictos, ofrece vista dividida y recorre una carpeta autorizada mediante una
 VFS acotada. La referencia anterior a Codex permanece intacta en
 `archive/claude-pre-codex`.
 
-El lector y el editor tienen gates automáticos verdes. Permanecen pendientes el
-QA humano acumulado, la actualización incremental de algunos modelos visibles,
-accesibilidad completa y distribución.
+El lector y el editor tienen gates automáticos verdes: la suite local actual
+reúne 211 regresiones. Permanecen pendientes el QA humano acumulado, la
+actualización incremental de algunos modelos visibles, accesibilidad completa,
+exportación y distribución.
 
 ## Git
 
@@ -64,8 +65,10 @@ exacto del traspaso.
 - búsqueda binaria del tramo visible;
 - scroll limitado por el viewport real;
 - fallos de inicialización y presentación gráfica reportados sin `panic`;
-- 53 pruebas unitarias y adversariales, incluido un corpus integrado de lector
-  y un barrido adversarial determinista.
+- el corpus integrado de lector, regresiones de editor, archivos, VFS,
+  workspace, recuperación y un barrido adversarial determinista; el conteo
+  vigente de la suite se conserva en el resumen de arriba, no en este inventario
+  histórico.
 - copia explícita de selección: texto visible con `Ctrl+C` y Markdown fuente de
   bloques con `Ctrl+Shift+C`; falta QA manual con aplicaciones externas.
 - apertura primaria desde un mismo handle, limitada a 16 MiB y UTF-8 válido;
