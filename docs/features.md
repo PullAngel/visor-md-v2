@@ -111,7 +111,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Búsqueda de bóveda | Parcial | Panel con resultados múltiples del índice en memoria; falta actualización incremental |
 | Wikilinks | Parcial | Resolución contenida y explícita; el índice ignora wikilinks literales en código o escapados y el panel de diagnóstico distingue rutas absolutas, UNC, `file:` o traversal bloqueadas de notas ausentes |
 | Backlinks | Parcial | Panel plegable muestra y navega backlinks contenidos; falta incrementalidad |
-| Callouts | Parcial | Sintaxis Obsidian elegida y render nativo; falta corpus de bóvedas |
+| Callouts | Parcial | Sintaxis Obsidian elegida y render nativo; la bóveda fixture cubre aliases, callouts, duplicados, código literal y rutas hostiles; falta corpus de compatibilidad ampliado |
 | Etiquetas y frontmatter | Planificado | Lectura sin reescritura |
 | Link peek | Planificado | Reusa renderer con límites |
 | Referencias de bloque | Futuro | Requiere identidad estable |

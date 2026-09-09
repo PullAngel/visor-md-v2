@@ -675,7 +675,7 @@ mod tests {
         let vfs = WorkspaceRoot::open(&root).expect("la fixture está contenida");
         let index = index_workspace(&vfs, WorkspaceLimits::default());
 
-        assert_eq!(index.notes.len(), 4);
+        assert_eq!(index.notes.len(), 5);
         assert!(
             index
                 .notes
@@ -706,6 +706,18 @@ mod tests {
             index.resolve_wikilink("file:///secreto.md"),
             WikiResolution::Blocked
         ));
+
+        let hostile = index
+            .note_at_relative(Path::new("hostil.md"))
+            .expect("la fixture hostil se indexó como nota inerte");
+        assert_eq!(hostile.wikilinks.len(), 4);
+        assert!(
+            hostile
+                .wikilinks
+                .iter()
+                .all(|link| matches!(index.resolve_wikilink(&link.note), WikiResolution::Blocked))
+        );
+        assert_eq!(index.backlinks_to(seguridad).len(), 1);
     }
 
     #[test]
