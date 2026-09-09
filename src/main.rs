@@ -7611,16 +7611,28 @@ impl App {
             PhysicalKey::Code(KeyCode::Home) => {
                 let shift = self.modifiers.shift_key();
                 let document = &mut self.document;
-                let _ = document
-                    .source_editor
-                    .move_line_boundary(&document.source, false, shift);
+                let _ = if self.modifiers.control_key() {
+                    document
+                        .source_editor
+                        .move_document_boundary(&document.source, false, shift)
+                } else {
+                    document
+                        .source_editor
+                        .move_line_boundary(&document.source, false, shift)
+                };
             }
             PhysicalKey::Code(KeyCode::End) => {
                 let shift = self.modifiers.shift_key();
                 let document = &mut self.document;
-                let _ = document
-                    .source_editor
-                    .move_line_boundary(&document.source, true, shift);
+                let _ = if self.modifiers.control_key() {
+                    document
+                        .source_editor
+                        .move_document_boundary(&document.source, true, shift)
+                } else {
+                    document
+                        .source_editor
+                        .move_line_boundary(&document.source, true, shift)
+                };
             }
             PhysicalKey::Code(KeyCode::KeyA) if self.modifiers.control_key() => {
                 let document = &mut self.document;

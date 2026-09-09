@@ -601,6 +601,19 @@ impl SourceEditor {
         self.set_cursor(source, target, extend)
     }
 
+    /// Va al límite del documento sin usar bytes intermedios de una secuencia
+    /// UTF-8 ni del CRLF. `Shift` conserva el ancla para la selección habitual
+    /// de Ctrl+Inicio y Ctrl+Fin.
+    pub fn move_document_boundary(
+        &mut self,
+        source: &TextBuffer,
+        end: bool,
+        extend: bool,
+    ) -> Result<(), EditError> {
+        let target = if end { source.len_bytes() } else { 0 };
+        self.set_cursor(source, target, extend)
+    }
+
     pub fn undo(&mut self, source: &mut TextBuffer) -> Result<bool, EditError> {
         let changed = self.history.undo(source)?;
         if changed {
@@ -918,6 +931,24 @@ mod tests {
         assert_eq!(editor.cursor(), "uno\r\n".len());
         editor.move_line_boundary(&source, true, true).unwrap();
         assert_eq!(editor.selection(), "uno\r\n".len().."uno\r\ndos".len());
+    }
+
+    #[test]
+    fn inicio_y_fin_de_documento_conservan_la_seleccion_unicode() {
+        let source = buffer("inicio á\r\nfinal 🔒");
+        let mut editor = SourceEditor::new();
+        editor
+            .set_cursor(&source, "inicio á\r\n".len(), false)
+            .unwrap();
+
+        editor.move_document_boundary(&source, true, true).unwrap();
+        assert_eq!(editor.selection(), "inicio á\r\n".len()..source.len_bytes());
+
+        editor
+            .move_document_boundary(&source, false, false)
+            .unwrap();
+        assert_eq!(editor.cursor(), 0);
+        assert_eq!(editor.anchor(), 0);
     }
 
     #[test]
