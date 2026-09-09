@@ -603,6 +603,34 @@ fn toolbar_actions(mode: DocumentMode) -> &'static [AppAction] {
     }
 }
 
+/// La barra se recorre en su orden visual: acciones principales, selector de
+/// modo y franja contextual. El selector no alterna estados: cada posición
+/// conserva un destino directo.
+fn toolbar_focus_mode(index: usize) -> Option<ModeTarget> {
+    index
+        .checked_sub(PRIMARY_TOOLBAR_ACTIONS.len())
+        .and_then(|slot| match slot {
+            0 => Some(ModeTarget::Reading),
+            1 => Some(ModeTarget::Editing),
+            2 => Some(ModeTarget::Compare),
+            _ => None,
+        })
+}
+
+fn toolbar_focus_action(index: usize, mode: DocumentMode) -> Option<AppAction> {
+    if index < PRIMARY_TOOLBAR_ACTIONS.len() {
+        return PRIMARY_TOOLBAR_ACTIONS.get(index).copied();
+    }
+    if toolbar_focus_mode(index).is_some() {
+        return None;
+    }
+    toolbar_actions(mode).get(index.checked_sub(3)?).copied()
+}
+
+fn toolbar_focus_count(mode: DocumentMode) -> usize {
+    toolbar_actions(mode).len() + 3
+}
+
 fn contextual_toolbar_actions(mode: DocumentMode) -> &'static [AppAction] {
     if mode.is_editable() {
         &EDITING_CONTEXT_TOOLBAR_ACTIONS
@@ -628,6 +656,7 @@ fn toolbar_action_at(x: f32, y: f32, window_width: f32, mode: DocumentMode) -> O
 
 /// La barra usa iconos para conservar espacio de lectura. Esta ayuda efímera
 /// conserva el nombre de la acción y su atajo tanto con mouse como con F6.
+#[cfg(test)]
 fn toolbar_hint_action(
     focus: Option<usize>,
     pointer: Option<(f32, f32)>,
@@ -635,8 +664,29 @@ fn toolbar_hint_action(
     mode: DocumentMode,
 ) -> Option<AppAction> {
     focus
-        .and_then(|index| toolbar_actions(mode).get(index).copied())
+        .and_then(|index| toolbar_focus_action(index, mode))
         .or_else(|| pointer.and_then(|(x, y)| toolbar_action_at(x, y, window_width, mode)))
+}
+
+fn toolbar_hint_label(
+    focus: Option<usize>,
+    pointer: Option<(f32, f32)>,
+    window_width: f32,
+    mode: DocumentMode,
+) -> Option<&'static str> {
+    focus
+        .and_then(|index| {
+            toolbar_focus_action(index, mode)
+                .map(AppAction::label)
+                .or_else(|| toolbar_focus_mode(index).map(mode_target_label))
+        })
+        .or_else(|| {
+            pointer.and_then(|(x, y)| {
+                toolbar_action_at(x, y, window_width, mode)
+                    .map(AppAction::label)
+                    .or_else(|| mode_target_at(x, y).map(mode_target_label))
+            })
+        })
 }
 
 fn adjacent_toolbar_index(current: usize, backwards: bool, action_count: usize) -> usize {
@@ -6917,18 +6967,22 @@ impl App {
         let Some(index) = self.toolbar_focus else {
             return;
         };
-        let actions = toolbar_actions(self.document.mode);
+        let focus_count = toolbar_focus_count(self.document.mode);
         match event.physical_key {
             PhysicalKey::Code(KeyCode::Escape | KeyCode::F6) => self.toolbar_focus = None,
             PhysicalKey::Code(KeyCode::ArrowLeft) => {
-                self.toolbar_focus = Some(adjacent_toolbar_index(index, true, actions.len()));
+                self.toolbar_focus = Some(adjacent_toolbar_index(index, true, focus_count));
             }
             PhysicalKey::Code(KeyCode::ArrowRight | KeyCode::Tab) => {
-                self.toolbar_focus = Some(adjacent_toolbar_index(index, false, actions.len()));
+                self.toolbar_focus = Some(adjacent_toolbar_index(index, false, focus_count));
             }
             PhysicalKey::Code(KeyCode::Enter | KeyCode::Space) => {
                 self.toolbar_focus = None;
-                self.perform_action(actions[index % actions.len()]);
+                if let Some(target) = toolbar_focus_mode(index) {
+                    self.select_mode(target);
+                } else if let Some(action) = toolbar_focus_action(index, self.document.mode) {
+                    self.perform_action(action);
+                }
             }
             _ => return,
         }
@@ -10486,22 +10540,12 @@ impl App {
         );
         let contextual_toolbar_actions = contextual_toolbar_actions(self.document.mode);
         let toolbar_focus = self.toolbar_focus;
-        let toolbar_hint = toolbar_hint_action(
+        let toolbar_hint_label = toolbar_hint_label(
             toolbar_focus,
             menu_pointer,
             w.get() as f32,
             self.document.mode,
         );
-        let toolbar_hint_label = toolbar_hint.map(AppAction::label).or_else(|| {
-            toolbar_focus
-                .is_none()
-                .then(|| {
-                    menu_pointer
-                        .and_then(|(x, y)| mode_target_at(x, y))
-                        .map(mode_target_label)
-                })
-                .flatten()
-        });
         let toolbar_hint_layout = toolbar_hint_label.map(|label| {
             build_menu_layout(label, &mut self.font_cx, &mut self.layout_cx, self.palette)
         });
@@ -10509,9 +10553,16 @@ impl App {
             .map(|index| {
                 if index < PRIMARY_TOOLBAR_ACTIONS.len() {
                     TOOLBAR_X + index as f32 * TOOLBAR_ITEM_WIDTH
+                } else if let Some(target) = toolbar_focus_mode(index) {
+                    let slot = match target {
+                        ModeTarget::Reading => 0,
+                        ModeTarget::Editing => 1,
+                        ModeTarget::Compare => 2,
+                    };
+                    MODE_SWITCH_X + slot as f32 * (MODE_SWITCH_WIDTH / 3.0)
                 } else {
                     TOOLBAR_X
-                        + (index - PRIMARY_TOOLBAR_ACTIONS.len()) as f32
+                        + (index - PRIMARY_TOOLBAR_ACTIONS.len() - 3) as f32
                             * CONTEXT_TOOLBAR_ITEM_WIDTH
                 }
             })
@@ -11252,8 +11303,15 @@ impl App {
                     | (ModeTarget::Editing, DocumentMode::SourceEditing)
                     | (ModeTarget::Compare, DocumentMode::Split)
             );
+            let focused = toolbar_focus == Some(PRIMARY_TOOLBAR_ACTIONS.len() + index);
             if active && let Some(rect) = Rect::from_xywh(x, TOOLBAR_Y, width, MODE_SWITCH_HEIGHT) {
                 pixmap.fill_rect(rect, &mode_active_paint, Transform::identity(), None);
+            }
+            if focused
+                && let Some(rect) =
+                    Rect::from_xywh(x, TOOLBAR_Y + MODE_SWITCH_HEIGHT - 2.0, width, 2.0)
+            {
+                pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
             }
             draw_toolbar_icon(
                 pixmap,
@@ -11261,7 +11319,11 @@ impl App {
                 x + (width - 18.0) * 0.5,
                 TOOLBAR_Y + 5.0,
                 18.0,
-                if active { palette.accent } else { palette.dim },
+                if active || focused {
+                    palette.accent
+                } else {
+                    palette.dim
+                },
             );
         }
 
@@ -11293,7 +11355,7 @@ impl App {
                     && (CONTEXT_TOOLBAR_Y..CONTEXT_TOOLBAR_Y + CONTEXT_TOOLBAR_HEIGHT)
                         .contains(&pointer_y)
             });
-            let focused = toolbar_focus == Some(PRIMARY_TOOLBAR_ACTIONS.len() + index);
+            let focused = toolbar_focus == Some(PRIMARY_TOOLBAR_ACTIONS.len() + 3 + index);
             let active = toolbar_action_is_active(action, context_mode);
             if (hovered || focused || active)
                 && let Some(rect) =
@@ -12340,6 +12402,36 @@ mod pruebas {
             None
         );
         assert_eq!(AppAction::OpenDocument.label(), "Abrir documento · Ctrl+O");
+        let first_mode_focus = PRIMARY_TOOLBAR_ACTIONS.len();
+        assert_eq!(
+            toolbar_focus_mode(first_mode_focus),
+            Some(ModeTarget::Reading)
+        );
+        assert_eq!(
+            toolbar_focus_mode(first_mode_focus + 2),
+            Some(ModeTarget::Compare)
+        );
+        assert_eq!(
+            toolbar_focus_action(first_mode_focus, DocumentMode::Reading),
+            None
+        );
+        assert_eq!(
+            toolbar_focus_action(first_mode_focus + 3, DocumentMode::Reading),
+            Some(AppAction::DocumentOutline)
+        );
+        assert_eq!(
+            toolbar_focus_count(DocumentMode::Reading),
+            READING_TOOLBAR_ACTIONS.len() + 3
+        );
+        assert_eq!(
+            toolbar_hint_label(
+                Some(first_mode_focus + 1),
+                None,
+                900.0,
+                DocumentMode::Reading,
+            ),
+            Some("Editar Markdown · F2")
+        );
     }
 
     #[test]

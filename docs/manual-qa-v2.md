@@ -119,6 +119,13 @@ Usar `tests/fixtures/sprint1-visual.md` y luego un Markdown propio no sensible.
 - [ ] El tema inicial sigue el sistema cuando no hay preferencia local previa.
 - [ ] La acción de tema cambia entre día y noche, conserva contraste y no deja
   texto, iconos o bordes invisibles.
+- [ ] El selector Leer, Editar y Comparar se reconoce como un control de estado:
+  el segmento activo se distingue sin llenar la barra de color y cada segmento
+  lleva directamente a su vista.
+- [ ] Pasar el mouse por cada segmento muestra una ayuda comprensible; el cursor
+  cambia a puntero y esa zona nunca arrastra la ventana.
+- [ ] Con `F6`, las flechas recorren también Leer, Editar y Comparar; Enter o
+  Espacio activa el segmento enfocado y Escape devuelve el foco al documento.
 - [ ] La transición de tema es breve, no desplaza el contenido y termina.
 - [ ] Con reducir movimiento activado, el cambio de tema es inmediato y la
   preferencia sobrevive al reinicio.
