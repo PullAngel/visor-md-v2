@@ -150,6 +150,14 @@ fn mode_target_at(x: f32, y: f32) -> Option<ModeTarget> {
         _ => Some(ModeTarget::Compare),
     }
 }
+
+const fn mode_target_label(target: ModeTarget) -> &'static str {
+    match target {
+        ModeTarget::Reading => "Vista de lectura",
+        ModeTarget::Editing => "Editar Markdown · F2",
+        ModeTarget::Compare => "Comparar fuente y vista · F3",
+    }
+}
 const READING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 6] = [
     AppAction::DocumentOutline,
     AppAction::ToggleSection,
@@ -10484,13 +10492,18 @@ impl App {
             w.get() as f32,
             self.document.mode,
         );
-        let toolbar_hint_layout = toolbar_hint.map(|action| {
-            build_menu_layout(
-                action.label(),
-                &mut self.font_cx,
-                &mut self.layout_cx,
-                self.palette,
-            )
+        let toolbar_hint_label = toolbar_hint.map(AppAction::label).or_else(|| {
+            toolbar_focus
+                .is_none()
+                .then(|| {
+                    menu_pointer
+                        .and_then(|(x, y)| mode_target_at(x, y))
+                        .map(mode_target_label)
+                })
+                .flatten()
+        });
+        let toolbar_hint_layout = toolbar_hint_label.map(|label| {
+            build_menu_layout(label, &mut self.font_cx, &mut self.layout_cx, self.palette)
         });
         let toolbar_hint_anchor_x = toolbar_focus
             .map(|index| {
@@ -12250,6 +12263,10 @@ mod pruebas {
         assert_eq!(mode_target_at(470.0, 12.0), Some(ModeTarget::Compare));
         assert_eq!(mode_target_at(379.0, 12.0), None);
         assert_eq!(mode_target_at(488.0, 12.0), None);
+        assert_eq!(
+            mode_target_label(ModeTarget::Editing),
+            "Editar Markdown · F2"
+        );
         assert_eq!(
             toolbar_action_at(50.0, 50.0, 900.0, DocumentMode::Reading),
             Some(AppAction::DocumentOutline)
