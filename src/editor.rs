@@ -93,7 +93,29 @@ impl TextBuffer {
         if slice.len_chars() > 0 && slice.char(slice.len_chars() - 1) == '\n' {
             end -= 1;
         }
+        // CRLF representa un único salto de línea para la interacción. El
+        // buffer conserva ambos bytes al guardar, pero el cursor nunca queda
+        // artificialmente entre `\r` y `\n`.
+        if end > start && self.rope.byte(end - 1) == b'\r' {
+            end -= 1;
+        }
         end
+    }
+
+    /// Columna de edición en caracteres Unicode, no en bytes UTF-8. Es una
+    /// unidad de navegación conservadora sin añadir segmentación de grafemas
+    /// al núcleo; evita que acentos o ideogramas desplacen una flecha vertical.
+    fn line_column(&self, byte: usize) -> usize {
+        let byte = byte.min(self.len_bytes());
+        let line = self.rope.byte_to_line(byte);
+        self.rope.byte_to_char(byte) - self.rope.line_to_char(line)
+    }
+
+    fn byte_at_line_column(&self, line: usize, column: usize) -> usize {
+        let line = line.min(self.rope.len_lines().saturating_sub(1));
+        let start = self.rope.line_to_char(line);
+        let end = self.rope.byte_to_char(self.line_end(line));
+        self.rope.char_to_byte((start + column).min(end))
     }
 
     pub fn lines(&self) -> ropey::iter::Lines<'_> {
@@ -546,8 +568,9 @@ impl SourceEditor {
         extend: bool,
     ) -> Result<(), EditError> {
         let line = source.rope.byte_to_line(self.cursor);
-        let line_start = source.line_start(self.cursor);
-        let column = self.preferred_column.unwrap_or(self.cursor - line_start);
+        let column = self
+            .preferred_column
+            .unwrap_or_else(|| source.line_column(self.cursor));
         let target_line = if down {
             if line + 1 >= source.rope.len_lines() {
                 return Ok(());
@@ -558,12 +581,7 @@ impl SourceEditor {
         } else {
             line - 1
         };
-        let target_start = source.rope.line_to_byte(target_line);
-        let target_end = source.line_end(target_line);
-        let mut target = (target_start + column).min(target_end);
-        while target > target_start && !source.is_char_boundary(target) {
-            target -= 1;
-        }
+        let target = source.byte_at_line_column(target_line, column);
         self.set_cursor(source, target, extend)?;
         self.preferred_column = Some(column);
         Ok(())
@@ -876,7 +894,19 @@ mod tests {
         editor.move_line(&source, true, false).unwrap();
         assert_eq!(editor.cursor(), "áéí\n文".len());
         editor.move_line(&source, true, false).unwrap();
-        assert_eq!(editor.cursor(), "áéí\n文\n🔒".len());
+        assert_eq!(editor.cursor(), "áéí\n文\n🔒🔒".len());
+    }
+
+    #[test]
+    fn navegacion_vertical_conserva_columna_de_caracteres_no_de_bytes() {
+        let source = buffer("áéí\nabcde\n日本語");
+        let mut editor = SourceEditor::new();
+        editor.set_cursor(&source, "áé".len(), false).unwrap();
+
+        editor.move_line(&source, true, false).unwrap();
+        assert_eq!(editor.cursor(), "áéí\nab".len());
+        editor.move_line(&source, true, false).unwrap();
+        assert_eq!(editor.cursor(), "áéí\nabcde\n日本".len());
     }
 
     #[test]
@@ -887,7 +917,17 @@ mod tests {
         editor.move_line_boundary(&source, false, false).unwrap();
         assert_eq!(editor.cursor(), "uno\r\n".len());
         editor.move_line_boundary(&source, true, true).unwrap();
-        assert_eq!(editor.selection(), "uno\r\n".len().."uno\r\ndos\r".len());
+        assert_eq!(editor.selection(), "uno\r\n".len().."uno\r\ndos".len());
+    }
+
+    #[test]
+    fn fin_de_linea_crlf_no_deja_el_cursor_entre_los_dos_bytes() {
+        let source = buffer("uno\r\ndos");
+        let mut editor = SourceEditor::new();
+        editor.set_cursor(&source, 0, false).unwrap();
+
+        editor.move_line_boundary(&source, true, false).unwrap();
+        assert_eq!(editor.cursor(), "uno".len());
     }
 
     #[test]
