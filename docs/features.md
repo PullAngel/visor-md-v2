@@ -126,8 +126,8 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Preguntas y respuestas | Parcial | Inserta un callout `[!QUESTION]-` portable y permite plegar su respuesta solo en lectura; falta QA de accesibilidad y corpus de compatibilidad. |
 | Ocultar respuesta | Parcial | Las respuestas de preguntas se pliegan en lectura sin alterar la fuente; faltan variantes de práctica y QA accesible. |
 | Estados de aprendizaje | Parcial | La paleta inserta callouts portables `[!SUCCESS]`, `[!WARNING]` y `[!TODO]` para entendido, duda y pendiente; falta edición contextual de estados ya existentes y QA visual. |
-| Resúmenes | Parcial | La paleta inserta una estructura Markdown portable o prepara desde una selección una pestaña derivada editable con plantilla y fuente literal; no resume automáticamente ni altera el original. Faltan extracción de conceptos y exportación dedicada. |
-| Lista de conceptos | Parcial | Inserta una estructura Markdown con encabezado y viñetas de conceptos; conserva EOL y es reutilizable en Obsidian, Git y otros lectores. Falta extracción y exportación dedicada. |
+| Resúmenes | Parcial | La paleta inserta una estructura Markdown portable o prepara desde una selección una pestaña derivada editable con plantilla y fuente literal; no resume automáticamente ni altera el original. Falta exportación dedicada. |
+| Lista de conceptos | Parcial | Inserta una estructura Markdown o prepara desde una selección una pestaña editable con plantilla y fuente literal. Conserva EOL, es reutilizable en Obsidian, Git y otros lectores, y no extrae conceptos automáticamente. Falta exportación dedicada. |
 | Repaso espaciado simple | Planificado tardío | Estado separado y sincronización segura |
 | Pomodoro | Futuro | Solo si no distrae ni infla producto |
 

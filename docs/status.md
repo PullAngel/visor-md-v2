@@ -26,6 +26,10 @@ La aplicación conserva literalmente la fuente elegida y aporta solo una
 plantilla Markdown para que la persona redacte el resumen: no hay inferencia,
 red, telemetría ni modificación del documento origen.
 
+La misma acción existe para una lista de conceptos. Es una plantilla editable,
+no una extracción automática de términos: evita presentar una heurística local
+como si fuese comprensión del texto.
+
 ## Git
 
 - Rama principal: `main` y `origin/main`, con el estado validado de Codex.
