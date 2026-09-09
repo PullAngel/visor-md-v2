@@ -193,6 +193,10 @@ cambio de tema · 240 ms panel y división.
 `cubic-bezier(0.16, 1, 0.3, 1)` · rebote `cubic-bezier(0.34, 1.56, 0.64, 1)`,
 solo en confirmaciones.
 
+La acción local **Reducir movimiento** prevalece sobre estas duraciones cuando
+la plataforma todavía no expone una preferencia equivalente: el cambio de tema
+se vuelve instantáneo y las futuras transiciones deben seguir la misma regla.
+
 **Reglas:** el texto nunca se mueve · solo `transform` y `opacity` · lo que sale
 sale más rápido que lo que entra · se respeta `prefers-reduced-motion` · nada en
 bucle salvo progreso real.

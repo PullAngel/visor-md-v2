@@ -56,6 +56,7 @@ Estados permitidos:
 | Propiedad | Nivel | Windows | Linux | Evidencia actual |
 | --- | --- | --- | --- | --- |
 | Tema claro y oscuro | Unitario y visual | Parcial | Pendiente | Paletas interpolan todos sus roles y la transición termina en 200 ms sin bucle permanente; falta QA visual y preferencia de reducir movimiento |
+| Reducir movimiento | Unitario y configuración | Parcial | Pendiente | La preferencia local versionada migra desde formatos anteriores y evita la transición de tema; falta QA visual y extensión al resto de animaciones |
 | Resize sin layout corrupto | Integración | Parcial | Pendiente | Prototipo |
 | Chrome y controles de ventana | Unitario y manual | Parcial | Pendiente | Geometría de controles, drag y resize cubierta; falta QA manual de Windows sin borde y fallback nativo |
 | Pestañas, fijado y cierre protegido | Unitario e integración | Parcial | Pendiente | Cambio, envoltura, identidad separada y protección de pestaña fijada probados; falta QA con mouse y documentos reales |

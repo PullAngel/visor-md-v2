@@ -695,6 +695,7 @@ enum AppAction {
     ToggleSplit,
     ToggleSplitOrientation,
     ToggleTheme,
+    ToggleReduceMotion,
     Cut,
     FormatBold,
     FormatItalic,
@@ -732,7 +733,7 @@ enum AppAction {
     CommandPalette,
 }
 
-const APP_ACTIONS: [AppAction; 44] = [
+const APP_ACTIONS: [AppAction; 45] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -740,6 +741,7 @@ const APP_ACTIONS: [AppAction; 44] = [
     AppAction::SearchDocument,
     AppAction::WorkspaceHub,
     AppAction::ToggleTheme,
+    AppAction::ToggleReduceMotion,
     AppAction::SaveAs,
     AppAction::CloseDocument,
     AppAction::TogglePinTab,
@@ -792,6 +794,7 @@ impl AppAction {
             Self::ToggleSplit => "Comparar fuente y vista · F3",
             Self::ToggleSplitOrientation => "Alternar disposición de comparación",
             Self::ToggleTheme => "Cambiar tema día o noche · T en lectura",
+            Self::ToggleReduceMotion => "Activar o desactivar movimiento reducido",
             Self::Cut => "Cortar · Ctrl+X",
             Self::FormatBold => "Aplicar negrita · Ctrl+B",
             Self::FormatItalic => "Aplicar cursiva · Ctrl+I",
@@ -4821,6 +4824,9 @@ struct App {
     /// Transición breve entre dos paletas completas. No contiene datos del
     /// documento ni altera su fuente, selección, scroll o modo de lectura.
     theme_transition: Option<ThemeTransition>,
+    /// Preferencia de accesibilidad explícita. Mientras no exista una API
+    /// uniforme de plataforma, prevalece sobre las transiciones visuales.
+    reduce_motion: bool,
     /// Punto actual del cursor dentro de la ventana, en pixeles físicos.
     pointer: Option<(f32, f32)>,
     /// Texto que un IME todavía está componiendo. No forma parte de la fuente
@@ -6554,6 +6560,7 @@ impl App {
                 }
             }
             AppAction::ToggleTheme => self.toggle_theme(),
+            AppAction::ToggleReduceMotion => self.toggle_reduce_motion(),
             AppAction::Cut => self.cut_source_selection(),
             AppAction::FormatBold => self.apply_markdown_surround("**", "**", "texto"),
             AppAction::FormatItalic => self.apply_markdown_surround("_", "_", "texto"),
@@ -6618,6 +6625,13 @@ impl App {
             self.palette = target;
             return;
         }
+        if self.reduce_motion {
+            self.theme_transition = None;
+            self.palette = target;
+            self.live.clear();
+            self.preview_live.clear();
+            return;
+        }
         self.palette = from;
         self.theme_transition = Some(ThemeTransition {
             from,
@@ -6645,6 +6659,28 @@ impl App {
         if transition.finished(now) {
             self.palette = transition.to;
             self.theme_transition = None;
+        }
+    }
+
+    fn toggle_reduce_motion(&mut self) {
+        self.reduce_motion = !self.reduce_motion;
+        if self.reduce_motion
+            && let Some(transition) = self.theme_transition.take()
+        {
+            self.palette = transition.to;
+            self.live.clear();
+            self.preview_live.clear();
+        }
+        self.settings.reduce_motion = self.reduce_motion;
+        if self.settings.store().is_err() {
+            self.set_notice("la preferencia de movimiento no pudo guardarse");
+        } else if self.reduce_motion {
+            self.set_notice("movimiento reducido activado");
+        } else {
+            self.set_notice("movimiento reducido desactivado");
+        }
+        if let Some(window) = &self.window {
+            window.request_redraw();
         }
     }
 
@@ -11535,6 +11571,7 @@ fn main() {
 
     let settings = Settings::load();
     let recovery_enabled = settings.recovery_enabled;
+    let reduce_motion = settings.reduce_motion;
     let recovery = settings
         .recovery_enabled
         .then(RecoverySession::start)
@@ -11625,6 +11662,7 @@ fn main() {
         log,
         palette: NIGHT,
         theme_transition: None,
+        reduce_motion,
         pointer: None,
         ime_preedit: None,
         tab_drag_id: None,
@@ -12110,6 +12148,7 @@ mod pruebas {
         assert!(label.is_char_boundary(label.len()));
         assert!(APP_ACTIONS.contains(&AppAction::TogglePinTab));
         assert!(APP_ACTIONS.contains(&AppAction::ToggleSplitOrientation));
+        assert!(APP_ACTIONS.contains(&AppAction::ToggleReduceMotion));
         assert!(APP_ACTIONS.contains(&AppAction::InsertStudyQuestion));
         assert!(APP_ACTIONS.contains(&AppAction::InsertStudySummary));
         assert!(APP_ACTIONS.contains(&AppAction::InsertStudyConceptList));

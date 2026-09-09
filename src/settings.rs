@@ -8,7 +8,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-const SETTINGS_VERSION: u32 = 2;
+const SETTINGS_VERSION: u32 = 3;
 const MAX_SETTINGS_BYTES: u64 = 16 * 1024;
 const MAX_DOCUMENT_MODES: usize = 128;
 
@@ -41,6 +41,9 @@ impl DocumentModePreference {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Settings {
     pub(crate) recovery_enabled: bool,
+    /// Preferencia explícita local. No intenta inferir una configuración de
+    /// accesibilidad del sistema que esta capa todavía no puede consultar.
+    pub(crate) reduce_motion: bool,
     document_modes: Vec<(String, DocumentModePreference)>,
 }
 
@@ -48,6 +51,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             recovery_enabled: true,
+            reduce_motion: false,
             document_modes: Vec::new(),
         }
     }
@@ -107,6 +111,7 @@ fn load_from(path: &Path) -> Result<Settings, std::io::Error> {
     let source = fs::read_to_string(path)?;
     let mut version = None;
     let mut recovery_enabled = None;
+    let mut reduce_motion = None;
     let mut document_modes = Vec::new();
     for line in source.lines().map(str::trim) {
         let Some((key, value)) = line.split_once('=') else {
@@ -116,6 +121,13 @@ fn load_from(path: &Path) -> Result<Settings, std::io::Error> {
             "version" => version = value.trim().parse::<u32>().ok(),
             "recovery_enabled" => {
                 recovery_enabled = match value.trim() {
+                    "true" => Some(true),
+                    "false" => Some(false),
+                    _ => None,
+                }
+            }
+            "reduce_motion" => {
+                reduce_motion = match value.trim() {
                     "true" => Some(true),
                     "false" => Some(false),
                     _ => None,
@@ -139,12 +151,13 @@ fn load_from(path: &Path) -> Result<Settings, std::io::Error> {
             _ => {}
         }
     }
-    if !matches!(version, Some(1) | Some(SETTINGS_VERSION)) {
+    if !matches!(version, Some(1) | Some(2) | Some(SETTINGS_VERSION)) {
         return Ok(Settings::default());
     }
     Ok(Settings {
         recovery_enabled: recovery_enabled.unwrap_or(true),
-        document_modes: if version == Some(SETTINGS_VERSION) {
+        reduce_motion: reduce_motion.unwrap_or(false),
+        document_modes: if matches!(version, Some(2) | Some(SETTINGS_VERSION)) {
             document_modes
         } else {
             Vec::new()
@@ -154,8 +167,8 @@ fn load_from(path: &Path) -> Result<Settings, std::io::Error> {
 
 fn store_to(path: &Path, settings: &Settings) -> Result<(), std::io::Error> {
     let mut source = format!(
-        "version={SETTINGS_VERSION}\nrecovery_enabled={}\n",
-        settings.recovery_enabled
+        "version={SETTINGS_VERSION}\nrecovery_enabled={}\nreduce_motion={}\n",
+        settings.recovery_enabled, settings.reduce_motion
     );
     for (key, mode) in &settings.document_modes {
         source.push_str(&format!("document_mode={key},{}\n", mode.code()));
@@ -206,6 +219,7 @@ mod tests {
         let path = temp_file();
         let settings = Settings {
             recovery_enabled: false,
+            reduce_motion: true,
             document_modes: Vec::new(),
         };
         store_to(&path, &settings).unwrap();
@@ -214,11 +228,13 @@ mod tests {
             load_from(&path).unwrap(),
             Settings {
                 recovery_enabled: false,
+                reduce_motion: true,
                 document_modes: Vec::new(),
             }
         );
         let stored = fs::read_to_string(&path).unwrap();
         assert!(!stored.contains("path"));
+        assert!(stored.contains("reduce_motion=true"));
         let _ = fs::remove_file(path);
     }
 
@@ -260,6 +276,28 @@ mod tests {
         let loaded = load_from(&path).unwrap();
         assert!(!loaded.recovery_enabled);
         assert!(loaded.document_modes.is_empty());
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn migra_version_dos_sin_activar_movimiento_reducido() {
+        let path = temp_file();
+        fs::write(
+            &path,
+            "version=2\nrecovery_enabled=false\ndocument_mode=0123456789abcdef,s\n",
+        )
+        .unwrap();
+
+        let loaded = load_from(&path).unwrap();
+        assert!(!loaded.recovery_enabled);
+        assert!(!loaded.reduce_motion);
+        assert_eq!(
+            loaded.document_modes,
+            vec![(
+                "0123456789abcdef".to_string(),
+                DocumentModePreference::Split
+            )]
+        );
         let _ = fs::remove_file(path);
     }
 
