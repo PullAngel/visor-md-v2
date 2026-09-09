@@ -5689,7 +5689,11 @@ impl ApplicationHandler<AppEvent> for App {
                                 }
                                 ContextAction::StudyTools => self.open_study_actions(),
                                 ContextAction::CopyText | ContextAction::CopyMarkdown => {
-                                    self.copy_selection(action.source_markdown());
+                                    if self.document.mode.is_editable() {
+                                        self.copy_source_selection();
+                                    } else {
+                                        self.copy_selection(action.source_markdown());
+                                    }
                                 }
                                 ContextAction::CopyPlatform => self.copy_selection_for_platform(),
                                 ContextAction::CopyTableTsv => self.copy_current_table_tsv(),
@@ -7651,7 +7655,7 @@ impl App {
                 document.source_editor.select_all(&document.source);
             }
             PhysicalKey::Code(KeyCode::KeyC) if self.modifiers.control_key() => {
-                self.copy_selection(false);
+                self.copy_source_selection();
             }
             PhysicalKey::Code(KeyCode::KeyX) if self.modifiers.control_key() => {
                 self.cut_source_selection();
@@ -8356,6 +8360,26 @@ impl App {
             "texto copiado"
         };
         self.copy_text_to_clipboard(text, kind);
+    }
+
+    /// En edición el buffer es la única autoridad. La vista Markdown puede
+    /// llevar una revisión anterior mientras se agrupa la escritura, por lo
+    /// que copiarla aquí produciría texto diferente al que la persona marcó.
+    fn copy_source_selection(&mut self) {
+        match self
+            .document
+            .source_editor
+            .selected_text(&self.document.source)
+        {
+            Ok(Some(text)) => self.copy_text_to_clipboard(text, "Markdown fuente copiado"),
+            Ok(None) => self.set_notice("sin texto seleccionado"),
+            Err(error) => {
+                self.log.push(format!(
+                    "[portapapeles] selección de fuente inválida: {error:?}"
+                ));
+                self.set_notice("no se pudo copiar la selección de fuente");
+            }
+        }
     }
 
     fn copy_selection_for_platform(&mut self) {

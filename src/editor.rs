@@ -403,6 +403,16 @@ impl SourceEditor {
         self.cursor.min(self.anchor)..self.cursor.max(self.anchor)
     }
 
+    /// Devuelve la selección exacta de la fuente. La copia desde edición no
+    /// debe depender de una vista Markdown que puede estar esperando su
+    /// actualización asíncrona.
+    pub fn selected_text(&self, source: &TextBuffer) -> Result<Option<String>, EditError> {
+        let selection = self.selection();
+        (!selection.is_empty())
+            .then(|| source.slice_bytes(selection))
+            .transpose()
+    }
+
     pub fn is_dirty(&self) -> bool {
         self.history.is_dirty()
     }
@@ -1023,6 +1033,21 @@ mod tests {
             editor.selection(),
             "uno áé, ".len().."uno áé, dos\r\n🔒".len()
         );
+    }
+
+    #[test]
+    fn copia_la_seleccion_de_fuente_unicode_sin_consultar_el_renderer() {
+        let source = buffer("antes á🔒 después");
+        let mut editor = SourceEditor::new();
+        editor.set_cursor(&source, "antes ".len(), false).unwrap();
+        editor.set_cursor(&source, "antes á🔒".len(), true).unwrap();
+
+        assert_eq!(
+            editor.selected_text(&source).unwrap(),
+            Some("á🔒".to_owned())
+        );
+        editor.set_cursor(&source, 0, false).unwrap();
+        assert_eq!(editor.selected_text(&source).unwrap(), None);
     }
 
     #[test]

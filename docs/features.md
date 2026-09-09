@@ -82,7 +82,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | --- | --- | --- |
 | Selección con mouse | Parcial | Selección visible con autoscroll y copia; falta QA visual completo |
 | Selección con teclado | Parcial | Flechas, Ctrl+flechas por palabras, Inicio/Fin, Ctrl+Inicio/Fin, RePág/AvPág, Ctrl+A, Escape y extensiones con Shift; falta foco accesible y QA de plataforma |
-| Copiar bloque o documento | Parcial | `Ctrl+C` copia texto visible; `Ctrl+Shift+C` copia Markdown de bloques completos |
+| Copiar bloque o documento | Parcial | En lectura `Ctrl+C` copia texto visible y `Ctrl+Shift+C` copia Markdown de bloques completos; en edición copia la selección fuente exacta, incluso si la vista previa todavía se actualiza |
 | Barra de estado | Parcial | Muestra modo, cambios sin guardar y estado de carpeta sin ocupar herramientas permanentes |
 | Alto contraste | Planificado | Matriz Windows y Linux |
 | Reduce motion | Parcial | La preferencia local ya elimina la transición de tema; debe cubrir toda transición futura |
