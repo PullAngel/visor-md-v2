@@ -328,6 +328,14 @@ documentos modificados que una solicitud del sistema. En otras plataformas la
 ventana conserva las decoraciones nativas mientras no haya una alternativa con
 las mismas affordances y QA accesible.
 
+El árbol de futuras divisiones distingue la identidad efímera de una **vista**
+de la identidad de su **documento**. Una hoja conserva un `pane_id` estable y
+solo referencia un documento de la sesión; por eso dos paneles pueden observar
+la misma nota sin crear un segundo `TextBuffer`, historial, guardado ni
+recuperación. Al cambiar una pestaña se actualiza únicamente la vista con foco,
+no todas las hojas que puedan referenciar ese documento. El dibujo, scroll,
+selección y foco por vista siguen siendo el siguiente bloque de integración.
+
 ### Workspace e índice
 
 La primera implementación usa un índice regenerable en memoria, sin SQLite ni

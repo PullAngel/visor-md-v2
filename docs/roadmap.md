@@ -155,10 +155,13 @@ lógica dentro de la sesión.
    plataforma la expone y conserva una ruta instantánea accesible.
 
 El modelo seguro de paneles ya existe con pruebas de identidad, colapso y
-geometría. El siguiente bloque activo es conectarlo a dibujo, foco, scroll y
-selección reales sin convertir esas pruebas de base en una función declarada
-antes de tiempo. Las animaciones se integran sobre geometría estable: no se
-añadirán efectos que oculten errores de foco, scroll o disposición.
+geometría. Cada hoja tiene ahora una identidad de vista distinta de la del
+documento: una misma nota puede ocupar dos paneles sin duplicar fuente, historial
+ni recuperación, y cambiar de pestaña solo sustituye la vista enfocada. El
+siguiente bloque activo es conectarlo a dibujo, foco, scroll y selección reales
+sin convertir esas pruebas de base en una función declarada antes de tiempo. Las
+animaciones se integran sobre geometría estable: no se añadirán efectos que
+oculten errores de foco, scroll o disposición.
 
 ## Sprint 0: viabilidad nativa
 

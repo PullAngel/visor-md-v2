@@ -235,6 +235,10 @@ const STUDY_ACTIONS: [AppAction; 9] = [
     AppAction::PrepareAiFragments,
 ];
 static NEXT_DOCUMENT_ID: AtomicU64 = AtomicU64::new(1);
+/// Identidad efímera de una vista. No coincide con la identidad del documento:
+/// dos paneles pueden observar la misma fuente sin crear otro buffer, historial
+/// ni archivo de recuperación.
+static NEXT_DOCUMENT_PANE_ID: AtomicU64 = AtomicU64::new(1);
 
 /// Windows recibe chrome propio para realizar la dirección visual aprobada. En
 /// otras plataformas se conserva el chrome nativo hasta tener el mismo nivel
@@ -1165,7 +1169,8 @@ impl SplitOrientation {
 }
 
 /// Dirección de una división entre documentos. Es distinta de la comparación
-/// fuente/vista: cada hoja del árbol solo referencia un documento de sesión.
+/// fuente/vista: cada hoja del árbol referencia una vista de un documento de
+/// sesión, nunca una copia de su buffer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(not(test), allow(dead_code))]
 enum DocumentPaneAxis {
@@ -1173,12 +1178,13 @@ enum DocumentPaneAxis {
     Horizontal,
 }
 
-/// Modelo de disposición de documentos para las futuras vistas divididas.
-/// No posee buffers ni recuperación: esos datos continúan perteneciendo a la
-/// pestaña identificada por cada hoja.
+/// Modelo de disposición de documentos para vistas divididas. Cada hoja tiene
+/// una identidad de vista estable y referencia un documento de sesión. No posee
+/// buffers ni recuperación: esos datos continúan perteneciendo al documento.
 #[derive(Clone, Debug, PartialEq)]
 enum DocumentPaneTree {
     Leaf {
+        pane_id: u64,
         document_id: u64,
     },
     Split {
@@ -1191,13 +1197,39 @@ enum DocumentPaneTree {
 
 impl DocumentPaneTree {
     fn single(document_id: u64) -> Self {
-        Self::Leaf { document_id }
+        Self::new_leaf(document_id)
+    }
+
+    fn new_leaf(document_id: u64) -> Self {
+        Self::Leaf {
+            pane_id: NEXT_DOCUMENT_PANE_ID.fetch_add(1, Ordering::Relaxed),
+            document_id,
+        }
+    }
+
+    fn first_pane_id(&self) -> u64 {
+        match self {
+            Self::Leaf { pane_id, .. } => *pane_id,
+            Self::Split { first, .. } => first.first_pane_id(),
+        }
+    }
+
+    fn pane_for_document(&self, document_id: u64) -> Option<u64> {
+        match self {
+            Self::Leaf {
+                pane_id,
+                document_id: current,
+            } => (*current == document_id).then_some(*pane_id),
+            Self::Split { first, second, .. } => first
+                .pane_for_document(document_id)
+                .or_else(|| second.pane_for_document(document_id)),
+        }
     }
 
     #[cfg_attr(not(test), allow(dead_code))]
     fn document_ids(&self, output: &mut Vec<u64>) {
         match self {
-            Self::Leaf { document_id } => output.push(*document_id),
+            Self::Leaf { document_id, .. } => output.push(*document_id),
             Self::Split { first, second, .. } => {
                 first.document_ids(output);
                 second.document_ids(output);
@@ -1208,53 +1240,59 @@ impl DocumentPaneTree {
     #[cfg_attr(not(test), allow(dead_code))]
     fn references_only(&self, document_ids: &HashSet<u64>) -> bool {
         match self {
-            Self::Leaf { document_id } => document_ids.contains(document_id),
+            Self::Leaf { document_id, .. } => document_ids.contains(document_id),
             Self::Split { first, second, .. } => {
                 first.references_only(document_ids) && second.references_only(document_ids)
             }
         }
     }
 
-    fn replace_document(&mut self, from: u64, to: u64) -> bool {
+    fn replace_pane_document(&mut self, pane_id: u64, document_id: u64) -> bool {
         match self {
-            Self::Leaf { document_id } if *document_id == from => {
-                *document_id = to;
+            Self::Leaf {
+                pane_id: current_pane,
+                document_id: current_document,
+            } if *current_pane == pane_id => {
+                *current_document = document_id;
                 true
             }
             Self::Leaf { .. } => false,
             Self::Split { first, second, .. } => {
-                first.replace_document(from, to) || second.replace_document(from, to)
+                first.replace_pane_document(pane_id, document_id)
+                    || second.replace_pane_document(pane_id, document_id)
             }
         }
     }
 
     #[cfg_attr(not(test), allow(dead_code))]
-    fn split_document(
+    fn split_pane(
         &mut self,
-        document_id: u64,
+        pane_id: u64,
         adjacent_id: u64,
         axis: DocumentPaneAxis,
-    ) -> bool {
-        if document_id == adjacent_id {
-            return false;
-        }
+    ) -> Option<u64> {
         match self {
             Self::Leaf {
-                document_id: current,
-            } if *current == document_id => {
+                pane_id: current_pane,
+                document_id: current_document,
+            } if *current_pane == pane_id => {
+                let adjacent = Self::new_leaf(adjacent_id);
+                let adjacent_pane_id = adjacent.first_pane_id();
                 *self = Self::Split {
                     axis,
                     fraction: 0.5,
-                    first: Box::new(Self::single(document_id)),
-                    second: Box::new(Self::single(adjacent_id)),
+                    first: Box::new(Self::Leaf {
+                        pane_id,
+                        document_id: *current_document,
+                    }),
+                    second: Box::new(adjacent),
                 };
-                true
+                Some(adjacent_pane_id)
             }
-            Self::Leaf { .. } => false,
-            Self::Split { first, second, .. } => {
-                first.split_document(document_id, adjacent_id, axis)
-                    || second.split_document(document_id, adjacent_id, axis)
-            }
+            Self::Leaf { .. } => None,
+            Self::Split { first, second, .. } => first
+                .split_pane(pane_id, adjacent_id, axis)
+                .or_else(|| second.split_pane(pane_id, adjacent_id, axis)),
         }
     }
 
@@ -1262,6 +1300,7 @@ impl DocumentPaneTree {
         match self {
             Self::Leaf {
                 document_id: current,
+                ..
             } => (*current != document_id).then(|| self.clone()),
             Self::Split {
                 axis,
@@ -1287,7 +1326,11 @@ impl DocumentPaneTree {
     #[cfg_attr(not(test), allow(dead_code))]
     fn layout(&self, available: PaneGeometry, output: &mut Vec<DocumentPaneLayout>) {
         match self {
-            Self::Leaf { document_id } => output.push(DocumentPaneLayout {
+            Self::Leaf {
+                pane_id,
+                document_id,
+            } => output.push(DocumentPaneLayout {
+                pane_id: *pane_id,
                 document_id: *document_id,
                 geometry: available,
             }),
@@ -3854,6 +3897,7 @@ struct PaneGeometry {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct DocumentPaneLayout {
+    pane_id: u64,
     document_id: u64,
     geometry: PaneGeometry,
 }
@@ -4923,10 +4967,13 @@ struct App {
     /// Orden visible estable de las pestañas, independiente de cuál esté
     /// activa. Los identificadores existen solo durante la sesión.
     tab_order: Vec<u64>,
-    /// Preparada para vistas divididas de documentos. Hoy conserva una única
-    /// hoja visible; las futuras divisiones referenciarán IDs sin copiar el
-    /// estado documental ni sus recuperaciones.
+    /// Disposición de vistas de documentos. Cada hoja referencia una fuente de
+    /// sesión sin copiar su buffer, historial ni recuperación.
     document_panes: DocumentPaneTree,
+    /// Vista que recibe el próximo cambio de pestaña. Separarla del documento
+    /// activo evita que una futura división cambie accidentalmente todas las
+    /// hojas que muestran la misma fuente.
+    focused_document_pane: u64,
     external_checks_in_flight: HashSet<u64>,
     /// Identifica las pestañas con una escritura atómica pendiente. El resto
     /// de la sesión puede seguir usándose sin atribuir el resultado a otro
@@ -7281,7 +7328,6 @@ impl App {
 
     fn open_document_in_tab(&mut self, document: DocumentState) {
         let new_id = document.id;
-        let current_id = self.document.id;
         self.document.scroll = self.scroll;
         if self.document.mode == DocumentMode::Reading {
             self.document.reading_selection = self.selection;
@@ -7294,7 +7340,9 @@ impl App {
             recovery: current_recovery,
         });
         self.tab_order.push(new_id);
-        let _ = self.document_panes.replace_document(current_id, new_id);
+        let _ = self
+            .document_panes
+            .replace_pane_document(self.focused_document_pane, new_id);
         self.reset_document_view();
     }
 
@@ -7324,7 +7372,6 @@ impl App {
             return;
         };
         let next = self.inactive_documents.remove(index);
-        let current_id = self.document.id;
         self.document.scroll = self.scroll;
         if self.document.mode == DocumentMode::Reading {
             self.document.reading_selection = self.selection;
@@ -7337,7 +7384,7 @@ impl App {
         });
         let _ = self
             .document_panes
-            .replace_document(current_id, document_id);
+            .replace_pane_document(self.focused_document_pane, document_id);
         self.reset_document_view();
         self.refresh_title();
         if let Some(window) = &self.window {
@@ -7387,6 +7434,10 @@ impl App {
             .document_panes
             .without_document(closing_id)
             .unwrap_or_else(|| DocumentPaneTree::single(self.document.id));
+        self.focused_document_pane = self
+            .document_panes
+            .pane_for_document(self.document.id)
+            .unwrap_or_else(|| self.document_panes.first_pane_id());
         self.reset_document_view();
         self.set_notice("pestaña cerrada");
         if let Some(window) = &self.window {
@@ -12042,6 +12093,8 @@ fn main() {
     let recovery_privacy_notice_pending =
         recovery.is_some() && RecoverySession::privacy_notice_needed().unwrap_or(false);
     let initial_document_id = NEXT_DOCUMENT_ID.fetch_add(1, Ordering::Relaxed);
+    let document_panes = DocumentPaneTree::single(initial_document_id);
+    let focused_document_pane = document_panes.first_pane_id();
     let mut app = App {
         started,
         document: DocumentState {
@@ -12075,7 +12128,8 @@ fn main() {
         },
         inactive_documents: Vec::new(),
         tab_order: vec![initial_document_id],
-        document_panes: DocumentPaneTree::single(initial_document_id),
+        document_panes,
+        focused_document_pane,
         external_checks_in_flight: HashSet::new(),
         saves_in_flight: HashSet::new(),
         settings,
@@ -12718,25 +12772,60 @@ mod pruebas {
     #[test]
     fn los_paneles_referencian_documentos_sin_duplicar_su_estado() {
         let mut panes = DocumentPaneTree::single(10);
-        assert!(panes.split_document(10, 20, DocumentPaneAxis::Vertical));
-        assert!(!panes.split_document(10, 10, DocumentPaneAxis::Horizontal));
+        let principal = panes.first_pane_id();
+        let secundario = panes
+            .split_pane(principal, 20, DocumentPaneAxis::Vertical)
+            .expect("el panel existente se puede dividir");
+        assert_ne!(principal, secundario);
+        assert_eq!(panes.pane_for_document(10), Some(principal));
+        assert_eq!(panes.pane_for_document(20), Some(secundario));
+
+        // Dos vistas pueden observar la misma fuente. La identidad de vista
+        // sigue siendo distinta y el árbol no crea otro documento de sesión.
+        let duplicado = panes
+            .split_pane(principal, 10, DocumentPaneAxis::Horizontal)
+            .expect("una segunda vista del mismo documento es válida");
+        assert_ne!(principal, duplicado);
         let mut ids = Vec::new();
         panes.document_ids(&mut ids);
-        assert_eq!(ids, vec![10, 20]);
+        assert_eq!(ids, vec![10, 10, 20]);
         assert!(panes.references_only(&HashSet::from([10, 20])));
         assert!(!panes.references_only(&HashSet::from([10])));
 
         let collapsed = panes
             .without_document(10)
             .expect("el panel restante se conserva");
-        assert_eq!(collapsed, DocumentPaneTree::single(20));
+        let mut retained = Vec::new();
+        collapsed.document_ids(&mut retained);
+        assert_eq!(retained, vec![20]);
+        assert_eq!(collapsed.first_pane_id(), secundario);
+    }
+
+    #[test]
+    fn cambiar_la_pestana_activa_actualiza_solo_el_panel_con_foco() {
+        let mut panes = DocumentPaneTree::single(10);
+        let principal = panes.first_pane_id();
+        let secundario = panes
+            .split_pane(principal, 20, DocumentPaneAxis::Vertical)
+            .expect("la vista secundaria existe");
+
+        assert!(panes.replace_pane_document(secundario, 30));
+        assert_eq!(panes.pane_for_document(10), Some(principal));
+        assert_eq!(panes.pane_for_document(20), None);
+        assert_eq!(panes.pane_for_document(30), Some(secundario));
+        assert!(!panes.replace_pane_document(999, 40));
     }
 
     #[test]
     fn la_geometria_de_paneles_cubre_el_area_sin_solaparse() {
         let mut panes = DocumentPaneTree::single(1);
-        assert!(panes.split_document(1, 2, DocumentPaneAxis::Vertical));
-        assert!(panes.split_document(2, 3, DocumentPaneAxis::Horizontal));
+        let primero = panes.first_pane_id();
+        let segundo = panes
+            .split_pane(primero, 2, DocumentPaneAxis::Vertical)
+            .expect("la primera división existe");
+        let tercero = panes
+            .split_pane(segundo, 3, DocumentPaneAxis::Horizontal)
+            .expect("la segunda división existe");
         let available = PaneGeometry {
             x: 10.0,
             y: 20.0,
@@ -12746,9 +12835,11 @@ mod pruebas {
         let mut layout = Vec::new();
         panes.layout(available, &mut layout);
         assert_eq!(layout.len(), 3);
+        assert_eq!(layout[0].pane_id, primero);
         assert_eq!(layout[0].document_id, 1);
         assert_eq!(layout[0].geometry.width, 500.0);
         assert_eq!(layout[1].document_id, 2);
+        assert_eq!(layout[1].pane_id, segundo);
         assert_eq!(
             layout[1].geometry,
             PaneGeometry {
@@ -12759,6 +12850,7 @@ mod pruebas {
             }
         );
         assert_eq!(layout[2].document_id, 3);
+        assert_eq!(layout[2].pane_id, tercero);
         assert_eq!(
             layout[2].geometry,
             PaneGeometry {
@@ -12773,9 +12865,14 @@ mod pruebas {
     #[test]
     fn los_paneles_degradan_tamanos_y_referencias_patologicas_sin_panico() {
         let mut panes = DocumentPaneTree::single(1);
-        assert!(!panes.split_document(99, 2, DocumentPaneAxis::Vertical));
-        assert_eq!(panes, DocumentPaneTree::single(1));
-        assert!(panes.split_document(1, 2, DocumentPaneAxis::Horizontal));
+        let principal = panes.first_pane_id();
+        assert_eq!(panes.split_pane(99, 2, DocumentPaneAxis::Vertical), None);
+        assert_eq!(panes.pane_for_document(1), Some(principal));
+        assert!(
+            panes
+                .split_pane(principal, 2, DocumentPaneAxis::Horizontal)
+                .is_some()
+        );
         assert!(panes.without_document(99).is_some());
         assert!(panes.without_document(1).is_some());
         assert!(DocumentPaneTree::single(1).without_document(1).is_none());
@@ -12783,8 +12880,14 @@ mod pruebas {
         let malformed = DocumentPaneTree::Split {
             axis: DocumentPaneAxis::Vertical,
             fraction: f32::NAN,
-            first: Box::new(DocumentPaneTree::single(1)),
-            second: Box::new(DocumentPaneTree::single(2)),
+            first: Box::new(DocumentPaneTree::Leaf {
+                pane_id: 1,
+                document_id: 1,
+            }),
+            second: Box::new(DocumentPaneTree::Leaf {
+                pane_id: 2,
+                document_id: 2,
+            }),
         };
         let mut layout = Vec::new();
         malformed.layout(
