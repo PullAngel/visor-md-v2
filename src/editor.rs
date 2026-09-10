@@ -45,7 +45,48 @@ impl TextBuffer {
             .is_ok_and(|character| self.rope.char_to_byte(character) == byte)
     }
 
+    /// Un CRLF representa un único salto de línea para quien edita. Aunque
+    /// ambos bytes son límites UTF-8 válidos, dejar el cursor entre `\r` y
+    /// `\n` permitiría borrar o insertar solo una mitad del salto Windows.
+    fn is_crlf_interior(&self, byte: usize) -> bool {
+        byte > 0
+            && byte < self.len_bytes()
+            && self.rope.byte(byte - 1) == b'\r'
+            && self.rope.byte(byte) == b'\n'
+    }
+
+    /// Límite permitido para una interacción o un parche externo. Es más
+    /// estricto que un límite UTF-8: también mantiene CRLF como unidad atómica.
+    fn is_edit_boundary(&self, byte: usize) -> bool {
+        self.is_char_boundary(byte) && !self.is_crlf_interior(byte)
+    }
+
+    /// Los cambios internos de historial pueden recrear temporalmente un
+    /// CRLF en el borde de un parche. La interfaz siempre se coloca después
+    /// del salto completo, nunca entre sus dos bytes.
+    fn normalize_edit_boundary(&self, byte: usize) -> usize {
+        let byte = byte.min(self.len_bytes());
+        if self.is_crlf_interior(byte) {
+            byte + 1
+        } else {
+            byte
+        }
+    }
+
     pub fn slice_bytes(&self, range: Range<usize>) -> Result<String, EditError> {
+        if range.start > range.end
+            || !self.is_edit_boundary(range.start)
+            || !self.is_edit_boundary(range.end)
+        {
+            return Err(EditError::InvalidRange);
+        }
+        self.slice_bytes_at_char_boundaries(range)
+    }
+
+    /// Ruta interna para revertir un parche de historial exacto. No se expone
+    /// a la interacción: solo permite deshacer una edición que convirtió dos
+    /// bytes vecinos en un CRLF antes de volver a su estado original.
+    fn slice_bytes_at_char_boundaries(&self, range: Range<usize>) -> Result<String, EditError> {
         if range.start > range.end
             || !self.is_char_boundary(range.start)
             || !self.is_char_boundary(range.end)
@@ -57,7 +98,11 @@ impl TextBuffer {
         Ok(self.rope.slice(start..end).to_string())
     }
 
-    fn replace_range(&mut self, range: Range<usize>, inserted: &str) -> Result<(), EditError> {
+    fn replace_range_at_char_boundaries(
+        &mut self,
+        range: Range<usize>,
+        inserted: &str,
+    ) -> Result<(), EditError> {
         if range.start > range.end
             || !self.is_char_boundary(range.start)
             || !self.is_char_boundary(range.end)
@@ -72,11 +117,28 @@ impl TextBuffer {
     }
 
     fn previous_boundary(&self, byte: usize) -> usize {
+        let byte = self.normalize_edit_boundary(byte);
         let character = self.rope.byte_to_char(byte);
-        self.rope.char_to_byte(character.saturating_sub(1))
+        let previous = self.rope.char_to_byte(character.saturating_sub(1));
+        if previous > 0
+            && self.rope.byte(previous) == b'\n'
+            && self.rope.byte(previous - 1) == b'\r'
+        {
+            previous - 1
+        } else {
+            previous
+        }
     }
 
     fn next_boundary(&self, byte: usize) -> usize {
+        let byte = self.normalize_edit_boundary(byte);
+        if byte < self.len_bytes()
+            && self.rope.byte(byte) == b'\r'
+            && byte + 1 < self.len_bytes()
+            && self.rope.byte(byte + 1) == b'\n'
+        {
+            return byte + 2;
+        }
         let character = self.rope.byte_to_char(byte);
         self.rope
             .char_to_byte((character + 1).min(self.rope.len_chars()))
@@ -262,8 +324,8 @@ impl EditHistory {
     ) -> Result<bool, EditError> {
         if range.start > range.end
             || range.end > source.len_bytes()
-            || !source.is_char_boundary(range.start)
-            || !source.is_char_boundary(range.end)
+            || !source.is_edit_boundary(range.start)
+            || !source.is_edit_boundary(range.end)
         {
             return Err(EditError::InvalidRange);
         }
@@ -277,7 +339,7 @@ impl EditHistory {
         let after_revision = self.next_revision;
         let removed_bytes = removed.len();
         self.next_revision = self.next_revision.saturating_add(1);
-        source.replace_range(range.clone(), inserted)?;
+        source.replace_range_at_char_boundaries(range.clone(), inserted)?;
         let change = Change {
             start: range.start,
             removed,
@@ -307,12 +369,15 @@ impl EditHistory {
         if end > source.len_bytes()
             || !source.is_char_boundary(change.start)
             || !source.is_char_boundary(end)
-            || source.slice_bytes(change.start..end)?.as_str() != change.inserted
+            || source
+                .slice_bytes_at_char_boundaries(change.start..end)?
+                .as_str()
+                != change.inserted
         {
             self.undo.push_back(change);
             return Err(EditError::InconsistentHistory);
         }
-        source.replace_range(change.start..end, &change.removed)?;
+        source.replace_range_at_char_boundaries(change.start..end, &change.removed)?;
         self.current_revision = change.before_revision;
         self.last_change = Some(SourceChange {
             start: change.start,
@@ -335,12 +400,15 @@ impl EditHistory {
         if end > source.len_bytes()
             || !source.is_char_boundary(change.start)
             || !source.is_char_boundary(end)
-            || source.slice_bytes(change.start..end)?.as_str() != change.removed
+            || source
+                .slice_bytes_at_char_boundaries(change.start..end)?
+                .as_str()
+                != change.removed
         {
             self.redo.push(change);
             return Err(EditError::InconsistentHistory);
         }
-        source.replace_range(change.start..end, &change.inserted)?;
+        source.replace_range_at_char_boundaries(change.start..end, &change.inserted)?;
         self.current_revision = change.after_revision;
         self.last_change = Some(SourceChange {
             start: change.start,
@@ -445,7 +513,7 @@ impl SourceEditor {
         offset: usize,
         extend: bool,
     ) -> Result<(), EditError> {
-        if offset > source.len_bytes() || !source.is_char_boundary(offset) {
+        if offset > source.len_bytes() || !source.is_edit_boundary(offset) {
             return Err(EditError::InvalidRange);
         }
         self.cursor = offset;
@@ -460,7 +528,7 @@ impl SourceEditor {
         let range = self.selection();
         let changed = self.history.apply(source, range.clone(), text)?;
         if changed {
-            self.cursor = range.start + text.len();
+            self.cursor = source.normalize_edit_boundary(range.start + text.len());
             self.anchor = self.cursor;
         }
         Ok(changed)
@@ -486,8 +554,8 @@ impl SourceEditor {
         let replacement = format!("{prefix}{content}{suffix}");
         let changed = self.history.apply(source, range.clone(), &replacement)?;
         if changed {
-            self.anchor = range.start + prefix.len();
-            self.cursor = self.anchor + content.len();
+            self.anchor = source.normalize_edit_boundary(range.start + prefix.len());
+            self.cursor = source.normalize_edit_boundary(self.anchor + content.len());
             self.preferred_column = None;
         }
         Ok(changed)
@@ -507,11 +575,11 @@ impl SourceEditor {
         let changed = self.history.apply(source, range.clone(), &replacement)?;
         if changed {
             if had_selection {
-                self.anchor = range.start + 1 + label.len() + 2;
-                self.cursor = self.anchor + DESTINATION.len();
+                self.anchor = source.normalize_edit_boundary(range.start + 1 + label.len() + 2);
+                self.cursor = source.normalize_edit_boundary(self.anchor + DESTINATION.len());
             } else {
-                self.anchor = range.start + 1;
-                self.cursor = self.anchor + LABEL.len();
+                self.anchor = source.normalize_edit_boundary(range.start + 1);
+                self.cursor = source.normalize_edit_boundary(self.anchor + LABEL.len());
             }
             self.preferred_column = None;
         }
@@ -529,9 +597,9 @@ impl SourceEditor {
         let start = source.line_start(self.cursor);
         let changed = self.history.apply(source, start..start, prefix)?;
         if changed {
-            self.cursor += prefix.len();
+            self.cursor = source.normalize_edit_boundary(self.cursor + prefix.len());
             if self.anchor >= start {
-                self.anchor += prefix.len();
+                self.anchor = source.normalize_edit_boundary(self.anchor + prefix.len());
             }
             self.preferred_column = None;
         }
@@ -548,8 +616,9 @@ impl SourceEditor {
         };
         let changed = self.history.apply(source, range.clone(), "")?;
         if changed {
-            self.cursor = range.start;
+            self.cursor = source.normalize_edit_boundary(range.start);
             self.anchor = range.start;
+            self.anchor = source.normalize_edit_boundary(self.anchor);
         }
         Ok(changed)
     }
@@ -563,6 +632,7 @@ impl SourceEditor {
             selection
         };
         let changed = self.history.apply(source, range, "")?;
+        self.cursor = source.normalize_edit_boundary(self.cursor);
         self.anchor = self.cursor;
         Ok(changed)
     }
@@ -686,6 +756,7 @@ impl SourceEditor {
                 .map(|change| change.start + change.inserted_bytes)
                 .unwrap_or(0)
                 .min(source.len_bytes());
+            self.cursor = source.normalize_edit_boundary(self.cursor);
             self.anchor = self.cursor;
         }
         Ok(changed)
@@ -700,6 +771,7 @@ impl SourceEditor {
                 .map(|change| change.start + change.inserted_bytes)
                 .unwrap_or(0)
                 .min(source.len_bytes());
+            self.cursor = source.normalize_edit_boundary(self.cursor);
             self.anchor = self.cursor;
         }
         Ok(changed)
@@ -926,6 +998,60 @@ mod tests {
         editor.set_cursor(&source, "uno".len(), false).unwrap();
         editor.insert(&mut source, "\r\n").unwrap();
         assert_eq!(source.to_string(), "uno\r\n\r\ndos");
+    }
+
+    #[test]
+    fn crlf_es_atomico_para_cursor_seleccion_y_borrado() {
+        let mut source = buffer("a\r\nb");
+        let mut editor = SourceEditor::new();
+
+        assert!(source.is_edit_boundary(1));
+        assert!(!source.is_edit_boundary(2));
+        assert!(source.is_edit_boundary(3));
+        assert_eq!(
+            editor.set_cursor(&source, 2, false),
+            Err(EditError::InvalidRange)
+        );
+        assert_eq!(source.slice_bytes(1..2), Err(EditError::InvalidRange));
+
+        editor.set_cursor(&source, 1, false).unwrap();
+        editor.move_right(&source, false).unwrap();
+        assert_eq!(editor.cursor(), 3);
+        editor.move_left(&source, true).unwrap();
+        assert_eq!(editor.selection(), 1..3);
+        assert_eq!(
+            editor.selected_text(&source).unwrap().as_deref(),
+            Some("\r\n")
+        );
+
+        editor.set_cursor(&source, 1, false).unwrap();
+        assert!(editor.delete(&mut source).unwrap());
+        assert_eq!(source.to_string(), "ab");
+        assert!(editor.undo(&mut source).unwrap());
+        assert_eq!(source.to_string(), "a\r\nb");
+
+        editor.set_cursor(&source, 3, false).unwrap();
+        assert!(editor.backspace(&mut source).unwrap());
+        assert_eq!(source.to_string(), "ab");
+        assert!(editor.undo(&mut source).unwrap());
+        assert_eq!(source.to_string(), "a\r\nb");
+    }
+
+    #[test]
+    fn historial_puede_revertir_un_crlf_formado_en_el_borde_de_un_parche() {
+        let mut source = buffer("\n");
+        let mut editor = SourceEditor::new();
+        editor.set_cursor(&source, 0, false).unwrap();
+
+        assert!(editor.insert(&mut source, "\r").unwrap());
+        assert_eq!(source.to_string(), "\r\n");
+        assert_eq!(editor.cursor(), 2);
+        assert!(editor.undo(&mut source).unwrap());
+        assert_eq!(source.to_string(), "\n");
+        assert_eq!(editor.cursor(), 0);
+        assert!(editor.redo(&mut source).unwrap());
+        assert_eq!(source.to_string(), "\r\n");
+        assert_eq!(editor.cursor(), 2);
     }
 
     #[test]

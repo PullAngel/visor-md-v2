@@ -32,6 +32,11 @@ normalizan. La identidad portátil, los parches reversibles, el conflicto
 externo y el guardado atómico ya están conectados. UTF-8 inválido y otras
 codificaciones se rechazan en vez de sustituirse silenciosamente.
 
+Para la interacción, un `CRLF` se trata como un único salto de línea aunque
+ocupe dos bytes. El cursor, la selección, Backspace y Delete no pueden quedar
+ni operar entre `\r` y `\n`; el historial conserva internamente los parches
+exactos necesarios para revertir una edición sin alterar los bytes vecinos.
+
 Parser, modelo, layout y aplicación todavía comparten `main.rs`. Se extraerán en
 commits separados; esta lista describe el estado real y no la arquitectura final.
 

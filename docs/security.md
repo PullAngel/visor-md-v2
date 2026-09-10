@@ -148,6 +148,11 @@ solo cuando el modo seguro y sus presupuestos de memoria estén medidos. Un
 archivo que lo supera hoy se rechaza con una explicación, no se parsea
 parcialmente.
 
+Durante edición, `CRLF` es una unidad atómica: la interfaz no deja el cursor,
+la selección ni un borrado parcial entre `\r` y `\n`. Esto evita convertir por
+accidente un archivo Windows en un archivo de saltos mixtos al modificar una
+línea cercana.
+
 Esto reduce una carrera TOCTOU común: comprobar por ruta y luego leer esa ruta
 podría validar un archivo y abrir otro si un proceso local lo reemplaza entre
 ambas operaciones. La contención de recursos secundarios, symlinks y junctions
