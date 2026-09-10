@@ -163,8 +163,10 @@ sensible. Para una edición puramente documental, `scripts/check-docs.ps1` y
 requiera auditoría.
 
 El workflow [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) repite
-formato, Clippy, pruebas y release en Windows MSVC y Linux. Windows verifica
-además que el SBOM versionado se pueda regenerar sin diferencias. No publica
+formato, Clippy, pruebas y release en Windows MSVC y Linux. Ambos targets
+verifican además que el SBOM versionado se pueda regenerar sin diferencias y
+todas las invocaciones que resuelven el grafo usan `--locked`: CI no puede
+actualizar `Cargo.lock` de forma implícita. No publica
 artefactos ni sustituye QA manual, fuzzing o auditoría de advisories.
 
 Además:

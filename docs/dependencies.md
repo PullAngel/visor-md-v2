@@ -144,6 +144,15 @@ fuerzan versiones transitivas sin comprobar compatibilidad.
 Cada release candidata debe repetir la auditoría contra una base RustSec actual y
 registrar commit, fecha, target y resultado.
 
+## Lockfile en CI
+
+El workflow de Windows y Linux y el gate local `scripts/check.ps1` invocan Cargo
+con `--locked` para Clippy, pruebas, metadata del SBOM y build release. Esto
+convierte un cambio no versionado de dependencias en un fallo visible, en vez de
+permitir que un runner altere `Cargo.lock` durante una validación. No sustituye
+la revisión humana de una actualización de dependencias ni la verificación de
+licencias y advisories.
+
 ## SBOM
 
 `scripts/generate-sbom.ps1` genera `sbom.cdx.json` en formato CycloneDX 1.6 a

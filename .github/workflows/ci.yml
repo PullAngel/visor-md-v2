@@ -50,5 +50,8 @@ jobs:
         run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - name: Pruebas
         run: cargo test --locked
+      - name: SBOM reproducible
+        shell: pwsh
+        run: ./scripts/generate-sbom.ps1 -Check
       - name: Release
         run: cargo build --locked --release

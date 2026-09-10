@@ -22,8 +22,8 @@ function Invoke-Checked {
 Push-Location (Split-Path -Parent $PSScriptRoot)
 try {
     Invoke-Checked "Formato" { cargo fmt -- --check }
-    Invoke-Checked "Clippy" { cargo clippy --all-targets --all-features -- -D warnings }
-    Invoke-Checked "Pruebas" { cargo test }
+    Invoke-Checked "Clippy" { cargo clippy --locked --all-targets --all-features -- -D warnings }
+    Invoke-Checked "Pruebas" { cargo test --locked }
 
     Write-Host "==> SBOM"
     & "$PSScriptRoot\generate-sbom.ps1" -Check
@@ -32,7 +32,7 @@ try {
     & "$PSScriptRoot\check-docs.ps1"
 
     if (-not $SkipRelease) {
-        Invoke-Checked "Build release" { cargo build --release }
+        Invoke-Checked "Build release" { cargo build --locked --release }
     }
 } finally {
     Pop-Location
