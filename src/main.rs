@@ -1099,11 +1099,17 @@ enum AppEvent {
         baseline_bytes: Vec<u8>,
         outcome: ParseOutcome,
         elapsed_ms: f64,
+        /// Solo existe al recargar la pestaña actual. Si la persona editó
+        /// mientras el disco se leía, el resultado no puede reemplazarla.
+        expected_revision: Option<u64>,
     },
     DocumentFailed {
         document_id: u64,
         request: u64,
         error: String,
+        /// Una recarga explícita conserva la fuente abierta si falla. Una
+        /// pestaña nueva aún puede mostrar su estado de apertura fallida.
+        preserve_document: bool,
     },
     ViewReady {
         document_id: u64,
@@ -1155,6 +1161,7 @@ enum AppEvent {
     },
     ExternalChangeChecked {
         document_id: u64,
+        baseline_generation: u64,
         result: Result<bool, String>,
     },
     ImageReady {
@@ -4720,6 +4727,9 @@ struct DocumentState {
     source_metadata: TextMetadata,
     source_identity: Option<FileIdentity>,
     source_baseline_bytes: Option<Vec<u8>>,
+    /// Generación de la versión externa aceptada. Evita que una comprobación
+    /// iniciada antes de guardar active un conflicto falso después de guardar.
+    baseline_generation: u64,
     source_editor: SourceEditor,
     mode: DocumentMode,
     split_orientation: SplitOrientation,
@@ -4762,6 +4772,7 @@ impl DocumentState {
             source_metadata: TextMetadata::default(),
             source_identity: None,
             source_baseline_bytes: None,
+            baseline_generation: 0,
             source_editor: SourceEditor::new(),
             mode: DocumentMode::SourceEditing,
             split_orientation: SplitOrientation::SideBySide,
@@ -4828,13 +4839,51 @@ fn apply_save_result(
     identity: FileIdentity,
     baseline_bytes: Vec<u8>,
 ) -> bool {
-    document.source_identity = Some(identity);
-    document.source_baseline_bytes = Some(baseline_bytes);
+    replace_file_baseline(document, identity, baseline_bytes);
     let is_current = revision == document.source_editor.revision();
     if is_current {
         document.source_editor.mark_saved();
     }
     is_current
+}
+
+fn replace_file_baseline(
+    document: &mut DocumentState,
+    identity: FileIdentity,
+    baseline_bytes: Vec<u8>,
+) {
+    document.source_identity = Some(identity);
+    document.source_baseline_bytes = Some(baseline_bytes);
+    invalidate_external_baseline(document);
+}
+
+fn invalidate_external_baseline(document: &mut DocumentState) {
+    document.baseline_generation = document.baseline_generation.wrapping_add(1);
+}
+
+fn is_current_external_check(
+    result_document_id: u64,
+    target_document_id: u64,
+    result_generation: u64,
+    current_generation: u64,
+) -> bool {
+    result_document_id == target_document_id && result_generation == current_generation
+}
+
+fn take_matching_external_check(
+    in_flight: &mut HashMap<u64, u64>,
+    document_id: u64,
+    baseline_generation: u64,
+) -> bool {
+    if in_flight.get(&document_id).copied() != Some(baseline_generation) {
+        return false;
+    }
+    in_flight.remove(&document_id);
+    true
+}
+
+fn reload_revision_is_current(expected_revision: Option<u64>, current_revision: u64) -> bool {
+    expected_revision.is_none_or(|expected| expected == current_revision)
 }
 
 fn apply_view_outcome(document: &mut DocumentState, outcome: ParseOutcome) {
@@ -5008,7 +5057,9 @@ struct App {
     /// activo evita que una futura división cambie accidentalmente todas las
     /// hojas que muestran la misma fuente.
     focused_document_pane: u64,
-    external_checks_in_flight: HashSet<u64>,
+    /// Documento y generación de baseline de cada comprobación en curso. La
+    /// generación evita que una respuesta vieja borre una comprobación nueva.
+    external_checks_in_flight: HashMap<u64, u64>,
     /// Identifica las pestañas con una escritura atómica pendiente. El resto
     /// de la sesión puede seguir usándose sin atribuir el resultado a otro
     /// documento.
@@ -5255,6 +5306,7 @@ impl ApplicationHandler<AppEvent> for App {
                 baseline_bytes,
                 outcome,
                 elapsed_ms,
+                expected_revision,
             } => {
                 if self.open_requests.get(&document_id) != Some(&request) {
                     self.log
@@ -5282,12 +5334,19 @@ impl ApplicationHandler<AppEvent> for App {
                     );
                     return;
                 };
+                if !reload_revision_is_current(expected_revision, document.source_editor.revision())
+                {
+                    self.log.push(
+                        "[apertura] se descartó una recarga porque la fuente cambió".to_string(),
+                    );
+                    self.set_notice("la recarga no reemplazó cambios nuevos");
+                    return;
+                }
                 document.path = path.to_string_lossy().into_owned();
                 document.content_kind = DocumentContentKind::for_path(&path);
                 document.source = TextBuffer::from_text(&source);
                 document.source_metadata = metadata;
-                document.source_identity = Some(identity);
-                document.source_baseline_bytes = Some(baseline_bytes);
+                replace_file_baseline(document, identity, baseline_bytes);
                 document.source_editor = SourceEditor::new();
                 document.mode = remembered_mode;
                 apply_view_outcome(document, outcome);
@@ -5318,8 +5377,8 @@ impl ApplicationHandler<AppEvent> for App {
                         reason.explanation()
                     ));
                 }
+                self.external_checks_in_flight.remove(&document_id);
                 if active {
-                    self.external_checks_in_flight.remove(&document_id);
                     self.reset_document_view();
                     self.notice = None;
                     self.refresh_title();
@@ -5334,6 +5393,7 @@ impl ApplicationHandler<AppEvent> for App {
                 document_id,
                 request,
                 error,
+                preserve_document,
             } => {
                 if self.open_requests.get(&document_id) != Some(&request) {
                     self.log
@@ -5343,16 +5403,22 @@ impl ApplicationHandler<AppEvent> for App {
                 self.open_requests.remove(&document_id);
                 self.external_checks_in_flight.remove(&document_id);
                 self.log.push(format!("[error] {error}"));
-                if let Some(document) = document_by_id_mut(
-                    &mut self.document,
-                    &mut self.inactive_documents,
-                    document_id,
-                ) {
+                if !preserve_document
+                    && let Some(document) = document_by_id_mut(
+                        &mut self.document,
+                        &mut self.inactive_documents,
+                        document_id,
+                    )
+                {
                     (document.source, document.blocks) = opening_failure_blocks();
                 }
                 if document_id == self.document.id {
-                    self.reset_document_view();
-                    self.set_notice("no se pudo abrir el documento");
+                    if preserve_document {
+                        self.set_notice("no se pudo recargar; la edición actual sigue intacta");
+                    } else {
+                        self.reset_document_view();
+                        self.set_notice("no se pudo abrir el documento");
+                    }
                     if let Some(window) = &self.window {
                         window.request_redraw();
                     }
@@ -5609,10 +5675,29 @@ impl ApplicationHandler<AppEvent> for App {
             }
             AppEvent::ExternalChangeChecked {
                 document_id,
+                baseline_generation,
                 result,
             } => {
-                self.external_checks_in_flight.remove(&document_id);
-                if document_id != self.document.id {
+                if !take_matching_external_check(
+                    &mut self.external_checks_in_flight,
+                    document_id,
+                    baseline_generation,
+                ) {
+                    self.log.push(
+                        "[archivos] se descartó una comprobación externa reemplazada".to_string(),
+                    );
+                    return;
+                }
+                if !is_current_external_check(
+                    document_id,
+                    self.document.id,
+                    baseline_generation,
+                    self.document.baseline_generation,
+                ) {
+                    self.log.push(
+                        "[archivos] se descartó una comprobación externa desactualizada"
+                            .to_string(),
+                    );
                     return;
                 }
                 match result {
@@ -7430,6 +7515,7 @@ impl App {
             .replace_pane_document(self.focused_document_pane, document_id);
         self.reset_document_view();
         self.refresh_title();
+        self.check_external_change();
         if let Some(window) = &self.window {
             window.request_redraw();
         }
@@ -8178,6 +8264,7 @@ impl App {
             self.set_notice("esta pestaña ya se está guardando");
             return;
         }
+        invalidate_external_baseline(&mut self.document);
         self.set_notice("guardando de forma atómica");
         thread::spawn(move || {
             let event =
@@ -8216,6 +8303,7 @@ impl App {
             self.set_notice("esta pestaña ya se está guardando");
             return;
         }
+        invalidate_external_baseline(&mut self.document);
         self.set_notice("creando documento de forma atómica");
         thread::spawn(move || {
             let event = match save_new_primary(&path, &source, metadata) {
@@ -8247,20 +8335,24 @@ impl App {
     fn check_external_change(&mut self) {
         let document_id = self.document.id;
         if self.open_requests.contains_key(&document_id)
-            || self.external_checks_in_flight.contains(&document_id)
+            || self.saves_in_flight.contains(&document_id)
+            || self.external_checks_in_flight.contains_key(&document_id)
         {
             return;
         }
         let Some(baseline_bytes) = self.document.source_baseline_bytes.clone() else {
             return;
         };
+        let baseline_generation = self.document.baseline_generation;
         let path = PathBuf::from(&self.document.path);
         let proxy = self.proxy.clone();
-        self.external_checks_in_flight.insert(document_id);
+        self.external_checks_in_flight
+            .insert(document_id, baseline_generation);
         thread::spawn(move || {
             let result = changed_on_disk(&path, &baseline_bytes).map_err(|error| error.to_string());
             let _ = proxy.send_event(AppEvent::ExternalChangeChecked {
                 document_id,
+                baseline_generation,
                 result,
             });
         });
@@ -8327,7 +8419,7 @@ impl App {
                         return;
                     }
                 }
-                self.open_document_path(PathBuf::from(&self.document.path));
+                self.reload_current_document_from_disk();
             }
             MessageDialogResult::No => self.save_as_current_document(),
             MessageDialogResult::Cancel
@@ -8369,7 +8461,7 @@ impl App {
                     );
                     return;
                 }
-                self.open_document_path(PathBuf::from(&self.document.path));
+                self.reload_current_document_from_disk();
             }
             MessageDialogResult::No => self.save_as_current_document(),
             MessageDialogResult::Cancel
@@ -8634,6 +8726,63 @@ impl App {
         }
     }
 
+    /// Recarga la pestaña actual sin abrir una segunda copia. Conserva la
+    /// fuente, el historial y la recuperación si disco o permisos fallan; la
+    /// respuesta solo puede reemplazar la fuente que existía al iniciarla.
+    fn reload_current_document_from_disk(&mut self) {
+        if self.document.source_identity.is_none() {
+            self.set_notice("no se puede recargar un documento que todavía no se guardó");
+            return;
+        }
+        let document_id = self.document.id;
+        if self.open_requests.contains_key(&document_id) {
+            self.set_notice("esta pestaña ya se está recargando");
+            return;
+        }
+        let path = PathBuf::from(&self.document.path);
+        let revision = self.document.source_editor.revision();
+        self.document_request = self.document_request.wrapping_add(1);
+        let request = self.document_request;
+        self.open_requests.insert(document_id, request);
+        self.external_checks_in_flight.remove(&document_id);
+        invalidate_external_baseline(&mut self.document);
+        self.set_notice("recargando desde disco");
+        let proxy = self.proxy.clone();
+        thread::spawn(move || {
+            let event = match open_explicit_primary(&path, DEFAULT_DOCUMENT_LIMIT_BYTES) {
+                Ok(opened) => match DocumentContentKind::for_path(&path)
+                    .prepare_view(&opened.source)
+                {
+                    Ok(outcome) => AppEvent::DocumentReady {
+                        document_id,
+                        request,
+                        path,
+                        source: opened.source,
+                        metadata: opened.metadata,
+                        identity: opened.identity,
+                        baseline_bytes: opened.baseline_bytes,
+                        outcome,
+                        elapsed_ms: 0.0,
+                        expected_revision: Some(revision),
+                    },
+                    Err(error) => AppEvent::DocumentFailed {
+                        document_id,
+                        request,
+                        error: format!("el documento no se pudo preparar de forma segura: {error}"),
+                        preserve_document: true,
+                    },
+                },
+                Err(error) => AppEvent::DocumentFailed {
+                    document_id,
+                    request,
+                    error: format!("no se pudo recargar el documento: {error}"),
+                    preserve_document: true,
+                },
+            };
+            let _ = proxy.send_event(event);
+        });
+    }
+
     fn open_document_path(&mut self, path: PathBuf) -> bool {
         if paths_refer_to_same_file(std::path::Path::new(&self.document.path), &path) {
             self.set_notice("el documento ya está abierto en la pestaña activa");
@@ -8676,17 +8825,20 @@ impl App {
                         baseline_bytes: opened.baseline_bytes,
                         outcome,
                         elapsed_ms: 0.0,
+                        expected_revision: None,
                     },
                     Err(error) => AppEvent::DocumentFailed {
                         document_id,
                         request,
                         error: format!("el documento no se pudo preparar de forma segura: {error}"),
+                        preserve_document: false,
                     },
                 },
                 Err(error) => AppEvent::DocumentFailed {
                     document_id,
                     request,
                     error: format!("no se pudo abrir el documento: {error}"),
+                    preserve_document: false,
                 },
             };
             let _ = proxy.send_event(event);
@@ -12158,6 +12310,7 @@ fn main() {
             source_metadata: TextMetadata::default(),
             source_identity: None,
             source_baseline_bytes: None,
+            baseline_generation: 0,
             source_editor: SourceEditor::new(),
             mode: if opening_path.is_some() {
                 DocumentMode::Reading
@@ -12181,7 +12334,7 @@ fn main() {
         tab_order: vec![initial_document_id],
         document_panes,
         focused_document_pane,
-        external_checks_in_flight: HashSet::new(),
+        external_checks_in_flight: HashMap::new(),
         saves_in_flight: HashSet::new(),
         settings,
         recovery_enabled,
@@ -12286,6 +12439,7 @@ fn main() {
                             baseline_bytes: opened.baseline_bytes,
                             outcome,
                             elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
+                            expected_revision: None,
                         },
                         Err(error) => AppEvent::DocumentFailed {
                             document_id: initial_document_id,
@@ -12293,6 +12447,7 @@ fn main() {
                             error: format!(
                                 "el documento no se pudo preparar de forma segura: {error}"
                             ),
+                            preserve_document: false,
                         },
                     }
                 }
@@ -12300,6 +12455,7 @@ fn main() {
                     document_id: initial_document_id,
                     request: initial_document_request,
                     error: format!("no se pudo leer {worker_path}: {error}"),
+                    preserve_document: false,
                 },
             };
             let _ = proxy.send_event(event);
@@ -14268,6 +14424,34 @@ con dos lineas
         assert!(is_current_view_result(7, 7, 12, 12));
         assert!(!is_current_view_result(6, 7, 12, 12));
         assert!(!is_current_view_result(7, 7, 11, 12));
+    }
+
+    #[test]
+    fn comprobacion_externa_exige_documento_y_baseline_actual() {
+        assert!(is_current_external_check(7, 7, 12, 12));
+        assert!(!is_current_external_check(6, 7, 12, 12));
+        assert!(!is_current_external_check(7, 7, 11, 12));
+
+        let mut in_flight = HashMap::from([(7, 12)]);
+        assert!(
+            !take_matching_external_check(&mut in_flight, 7, 11),
+            "un resultado A viejo no puede borrar la comprobación B vigente"
+        );
+        assert_eq!(in_flight.get(&7).copied(), Some(12));
+        assert!(take_matching_external_check(&mut in_flight, 7, 12));
+        assert!(in_flight.is_empty());
+
+        let mut document = DocumentState::untitled();
+        assert_eq!(document.baseline_generation, 0);
+        invalidate_external_baseline(&mut document);
+        assert_eq!(document.baseline_generation, 1);
+    }
+
+    #[test]
+    fn una_recarga_nunca_reemplaza_edicion_posterior() {
+        assert!(reload_revision_is_current(None, 8));
+        assert!(reload_revision_is_current(Some(8), 8));
+        assert!(!reload_revision_is_current(Some(8), 9));
     }
 
     #[test]

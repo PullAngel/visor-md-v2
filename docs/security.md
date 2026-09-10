@@ -361,9 +361,13 @@ La deduplicación de pestañas compara rutas locales existentes para activar una
 pestaña ya abierta. Las rutas UNC solo pueden coincidir mediante comparación
 léxica; esta comodidad nunca las canonicaliza ni provoca una consulta de red.
 
-Al recuperar foco, la aplicación compara de forma acotada el archivo abierto
-con su baseline confirmado. Si difiere, no recarga ni guarda por sí sola: ofrece
-recargar, guardar una copia o conservar la vista actual. Esta comprobación no
+Al recuperar foco o reactivar una pestaña, la aplicación compara de forma
+acotada el archivo abierto con su baseline confirmado. Si difiere, no recarga
+ni guarda por sí sola: ofrece recargar, guardar una copia o conservar la vista
+actual. Cada comprobación lleva la generación del baseline que leyó; un
+resultado anterior a un guardado o a una comprobación más nueva se descarta. La
+recarga usa la misma pestaña y, si falla o la fuente cambió mientras se leía,
+conserva la edición, historial y recuperación locales. Esta comprobación no
 instala observadores de carpetas ni sigue rutas provenientes del documento.
 
 La recuperación de sesión actual escribe texto UTF-8 sin cifrar en el perfil

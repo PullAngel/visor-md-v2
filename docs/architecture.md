@@ -259,7 +259,8 @@ lleva documento y revisión, por lo que una respuesta vieja no puede reemplazar
 otra pestaña ni una edición más nueva.
 
 `DocumentState` concentra la identidad, fuente, metadatos de preservación,
-política de contenido Markdown o texto inerte, editor, modo, bloques
+política de contenido Markdown o texto inerte, generación de baseline externo,
+editor, modo, bloques
 renderizables y degradación de cada documento. La política de contenido no se
 deduce del resultado mutable del parser: se conserva para que un refresco
 asíncrono no transforme un `.txt` o código en Markdown. La
@@ -273,7 +274,9 @@ de render anteriores mediante una generación monotónica. La barra visible ya
 permite elegir y cerrar pestañas. Scroll, plegado y selección de lectura viajan
 con cada documento; el cursor y la selección de fuente viven en su
 `SourceEditor`. Los caches y overlays efímeros pertenecen a la ventana y se
-reconstruyen al cambiar de pestaña.
+reconstruyen al cambiar de pestaña. Las comprobaciones externas llevan una
+generación separada: un resultado de disco no puede abrir un diálogo si una
+escritura o una lectura posterior ya aceptó otro baseline.
 
 Responsabilidades:
 

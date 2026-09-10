@@ -269,3 +269,9 @@ guardado representa también la edición más reciente.
 Apertura y render aplican la misma regla: identidad de pestaña más solicitud o
 revisión vigente. Cambiar de pestaña no invalida una tarea correcta, mientras
 que una respuesta vieja para el mismo documento se descarta.
+
+Las comprobaciones de cambios externos se prueban con generaciones de baseline:
+una respuesta vieja no puede borrar una comprobación más nueva ni mostrar un
+conflicto después de guardar. Una recarga solo reemplaza la fuente si conserva
+la revisión que tenía al iniciarse; un fallo de lectura mantiene intacta la
+edición local y su recuperación.
