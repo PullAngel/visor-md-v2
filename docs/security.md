@@ -351,11 +351,15 @@ Controles:
 No hay autoguardado por defecto.
 
 La primera implementación de Guardar compara además los bytes completos de la
-versión abierta con el destino justo antes del reemplazo atómico. Esto detecta
-ediciones externas que una fecha de modificación o un tamaño iguales podrían
-ocultar. La comprobación reduce el riesgo TOCTOU, pero no elimina una carrera
-del filesystem entre esa lectura y el reemplazo; la identidad específica de
-handle y los tests por plataforma siguen siendo trabajo pendiente.
+versión abierta con el destino justo antes del reemplazo atómico. Primero
+descarta identidad o tamaño distintos sin leer contenido; después abre un
+handle y lee como máximo la longitud de la versión base más un byte. Esto evita
+que un reemplazo externo enorme convierta la comprobación de conflicto en una
+lectura sin cota, y detecta ediciones externas que una fecha de modificación o
+un tamaño iguales podrían ocultar. La comprobación reduce el riesgo TOCTOU,
+pero no elimina una carrera del filesystem entre esa lectura y el reemplazo; la
+identidad específica de handle y los tests por plataforma siguen siendo trabajo
+pendiente.
 
 La deduplicación de pestañas compara rutas locales existentes para activar una
 pestaña ya abierta. Las rutas UNC solo pueden coincidir mediante comparación

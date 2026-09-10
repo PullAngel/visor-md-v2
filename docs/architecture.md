@@ -378,11 +378,13 @@ sin ejecutar HTML ni interpretar atributos. Variantes desconocidas permanecen
 como citas con su marcador fuente visible; editar y guardar conserva la sintaxis
 original.
 
-Las aperturas y los resultados de vista llevan identidad de documento y una
-versión de solicitud o revisión. Si una tarea termina tarde después de una
-apertura o edición posterior, tanto su resultado como su error se descartan en
-vez de reemplazar el documento. Una tarea vigente puede completar una pestaña
-inactiva sin bloquear ni mutar la pestaña que la persona está usando.
+Las aperturas y los resultados de vista llevan identidad de documento, token de
+solicitud y revisión de fuente. El token no reutiliza el contador del editor:
+una recarga puede reiniciarlo y aun así una vista antigua se descarta. Si una
+tarea termina tarde después de una apertura o edición posterior, tanto su
+resultado como su error se descartan en vez de reemplazar el documento. Una
+tarea vigente puede completar una pestaña inactiva sin bloquear ni mutar la
+pestaña que la persona está usando.
 
 Indexa incrementalmente una carpeta permitida:
 

@@ -305,11 +305,30 @@ pub(crate) fn save_explicit_primary(
         return Err(FileSaveError::NotAFile);
     }
     let current_identity = FileIdentity::from_metadata(&existing_metadata);
-    let current_bytes = fs::read(path).map_err(|source| FileSaveError::Io {
-        operation: "no se pudo comprobar el contenido actual antes de guardar",
+    if &current_identity != expected_identity {
+        return Err(FileSaveError::Conflict);
+    }
+
+    // No usar `fs::read`: un proceso externo podría reemplazar el archivo por
+    // uno enorme después de consultar sus metadatos. El handle y `take` acotan
+    // la comprobación al tamaño que esta sesión abrió.
+    let mut current_file = File::open(path).map_err(|source| FileSaveError::Io {
+        operation: "no se pudo abrir el destino antes de guardar",
         source,
     })?;
-    if &current_identity != expected_identity || current_bytes != baseline_bytes {
+    let baseline_len = u64::try_from(baseline_bytes.len()).unwrap_or(u64::MAX);
+    let mut current_bytes = Vec::with_capacity(baseline_bytes.len());
+    Read::by_ref(&mut current_file)
+        .take(baseline_len.saturating_add(1))
+        .read_to_end(&mut current_bytes)
+        .map_err(|source| FileSaveError::Io {
+            operation: "no se pudo comprobar el contenido actual antes de guardar",
+            source,
+        })?;
+    // Windows no permite reemplazar atómicamente un destino cuyo handle sigue
+    // abierto en este proceso.
+    drop(current_file);
+    if current_bytes != baseline_bytes {
         return Err(FileSaveError::Conflict);
     }
 
@@ -498,6 +517,26 @@ mod tests {
             Err(FileSaveError::Conflict)
         ));
         assert_eq!(fs::read(&path).unwrap(), b"dos");
+    }
+
+    #[test]
+    fn guardar_no_lee_sin_cota_un_reemplazo_externo_enorme() {
+        let path = temporary_file("save-large-conflict", b"uno");
+        let opened = open_explicit_primary(&path, 64).expect("la fixture es válida");
+        let external = vec![b'x'; 128 * 1024];
+        fs::write(&path, &external).expect("la fixture se puede reemplazar");
+
+        assert!(matches!(
+            save_explicit_primary(
+                &path,
+                "tres",
+                opened.metadata,
+                &opened.identity,
+                &opened.baseline_bytes,
+            ),
+            Err(FileSaveError::Conflict)
+        ));
+        assert_eq!(fs::read(&path).unwrap(), external);
     }
 
     #[test]

@@ -1113,16 +1113,19 @@ enum AppEvent {
     },
     ViewReady {
         document_id: u64,
+        request: u64,
         revision: u64,
         outcome: ParseOutcome,
         elapsed_ms: f64,
     },
     ViewRequested {
         document_id: u64,
+        request: u64,
         revision: u64,
     },
     ViewFailed {
         document_id: u64,
+        request: u64,
         revision: u64,
         error: String,
     },
@@ -1473,6 +1476,13 @@ fn is_current_view_result(
     active_revision: u64,
 ) -> bool {
     result_document_id == target_document_id && result_revision == active_revision
+}
+
+/// La revisión protege el contenido; el token protege la identidad de una
+/// solicitud. Una recarga puede reiniciar el editor en revisión cero, por lo
+/// que no alcanza con comparar la revisión sola.
+fn is_current_view_request(in_flight: &HashMap<u64, u64>, document_id: u64, request: u64) -> bool {
+    in_flight.get(&document_id).copied() == Some(request)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
@@ -5085,7 +5095,11 @@ struct App {
     /// Solicitudes activas por pestaña. Un valor nuevo reemplaza lógicamente
     /// al anterior; los hilos viejos pueden terminar, pero no publicar estado.
     open_requests: HashMap<u64, u64>,
+    /// Cada render conserva un token monotónico separado de la revisión de
+    /// fuente. Así una recarga que reinicia el editor no puede aceptar una
+    /// vista vieja que coincidía accidentalmente en revisión cero.
     view_requests: HashMap<u64, u64>,
+    view_request: u64,
     image_request: u64,
     /// Solo existe después de una confirmación puntual. No persiste permisos,
     /// bytes comprimidos ni más de una imagen decodificada a la vez.
@@ -5259,9 +5273,10 @@ impl ApplicationHandler<AppEvent> for App {
         match event {
             AppEvent::ViewRequested {
                 document_id,
+                request,
                 revision,
             } => {
-                if self.view_requests.get(&document_id) != Some(&revision) {
+                if !is_current_view_request(&self.view_requests, document_id, request) {
                     return;
                 }
                 let Some(document) = document_by_id_mut(
@@ -5283,12 +5298,14 @@ impl ApplicationHandler<AppEvent> for App {
                     let event = match content_kind.prepare_view(&source) {
                         Ok(outcome) => AppEvent::ViewReady {
                             document_id,
+                            request,
                             revision,
                             outcome,
                             elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
                         },
                         Err(error) => AppEvent::ViewFailed {
                             document_id,
+                            request,
                             revision,
                             error: format!("no se pudo actualizar la vista: {error}"),
                         },
@@ -5342,6 +5359,7 @@ impl ApplicationHandler<AppEvent> for App {
                     self.set_notice("la recarga no reemplazó cambios nuevos");
                     return;
                 }
+                self.view_requests.remove(&document_id);
                 document.path = path.to_string_lossy().into_owned();
                 document.content_kind = DocumentContentKind::for_path(&path);
                 document.source = TextBuffer::from_text(&source);
@@ -5428,11 +5446,12 @@ impl ApplicationHandler<AppEvent> for App {
             }
             AppEvent::ViewReady {
                 document_id,
+                request,
                 revision,
                 outcome,
                 elapsed_ms,
             } => {
-                if self.view_requests.get(&document_id) != Some(&revision) {
+                if !is_current_view_request(&self.view_requests, document_id, request) {
                     self.log
                         .push("[edición] se descartó una vista desactualizada".to_string());
                     return;
@@ -5481,10 +5500,23 @@ impl ApplicationHandler<AppEvent> for App {
             }
             AppEvent::ViewFailed {
                 document_id,
+                request,
                 revision,
                 error,
             } => {
-                if self.view_requests.get(&document_id) != Some(&revision) {
+                if !is_current_view_request(&self.view_requests, document_id, request) {
+                    self.log
+                        .push("[edición] se descartó un error de vista desactualizado".to_string());
+                    return;
+                }
+                let current_revision = document_by_id_mut(
+                    &mut self.document,
+                    &mut self.inactive_documents,
+                    document_id,
+                )
+                .map(|document| document.source_editor.revision());
+                if current_revision != Some(revision) {
+                    self.view_requests.remove(&document_id);
                     self.log
                         .push("[edición] se descartó un error de vista desactualizado".to_string());
                     return;
@@ -7653,22 +7685,28 @@ impl App {
         &mut self,
         operation: impl FnOnce(&mut SourceEditor, &mut TextBuffer) -> Result<bool, editor::EditError>,
     ) {
+        let mode_before_edit = self.document.mode;
         let document = &mut self.document;
         match operation(&mut document.source_editor, &mut document.source) {
-            Ok(true) => match self.refresh_source_blocks() {
-                Ok(()) => {
+            Ok(true) => match mode_before_edit
+                .is_editable()
+                .then(|| self.refresh_source_blocks())
+            {
+                Some(Ok(())) | None => {
                     self.document.reading_selection = None;
                     self.notice = None;
                     self.refresh_title();
                     self.schedule_recovery();
-                    if self.document.mode == DocumentMode::Split {
+                    if mode_before_edit != DocumentMode::SourceEditing {
                         self.request_render_async();
                     }
                     if let Some(window) = &self.window {
                         window.request_redraw();
                     }
                 }
-                Err(error) => self.set_notice(&format!("no se pudo actualizar la fuente: {error}")),
+                Some(Err(error)) => {
+                    self.set_notice(&format!("no se pudo actualizar la fuente: {error}"))
+                }
             },
             Ok(false) => {}
             Err(error) => self.set_notice(&format!("edición rechazada: {error:?}")),
@@ -7944,12 +7982,15 @@ impl App {
         .map(|document| document.source_editor.revision()) else {
             return;
         };
-        self.view_requests.insert(document_id, revision);
+        self.view_request = self.view_request.wrapping_add(1);
+        let request = self.view_request;
+        self.view_requests.insert(document_id, request);
         let proxy = self.proxy.clone();
         thread::spawn(move || {
             thread::sleep(Duration::from_millis(120));
             let _ = proxy.send_event(AppEvent::ViewRequested {
                 document_id,
+                request,
                 revision,
             });
         });
@@ -8243,6 +8284,10 @@ impl App {
     }
 
     fn save_current_document(&mut self) {
+        if self.open_requests.contains_key(&self.document.id) {
+            self.set_notice("espera a que termine la recarga antes de guardar");
+            return;
+        }
         let (Some(identity), Some(baseline_bytes)) = (
             self.document.source_identity.clone(),
             self.document.source_baseline_bytes.clone(),
@@ -8286,6 +8331,10 @@ impl App {
     }
 
     fn save_as_current_document(&mut self) {
+        if self.open_requests.contains_key(&self.document.id) {
+            self.set_notice("espera a que termine la recarga antes de guardar una copia");
+            return;
+        }
         let Some(path) = FileDialog::new()
             .add_filter("Markdown", &["md", "markdown"])
             .set_file_name("nota.md")
@@ -12352,6 +12401,7 @@ fn main() {
             HashMap::new()
         },
         view_requests: HashMap::new(),
+        view_request: 0,
         image_request: 0,
         image_preview: None,
         proxy: proxy.clone(),
@@ -14420,10 +14470,18 @@ con dos lineas
     }
 
     #[test]
-    fn una_vista_asincrona_solo_es_actual_para_su_documento_y_revision() {
+    fn una_vista_asincrona_exige_documento_revision_y_solicitud_actual() {
         assert!(is_current_view_result(7, 7, 12, 12));
         assert!(!is_current_view_result(6, 7, 12, 12));
         assert!(!is_current_view_result(7, 7, 11, 12));
+
+        let requests = HashMap::from([(7, 19)]);
+        assert!(is_current_view_request(&requests, 7, 19));
+        assert!(
+            !is_current_view_request(&requests, 7, 18),
+            "una respuesta anterior no puede coincidir solo porque el editor volvió a revisión cero"
+        );
+        assert!(!is_current_view_request(&requests, 6, 19));
     }
 
     #[test]
@@ -15488,6 +15546,44 @@ Pagina 14 de 14"#;
         changed.replace_range(position..position + 1, replacement);
 
         assert_eq!(changed, "- [x] pendiente\n- [x] hecha");
+    }
+
+    #[test]
+    fn una_tarea_en_lectura_se_renderiza_y_se_deshace_sin_tocar_otro_texto() {
+        let original = "- [ ] pendiente\n- [x] hecha\n";
+        let initial = parse_blocks(original).expect("el Markdown de prueba es válido");
+        let task = initial
+            .blocks
+            .iter()
+            .find(|block| matches!(block.marker, Some(Marker::Task { done: false })))
+            .expect("falta la tarea pendiente");
+        let task_text = &original[task.source.start..task.source.end];
+        let (offset, replacement) =
+            task_marker_replacement(task_text).expect("el marcador es interactivo");
+        let position = task.source.start + offset;
+        let mut source = TextBuffer::from_text(original);
+        let mut editor = SourceEditor::new();
+
+        editor.set_cursor(&source, position, false).unwrap();
+        editor.set_cursor(&source, position + 1, true).unwrap();
+        editor.insert(&mut source, replacement).unwrap();
+        let rendered = parse_blocks(&source.to_string()).expect("la vista se vuelve a preparar");
+        assert!(
+            rendered
+                .blocks
+                .iter()
+                .any(|block| matches!(block.marker, Some(Marker::Task { done: true })))
+        );
+
+        editor.undo(&mut source).unwrap();
+        assert_eq!(source.to_string(), original);
+        let restored = parse_blocks(&source.to_string()).expect("la vista se vuelve a preparar");
+        assert!(
+            restored
+                .blocks
+                .iter()
+                .any(|block| matches!(block.marker, Some(Marker::Task { done: false })))
+        );
     }
 
     #[test]

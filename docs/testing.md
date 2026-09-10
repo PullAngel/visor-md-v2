@@ -275,3 +275,12 @@ una respuesta vieja no puede borrar una comprobación más nueva ni mostrar un
 conflicto después de guardar. Una recarga solo reemplaza la fuente si conserva
 la revisión que tenía al iniciarse; un fallo de lectura mantiene intacta la
 edición local y su recuperación.
+
+Los renders asíncronos combinan documento, revisión y token de solicitud. La
+regresión cubre una recarga que reinicia el contador del editor: una respuesta
+vieja con la misma revisión numérica no puede aplicar bloques de otra fuente o
+de otra política de contenido.
+
+El guardado ejercita un destino sustituido por un archivo mucho mayor que su
+baseline. Debe devolver conflicto y conservar el destino sin realizar una
+lectura de tamaño no acotado.
