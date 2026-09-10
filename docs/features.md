@@ -58,7 +58,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Reducir movimiento | Parcial | Acción persistente local que vuelve instantáneo el cambio de tema; no guarda contenido, rutas ni permisos. Debe cubrir paneles, pestañas y futuras divisiones cuando tengan transición visual |
 | Paneles plegables | Parcial | Índice, árbol plegable de notas, búsqueda de carpeta y backlinks muestran listas acotadas con selección visible, navegación por teclado o mouse y cierre con Escape; falta accesibilidad completa |
 | Actualizar workspace | Parcial | El catálogo y `Ctrl+Shift+I` reconstruyen de forma explícita el índice cancelable cuando la carpeta cambió; falta invalidación más precisa por archivo |
-| `.txt` y otros textos inertes | Parcial | Extensiones no Markdown se muestran como texto inerte; falta QA y reconocimiento UX |
+| `.txt` y otros textos inertes | Parcial | Extensiones no Markdown se mantienen inertes al abrir, editar, comparar, actualizar y Guardar como; falta QA de reconocimiento UX |
 | Edición en vivo | Futuro | Solo tras editor y modelo estables |
 
 ## Seguridad

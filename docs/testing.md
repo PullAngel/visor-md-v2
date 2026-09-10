@@ -45,6 +45,11 @@ reemplazar los bloques fuente editables, conserva el modo y reserva una
 geometría independiente. La percepción durante escritura rápida, DPI y ventanas
 estrechas permanece como QA manual.
 
+Los textos no Markdown se prueban como política persistente, no solo al abrir:
+un `.txt` o JSON que contiene `**literal**`, encabezados o listas sigue siendo
+texto inerte después de editar, entrar a vista dividida o reconstruir la vista
+en segundo plano.
+
 Las métricas de lectura cuentan solamente bloques visibles del modelo, ignoran
 separadores sin texto y redondean hacia arriba sin inventar un minuto para un
 documento vacío.

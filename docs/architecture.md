@@ -259,7 +259,10 @@ lleva documento y revisión, por lo que una respuesta vieja no puede reemplazar
 otra pestaña ni una edición más nueva.
 
 `DocumentState` concentra la identidad, fuente, metadatos de preservación,
-editor, modo, bloques renderizables y degradación de cada documento. La
+política de contenido Markdown o texto inerte, editor, modo, bloques
+renderizables y degradación de cada documento. La política de contenido no se
+deduce del resultado mutable del parser: se conserva para que un refresco
+asíncrono no transforme un `.txt` o código en Markdown. La
 aplicación conserva varios estados documentales y rota con ellos una sesión de
 recuperación independiente dentro de una misma estructura, por lo que fuente y
 recuperación no pueden desalinearse. Cada estado conserva también su posición

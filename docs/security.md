@@ -174,7 +174,9 @@ versión local.
 Solo las extensiones Markdown (`.md`, `.markdown`, `.mdown`, `.mkdn`) pasan al
 parser. `.txt`, JSON, YAML, TOML, CSV y código se conservan como texto inerte:
 la aplicación no intenta ejecutar, compilar ni tratar su sintaxis como una
-capacidad.
+capacidad. Esta clasificación viaja con el documento durante edición, vista
+dividida, refrescos asíncronos y Guardar como: texto que parece Markdown no
+adquiere formato ni comportamiento por alternar una vista.
 
 ### Recursos secundarios
 

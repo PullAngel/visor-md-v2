@@ -1056,6 +1056,38 @@ struct ParseOutcome {
     degradation: Option<Degradation>,
 }
 
+/// La extensión elegida para el archivo es una política de contenido, no una
+/// conclusión del parser. Un texto inerte sigue siéndolo al editar o alternar
+/// la vista, aunque contenga caracteres que parecen Markdown.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DocumentContentKind {
+    Markdown,
+    InertText,
+}
+
+impl DocumentContentKind {
+    fn for_path(path: &std::path::Path) -> Self {
+        if is_markdown_path(path) {
+            Self::Markdown
+        } else {
+            Self::InertText
+        }
+    }
+
+    fn prepare_view(self, source: &str) -> Result<ParseOutcome, &'static str> {
+        match self {
+            Self::Markdown => parse_blocks(source),
+            Self::InertText => {
+                let source_index = SourceIndex::new(source);
+                safe_source_blocks(source, &source_index).map(|blocks| ParseOutcome {
+                    blocks,
+                    degradation: Some(Degradation::TextOnly),
+                })
+            }
+        }
+    }
+}
+
 enum AppEvent {
     DocumentReady {
         document_id: u64,
@@ -4681,6 +4713,7 @@ fn blit_color(pixmap: &mut Pixmap, g: &CachedGlyph, gx: f32, gy: f32, width: i32
 struct DocumentState {
     id: u64,
     path: String,
+    content_kind: DocumentContentKind,
     /// Protección reversible de sesión. No se persiste ni modifica el archivo.
     pinned: bool,
     source: TextBuffer,
@@ -4723,6 +4756,7 @@ impl DocumentState {
         Self {
             id: NEXT_DOCUMENT_ID.fetch_add(1, Ordering::Relaxed),
             path: "sin título.md".to_string(),
+            content_kind: DocumentContentKind::Markdown,
             pinned: false,
             source: TextBuffer::new(),
             source_metadata: TextMetadata::default(),
@@ -5191,10 +5225,11 @@ impl ApplicationHandler<AppEvent> for App {
                     return;
                 }
                 let source = document.source.to_string();
+                let content_kind = document.content_kind;
                 let proxy = self.proxy.clone();
                 thread::spawn(move || {
                     let started = Instant::now();
-                    let event = match parse_blocks(&source) {
+                    let event = match content_kind.prepare_view(&source) {
                         Ok(outcome) => AppEvent::ViewReady {
                             document_id,
                             revision,
@@ -5248,6 +5283,7 @@ impl ApplicationHandler<AppEvent> for App {
                     return;
                 };
                 document.path = path.to_string_lossy().into_owned();
+                document.content_kind = DocumentContentKind::for_path(&path);
                 document.source = TextBuffer::from_text(&source);
                 document.source_metadata = metadata;
                 document.source_identity = Some(identity);
@@ -5464,6 +5500,8 @@ impl ApplicationHandler<AppEvent> for App {
             } => {
                 self.saves_in_flight.remove(&document_id);
                 let active = document_id == self.document.id;
+                let content_kind = DocumentContentKind::for_path(&path);
+                let mut needs_view_refresh = false;
                 let saved_current = document_by_id_mut(
                     &mut self.document,
                     &mut self.inactive_documents,
@@ -5471,8 +5509,13 @@ impl ApplicationHandler<AppEvent> for App {
                 )
                 .map(|document| {
                     document.path = path.to_string_lossy().into_owned();
+                    needs_view_refresh = document.content_kind != content_kind;
+                    document.content_kind = content_kind;
                     apply_save_result(document, revision, identity, baseline_bytes)
                 });
+                if needs_view_refresh {
+                    self.request_render_async_for(document_id);
+                }
                 if saved_current == Some(true) {
                     if active {
                         if let Some(recovery) = &self.recovery {
@@ -7803,8 +7846,18 @@ impl App {
     }
 
     fn request_render_async(&mut self) {
-        let document_id = self.document.id;
-        let revision = self.document.source_editor.revision();
+        self.request_render_async_for(self.document.id);
+    }
+
+    fn request_render_async_for(&mut self, document_id: u64) {
+        let Some(revision) = document_by_id_mut(
+            &mut self.document,
+            &mut self.inactive_documents,
+            document_id,
+        )
+        .map(|document| document.source_editor.revision()) else {
+            return;
+        };
         self.view_requests.insert(document_id, revision);
         let proxy = self.proxy.clone();
         thread::spawn(move || {
@@ -8610,15 +8663,9 @@ impl App {
         let proxy = self.proxy.clone();
         thread::spawn(move || {
             let event = match open_explicit_primary(&path, DEFAULT_DOCUMENT_LIMIT_BYTES) {
-                Ok(opened) => match if is_markdown_path(&path) {
-                    parse_blocks(&opened.source)
-                } else {
-                    let source_index = SourceIndex::new(&opened.source);
-                    safe_source_blocks(&opened.source, &source_index).map(|blocks| ParseOutcome {
-                        blocks,
-                        degradation: Some(Degradation::TextOnly),
-                    })
-                } {
+                Ok(opened) => match DocumentContentKind::for_path(&path)
+                    .prepare_view(&opened.source)
+                {
                     Ok(outcome) => AppEvent::DocumentReady {
                         document_id,
                         request,
@@ -12102,6 +12149,10 @@ fn main() {
             path: opening_path
                 .clone()
                 .unwrap_or_else(|| "sin título.md".to_string()),
+            content_kind: opening_path
+                .as_deref()
+                .map(|path| DocumentContentKind::for_path(std::path::Path::new(path)))
+                .unwrap_or(DocumentContentKind::Markdown),
             pinned: false,
             source: TextBuffer::new(),
             source_metadata: TextMetadata::default(),
@@ -12221,32 +12272,30 @@ fn main() {
         thread::spawn(move || {
             let started = Instant::now();
             let event = match open_explicit_primary(&worker_path, DEFAULT_DOCUMENT_LIMIT_BYTES) {
-                Ok(opened) => match if is_markdown_path(std::path::Path::new(&worker_path)) {
-                    parse_blocks(&opened.source)
-                } else {
-                    let source_index = SourceIndex::new(&opened.source);
-                    safe_source_blocks(&opened.source, &source_index).map(|blocks| ParseOutcome {
-                        blocks,
-                        degradation: Some(Degradation::TextOnly),
-                    })
-                } {
-                    Ok(outcome) => AppEvent::DocumentReady {
-                        document_id: initial_document_id,
-                        request: initial_document_request,
-                        path: PathBuf::from(&worker_path),
-                        source: opened.source,
-                        metadata: opened.metadata,
-                        identity: opened.identity,
-                        baseline_bytes: opened.baseline_bytes,
-                        outcome,
-                        elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
-                    },
-                    Err(error) => AppEvent::DocumentFailed {
-                        document_id: initial_document_id,
-                        request: initial_document_request,
-                        error: format!("el documento no se pudo preparar de forma segura: {error}"),
-                    },
-                },
+                Ok(opened) => {
+                    match DocumentContentKind::for_path(std::path::Path::new(&worker_path))
+                        .prepare_view(&opened.source)
+                    {
+                        Ok(outcome) => AppEvent::DocumentReady {
+                            document_id: initial_document_id,
+                            request: initial_document_request,
+                            path: PathBuf::from(&worker_path),
+                            source: opened.source,
+                            metadata: opened.metadata,
+                            identity: opened.identity,
+                            baseline_bytes: opened.baseline_bytes,
+                            outcome,
+                            elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
+                        },
+                        Err(error) => AppEvent::DocumentFailed {
+                            document_id: initial_document_id,
+                            request: initial_document_request,
+                            error: format!(
+                                "el documento no se pudo preparar de forma segura: {error}"
+                            ),
+                        },
+                    }
+                }
                 Err(error) => AppEvent::DocumentFailed {
                     document_id: initial_document_id,
                     request: initial_document_request,
@@ -12983,6 +13032,57 @@ mod pruebas {
 
         assert_eq!(document.blocks[0].text, "lectura");
         assert_eq!(document.rendered_blocks[0].text, "lectura");
+    }
+
+    #[test]
+    fn texto_inerte_permanece_literal_despues_de_editar_y_actualizar_vista() {
+        let mut document = DocumentState::untitled();
+        document.path = "datos.json".to_string();
+        document.content_kind = DocumentContentKind::for_path(std::path::Path::new(&document.path));
+        document.mode = DocumentMode::Reading;
+        document.source = TextBuffer::from_text("**literal**\n# tampoco es título");
+
+        let outcome = document
+            .content_kind
+            .prepare_view(&document.source.to_string())
+            .unwrap();
+        assert_eq!(outcome.degradation, Some(Degradation::TextOnly));
+        apply_view_outcome(&mut document, outcome);
+        assert!(
+            document
+                .blocks
+                .iter()
+                .all(|block| matches!(block.kind, Kind::Code))
+        );
+        assert_eq!(document.blocks[0].text, "**literal**");
+        assert_eq!(document.blocks[1].text, "# tampoco es título");
+
+        document
+            .source_editor
+            .set_cursor(&document.source, document.source.len_bytes(), false)
+            .unwrap();
+        document
+            .source_editor
+            .insert(&mut document.source, "\n- sigue siendo texto")
+            .unwrap();
+        let outcome = document
+            .content_kind
+            .prepare_view(&document.source.to_string())
+            .unwrap();
+        apply_view_outcome(&mut document, outcome);
+
+        assert_eq!(document.safe_mode, Some(Degradation::TextOnly));
+        assert!(
+            document
+                .rendered_blocks
+                .iter()
+                .all(|block| matches!(block.kind, Kind::Code))
+        );
+        assert_eq!(document.rendered_blocks[2].text, "- sigue siendo texto");
+        assert_eq!(
+            DocumentContentKind::for_path(std::path::Path::new("nota.md")),
+            DocumentContentKind::Markdown
+        );
     }
 
     #[test]
