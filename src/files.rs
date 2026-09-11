@@ -155,6 +155,12 @@ pub(crate) enum FileOpenError {
 pub(crate) enum FileSaveError {
     Conflict,
     NotAFile,
+    /// La sustitución atómica terminó, pero no se pudo leer de nuevo el
+    /// destino para actualizar la fotografía local. Reintentar a ciegas
+    /// podría sobrescribir una edición posterior de otra aplicación.
+    WrittenButUnverified {
+        source: std::io::Error,
+    },
     Io {
         operation: &'static str,
         source: std::io::Error,
@@ -167,6 +173,10 @@ impl fmt::Display for FileSaveError {
             Self::Conflict => formatter
                 .write_str("el archivo cambió fuera de Visor MD; no se sobrescribió ningún dato"),
             Self::NotAFile => formatter.write_str("el destino no es un archivo normal"),
+            Self::WrittenButUnverified { source } => write!(
+                formatter,
+                "el archivo pudo haberse escrito, pero no se pudo verificar su estado: {source}"
+            ),
             Self::Io { operation, source } => write!(formatter, "{operation}: {source}"),
         }
     }
@@ -344,10 +354,8 @@ pub(crate) fn save_explicit_primary(
             source: error.into(),
         })?;
 
-    let saved_metadata = fs::metadata(path).map_err(|source| FileSaveError::Io {
-        operation: "el archivo se guardó pero no se pudo volver a identificar",
-        source,
-    })?;
+    let saved_metadata =
+        fs::metadata(path).map_err(|source| FileSaveError::WrittenButUnverified { source })?;
     Ok(SavedText {
         identity: FileIdentity::from_metadata(&saved_metadata),
         baseline_bytes: output,
@@ -376,10 +384,8 @@ pub(crate) fn save_new_primary(
             operation: "no se pudo crear el archivo de forma atómica",
             source: error.into(),
         })?;
-    let saved_metadata = fs::metadata(path).map_err(|source| FileSaveError::Io {
-        operation: "el archivo se creó pero no se pudo volver a identificar",
-        source,
-    })?;
+    let saved_metadata =
+        fs::metadata(path).map_err(|source| FileSaveError::WrittenButUnverified { source })?;
     Ok(SavedText {
         identity: FileIdentity::from_metadata(&saved_metadata),
         baseline_bytes: output,
@@ -480,6 +486,68 @@ mod tests {
 
         fs::write(&path, b"dos").expect("la fixture se puede modificar");
         assert!(changed_on_disk(&path, &opened.baseline_bytes).unwrap());
+    }
+
+    #[test]
+    fn un_archivo_borrado_se_informa_sin_recrear_el_destino() {
+        let path = temporary_file("external-missing", b"uno");
+        let opened = open_explicit_primary(&path, 64).expect("la fixture es válida");
+        fs::remove_file(&path).expect("la fixture se puede borrar");
+
+        assert!(matches!(
+            changed_on_disk(&path, &opened.baseline_bytes),
+            Err(FileOpenError::Io { source, .. })
+                if source.kind() == std::io::ErrorKind::NotFound
+        ));
+        assert!(matches!(
+            save_explicit_primary(
+                &path,
+                "tres",
+                opened.metadata,
+                &opened.identity,
+                &opened.baseline_bytes,
+            ),
+            Err(FileSaveError::Io { source, .. })
+                if source.kind() == std::io::ErrorKind::NotFound
+        ));
+        assert!(
+            !path.exists(),
+            "un intento de guardar nunca debe recrear una ruta que desapareció"
+        );
+    }
+
+    #[test]
+    fn un_destino_reemplazado_por_directorio_no_se_toca() {
+        let path = temporary_file("external-directory", b"uno");
+        let opened = open_explicit_primary(&path, 64).expect("la fixture es válida");
+        fs::remove_file(&path).expect("la fixture se puede borrar");
+        fs::create_dir(&path).expect("la fixture se puede convertir en directorio");
+
+        let check_is_unavailable = match changed_on_disk(&path, &opened.baseline_bytes) {
+            Err(FileOpenError::NotAFile) => true,
+            // Windows puede rechazar abrir un directorio antes de que se
+            // puedan consultar sus metadatos; ambos resultados son seguros.
+            Err(FileOpenError::Io { source, .. }) => {
+                source.kind() == std::io::ErrorKind::PermissionDenied
+            }
+            Ok(_) | Err(_) => false,
+        };
+        assert!(check_is_unavailable);
+        assert!(matches!(
+            save_explicit_primary(
+                &path,
+                "tres",
+                opened.metadata,
+                &opened.identity,
+                &opened.baseline_bytes,
+            ),
+            Err(FileSaveError::NotAFile)
+        ));
+        assert!(
+            path.is_dir(),
+            "guardar no debe sustituir un directorio externo"
+        );
+        fs::remove_dir(&path).expect("la fixture temporal se puede limpiar");
     }
 
     #[test]

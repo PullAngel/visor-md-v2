@@ -59,8 +59,8 @@ use winit::window::{CursorIcon, ResizeDirection, Theme, Window, WindowId};
 
 use editor::{SourceChange, SourceEditor, TextBuffer};
 use files::{
-    DEFAULT_DOCUMENT_LIMIT_BYTES, FileIdentity, FileSaveError, LineEndings, TextMetadata,
-    changed_on_disk, is_markdown_path, open_explicit_primary, save_explicit_primary,
+    DEFAULT_DOCUMENT_LIMIT_BYTES, FileIdentity, FileOpenError, FileSaveError, LineEndings,
+    TextMetadata, changed_on_disk, is_markdown_path, open_explicit_primary, save_explicit_primary,
     save_new_primary,
 };
 use fonts::{FONT_CODE, FONT_DOC, FONT_UI, register_embedded_fonts};
@@ -1141,7 +1141,7 @@ enum AppEvent {
     SaveFailed {
         document_id: u64,
         error: String,
-        conflict: bool,
+        failure: SaveFailureKind,
     },
     SaveAsReady {
         document_id: u64,
@@ -1168,7 +1168,7 @@ enum AppEvent {
     ExternalChangeChecked {
         document_id: u64,
         baseline_generation: u64,
-        result: Result<bool, String>,
+        result: Result<ExternalFileCheck, String>,
     },
     ImageReady {
         request: u64,
@@ -4749,6 +4749,10 @@ struct DocumentState {
     /// Generación de la versión externa aceptada. Evita que una comprobación
     /// iniciada antes de guardar active un conflicto falso después de guardar.
     baseline_generation: u64,
+    /// Se mantiene mientras el destino original no existe o no es legible.
+    /// Evita abrir el mismo diálogo cada vez que la ventana recupera foco,
+    /// sin olvidar que la fuente local debe guardarse como copia explícita.
+    external_unavailable_generation: Option<u64>,
     source_editor: SourceEditor,
     mode: DocumentMode,
     split_orientation: SplitOrientation,
@@ -4792,6 +4796,7 @@ impl DocumentState {
             source_identity: None,
             source_baseline_bytes: None,
             baseline_generation: 0,
+            external_unavailable_generation: None,
             source_editor: SourceEditor::new(),
             mode: DocumentMode::SourceEditing,
             split_orientation: SplitOrientation::SideBySide,
@@ -4906,11 +4911,24 @@ fn replace_file_baseline(
 ) {
     document.source_identity = Some(identity);
     document.source_baseline_bytes = Some(baseline_bytes);
+    document.external_unavailable_generation = None;
     invalidate_external_baseline(document);
 }
 
 fn invalidate_external_baseline(document: &mut DocumentState) {
     document.baseline_generation = document.baseline_generation.wrapping_add(1);
+}
+
+/// Registra una indisponibilidad por cada baseline aceptada. Devuelve `true`
+/// solo la primera vez para que recuperar el foco no repita el mismo diálogo.
+fn mark_external_destination_unavailable(document: &mut DocumentState, generation: u64) -> bool {
+    let was_reported = document.external_unavailable_generation == Some(generation);
+    document.external_unavailable_generation = Some(generation);
+    !was_reported
+}
+
+fn clear_external_destination_unavailable(document: &mut DocumentState) -> bool {
+    document.external_unavailable_generation.take().is_some()
 }
 
 fn is_current_external_check(
@@ -4932,6 +4950,72 @@ fn take_matching_external_check(
     }
     in_flight.remove(&document_id);
     true
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ExternalFileCheck {
+    Unchanged,
+    Changed,
+    /// El destino se borró, dejó de ser archivo o ya no se puede leer. No se
+    /// interpreta como permiso para reemplazarlo: se ofrece conservar una
+    /// copia explícita de la fuente local.
+    Unavailable,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SaveFailureKind {
+    Conflict,
+    DestinationUnavailable,
+    WrittenButUnverified,
+    Other,
+}
+
+fn classify_save_failure(error: &FileSaveError) -> SaveFailureKind {
+    match error {
+        FileSaveError::Conflict => SaveFailureKind::Conflict,
+        FileSaveError::NotAFile => SaveFailureKind::DestinationUnavailable,
+        FileSaveError::WrittenButUnverified { .. } => SaveFailureKind::WrittenButUnverified,
+        FileSaveError::Io { source, .. }
+            if matches!(
+                source.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::PermissionDenied
+            ) =>
+        {
+            SaveFailureKind::DestinationUnavailable
+        }
+        FileSaveError::Io { .. } => SaveFailureKind::Other,
+    }
+}
+
+/// Guardar como no toca el documento de origen. Un destino elegido para la
+/// copia que ya existe, es directorio o deniega acceso no debe abrir un diálogo
+/// de conflicto o indisponibilidad del archivo que estaba abierto.
+fn classify_save_as_failure(error: &FileSaveError) -> SaveFailureKind {
+    match classify_save_failure(error) {
+        SaveFailureKind::WrittenButUnverified => SaveFailureKind::WrittenButUnverified,
+        SaveFailureKind::Conflict
+        | SaveFailureKind::DestinationUnavailable
+        | SaveFailureKind::Other => SaveFailureKind::Other,
+    }
+}
+
+fn classify_external_file_check(
+    result: Result<bool, FileOpenError>,
+) -> Result<ExternalFileCheck, String> {
+    match result {
+        Ok(true) => Ok(ExternalFileCheck::Changed),
+        Ok(false) => Ok(ExternalFileCheck::Unchanged),
+        Err(FileOpenError::NotAFile) => Ok(ExternalFileCheck::Unavailable),
+        Err(FileOpenError::Io { source, .. })
+            if matches!(
+                source.kind(),
+                std::io::ErrorKind::NotFound | std::io::ErrorKind::PermissionDenied
+            ) =>
+        {
+            Ok(ExternalFileCheck::Unavailable)
+        }
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 fn reload_revision_is_current(expected_revision: Option<u64>, current_revision: u64) -> bool {
@@ -5625,18 +5709,27 @@ impl ApplicationHandler<AppEvent> for App {
             AppEvent::SaveFailed {
                 document_id,
                 error,
-                conflict,
+                failure,
             } => {
                 self.saves_in_flight.remove(&document_id);
                 self.log.push(format!("[error] {error}"));
-                if conflict && document_id == self.document.id {
-                    self.resolve_save_conflict();
-                } else if document_id != self.document.id {
+                if document_id != self.document.id {
                     self.set_notice(
                         "falló el guardado de otra pestaña; sus cambios siguen intactos",
                     );
-                } else {
-                    self.set_notice(&error);
+                    return;
+                }
+                match failure {
+                    SaveFailureKind::Conflict => self.resolve_save_conflict(),
+                    SaveFailureKind::DestinationUnavailable => {
+                        let baseline_generation = self.document.baseline_generation;
+                        mark_external_destination_unavailable(&mut self.document, baseline_generation);
+                        self.resolve_unavailable_external_file();
+                    }
+                    SaveFailureKind::WrittenButUnverified => self.set_notice(
+                        "el archivo pudo haberse escrito, pero no se pudo verificar; no se reintentó y la edición local sigue protegida",
+                    ),
+                    SaveFailureKind::Other => self.set_notice(&error),
                 }
             }
             AppEvent::SaveAsReady {
@@ -5786,8 +5879,28 @@ impl ApplicationHandler<AppEvent> for App {
                     return;
                 }
                 match result {
-                    Ok(true) => self.resolve_external_change(),
-                    Ok(false) => {}
+                    Ok(ExternalFileCheck::Changed) => {
+                        clear_external_destination_unavailable(&mut self.document);
+                        self.resolve_external_change();
+                    }
+                    Ok(ExternalFileCheck::Unavailable) => {
+                        if mark_external_destination_unavailable(
+                            &mut self.document,
+                            baseline_generation,
+                        ) {
+                            self.resolve_unavailable_external_file();
+                        } else {
+                            self.log.push(
+                                "[archivos] el destino externo sigue sin estar disponible"
+                                    .to_string(),
+                            );
+                        }
+                    }
+                    Ok(ExternalFileCheck::Unchanged) => {
+                        if clear_external_destination_unavailable(&mut self.document) {
+                            self.set_notice("el destino externo volvió a estar disponible");
+                        }
+                    }
                     Err(error) => {
                         self.log.push(format!("[archivos] {error}"));
                         self.set_notice(
@@ -8408,7 +8521,7 @@ impl App {
                     },
                     Err(error) => AppEvent::SaveFailed {
                         document_id,
-                        conflict: matches!(&error, FileSaveError::Conflict),
+                        failure: classify_save_failure(&error),
                         error: format!("no se pudo guardar: {error}"),
                     },
                 };
@@ -8449,16 +8562,24 @@ impl App {
                     identity: saved.identity,
                     baseline_bytes: saved.baseline_bytes,
                 },
-                Err(error) => AppEvent::SaveFailed {
-                    document_id,
-                    // Guardar como nunca reemplaza destinos existentes. Ese
-                    // rechazo no es un conflicto de la fuente abierta y no
-                    // debe ofrecer recargar el documento actual.
-                    conflict: false,
-                    error: format!(
-                        "no se pudo guardar como: {error}. El destino existente no se modificó"
-                    ),
-                },
+                Err(error) => {
+                    let failure = classify_save_as_failure(&error);
+                    let error = match failure {
+                        SaveFailureKind::WrittenButUnverified => format!(
+                            "la copia pudo haberse escrito, pero no se pudo verificar; no se reintentó: {error}"
+                        ),
+                        SaveFailureKind::Conflict
+                        | SaveFailureKind::DestinationUnavailable
+                        | SaveFailureKind::Other => format!(
+                            "no se pudo guardar como: {error}. El destino existente no se modificó"
+                        ),
+                    };
+                    AppEvent::SaveFailed {
+                        document_id,
+                        failure,
+                        error,
+                    }
+                }
             };
             let _ = proxy.send_event(event);
         });
@@ -8484,7 +8605,7 @@ impl App {
         self.external_checks_in_flight
             .insert(document_id, baseline_generation);
         thread::spawn(move || {
-            let result = changed_on_disk(&path, &baseline_bytes).map_err(|error| error.to_string());
+            let result = classify_external_file_check(changed_on_disk(&path, &baseline_bytes));
             let _ = proxy.send_event(AppEvent::ExternalChangeChecked {
                 document_id,
                 baseline_generation,
@@ -8563,6 +8684,31 @@ impl App {
             | MessageDialogResult::Custom(_) => {
                 self.set_notice("cambio externo detectado: se conservó la vista actual")
             }
+        }
+    }
+
+    /// Un destino perdido no se convierte nunca en un guardado implícito. La
+    /// fuente que ya estaba abierta sigue siendo autoridad local hasta que la
+    /// persona elige explícitamente una copia nueva.
+    fn resolve_unavailable_external_file(&mut self) {
+        let dialog = MessageDialog::new()
+            .set_level(MessageLevel::Warning)
+            .set_title("Visor MD · archivo externo no disponible")
+            .set_description(
+                "El archivo abierto se borró, dejó de ser un archivo normal o ya no se puede leer. Tu documento local permanece intacto.\n\nSí: Guardar una copia con otro nombre.\nNo: mantener esta edición abierta.",
+            )
+            .set_buttons(MessageButtons::YesNo);
+        let result = if let Some(window) = &self.window {
+            dialog.set_parent(window.as_ref()).show()
+        } else {
+            dialog.show()
+        };
+        if matches!(result, MessageDialogResult::Yes) {
+            self.save_as_current_document();
+        } else {
+            self.set_notice(
+                "la edición local se mantiene; elegí Guardar como para conservar una copia",
+            );
         }
     }
 
@@ -12450,6 +12596,7 @@ fn main() {
             source_identity: None,
             source_baseline_bytes: None,
             baseline_generation: 0,
+            external_unavailable_generation: None,
             source_editor: SourceEditor::new(),
             mode: if opening_path.is_some() {
                 DocumentMode::Reading
@@ -14631,6 +14778,87 @@ con dos lineas
         assert_eq!(document.baseline_generation, 0);
         invalidate_external_baseline(&mut document);
         assert_eq!(document.baseline_generation, 1);
+    }
+
+    #[test]
+    fn un_destino_externo_perdido_conserva_la_fuente_local_para_guardar_copia() {
+        assert_eq!(
+            classify_external_file_check(Ok(false)),
+            Ok(ExternalFileCheck::Unchanged)
+        );
+        assert_eq!(
+            classify_external_file_check(Ok(true)),
+            Ok(ExternalFileCheck::Changed)
+        );
+        assert_eq!(
+            classify_external_file_check(Err(FileOpenError::NotAFile)),
+            Ok(ExternalFileCheck::Unavailable)
+        );
+        let missing = FileOpenError::Io {
+            operation: "prueba",
+            source: std::io::Error::from(std::io::ErrorKind::NotFound),
+        };
+        assert_eq!(
+            classify_external_file_check(Err(missing)),
+            Ok(ExternalFileCheck::Unavailable)
+        );
+
+        let denied = FileOpenError::Io {
+            operation: "prueba",
+            source: std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+        };
+        assert_eq!(
+            classify_external_file_check(Err(denied)),
+            Ok(ExternalFileCheck::Unavailable)
+        );
+    }
+
+    #[test]
+    fn un_destino_perdido_no_repite_dialogos_y_se_limpia_al_volver() {
+        let mut document = DocumentState::untitled();
+        assert!(mark_external_destination_unavailable(&mut document, 0));
+        assert!(
+            !mark_external_destination_unavailable(&mut document, 0),
+            "el mismo foco no debe volver a abrir el diálogo"
+        );
+        assert!(clear_external_destination_unavailable(&mut document));
+        assert!(
+            mark_external_destination_unavailable(&mut document, 0),
+            "un destino restaurado puede avisar de una indisponibilidad posterior"
+        );
+
+        invalidate_external_baseline(&mut document);
+        let next_generation = document.baseline_generation;
+        assert!(
+            mark_external_destination_unavailable(&mut document, next_generation),
+            "una baseline nueva inicia una advertencia independiente"
+        );
+    }
+
+    #[test]
+    fn clasifica_fallos_de_guardado_sin_asumir_que_un_escrito_fallo() {
+        assert_eq!(
+            classify_save_failure(&FileSaveError::NotAFile),
+            SaveFailureKind::DestinationUnavailable
+        );
+        assert_eq!(
+            classify_save_failure(&FileSaveError::Io {
+                operation: "prueba",
+                source: std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+            }),
+            SaveFailureKind::DestinationUnavailable
+        );
+        assert_eq!(
+            classify_save_failure(&FileSaveError::WrittenButUnverified {
+                source: std::io::Error::from(std::io::ErrorKind::Other),
+            }),
+            SaveFailureKind::WrittenButUnverified
+        );
+        assert_eq!(
+            classify_save_as_failure(&FileSaveError::Conflict),
+            SaveFailureKind::Other,
+            "un destino existente de Guardar como no es un conflicto del origen"
+        );
     }
 
     #[test]

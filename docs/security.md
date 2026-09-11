@@ -374,6 +374,23 @@ recarga usa la misma pestaña y, si falla o la fuente cambió mientras se leía,
 conserva la edición, historial y recuperación locales. Esta comprobación no
 instala observadores de carpetas ni sigue rutas provenientes del documento.
 
+Que el destino desaparezca, deje de ser un archivo normal o pierda permiso de
+lectura es distinto de un cambio de contenido. Visor MD no interpreta ese
+estado como permiso para recrear ni reemplazar la ruta original: conserva la
+fuente local, ofrece **Guardar una copia** de forma explícita y permite mantener
+la edición abierta. El aviso modal se muestra una vez por baseline para no
+convertir cada recuperación de foco en un bucle; las comprobaciones posteriores
+siguen siendo acotadas y limpian esa advertencia si el destino vuelve a estar
+disponible. Si `Ctrl+S` descubre el mismo estado antes de una comprobación de
+foco, aplica exactamente la misma política.
+
+Tras un reemplazo atómico puede fallar la lectura usada para confirmar la nueva
+identidad. Ese resultado se comunica como **escrito pero no verificado**, no
+como si el guardado seguramente hubiera fallado: no se reintenta, el documento
+sigue marcado como modificado y la recuperación local no se elimina. Esto evita
+que una segunda escritura automática convierta un estado incierto del sistema
+de archivos en pérdida de datos.
+
 La recuperación de sesión actual escribe texto UTF-8 sin cifrar en el perfil
 local de la persona, nunca dentro de la bóveda ni junto al documento. Se crea
 tres segundos después del último cambio de una ráfaga, mediante el event loop y

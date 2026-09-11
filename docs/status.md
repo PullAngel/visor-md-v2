@@ -10,8 +10,14 @@ conflictos, ofrece vista dividida y recorre una carpeta autorizada mediante una
 VFS acotada. La referencia anterior a Codex permanece intacta en
 `archive/claude-pre-codex`.
 
+La última estabilización de archivos distingue un conflicto de un destino que
+desapareció, se volvió directorio o perdió acceso. En ese último caso conserva
+la edición local y dirige a Guardar como; no recrea rutas originales ni repite
+el mismo diálogo al recuperar foco. También mantiene la recuperación si una
+escritura terminó pero su verificación final no pudo completarse.
+
 El lector y el editor tienen gates automáticos verdes: la suite local actual
-reúne 227 regresiones. El gate de Windows del 9 de septiembre también verificó
+reúne 232 regresiones. El gate de Windows del 9 de septiembre también verificó
 Clippy, SBOM, documentación y un release de 3.524.096 bytes (3,361 MiB).
 Permanecen pendientes el QA humano acumulado, la
 actualización incremental de algunos modelos visibles, accesibilidad completa,

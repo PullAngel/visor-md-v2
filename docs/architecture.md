@@ -300,6 +300,15 @@ Es una operación separada y auditable:
 6. conservar o informar permisos y errores;
 7. actualizar identidad y estado sucio.
 
+Un destino que se borró, pasó a ser directorio o dejó de poder leerse no se
+trata como una variante recuperable de Guardar. La fuente de la pestaña sigue
+siendo la autoridad local y solo **Guardar como** puede elegir un nuevo destino.
+La indisponibilidad se recuerda por baseline para evitar diálogos repetidos al
+recuperar foco y se vuelve a comprobar de forma acotada por si el archivo
+regresa. Si el reemplazo atómico terminó pero la identidad final no puede
+confirmarse, el resultado queda deliberadamente incierto: no se marca guardado,
+no se borra la recuperación y no se reintenta de forma automática.
+
 No hay autoguardado por defecto. La recuperación de sesión usa almacenamiento
 separado y nunca se presenta como guardado definitivo.
 

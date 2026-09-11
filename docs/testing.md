@@ -276,6 +276,16 @@ conflicto después de guardar. Una recarga solo reemplaza la fuente si conserva
 la revisión que tenía al iniciarse; un fallo de lectura mantiene intacta la
 edición local y su recuperación.
 
+El corpus también borra el archivo abierto y lo reemplaza por un directorio.
+Ambos casos se clasifican como destino no disponible: no se recrea la ruta ni
+se escribe dentro del directorio. La clasificación de permiso denegado se fija
+de forma sintética para que la regresión sea portable. Otra prueba confirma que
+la misma indisponibilidad no repite diálogos tras recuperar foco y que una
+comprobación posterior de disponibilidad restablece la vigilancia normal.
+Los resultados de guardado distinguen conflicto, destino no disponible y
+escritura terminada pero no verificable; este último nunca dispara un reintento
+automático ni limpia la recuperación.
+
 Los renders asíncronos combinan documento, revisión y token de solicitud. La
 regresión cubre una recarga que reinicia el contador del editor: una respuesta
 vieja con la misma revisión numérica no puede aplicar bloques de otra fuente o
