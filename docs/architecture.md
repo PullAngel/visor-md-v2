@@ -304,10 +304,14 @@ No hay autoguardado por defecto. La recuperación de sesión usa almacenamiento
 separado y nunca se presenta como guardado definitivo.
 
 La recuperación local actual escribe snapshots limitados y separados por
-pestaña en el perfil del usuario, fuera de documentos y bóvedas. El cierre de
-la ventana no continúa si no puede preservar todos los documentos modificados.
-Las escrituras se serializan y versionan: una tarea anterior no puede reemplazar
-una recuperación más nueva ni recrearla después de un guardado que la eliminó.
+pestaña en el perfil del usuario, fuera de documentos y bóvedas. Tras el último
+cambio de una ráfaga espera tres segundos mediante el deadline del event loop:
+no usa polling ni crea un hilo por pulsación. El cierre de la ventana no
+continúa si no puede preservar todos los documentos modificados. Las escrituras
+se serializan y versionan: una tarea anterior no puede reemplazar una
+recuperación más nueva ni recrearla después de un guardado que la eliminó.
+Guardar, limpiar, desactivar la protección o aceptar una recarga cancelan el
+deadline pendiente.
 La restauración es una acción explícita que abre una pestaña nueva, sin destino
 y marcada como modificada; nunca reemplaza el documento activo para presentar
 una recuperación.

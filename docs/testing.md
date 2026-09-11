@@ -284,3 +284,7 @@ de otra política de contenido.
 El guardado ejercita un destino sustituido por un archivo mucho mayor que su
 baseline. Debe devolver conflicto y conservar el destino sin realizar una
 lectura de tamaño no acotado.
+
+La recuperación prueba una ráfaga de dos cambios: solo el último request vence
+tres segundos después de la última edición. También prueba cancelación y que el
+deadline de una pestaña inactiva participa del próximo despertar del event loop.

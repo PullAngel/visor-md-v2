@@ -376,10 +376,11 @@ instala observadores de carpetas ni sigue rutas provenientes del documento.
 
 La recuperación de sesión actual escribe texto UTF-8 sin cifrar en el perfil
 local de la persona, nunca dentro de la bóveda ni junto al documento. Se crea
-con una cadencia limitada durante la edición, se borra después de guardar y solo
-se abre mediante una acción explícita como documento sin destino. Es una defensa
-contra cierres inesperados, no un backup ni una garantía de durabilidad; la UI
-lo explica una vez antes de usarla y permitirá desactivarla cuando exista
+tres segundos después del último cambio de una ráfaga, mediante el event loop y
+sin polling ni un hilo por pulsación; se borra después de guardar y solo se abre
+mediante una acción explícita como documento sin destino. Es una defensa contra
+cierres inesperados, no un backup ni una garantía de durabilidad; la UI lo
+explica una vez antes de usarla y permitirá desactivarla cuando exista
 configuración persistente. Los snapshots propios de más de catorce días se
 limpian al iniciar; el proceso no elimina enlaces simbólicos ni archivos ajenos
 dentro de ese directorio.

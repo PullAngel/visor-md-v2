@@ -112,6 +112,9 @@ const WINDOW_CHROME_HEIGHT: f32 = 40.0;
 /// event loop despierta solo los cuadros necesarios durante este intervalo.
 const THEME_TRANSITION_DURATION: Duration = Duration::from_millis(200);
 const THEME_TRANSITION_FRAME: Duration = Duration::from_millis(16);
+/// Espera una pausa breve de escritura antes de materializar la recuperación.
+/// El event loop despierta en este deadline; no se crea un hilo por pulsación.
+const RECOVERY_DEBOUNCE: Duration = Duration::from_secs(3);
 /// Fuente y resultado tienen el mismo espacio en la comparación. La evidencia
 /// de QA mostró que privilegiar lectura comprimía demasiado la fuente y hacía
 /// que ambas columnas dejaran de corresponder visualmente.
@@ -4727,6 +4730,12 @@ fn blit_color(pixmap: &mut Pixmap, g: &CachedGlyph, gx: f32, gy: f32, width: i32
 
 // ---------------------------------------------------------------- app
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct PendingRecovery {
+    due_at: Instant,
+    request: u64,
+}
+
 struct DocumentState {
     id: u64,
     path: String,
@@ -4768,7 +4777,7 @@ struct DocumentState {
     /// Callouts plegados solo para lectura. Una pregunta puede ocultar su
     /// respuesta sin alterar el Markdown que comparte con Obsidian.
     folded_callouts: HashSet<usize>,
-    last_recovery: Instant,
+    pending_recovery: Option<PendingRecovery>,
 }
 
 impl DocumentState {
@@ -4796,13 +4805,46 @@ impl DocumentState {
             pending_block: None,
             folded_headings: HashSet::new(),
             folded_callouts: HashSet::new(),
-            last_recovery: Instant::now(),
+            pending_recovery: None,
         }
     }
 
     fn is_dirty(&self) -> bool {
         self.source_editor.is_dirty()
     }
+
+    fn queue_recovery(&mut self, request: u64, now: Instant) {
+        self.pending_recovery = Some(PendingRecovery {
+            due_at: now + RECOVERY_DEBOUNCE,
+            request,
+        });
+    }
+
+    fn take_due_recovery(&mut self, now: Instant) -> Option<u64> {
+        let pending = self.pending_recovery?;
+        if now < pending.due_at {
+            return None;
+        }
+        self.pending_recovery = None;
+        Some(pending.request)
+    }
+
+    fn cancel_pending_recovery(&mut self) {
+        self.pending_recovery = None;
+    }
+
+    fn recovery_deadline(&self) -> Option<Instant> {
+        self.pending_recovery.map(|pending| pending.due_at)
+    }
+}
+
+fn earliest_recovery_deadline<'a>(
+    documents: impl IntoIterator<Item = &'a DocumentState>,
+) -> Option<Instant> {
+    documents
+        .into_iter()
+        .filter_map(DocumentState::recovery_deadline)
+        .min()
 }
 
 fn recovered_document(source: String) -> Result<DocumentState, &'static str> {
@@ -5249,22 +5291,26 @@ impl ThemeTransition {
 
 impl ApplicationHandler<AppEvent> for App {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        let Some(transition) = self.theme_transition else {
-            return;
-        };
         let now = Instant::now();
-        if transition.finished(now) {
-            if let Some(window) = &self.window {
-                window.request_redraw();
+        self.flush_due_recoveries(now);
+
+        let theme_deadline = self.theme_transition.and_then(|transition| {
+            if transition.finished(now) {
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+                None
+            } else {
+                Some(transition.next_frame_at(now))
             }
-            return;
-        }
-        let next = transition.next_frame_at(now);
-        if now >= next {
-            if let Some(window) = &self.window {
-                window.request_redraw();
-            }
-        } else {
+        });
+        let next = match (theme_deadline, self.next_recovery_deadline()) {
+            (Some(theme), Some(recovery)) => Some(theme.min(recovery)),
+            (Some(theme), None) => Some(theme),
+            (None, Some(recovery)) => Some(recovery),
+            (None, None) => None,
+        };
+        if let Some(next) = next.filter(|next| *next > now) {
             event_loop.set_control_flow(ControlFlow::WaitUntil(next));
         }
     }
@@ -5360,6 +5406,7 @@ impl ApplicationHandler<AppEvent> for App {
                     return;
                 }
                 self.view_requests.remove(&document_id);
+                document.cancel_pending_recovery();
                 document.path = path.to_string_lossy().into_owned();
                 document.content_kind = DocumentContentKind::for_path(&path);
                 document.source = TextBuffer::from_text(&source);
@@ -5545,6 +5592,7 @@ impl ApplicationHandler<AppEvent> for App {
                 .map(|document| apply_save_result(document, revision, identity, baseline_bytes));
                 if saved_current == Some(true) {
                     if active {
+                        self.document.cancel_pending_recovery();
                         if let Some(recovery) = &self.recovery {
                             let _ = recovery.clear();
                         }
@@ -5552,11 +5600,13 @@ impl ApplicationHandler<AppEvent> for App {
                     } else {
                         if let Some(tab) = self
                             .inactive_documents
-                            .iter()
+                            .iter_mut()
                             .find(|tab| tab.document.id == document_id)
-                            && let Some(recovery) = &tab.recovery
                         {
-                            let _ = recovery.clear();
+                            tab.document.cancel_pending_recovery();
+                            if let Some(recovery) = &tab.recovery {
+                                let _ = recovery.clear();
+                            }
                         }
                         self.set_notice("otra pestaña terminó de guardarse");
                     }
@@ -5616,6 +5666,7 @@ impl ApplicationHandler<AppEvent> for App {
                 }
                 if saved_current == Some(true) {
                     if active {
+                        self.document.cancel_pending_recovery();
                         if let Some(recovery) = &self.recovery {
                             let _ = recovery.clear();
                         }
@@ -5623,11 +5674,13 @@ impl ApplicationHandler<AppEvent> for App {
                     } else {
                         if let Some(tab) = self
                             .inactive_documents
-                            .iter()
+                            .iter_mut()
                             .find(|tab| tab.document.id == document_id)
-                            && let Some(recovery) = &tab.recovery
                         {
-                            let _ = recovery.clear();
+                            tab.document.cancel_pending_recovery();
+                            if let Some(recovery) = &tab.recovery {
+                                let _ = recovery.clear();
+                            }
                         }
                         self.set_notice("otra pestaña terminó de guardarse");
                     }
@@ -7105,6 +7158,37 @@ impl App {
             .and_then(Result::ok)
     }
 
+    fn next_recovery_deadline(&self) -> Option<Instant> {
+        earliest_recovery_deadline(
+            std::iter::once(&self.document)
+                .chain(self.inactive_documents.iter().map(|tab| &tab.document)),
+        )
+    }
+
+    /// Materializa únicamente las recuperaciones cuya pausa de escritura ya
+    /// venció. La lista se reúne antes de crear hilos para no retener préstamos
+    /// de pestañas mientras se interactúa con disco.
+    fn flush_due_recoveries(&mut self, now: Instant) {
+        let mut pending = Vec::new();
+        if let (Some(recovery), Some(request)) =
+            (self.recovery.clone(), self.document.take_due_recovery(now))
+        {
+            pending.push((recovery, self.document.source.to_string(), request));
+        }
+        for tab in &mut self.inactive_documents {
+            if let (Some(recovery), Some(request)) =
+                (tab.recovery.clone(), tab.document.take_due_recovery(now))
+            {
+                pending.push((recovery, tab.document.source.to_string(), request));
+            }
+        }
+        for (recovery, source, request) in pending {
+            thread::spawn(move || {
+                let _ = recovery.write_if_current(&source, request);
+            });
+        }
+    }
+
     fn toggle_recovery(&mut self) {
         if self.recovery_enabled {
             let dialog = MessageDialog::new()
@@ -7134,10 +7218,12 @@ impl App {
                 RecoverySession::privacy_notice_needed().unwrap_or(false);
             self.set_notice("recuperación local activada");
         } else {
+            self.document.cancel_pending_recovery();
             if let Some(recovery) = self.recovery.take() {
                 let _ = recovery.clear();
             }
             for tab in &mut self.inactive_documents {
+                tab.document.cancel_pending_recovery();
                 if let Some(recovery) = tab.recovery.take() {
                     let _ = recovery.clear();
                 }
@@ -7919,18 +8005,18 @@ impl App {
     }
 
     fn schedule_recovery(&mut self) {
-        if self.document.last_recovery.elapsed().as_secs() < 3 {
+        if !self.document.is_dirty() {
+            self.document.cancel_pending_recovery();
+            if let Some(recovery) = &self.recovery {
+                let _ = recovery.clear();
+            }
             return;
         }
-        let Some(recovery) = self.recovery.clone() else {
+        let Some(recovery) = &self.recovery else {
             return;
         };
-        self.document.last_recovery = Instant::now();
-        let source = self.document.source.to_string();
         let request = recovery.next_write_request();
-        thread::spawn(move || {
-            let _ = recovery.write_if_current(&source, request);
-        });
+        self.document.queue_recovery(request, Instant::now());
     }
 
     fn direct_source_text<'a>(&self, event: &'a KeyEvent) -> Option<&'a str> {
@@ -8467,6 +8553,7 @@ impl App {
                         );
                         return;
                     }
+                    self.document.cancel_pending_recovery();
                 }
                 self.reload_current_document_from_disk();
             }
@@ -8510,6 +8597,7 @@ impl App {
                     );
                     return;
                 }
+                self.document.cancel_pending_recovery();
                 self.reload_current_document_from_disk();
             }
             MessageDialogResult::No => self.save_as_current_document(),
@@ -8526,6 +8614,7 @@ impl App {
     /// recuperación sin cifrar antes de permitir abandonarla.
     fn request_close_current(&mut self) -> bool {
         if !self.document.source_editor.is_dirty() {
+            self.document.cancel_pending_recovery();
             if let Some(recovery) = &self.recovery {
                 let _ = recovery.clear();
             }
@@ -8541,6 +8630,7 @@ impl App {
                 self.set_notice("no se cerró: no se pudo conservar la recuperación local");
                 return false;
             }
+            self.document.cancel_pending_recovery();
             true
         } else {
             false
@@ -12377,7 +12467,7 @@ fn main() {
             pending_block: None,
             folded_headings: HashSet::new(),
             folded_callouts: HashSet::new(),
-            last_recovery: Instant::now(),
+            pending_recovery: None,
         },
         inactive_documents: Vec::new(),
         tab_order: vec![initial_document_id],
@@ -14482,6 +14572,44 @@ con dos lineas
             "una respuesta anterior no puede coincidir solo porque el editor volvió a revisión cero"
         );
         assert!(!is_current_view_request(&requests, 6, 19));
+    }
+
+    #[test]
+    fn recuperacion_difiere_hasta_la_ultima_edicion_y_cubre_pestanas_inactivas() {
+        let start = Instant::now();
+        let mut active = DocumentState::untitled();
+        active.queue_recovery(1, start);
+        active.queue_recovery(2, start + Duration::from_millis(100));
+        assert_eq!(
+            active.recovery_deadline(),
+            Some(start + Duration::from_millis(100) + RECOVERY_DEBOUNCE)
+        );
+        assert_eq!(
+            active.take_due_recovery(start + RECOVERY_DEBOUNCE),
+            None,
+            "una ráfaga corta no debe usar el deadline del primer cambio"
+        );
+        assert_eq!(
+            active.take_due_recovery(start + Duration::from_millis(100) + RECOVERY_DEBOUNCE),
+            Some(2)
+        );
+        assert_eq!(
+            active.take_due_recovery(start + RECOVERY_DEBOUNCE * 2),
+            None
+        );
+
+        active.queue_recovery(3, start);
+        active.cancel_pending_recovery();
+        assert_eq!(active.recovery_deadline(), None);
+
+        let mut inactive = DocumentState::untitled();
+        active.queue_recovery(4, start + Duration::from_secs(10));
+        inactive.queue_recovery(5, start + Duration::from_secs(1));
+        assert_eq!(
+            earliest_recovery_deadline([&active, &inactive]),
+            inactive.recovery_deadline(),
+            "una pestaña inactiva no pierde su recuperación solo por cambiar de foco"
+        );
     }
 
     #[test]

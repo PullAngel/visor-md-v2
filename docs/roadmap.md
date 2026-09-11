@@ -1,6 +1,6 @@
 # Roadmap
 
-Última revisión: 1 de septiembre de 2026.
+Última revisión: 10 de septiembre de 2026.
 
 El roadmap ordena dependencias y criterios de salida. No promete fechas. Una
 etapa solo se cierra con evidencia y el producto debe quedar en un punto útil al
@@ -46,7 +46,7 @@ contradicen esta fotografía.
 | Sprint 1 | Implementado, pendiente de cierre formal | Lector Markdown profesional con CommonMark/GFM anunciado, límites, fuente embebida, tema y regresiones; falta consolidar corpus y QA visual de release. |
 | Validación base | En curso | Gates Windows y pruebas de regresión ya existen; faltan la pasada de cierre de SBOM, advisories, benchmarks y CI multiplataforma. |
 | Lector completo | En curso | Tablas legibles con copia TSV, notas al pie, autolinks, búsqueda, índice, métricas, plegado y placeholder/PNG local confirmado están presentes; faltan corpus sistemático, imágenes inline y accesibilidad de interacción. |
-| Editor básico | En curso | Abrir, crear, edición fuente/dividida, historial, guardado atómico, conflictos explícitos y recuperación local están implementados; falta endurecer la sincronización incremental, selección/IME y QA real de archivos y diálogos. |
+| Editor básico | En curso | Abrir, crear, edición fuente/dividida, historial, guardado atómico, conflictos explícitos y recuperación local con debounce real están implementados; renders, recargas y comprobaciones externas ya se versionan por solicitud. Faltan sincronización incremental, selección/IME y QA real de archivos y diálogos. |
 | Aplicación diaria | En curso | Pestañas reordenables, cierre protegido, acciones comunes, barra de estado, paneles plegables y chrome sin borde de Windows ya existen. La comparación fuente/vista admite disposición lado a lado o apilada sin duplicar datos; faltan paneles simultáneos, ventanas separadas, accesibilidad y QA por plataforma. |
 | Corrección visual | En curso | La composición Papel + Tinta, jerarquía de superficies, tipografía, barras primaria/contextual, iconos nativos, ayuda contextual y paneles fueron realineados con diseño; faltan pulido de estados y QA humano. |
 | Workspace | En curso | Carpeta explícita, VFS, índice acotado/cancelable con cancelación visible, árbol, búsqueda y detección externa limitada ya existen; faltan escala y QA con bóvedas grandes. |

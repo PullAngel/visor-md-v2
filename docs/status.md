@@ -1,6 +1,6 @@
 # Estado actual
 
-Última revisión: 9 de septiembre de 2026.
+Última revisión: 10 de septiembre de 2026.
 
 ## Resumen
 
@@ -11,7 +11,7 @@ VFS acotada. La referencia anterior a Codex permanece intacta en
 `archive/claude-pre-codex`.
 
 El lector y el editor tienen gates automáticos verdes: la suite local actual
-reúne 218 regresiones. El gate de Windows del 9 de septiembre también verificó
+reúne 227 regresiones. El gate de Windows del 9 de septiembre también verificó
 Clippy, SBOM, documentación y un release de 3.524.096 bytes (3,361 MiB).
 Permanecen pendientes el QA humano acumulado, la
 actualización incremental de algunos modelos visibles, accesibilidad completa,
@@ -136,7 +136,19 @@ exacto del traspaso.
   prolongada, ventanas estrechas, DPI y correspondencia de desplazamiento.
 - las task lists se dibujan sin depender de glifos de fuente y permiten cambiar
   `[ ]` por `[x]` con clic sobre la casilla. La mutación toca un solo byte de la
-  fuente y entra al mismo historial reversible que el editor.
+  fuente, vuelve a derivar la lectura con un token asíncrono propio y entra al
+  mismo historial reversible que el editor.
+- una recarga o un cambio de extensión no puede aceptar un render viejo aunque
+  el contador del editor vuelva a cero. Guardar y Guardar como esperan una
+  recarga pendiente, y una verificación externa vieja no abre un diálogo sobre
+  un baseline nuevo.
+- antes del reemplazo atómico, Guardar corta por identidad distinta y limita la
+  comparación de bytes al tamaño que había abierto. Un reemplazo externo enorme
+  devuelve conflicto sin forzar una lectura sin cota.
+- la recuperación local programa una sola copia tres segundos después del
+  último cambio de cada pestaña, incluso si pasa a segundo plano. Guardar,
+  limpiar, desactivar la protección o aceptar una recarga cancelan ese trabajo
+  pendiente; no hay un hilo ni polling por pulsación.
 - cada fila GFM se representa como celdas con layouts, estilos y alineación
   independientes; los bordes y el encabezado ya no dependen de dibujar una
   línea aplanada con caracteres `|`. El clic y arrastre dentro de una celda se

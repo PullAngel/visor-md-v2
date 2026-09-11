@@ -48,7 +48,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Guardado atómico | Parcial | Sin corrupción ante fallo y conflictos probados; falta QA multiplataforma |
 | Preservar sintaxis desconocida | Parcial | Fuente no se reserializa; falta property testing de round-trip |
 | Detectar cambios externos | Parcial | Conflicto visible al guardar, recuperar foco o reactivar pestaña; respuestas viejas y recargas fallidas no reemplazan la edición local; falta QA multiplataforma |
-| Recuperación de sesión | Parcial | Activa por defecto, separada por pestaña, versionada y desactivable con advertencia; falta QA de cierre inesperado |
+| Recuperación de sesión | Parcial | Activa por defecto, separada por pestaña, versionada y desactivable con advertencia; registra la última edición tras tres segundos de pausa sin polling; falta QA de cierre inesperado |
 | Crear documento | Parcial | Crea una pestaña nueva sin reemplazar el documento activo; Guardar abre el diálogo de destino incluso para un documento vacío; falta plantilla inicial |
 | Varios documentos y pestañas | Parcial | Barra visible, cambio y cierre por mouse/teclado, `Ctrl+Tab`, `Ctrl+PageUp/PageDown`, pestañas fijables por sesión, estado, historial, scroll, selección, plegado, anclas y recuperación separados; aperturas, renders y guardados se dirigen por pestaña sin congelar las demás; falta accesibilidad completa |
 | Menú contextual | Parcial | Copia y pegado explícito según modo, búsqueda, cambio de vista y guardado; faltan acciones de workspace y estados deshabilitados visibles |
