@@ -501,4 +501,6 @@ Solo se evalúan con evidencia de uso:
 - macOS;
 - funciones de estudio adicionales.
 
-Ver [`future.md`](future.md).
+Ver [`future.md`](future.md), incluida la investigación no prioritaria de un
+teclado virtual y una sesión de seguridad pragmática. Ninguna es requisito ni
+gate de v2.0; primero se evalúa su utilidad antes de decidir su incorporación.

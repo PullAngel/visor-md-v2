@@ -67,6 +67,77 @@ criptográfica completa y auditable.
 Opcionales, visibles y sin telemetría. Requieren firma, protección contra
 rollback, canal de publicación y recuperación segura.
 
+## Investigación de seguridad no prioritaria
+
+Estas dos líneas quedan pendientes, sin urgencia, fuera del roadmap activo. No
+son requisitos ni gates de v2.0 y no implican un compromiso de implementación.
+La revisión futura parte de las políticas de [`security.md`](security.md), el
+[`threat-model.md`](threat-model.md) y los criterios de UX de
+[`design.md`](design.md); no amplía sus garantías ni sustituye los controles y
+verificaciones de seguridad ya exigidos para v2.0.
+
+### Teclado virtual compatible con Visor MD
+
+Investigar si un teclado virtual aporta utilidad real en los flujos de escritura
+de Visor MD antes de decidir si se crea y se agrega. La evaluación debe cubrir:
+
+- **Caso de uso y alternativas:** qué tarea concreta mejora, para quién y si el
+  teclado en pantalla del sistema u otra solución existente ya la resuelve.
+- **Threat model y limitaciones:** identificar el atacante, sus permisos, el
+  punto de captura y qué protección sería demostrable. Distinguir captura de
+  pulsaciones, eventos sintéticos, pantalla, accesibilidad y lectura de memoria;
+  evitar tratar todas esas vías como si fueran el mismo problema. No prometer
+  protección general contra keyloggers ni frente a un sistema comprometido,
+  conforme a las exclusiones del modelo vigente. La ofuscación interna no debe
+  presentarse como protección de una entrada ya observada antes de llegar a la
+  app.
+- **Compatibilidad y UX:** edición fuente/dividida, foco, selección, atajos,
+  undo/redo, Unicode, distribuciones de teclado, IME y tecnologías de asistencia
+  en Windows y Linux. Valorar velocidad de escritura, errores, fatiga y claridad
+  de las limitaciones sin sobrecargar la interfaz editorial.
+- **Coste y evidencia:** superficie de ataque, dependencias, tamaño, recursos y
+  mantenimiento frente al beneficio. Definir pruebas por vía de captura y
+  plataforma antes de atribuirle una mejora de seguridad.
+
+La salida será una decisión razonada: descartar, mantener en investigación o
+proponer una implementación acotada con evidencia, riesgo residual y criterio
+de salida. Una utilidad de accesibilidad o comodidad debe describirse como tal,
+sin atribuirle garantías de confidencialidad no demostradas.
+
+### Sesión futura de revisión de seguridad pragmática
+
+Reservar una sesión para explorar mejores alternativas de seguridad sin
+overengineering: partir de riesgos y flujos concretos, reutilizar controles
+existentes y preferir la solución mantenible más pequeña. No es una auditoría
+realizada ni una nueva etapa obligatoria del roadmap.
+
+Agenda propuesta:
+
+1. Recorrer apertura de documentos hostiles, edición, portapapeles, recuperación
+   local, guardado, bóvedas, enlaces, exportación y distribución. Separar las
+   propiedades implementadas de las previstas y de las todavía no verificadas.
+2. Contrastar cada escenario con OWASP y buenas prácticas aplicables. Seleccionar
+   las guías y controles pertinentes para una app nativa de escritorio, registrar
+   fuente, versión o fecha y justificar lo no aplicable; no trasladar listas web
+   o móviles completas ni presentar la revisión como una certificación.
+3. Identificar dónde Visor MD o una app de su ecosistema podría aportar más
+   seguridad y control sobre los dispositivos del usuario: permisos acotados,
+   datos locales, decisiones visibles y transferencias explícitas entre apps.
+   Separar lo que corresponde al núcleo, a un componente opcional y al sistema
+   operativo; conservar el núcleo pequeño y offline, sin ejecución de documentos
+   ni ampliaciones implícitas de privilegios o red. Evaluar también cuándo basta
+   con una herramienta existente o una explicación más clara.
+4. Comparar alternativas por amenaza mitigada, evidencia reproducible, riesgo
+   residual, coste de UX, accesibilidad, rendimiento y mantenimiento. Diferenciar
+   mitigaciones reales de security theater: controles que aparentan protección
+   sin demostrar una reducción del riesgo concreto o que inducen falsa confianza.
+
+Como resultado, dejar una lista breve de propuestas con escenario, control,
+prueba, límites y decisión: descartar, investigar o proponer al roadmap. No
+implementar infraestructura preventiva ni ampliar el producto durante esta
+sesión; cualquier propuesta seguirá los criterios de entrada al roadmap y las
+políticas de seguridad vigentes.
+
 ## Ideas descartadas actualmente
 
 - IA propia o chatbot;
