@@ -1,8 +1,8 @@
 //! Puerta de acceso a archivos secundarios dentro de un workspace explícito.
 //!
 //! El contenido Markdown nunca llama a `std::fs` directamente. Primero entrega
-//! una ruta relativa a esta capa, que rechaza escapes léxicos y comprueba la
-//! contención después de resolver enlaces existentes.
+//! una ruta relativa a esta capa, que rechaza escapes léxicos, inspecciona
+//! reparse points secundarios antes de resolver y comprueba la contención final.
 
 use std::fmt;
 use std::fs;
@@ -23,6 +23,7 @@ pub(crate) enum VfsError {
     AlternateDataStream,
     Missing,
     OutsideRoot,
+    ReparsePoint,
     Io(std::io::ErrorKind),
 }
 
@@ -41,6 +42,9 @@ impl fmt::Display for VfsError {
             }
             Self::Missing => "el archivo referido no existe",
             Self::OutsideRoot => "la referencia termina fuera de la carpeta autorizada",
+            Self::ReparsePoint => {
+                "la referencia atraviesa un enlace simbólico o junction no permitido"
+            }
             Self::Io(_) => "no se pudo resolver el archivo referido",
         };
         formatter.write_str(text)
@@ -63,15 +67,17 @@ impl WorkspaceRoot {
         &self.canonical_root
     }
 
-    /// Resuelve solo un archivo existente. Canonicalizar después de unir la
-    /// ruta descubre symlinks y junctions que una validación textual no ve.
+    /// Resuelve solo un archivo existente. Primero inspecciona cada componente
+    /// secundario sin seguirlo; solo después canonicaliza y confirma contención.
     pub(crate) fn resolve_existing(
         &self,
         reference: impl AsRef<Path>,
     ) -> Result<PathBuf, VfsError> {
         let reference = reference.as_ref();
         validate_relative_reference(reference)?;
-        let resolved = fs::canonicalize(self.canonical_root.join(reference)).map_err(|error| {
+        let candidate = self.canonical_root.join(reference);
+        self.reject_secondary_reparse_points(&candidate)?;
+        let resolved = fs::canonicalize(candidate).map_err(|error| {
             if error.kind() == std::io::ErrorKind::NotFound {
                 VfsError::Missing
             } else {
@@ -106,7 +112,9 @@ impl WorkspaceRoot {
             return Err(VfsError::OutsideRoot);
         }
         let parent = base.parent().ok_or(VfsError::OutsideRoot)?;
-        let resolved = fs::canonicalize(parent.join(reference)).map_err(|error| {
+        let candidate = parent.join(reference);
+        self.reject_secondary_reparse_points(&candidate)?;
+        let resolved = fs::canonicalize(candidate).map_err(|error| {
             if error.kind() == std::io::ErrorKind::NotFound {
                 VfsError::Missing
             } else {
@@ -117,6 +125,54 @@ impl WorkspaceRoot {
             return Err(VfsError::OutsideRoot);
         }
         Ok(resolved)
+    }
+
+    /// Una referencia secundaria declarada por un documento no puede hacer
+    /// que el proceso siga symlinks o junctions, incluso si por casualidad
+    /// terminan dentro de la raíz. Se inspecciona cada componente antes de
+    /// canonicalizar, que en Windows podría consultar una ubicación de red.
+    fn reject_secondary_reparse_points(&self, candidate: &Path) -> Result<(), VfsError> {
+        let relative = candidate
+            .strip_prefix(&self.canonical_root)
+            .map_err(|_| VfsError::OutsideRoot)?;
+        let mut current = self.canonical_root.clone();
+        for component in relative.components() {
+            let Component::Normal(name) = component else {
+                return Err(VfsError::OutsideRoot);
+            };
+            current.push(name);
+            let metadata = fs::symlink_metadata(&current).map_err(|error| {
+                if error.kind() == std::io::ErrorKind::NotFound {
+                    VfsError::Missing
+                } else {
+                    VfsError::Io(error.kind())
+                }
+            })?;
+            if is_reparse_point(&metadata) {
+                return Err(VfsError::ReparsePoint);
+            }
+        }
+        Ok(())
+    }
+}
+
+/// `symlink_metadata` no sigue el último componente. En Windows, una junction
+/// no siempre se anuncia como symlink, por lo que también se consulta el bit
+/// de reparse point. La raíz elegida explícitamente queda fuera de esta regla;
+/// solo se aplica a componentes que proceden de una referencia secundaria.
+pub(crate) fn is_reparse_point(metadata: &fs::Metadata) -> bool {
+    if metadata.file_type().is_symlink() {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+        metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+    }
+    #[cfg(not(windows))]
+    {
+        false
     }
 }
 
@@ -216,6 +272,49 @@ mod tests {
             resolved,
             fs::canonicalize(root.join("apuntes").join("media").join("diagrama.png")).unwrap()
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn una_referencia_secundaria_no_sigue_symlinks_antes_de_canonicalizar() {
+        use std::os::unix::fs::symlink;
+
+        let root = fixture_root();
+        let outside = std::env::temp_dir().join(format!(
+            "visor-md-vfs-outside-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("el reloj es válido")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&outside).expect("se crea destino externo");
+        fs::write(outside.join("secreto.md"), "# secreto").expect("se crea archivo externo");
+        symlink(&outside, root.join("apuntes").join("atajo")).expect("se crea symlink de fixture");
+        symlink(
+            outside.join("secreto.md"),
+            root.join("apuntes").join("atajo-final.md"),
+        )
+        .expect("se crea symlink final de fixture");
+        let vfs = WorkspaceRoot::open(&root).expect("la raíz es válida");
+
+        assert_eq!(
+            vfs.resolve_existing(Path::new("apuntes/atajo/secreto.md")),
+            Err(VfsError::ReparsePoint)
+        );
+        assert_eq!(
+            vfs.resolve_existing(Path::new("apuntes/atajo-final.md")),
+            Err(VfsError::ReparsePoint)
+        );
+        assert_eq!(
+            vfs.resolve_existing_from(
+                root.join("apuntes").join("redes.md"),
+                Path::new("atajo/secreto.md"),
+            ),
+            Err(VfsError::ReparsePoint)
+        );
+        let _ = fs::remove_file(root.join("apuntes").join("atajo"));
+        let _ = fs::remove_file(root.join("apuntes").join("atajo-final.md"));
+        let _ = fs::remove_dir_all(outside);
     }
 
     #[test]

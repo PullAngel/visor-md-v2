@@ -108,7 +108,7 @@ Cada flecha es un lugar donde validar datos, limitar capacidades y crear tests.
 | Stack overflow | Miles de citas anidadas | Profundidad, recorrido iterativo y cancelación | Test adversarial y medición | Nuevas rutas recursivas |
 | Agotamiento de memoria | Tabla, línea o imagen enorme | Presupuestos, tope de 16 KiB por línea y fallback | Benchmark y límites simulados | Coste previo a detectar formato |
 | Path traversal | `../../secreto` | VFS, canonicalización y contención | Pruebas de rutas, prefijos y streams alternativos | TOCTOU o diferencias de plataforma |
-| Escape por symlink | Recurso relativo que cambia destino | Identidad y validación sobre handle | Tests de carrera | Limitaciones de API |
+| Escape por symlink | Recurso relativo que cambia destino | Inspección previa de reparse points, canonicalización y contención; identidad por handle cuando la plataforma lo permita | Regresión Unix y QA con junction Windows | TOCTOU entre inspección y apertura, API de plataforma |
 | Acceso UNC | Markdown apunta a un share | Solo archivo principal manual | Tests UNC | Intención ambigua en asociación externa |
 | Portapapeles | Documento intenta inducir copia o contenido queda expuesto | Copia o pegado solo tras gesto explícito; sin observador, historial ni red | Tests de selección y QA de atajos | La persona puede pegar texto voluntariamente en el editor |
 | Filtración por imagen | Pixel remoto registra IP | Bloqueo y consentimiento aislado | Monitor de sockets | IP revelada tras consentimiento |
@@ -150,8 +150,9 @@ correctas.
 
 ## Riesgos abiertos durante la recuperación
 
-- VFS conectado a navegación e indexado, con QA adversarial de junctions y
-  diferencias de plataforma todavía pendiente;
+- VFS ya rechaza reparse points secundarios antes de canonicalizar; siguen
+  pendientes QA adversarial de junctions y diferencias de plataforma, además de
+  identidad por handle para reducir la carrera restante;
 - los límites absolutos están implementados; falta evidencia sostenida bajo
   presión de memoria y cancelación cooperativa del parseo de un solo documento;
 - round-trip y rangos finos todavía no demostrados para toda sintaxis;

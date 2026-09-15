@@ -5,8 +5,9 @@
 //! y descartar su resultado al cambiar de workspace.
 
 use crate::files::open_explicit_primary;
-use crate::vfs::WorkspaceRoot;
+use crate::vfs::{WorkspaceRoot, is_reparse_point};
 use std::collections::{HashMap, HashSet};
+use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -246,6 +247,11 @@ fn blocked_wikilink_target(target: &str) -> bool {
         || target.split(['/', '\\']).any(|component| component == "..")
 }
 
+fn is_workspace_metadata_dir(name: &OsStr) -> bool {
+    let name = name.to_string_lossy();
+    name.eq_ignore_ascii_case(".git") || name.eq_ignore_ascii_case(".obsidian")
+}
+
 /// Recorre únicamente rutas ya contenidas. `.git` y `.obsidian` son metadatos
 /// de otras herramientas: no se indexan para evitar ruido, secretos de plugin
 /// y un falso efecto de compatibilidad al interpretar sus configuraciones.
@@ -312,10 +318,23 @@ fn index_workspace_with_previous(
                 return index;
             }
             let name = entry.file_name();
-            if name == ".git" || name == ".obsidian" {
+            if is_workspace_metadata_dir(&name) {
                 continue;
             }
-            let Ok(canonical) = fs::canonicalize(entry.path()) else {
+            let entry_path = entry.path();
+            let Ok(metadata) = fs::symlink_metadata(&entry_path) else {
+                index.skipped += 1;
+                continue;
+            };
+            // No canonicalizar antes: una junction de una bóveda local puede
+            // apuntar a UNC y provocar acceso de red mientras se intenta
+            // descubrir que está fuera. Los reparse points secundarios no son
+            // parte de la capacidad concedida al indexar.
+            if is_reparse_point(&metadata) {
+                index.skipped += 1;
+                continue;
+            }
+            let Ok(canonical) = fs::canonicalize(&entry_path) else {
                 index.skipped += 1;
                 continue;
             };
@@ -323,25 +342,17 @@ fn index_workspace_with_previous(
                 index.skipped += 1;
                 continue;
             }
-            let Ok(file_type) = entry.file_type() else {
-                index.skipped += 1;
-                continue;
-            };
-            if file_type.is_dir() {
+            if metadata.is_dir() {
                 pending.push(canonical);
                 continue;
             }
-            if !file_type.is_file() || !is_markdown_path(&canonical) {
+            if !metadata.is_file() || !is_markdown_path(&canonical) {
                 continue;
             }
             if index.notes.len() >= limits.max_files {
                 index.truncated = true;
                 return index;
             }
-            let Ok(metadata) = entry.metadata() else {
-                index.skipped += 1;
-                continue;
-            };
             if metadata.len() > limits.max_note_bytes {
                 index.skipped += 1;
                 continue;
@@ -777,6 +788,60 @@ mod tests {
                 .iter()
                 .all(|note| !note.relative_path.starts_with(".obsidian"))
         );
+    }
+
+    #[test]
+    fn omite_metadatos_de_workspace_sin_depender_de_mayusculas() {
+        let root = fixture_root();
+        fs::create_dir_all(root.join(".GIT")).expect("se crea metadato alternativo");
+        fs::write(root.join(".GIT").join("historial.md"), "# No indexar")
+            .expect("se crea archivo de metadato");
+        let vfs = WorkspaceRoot::open(&root).expect("la raíz es válida");
+        let index = index_workspace(&vfs, WorkspaceLimits::default());
+
+        assert_eq!(index.notes.len(), 2);
+        assert!(
+            index
+                .notes
+                .iter()
+                .all(|note| !note.relative_path.starts_with(".GIT"))
+        );
+        assert!(is_workspace_metadata_dir(OsStr::new(".ObSiDiAn")));
+        assert!(is_workspace_metadata_dir(OsStr::new(".gIt")));
+        assert!(!is_workspace_metadata_dir(OsStr::new(".obsidian-notas")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn el_indice_no_sigue_un_symlink_secundario() {
+        use std::os::unix::fs::symlink;
+
+        let root = fixture_root();
+        let outside = std::env::temp_dir().join(format!(
+            "visor-md-workspace-outside-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("el reloj es válido")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&outside).expect("se crea carpeta externa");
+        fs::write(outside.join("secreto.md"), "# No indexar").expect("se crea nota externa");
+        symlink(&outside, root.join("atajo")).expect("se crea symlink secundario");
+
+        let vfs = WorkspaceRoot::open(&root).expect("la raíz es válida");
+        let index = index_workspace(&vfs, WorkspaceLimits::default());
+
+        assert_eq!(index.notes.len(), 2);
+        assert!(index.skipped >= 1);
+        assert!(
+            index
+                .notes
+                .iter()
+                .all(|note| !note.relative_path.starts_with("atajo"))
+        );
+
+        let _ = fs::remove_file(root.join("atajo"));
+        let _ = fs::remove_dir_all(outside);
     }
 
     #[test]

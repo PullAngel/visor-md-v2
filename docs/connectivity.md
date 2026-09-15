@@ -62,9 +62,11 @@ Los recursos relativos y enlaces locales pasan por VFS. Un documento no obtiene
 permiso sobre todo el disco por haber sido abierto.
 
 La VFS resuelve cada enlace Markdown relativo desde la carpeta de la nota que lo
-declara, no desde la raíz de la bóveda ni desde el proceso. Tanto la nota base
-como el destino canonicalizado deben permanecer dentro de la raíz concedida;
-una nota abierta fuera de ella no hereda acceso lateral a la bóveda activa.
+declara, no desde la raíz de la bóveda ni desde el proceso. Antes de
+canonicalizar un destino secundario inspecciona cada componente y rechaza
+symlinks, junctions y otros reparse points. Tanto la nota base como el destino
+canonicalizado deben permanecer dentro de la raíz concedida; una nota abierta
+fuera de ella no hereda acceso lateral a la bóveda activa.
 
 ## Obsidian
 

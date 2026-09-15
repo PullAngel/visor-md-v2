@@ -69,7 +69,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Sin red durante uso normal | Parcial | Falta prueba automatizada de sockets |
 | Límites de anidamiento | Recuperación | Tiempo, memoria y fallback |
 | VFS central | Parcial | Workspace contenido, archivo principal limitado, enlaces relativos e imágenes PNG resueltos desde su nota; faltan futuros recursos secundarios |
-| Política de rutas | Parcial | UNC, traversal, symlinks y junctions cubiertos para workspace, navegación y PNG local; falta QA adversarial multiplataforma |
+| Política de rutas | Parcial | UNC, traversal, symlinks, junctions y reparse points secundarios se rechazan antes de canonicalizar para workspace, navegación y PNG local; falta QA adversarial multiplataforma |
 | Allowlist HTML semántica | Recuperación | `br`, `kbd`, `mark`, `sub` y `sup` nativos sin atributos; falta corpus sistemático y QA visual |
 | Límites de imágenes | Parcial | PNG local: firma, 8 MiB, 8192 por lado y 16 millones de píxeles; falta corpus hostil ampliado |
 | Consentimiento remoto | Planificado | Aislado, explícito y revocable |
@@ -106,7 +106,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 
 | Función | Estado | Criterio mínimo |
 | --- | --- | --- |
-| Abrir carpeta o bóveda | Parcial | Sin migración ni cambios implícitos; al recuperar foco compara fuera de UI hasta 1.024 rutas ya indexadas y sugiere `Ctrl+Shift+I` si cambiaron |
+| Abrir carpeta o bóveda | Parcial | Sin migración ni cambios implícitos; el índice omite `.git` y `.obsidian` sin distinguir mayúsculas, rechaza reparse points y al recuperar foco compara fuera de UI hasta 1.024 rutas ya indexadas |
 | Lista de notas | Parcial | Panel plegable con árbol del índice; abre solo tras resolver dentro de VFS y señala cambios externos limitados |
 | Búsqueda de bóveda | Parcial | Panel con resultados múltiples del índice en memoria; falta actualización incremental |
 | Wikilinks | Parcial | Resolución contenida y explícita; el índice ignora wikilinks literales en código o escapados y el panel de diagnóstico distingue rutas absolutas, UNC, `file:` o traversal bloqueadas de notas ausentes |

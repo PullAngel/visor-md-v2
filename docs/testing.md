@@ -289,11 +289,19 @@ automático ni limpia la recuperación.
 Los renders asíncronos combinan documento, revisión y token de solicitud. La
 regresión cubre una recarga que reinicia el contador del editor: una respuesta
 vieja con la misma revisión numérica no puede aplicar bloques de otra fuente o
-de otra política de contenido.
+de otra política de contenido. Las previews PNG exigen además que coincida la
+generación de workspace; una imagen de una raíz anterior no puede publicarse
+sobre el documento o la carpeta actuales.
 
 El guardado ejercita un destino sustituido por un archivo mucho mayor que su
 baseline. Debe devolver conflicto y conservar el destino sin realizar una
 lectura de tamaño no acotado.
+
+La VFS tiene una regresión Unix que rechaza un symlink secundario tanto desde la
+raíz como desde la carpeta de una nota antes de canonicalizar. El índice omite
+`.git` y `.obsidian` sin distinguir mayúsculas. Windows conserva como gate
+manual pendiente una fixture con junction o reparse point real: debe demostrar
+que ni el índice ni una preview PNG lo siguen.
 
 La recuperación prueba una ráfaga de dos cambios: solo el último request vence
 tres segundos después de la última edición. También prueba cancelación y que el

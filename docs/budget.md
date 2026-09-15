@@ -37,11 +37,31 @@ compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
 | **Herramientas de estudio derivadas** | **3.516.928 bytes, 3,354 MiB** |
 | **Interacción fiable de tareas** | **3.522.560 bytes, 3,359 MiB** |
 | **Selector directo de modo** | **3.524.096 bytes, 3,361 MiB** |
+| **Rutas secundarias y previews vigentes** | **3.532.288 bytes, 3,369 MiB** |
 
 Superar 8 MB exige medición, explicación y aprobación. El límite no se usa para
 recortar seguridad, estabilidad, accesibilidad, Unicode o funciones esenciales.
 Mermaid, correctores y otros componentes pesados no tienen permiso automático
 para ampliar el núcleo.
+
+### Rutas secundarias y previews vigentes del 15 de septiembre de 2026
+
+Este checkpoint rechaza reparse points secundarios antes de canonicalizar y
+descarta previews PNG cuyo documento, revisión, solicitud o carpeta ya no sean
+actuales. No incorpora dependencias, red ni permisos persistentes. La mitigación
+reduce exposición a junctions hacia UNC, pero no sustituye la futura validación
+por handle contra la carrera TOCTOU residual.
+
+| Medida | Resultado |
+| --- | --- |
+| Binario Windows | 3.532.288 bytes, 3,369 MiB |
+| SHA-256 | `B7594FACE684FAD7A4375C6838437FC222D254552D0D02AFB7967D8DE1726892` |
+| Variación frente al checkpoint anterior | +8.192 bytes |
+| Margen frente al límite deseado | 4,631 MiB |
+
+La suite completa de 234 pruebas, Clippy estricto y la verificación de enlaces
+de documentación quedaron verdes. Falta QA adversarial de junction real en
+Windows y evidencia equivalente en Linux.
 
 ### Selector directo de modo del 9 de septiembre de 2026
 

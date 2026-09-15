@@ -155,8 +155,10 @@ línea cercana.
 
 Esto reduce una carrera TOCTOU común: comprobar por ruta y luego leer esa ruta
 podría validar un archivo y abrir otro si un proceso local lo reemplaza entre
-ambas operaciones. La contención de recursos secundarios, symlinks y junctions
-todavía no existe porque Visor MD aún no abre recursos secundarios.
+ambas operaciones. Los recursos secundarios pasan además por VFS: examina cada
+componente declarado con `symlink_metadata` antes de canonicalizarlo y rechaza
+symlinks, junctions y otros reparse points. Así una ruta controlada por Markdown
+no activa, por ejemplo, una consulta SMB solo para descubrir que escapaba.
 
 La sesión retiene además tamaño y fecha de modificación observados al abrir. Es
 una señal de conflicto previa al guardado, no una prueba criptográfica ni una
@@ -188,7 +190,7 @@ El contenido no puede cargar automáticamente:
 - rutas absolutas;
 - streams alternativos NTFS;
 - destinos fuera del espacio permitido;
-- symlinks o junctions que escapen de ese espacio.
+- symlinks, junctions o reparse points en componentes secundarios.
 
 El hover de enlaces clasifica y etiqueta destinos web, correo, archivos
 relativos y formatos bloqueados. Esta clasificación no abre ni resuelve nada;
@@ -197,7 +199,8 @@ una futura acción de clic deberá volver a aplicar la política correspondiente
 Las rutas relativas locales pueden resolverse mediante VFS y límites. Seguir un
 enlace a otro archivo requiere una acción explícita. La implementación actual
 solo sigue enlaces relativos si una carpeta de trabajo fue elegida antes: VFS
-canonicaliza y comprueba contención de nuevo justo antes de abrir el destino.
+inspecciona los componentes antes de canonicalizar, rechaza reparse points y
+comprueba contención de nuevo justo antes de abrir el destino.
 
 ## Portapapeles
 
@@ -218,9 +221,12 @@ ni registrar contenido del documento.
 TOCTOU significa comprobar algo y usarlo después, cuando pudo cambiar. Un atacante
 podría reemplazar un archivo o symlink entre la validación y la lectura.
 
-Cuando el riesgo lo justifique, VFS debe abrir y validar identidad sobre el mismo
-handle o volver a comprobar identidad antes del uso. La implementación depende de
-la plataforma y necesita tests específicos.
+VFS ya evita seguir reparse points conocidos antes de canonicalizar y la vista
+previa PNG vuelve a resolver su ruta después del consentimiento, dentro del
+worker y justo antes de abrir. Aun así, un proceso local con permisos suficientes
+puede sustituir un componente entre esas operaciones. Eliminar esa carrera exige
+validar identidad sobre el mismo handle por plataforma; sigue como riesgo
+residual y necesita pruebas específicas de Windows y Linux.
 
 ## Workspace y confianza temporal
 
@@ -281,11 +287,14 @@ legítimo.
 
 La primera implementación solo permite una vista previa de PNG local después de
 un clic o Enter y una confirmación puntual. No recuerda el permiso, no carga al
-abrir el documento y conserva un único pixmap decodificado en memoria.
+abrir el documento y conserva un único pixmap decodificado en memoria. Después
+del consentimiento vuelve a resolver la ruta dentro del worker, justo antes de
+abrirla; documento, revisión, solicitud y generación de carpeta deben seguir
+vigentes antes de publicar el pixmap.
 
 Antes de decodificar:
 
-1. VFS resuelve y contiene la ruta;
+1. VFS vuelve a resolver y contener la ruta después del consentimiento;
 2. se limita tamaño en bytes;
 3. se identifica formato real;
 4. se leen dimensiones con presupuesto;

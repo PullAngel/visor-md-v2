@@ -128,11 +128,12 @@ otro disco. Es una puerta única que aplica política antes de cada acceso.
 
 Responsabilidades:
 
-- canonicalizar;
-- comprobar contención;
+- inspeccionar y rechazar reparse points de componentes secundarios antes de
+  canonicalizar;
+- canonicalizar y comprobar contención;
 - distinguir archivo principal y recurso secundario;
 - controlar UNC, rutas de dispositivo y streams alternativos;
-- manejar symlinks y junctions;
+- rechazar symlinks, junctions y otros reparse points secundarios;
 - aplicar tamaño y tipo;
 - producir errores explicables;
 - registrar evidencia para tests sin almacenar contenido privado.
@@ -363,8 +364,9 @@ selección y foco por vista siguen siendo el siguiente bloque de integración.
 ### Workspace e índice
 
 La primera implementación usa un índice regenerable en memoria, sin SQLite ni
-sidecar de contenido. Ya existe un recorrido acotado que canoniza cada entrada,
-omite `.git` y `.obsidian`, descarta escapes y extrae títulos, encabezados y
+sidecar de contenido. Ya existe un recorrido acotado que inspecciona metadatos
+antes de canonicalizar cada entrada, omite `.git` y `.obsidian` sin distinguir
+mayúsculas, descarta reparse points y escapes, y extrae títulos, encabezados y
 wikilinks de Markdown UTF-8 permitido. La selección de carpeta y el indexado ya
 corren fuera de la UI; los enlaces relativos solo se abren tras resolverlos con
 la raíz autorizada. Los wikilinks `[[nota]]`, `[[nota|alias]]`,
@@ -382,7 +384,9 @@ dato para abrir archivos: cada navegación vuelve a pasar por VFS.
 del documento actual y solo abre una selección tras resolverla de nuevo con la
 VFS. Índice, árbol de notas, búsqueda y backlinks ya usan paneles plegables. El
 árbol deriva carpetas únicamente desde rutas indexadas y permite plegarlas sin
-volver a tocar el disco. Al recuperar foco, una tarea separada compara una
+volver a tocar el disco. Una raíz UNC o reparse point solo puede ser la carpeta
+elegida explícitamente; esa excepción nunca se propaga a referencias secundarias.
+Al recuperar foco, una tarea separada compara una
 fotografía acotada de rutas ya indexadas; no descubre rutas ni bloquea la UI.
 
 Los callouts conocidos de Obsidian dentro de una cita (`NOTE`, `INFO`, `TIP`,
@@ -446,6 +450,10 @@ instala un watcher: al recuperar foco compara fuera de la UI metadatos de hasta
 1.024 archivos y directorios ya contenidos por VFS y, si cambiaron, avisa para
 reindexar explícitamente. El límite queda visible; es una señal de actualización
 y no vigilancia total.
+
+La vista previa de imagen añade además solicitud y generación de workspace a la
+identidad de documento y revisión. Cambiar de carpeta invalida el pixmap retenido
+y descarta cualquier resultado de la raíz anterior antes de dibujarlo.
 
 ## Virtualización
 

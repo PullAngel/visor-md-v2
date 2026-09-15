@@ -1172,12 +1172,16 @@ enum AppEvent {
     },
     ImageReady {
         request: u64,
+        workspace_generation: u64,
         document_id: u64,
         revision: u64,
         pixmap: Pixmap,
     },
     ImageFailed {
         request: u64,
+        workspace_generation: u64,
+        document_id: u64,
+        revision: u64,
         error: String,
     },
 }
@@ -4940,6 +4944,18 @@ fn is_current_external_check(
     result_document_id == target_document_id && result_generation == current_generation
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ImageResultIdentity {
+    request: u64,
+    workspace_generation: u64,
+    document_id: u64,
+    revision: u64,
+}
+
+fn is_current_image_result(result: ImageResultIdentity, current: ImageResultIdentity) -> bool {
+    result == current
+}
+
 fn take_matching_external_check(
     in_flight: &mut HashMap<u64, u64>,
     document_id: u64,
@@ -5151,6 +5167,7 @@ fn paths_refer_to_same_file(left: &std::path::Path, right: &std::path::Path) -> 
 
 struct ImagePreview {
     document_id: u64,
+    workspace_generation: u64,
     pixmap: Pixmap,
 }
 
@@ -5210,6 +5227,11 @@ struct App {
     /// Cambiar de carpeta cancela cooperativamente el recorrido anterior. El
     /// contador descarta además cualquier resultado tardío del hilo anterior.
     workspace_request: u64,
+    /// La capacidad de una carpeta solo vale mientras esta generación sea la
+    /// instalada. Las previews asíncronas la cargan para no publicar una
+    /// imagen resuelta bajo una carpeta que ya fue reemplazada.
+    workspace_generation: u64,
+    workspace_generation_guard: Arc<AtomicU64>,
     workspace_cancel: Option<Arc<AtomicBool>>,
     workspace_check_in_flight: Option<u64>,
     /// La raíz cambió desde el último índice conocido. No se usa un watcher:
@@ -5803,6 +5825,11 @@ impl ApplicationHandler<AppEvent> for App {
                 let content_truncated = index.content_truncated;
                 let scan_truncated = index.scan_truncated;
                 self.workspace = Some((root, index));
+                self.workspace_generation = self.workspace_generation.wrapping_add(1);
+                self.workspace_generation_guard
+                    .store(self.workspace_generation, Ordering::Release);
+                self.image_request = self.image_request.wrapping_add(1);
+                self.image_preview = None;
                 self.workspace_paths = None;
                 self.collapsed_workspace_dirs.clear();
                 self.workspace_check_in_flight = None;
@@ -5911,14 +5938,25 @@ impl ApplicationHandler<AppEvent> for App {
             }
             AppEvent::ImageReady {
                 request,
+                workspace_generation,
                 document_id,
                 revision,
                 pixmap,
             } => {
-                if request != self.image_request
-                    || document_id != self.document.id
-                    || revision != self.document.source_editor.revision()
-                {
+                if !is_current_image_result(
+                    ImageResultIdentity {
+                        request,
+                        workspace_generation,
+                        document_id,
+                        revision,
+                    },
+                    ImageResultIdentity {
+                        request: self.image_request,
+                        workspace_generation: self.workspace_generation,
+                        document_id: self.document.id,
+                        revision: self.document.source_editor.revision(),
+                    },
+                ) {
                     self.log
                         .push("[imagen] se descartó una vista previa desactualizada".to_string());
                     return;
@@ -5926,6 +5964,7 @@ impl ApplicationHandler<AppEvent> for App {
                 let dimensions = (pixmap.width(), pixmap.height());
                 self.image_preview = Some(ImagePreview {
                     document_id,
+                    workspace_generation,
                     pixmap,
                 });
                 self.set_notice(&format!(
@@ -5936,8 +5975,27 @@ impl ApplicationHandler<AppEvent> for App {
                     window.request_redraw();
                 }
             }
-            AppEvent::ImageFailed { request, error } => {
-                if request != self.image_request {
+            AppEvent::ImageFailed {
+                request,
+                workspace_generation,
+                document_id,
+                revision,
+                error,
+            } => {
+                if !is_current_image_result(
+                    ImageResultIdentity {
+                        request,
+                        workspace_generation,
+                        document_id,
+                        revision,
+                    },
+                    ImageResultIdentity {
+                        request: self.image_request,
+                        workspace_generation: self.workspace_generation,
+                        document_id: self.document.id,
+                        revision: self.document.source_editor.revision(),
+                    },
+                ) {
                     return;
                 }
                 self.log.push(format!("[imagen] {error}"));
@@ -9485,17 +9543,6 @@ impl App {
             );
             return;
         }
-        let path = match root.resolve_existing_from(
-            std::path::Path::new(&self.document.path),
-            std::path::Path::new(relative_path),
-        ) {
-            Ok(path) => path,
-            Err(error) => {
-                self.log.push(format!("[imagen/vfs] {error}"));
-                self.set_notice("la imagen local fue bloqueada por la política de archivos");
-                return;
-            }
-        };
         let dialog = MessageDialog::new()
             .set_level(MessageLevel::Info)
             .set_title("Visor MD · mostrar imagen local")
@@ -9513,24 +9560,50 @@ impl App {
             return;
         }
 
+        // La comprobación de VFS ocurre dentro del worker, inmediatamente
+        // antes de abrir. Así una sustitución durante el diálogo no reutiliza
+        // una ruta resuelta antes del consentimiento.
+        let root = root.clone();
+        let source_path = PathBuf::from(&self.document.path);
+        let relative_path = PathBuf::from(relative_path);
         self.image_request = self.image_request.wrapping_add(1);
         let request = self.image_request;
+        let workspace_generation = self.workspace_generation;
+        let workspace_generation_guard = self.workspace_generation_guard.clone();
         let document_id = self.document.id;
         let revision = self.document.source_editor.revision();
         let proxy = self.proxy.clone();
         self.image_preview = None;
         self.set_notice("cargando PNG local con límites de seguridad");
         thread::spawn(move || {
-            let event = match images::load_local_png(&path) {
+            let result =
+                if workspace_generation_guard.load(Ordering::Acquire) != workspace_generation {
+                    Err("la carpeta de trabajo cambió antes de abrir la imagen".to_string())
+                } else {
+                    root.resolve_existing_from(&source_path, &relative_path)
+                        .map_err(|error| {
+                            format!(
+                                "la imagen local fue bloqueada por la política de archivos: {error}"
+                            )
+                        })
+                        .and_then(|path| {
+                            images::load_local_png(&path).map_err(|error| error.to_string())
+                        })
+                };
+            let event = match result {
                 Ok(pixmap) => AppEvent::ImageReady {
                     request,
+                    workspace_generation,
                     document_id,
                     revision,
                     pixmap,
                 },
                 Err(error) => AppEvent::ImageFailed {
                     request,
-                    error: error.to_string(),
+                    workspace_generation,
+                    document_id,
+                    revision,
+                    error,
                 },
             };
             let _ = proxy.send_event(event);
@@ -11206,6 +11279,7 @@ impl App {
         // Se desarma `self` en campos sueltos para que el prestamo del pixmap
         // no choque con el de la cache de glifos ni con el de los bloques.
         let context_mode = self.document.mode;
+        let workspace_generation = self.workspace_generation;
         let App {
             pixmap,
             slots,
@@ -12256,6 +12330,7 @@ impl App {
 
         if let Some(preview) = image_preview.as_ref()
             && preview.document_id == document.id
+            && preview.workspace_generation == workspace_generation
             && let Some((x, y, scale)) = fitted_image_rect(
                 preview.pixmap.width(),
                 preview.pixmap.height(),
@@ -12628,6 +12703,8 @@ fn main() {
         recovery_privacy_notice_pending,
         workspace: None,
         workspace_request: 0,
+        workspace_generation: 0,
+        workspace_generation_guard: Arc::new(AtomicU64::new(0)),
         workspace_cancel: None,
         workspace_check_in_flight: None,
         workspace_stale: false,
@@ -14719,6 +14796,45 @@ con dos lineas
             "una respuesta anterior no puede coincidir solo porque el editor volvió a revisión cero"
         );
         assert!(!is_current_view_request(&requests, 6, 19));
+    }
+
+    #[test]
+    fn una_imagen_asincrona_exige_workspace_documento_revision_y_solicitud_actual() {
+        let current = ImageResultIdentity {
+            request: 4,
+            workspace_generation: 9,
+            document_id: 7,
+            revision: 12,
+        };
+        assert!(is_current_image_result(current, current));
+        assert!(!is_current_image_result(
+            ImageResultIdentity {
+                request: 3,
+                ..current
+            },
+            current
+        ));
+        assert!(!is_current_image_result(
+            ImageResultIdentity {
+                workspace_generation: 8,
+                ..current
+            },
+            current
+        ));
+        assert!(!is_current_image_result(
+            ImageResultIdentity {
+                document_id: 6,
+                ..current
+            },
+            current
+        ));
+        assert!(!is_current_image_result(
+            ImageResultIdentity {
+                revision: 11,
+                ..current
+            },
+            current
+        ));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 # Estado actual
 
-Última revisión: 10 de septiembre de 2026.
+Última revisión: 15 de septiembre de 2026.
 
 ## Resumen
 
@@ -17,8 +17,10 @@ el mismo diálogo al recuperar foco. También mantiene la recuperación si una
 escritura terminó pero su verificación final no pudo completarse.
 
 El lector y el editor tienen gates automáticos verdes: la suite local actual
-reúne 232 regresiones. El gate de Windows del 9 de septiembre también verificó
+reúne 234 regresiones en Windows. El gate de Windows del 9 de septiembre también verificó
 Clippy, SBOM, documentación y un release de 3.524.096 bytes (3,361 MiB).
+La medición posterior de rutas secundarias y previews vigentes da 3.532.288
+bytes (3,369 MiB), aún con 4,631 MiB de margen frente al límite deseado.
 Permanecen pendientes el QA humano acumulado, la
 actualización incremental de algunos modelos visibles, accesibilidad completa,
 exportación y distribución.
@@ -256,10 +258,13 @@ exacto del traspaso.
   contenidos por la VFS; las anclas `nota.md#encabezado` viajan con la pestaña
   que se abre y `#encabezado` navega solo dentro del documento actual.
 - una imagen Markdown sigue siendo un placeholder hasta una acción explícita.
-  Clic o Enter permite confirmar una vista previa de un PNG local contenido por
-  la VFS; firma, bytes, dimensiones y memoria se limitan antes de decodificar en
-  segundo plano. Las imágenes remotas y rutas no permitidas continúan
-  bloqueadas sin conexión. Escape o un clic descartan el único pixmap retenido.
+   Clic o Enter permite confirmar una vista previa de un PNG local contenido por
+   la VFS; sus componentes secundarios se inspeccionan antes de canonicalizar y,
+   tras confirmar, se vuelven a resolver dentro del worker justo antes de abrir.
+   Firma, bytes, dimensiones y memoria se limitan antes de decodificar en segundo
+   plano; solicitud, carpeta, documento y revisión deben seguir vigentes antes
+   de publicar el pixmap. Las imágenes remotas y rutas no permitidas continúan
+   bloqueadas sin conexión. Escape o un clic descartan el único pixmap retenido.
 - una tabla enfocada o seleccionada puede copiarse como TSV desde el menú
   contextual o la paleta. Se usan las celdas del modelo, no los separadores
   visibles ni una reserialización del Markdown; saltos y tabuladores internos
@@ -370,9 +375,11 @@ causa porque todavía no se controlan caché, carga y planificación del sistema
   vuelta lectura-edición-lectura tras una edición grande;
 - selección de ejemplos de la suite oficial CommonMark y ampliación GFM sistemática;
 - separación incompleta de `main.rs`; fuentes y tema ya tienen módulos propios;
-- VFS de recursos secundarios ya cubre PNG local confirmado; otros formatos o
+- VFS de recursos secundarios ya cubre PNG local confirmado e inspecciona
+  symlinks, junctions y reparse points antes de canonicalizar. Otros formatos o
   capacidades futuras deberán reutilizar la misma frontera sin permisos
-  persistentes;
+  persistentes; faltan QA de junction real en Windows e identidad por handle
+  para reducir la carrera TOCTOU residual;
 - lista efímera de notas indexadas con `Ctrl+Shift+T`: no recorre el disco ni
   acepta rutas del documento y vuelve a resolver la elección dentro de VFS;
   el árbol deriva directorios solo de rutas contenidas y permite plegarlos; el
