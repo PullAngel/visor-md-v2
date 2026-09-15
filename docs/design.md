@@ -100,7 +100,8 @@ de tres estados, claramente separado: Leer, Editar y Comparar. El selector muest
 el estado actual con fondo del acento al 14 %, icono en acento y separadores sobrios;
 cada segmento es un destino directo, no un botón que obliga a recorrer modos. Debajo vive una segunda franja contextual, que
 evita mezclar archivo, formato y navegación: en edición muestra Negrita,
-Cursiva, H2, Lista, Tarea, Cita, Enlace, Código, Tabla, Resaltado y Comparar;
+Cursiva, H2, Lista, Tarea, Cita, Enlace, Código, Tabla, Resaltado, Comparar y
+orientación de comparación;
 en lectura muestra Índice, Plegar, Carpeta, Notas, Bóveda y Vínculos. Un separador sobrio distingue
 acciones del documento de las de bóveda, y formato de comparación. La segunda franja no es
 una barra lateral ni un panel permanente: cambia con el modo, da acceso visible

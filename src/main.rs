@@ -106,7 +106,8 @@ const CONTEXT_TOOLBAR_Y: f32 = 44.0;
 const CONTEXT_TOOLBAR_HEIGHT: f32 = 28.0;
 /// Doce herramientas caben aun en el mínimo de 640 px; los nombres completos
 /// siguen disponibles con hover, foco F6 y la paleta.
-const CONTEXT_TOOLBAR_ITEM_WIDTH: f32 = 52.0;
+const CONTEXT_TOOLBAR_ITEM_WIDTH: f32 = 48.0;
+const CONTEXT_TOOLBAR_ITEM_GAP: f32 = 4.0;
 const WINDOW_CHROME_HEIGHT: f32 = 40.0;
 /// La transición no desplaza contenido ni mantiene un render continuo: el
 /// event loop despierta solo los cuadros necesarios durante este intervalo.
@@ -182,37 +183,6 @@ const EDITING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 12] = [
     AppAction::FormatHighlight,
     AppAction::ToggleSplit,
     AppAction::ToggleSplitOrientation,
-];
-const READING_TOOLBAR_ACTIONS: [AppAction; 12] = [
-    AppAction::NewDocument,
-    AppAction::OpenDocument,
-    AppAction::Save,
-    AppAction::SearchDocument,
-    AppAction::WorkspaceHub,
-    AppAction::CommandPalette,
-    AppAction::DocumentOutline,
-    AppAction::ToggleSection,
-    AppAction::ChooseWorkspace,
-    AppAction::WorkspaceFiles,
-    AppAction::SearchWorkspace,
-    AppAction::Backlinks,
-];
-const EDITING_TOOLBAR_ACTIONS: [AppAction; 15] = [
-    AppAction::NewDocument,
-    AppAction::OpenDocument,
-    AppAction::Save,
-    AppAction::SearchDocument,
-    AppAction::WorkspaceHub,
-    AppAction::CommandPalette,
-    AppAction::FormatBold,
-    AppAction::FormatItalic,
-    AppAction::InsertHeading,
-    AppAction::InsertBulletList,
-    AppAction::InsertLink,
-    AppAction::InsertCodeBlock,
-    AppAction::InsertTable,
-    AppAction::FormatHighlight,
-    AppAction::ToggleSplit,
 ];
 const WORKSPACE_HUB_ACTIONS: [AppAction; 8] = [
     AppAction::ChooseWorkspace,
@@ -602,14 +572,6 @@ fn backlinks_panel_title(count: usize) -> String {
     }
 }
 
-fn toolbar_actions(mode: DocumentMode) -> &'static [AppAction] {
-    if mode.is_editable() {
-        &EDITING_TOOLBAR_ACTIONS
-    } else {
-        &READING_TOOLBAR_ACTIONS
-    }
-}
-
 /// La barra se recorre en su orden visual: acciones principales, selector de
 /// modo y franja contextual. El selector no alterna estados: cada posición
 /// conserva un destino directo.
@@ -631,11 +593,13 @@ fn toolbar_focus_action(index: usize, mode: DocumentMode) -> Option<AppAction> {
     if toolbar_focus_mode(index).is_some() {
         return None;
     }
-    toolbar_actions(mode).get(index.checked_sub(3)?).copied()
+    contextual_toolbar_actions(mode)
+        .get(index.checked_sub(contextual_toolbar_focus_start())?)
+        .copied()
 }
 
 fn toolbar_focus_count(mode: DocumentMode) -> usize {
-    toolbar_actions(mode).len() + 3
+    contextual_toolbar_focus_start() + contextual_toolbar_actions(mode).len()
 }
 
 fn contextual_toolbar_actions(mode: DocumentMode) -> &'static [AppAction] {
@@ -644,6 +608,31 @@ fn contextual_toolbar_actions(mode: DocumentMode) -> &'static [AppAction] {
     } else {
         &READING_CONTEXT_TOOLBAR_ACTIONS
     }
+}
+
+fn contextual_toolbar_focus_start() -> usize {
+    PRIMARY_TOOLBAR_ACTIONS.len() + 3
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct ContextToolbarItemGeometry {
+    x: f32,
+    width: f32,
+}
+
+/// La misma geometría sirve para dibujo, puntero, foco y ayuda. No se devuelve
+/// un rectángulo fuera de la barra, de modo que una acción no puede ser
+/// invisible y clicable a la vez.
+fn contextual_toolbar_item_geometry(
+    index: usize,
+    window_width: f32,
+) -> Option<ContextToolbarItemGeometry> {
+    let x = TOOLBAR_X + index as f32 * CONTEXT_TOOLBAR_ITEM_WIDTH;
+    let width = CONTEXT_TOOLBAR_ITEM_WIDTH - CONTEXT_TOOLBAR_ITEM_GAP;
+    if x + width > window_width - MARGIN {
+        return None;
+    }
+    Some(ContextToolbarItemGeometry { x, width })
 }
 
 fn toolbar_action_at(x: f32, y: f32, window_width: f32, mode: DocumentMode) -> Option<AppAction> {
@@ -655,8 +644,14 @@ fn toolbar_action_at(x: f32, y: f32, window_width: f32, mode: DocumentMode) -> O
         return PRIMARY_TOOLBAR_ACTIONS.get(index).copied();
     }
     if (CONTEXT_TOOLBAR_Y..CONTEXT_TOOLBAR_Y + CONTEXT_TOOLBAR_HEIGHT).contains(&y) {
-        let index = ((x - TOOLBAR_X) / CONTEXT_TOOLBAR_ITEM_WIDTH) as usize;
-        return contextual_toolbar_actions(mode).get(index).copied();
+        return contextual_toolbar_actions(mode)
+            .iter()
+            .copied()
+            .enumerate()
+            .find_map(|(index, action)| {
+                let geometry = contextual_toolbar_item_geometry(index, window_width)?;
+                ((geometry.x..geometry.x + geometry.width).contains(&x)).then_some(action)
+            });
     }
     None
 }
@@ -11169,9 +11164,12 @@ impl App {
                     };
                     MODE_SWITCH_X + slot as f32 * (MODE_SWITCH_WIDTH / 3.0)
                 } else {
-                    TOOLBAR_X
-                        + (index - PRIMARY_TOOLBAR_ACTIONS.len() - 3) as f32
-                            * CONTEXT_TOOLBAR_ITEM_WIDTH
+                    index
+                        .checked_sub(contextual_toolbar_focus_start())
+                        .and_then(|context_index| {
+                            contextual_toolbar_item_geometry(context_index, w.get() as f32)
+                        })
+                        .map_or(TOOLBAR_X, |geometry| geometry.x)
                 }
             })
             .or_else(|| menu_pointer.map(|(x, _)| x))
@@ -11940,12 +11938,11 @@ impl App {
             pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
         }
         for (index, action) in contextual_toolbar_actions.iter().copied().enumerate() {
-            let x = TOOLBAR_X + index as f32 * CONTEXT_TOOLBAR_ITEM_WIDTH;
-            let width = CONTEXT_TOOLBAR_ITEM_WIDTH - 4.0;
-            let right_limit = w.get() as f32 - MARGIN;
-            if x + width > right_limit {
+            let Some(geometry) = contextual_toolbar_item_geometry(index, w.get() as f32) else {
                 break;
-            }
+            };
+            let x = geometry.x;
+            let width = geometry.width;
             let begins_group = (context_mode == DocumentMode::Reading && index == 2)
                 || (context_mode.is_editable() && index == 7);
             if begins_group
@@ -11964,7 +11961,7 @@ impl App {
                     && (CONTEXT_TOOLBAR_Y..CONTEXT_TOOLBAR_Y + CONTEXT_TOOLBAR_HEIGHT)
                         .contains(&pointer_y)
             });
-            let focused = toolbar_focus == Some(PRIMARY_TOOLBAR_ACTIONS.len() + 3 + index);
+            let focused = toolbar_focus == Some(contextual_toolbar_focus_start() + index);
             let active = toolbar_action_is_active(action, context_mode);
             if (hovered || focused || active)
                 && let Some(rect) =
@@ -12980,16 +12977,75 @@ mod pruebas {
             toolbar_action_at(280.0, 50.0, 900.0, DocumentMode::SourceEditing),
             Some(AppAction::InsertQuote)
         );
+        for (index, action) in READING_CONTEXT_TOOLBAR_ACTIONS.iter().copied().enumerate() {
+            let geometry = contextual_toolbar_item_geometry(index, 640.0)
+                .expect("cada herramienta de lectura cabe en el mínimo");
+            assert_eq!(
+                toolbar_action_at(
+                    geometry.x + geometry.width * 0.5,
+                    CONTEXT_TOOLBAR_Y + 8.0,
+                    640.0,
+                    DocumentMode::Reading,
+                ),
+                Some(action)
+            );
+            assert_eq!(
+                toolbar_focus_action(
+                    contextual_toolbar_focus_start() + index,
+                    DocumentMode::Reading
+                ),
+                Some(action)
+            );
+        }
+        for (index, action) in EDITING_CONTEXT_TOOLBAR_ACTIONS.iter().copied().enumerate() {
+            let geometry = contextual_toolbar_item_geometry(index, 640.0)
+                .expect("cada herramienta de edición cabe en el mínimo");
+            assert_eq!(
+                toolbar_action_at(
+                    geometry.x + geometry.width * 0.5,
+                    CONTEXT_TOOLBAR_Y + 8.0,
+                    640.0,
+                    DocumentMode::SourceEditing,
+                ),
+                Some(action)
+            );
+            assert_eq!(
+                toolbar_focus_action(
+                    contextual_toolbar_focus_start() + index,
+                    DocumentMode::SourceEditing
+                ),
+                Some(action)
+            );
+        }
         assert_eq!(
-            adjacent_toolbar_index(0, true, READING_TOOLBAR_ACTIONS.len()),
-            READING_TOOLBAR_ACTIONS.len() - 1
+            toolbar_action_at(
+                58.0,
+                CONTEXT_TOOLBAR_Y + 8.0,
+                640.0,
+                DocumentMode::SourceEditing
+            ),
+            None,
+            "el hueco visual entre botones no ejecuta una acción"
+        );
+        assert!(
+            contextual_toolbar_item_geometry(EDITING_CONTEXT_TOOLBAR_ACTIONS.len(), 640.0)
+                .is_none()
         );
         assert_eq!(
-            adjacent_toolbar_index(
-                EDITING_TOOLBAR_ACTIONS.len() - 1,
-                false,
-                EDITING_TOOLBAR_ACTIONS.len()
+            toolbar_focus_action(
+                contextual_toolbar_focus_start() + EDITING_CONTEXT_TOOLBAR_ACTIONS.len() - 1,
+                DocumentMode::SourceEditing,
             ),
+            Some(AppAction::ToggleSplitOrientation)
+        );
+        let reading_focus_count = toolbar_focus_count(DocumentMode::Reading);
+        assert_eq!(
+            adjacent_toolbar_index(0, true, reading_focus_count),
+            reading_focus_count - 1
+        );
+        let editing_focus_count = toolbar_focus_count(DocumentMode::SourceEditing);
+        assert_eq!(
+            adjacent_toolbar_index(editing_focus_count - 1, false, editing_focus_count),
             0
         );
         assert!(!toolbar_action_is_active(
@@ -13044,7 +13100,11 @@ mod pruebas {
         );
         assert_eq!(
             toolbar_focus_count(DocumentMode::Reading),
-            READING_TOOLBAR_ACTIONS.len() + 3
+            contextual_toolbar_focus_start() + READING_CONTEXT_TOOLBAR_ACTIONS.len()
+        );
+        assert_eq!(
+            toolbar_focus_count(DocumentMode::SourceEditing),
+            contextual_toolbar_focus_start() + EDITING_CONTEXT_TOOLBAR_ACTIONS.len()
         );
         assert_eq!(
             toolbar_hint_label(
@@ -13054,6 +13114,15 @@ mod pruebas {
                 DocumentMode::Reading,
             ),
             Some("Editar Markdown · F2")
+        );
+        assert_eq!(
+            toolbar_hint_label(
+                Some(contextual_toolbar_focus_start() + EDITING_CONTEXT_TOOLBAR_ACTIONS.len() - 1),
+                None,
+                640.0,
+                DocumentMode::SourceEditing,
+            ),
+            Some(AppAction::ToggleSplitOrientation.label())
         );
     }
 
