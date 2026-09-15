@@ -46,7 +46,7 @@ contradicen esta fotografía.
 | Sprint 1 | Implementado, pendiente de cierre formal | Lector Markdown profesional con CommonMark/GFM anunciado, límites, fuente embebida, tema y regresiones; falta consolidar corpus y QA visual de release. |
 | Validación base | En curso | Gates Windows y pruebas de regresión ya existen; faltan la pasada de cierre de SBOM, advisories, benchmarks y CI multiplataforma. |
 | Lector completo | En curso | Tablas legibles con copia TSV, notas al pie, autolinks, búsqueda, índice, métricas, plegado y placeholder/PNG local confirmado están presentes; faltan corpus sistemático, imágenes inline y accesibilidad de interacción. |
-| Editor básico | En curso | Abrir, crear, edición fuente/dividida, historial, guardado atómico, conflictos explícitos y recuperación local con debounce real están implementados; renders, recargas y comprobaciones externas ya se versionan por solicitud. Faltan sincronización incremental, selección/IME y QA real de archivos y diálogos. |
+| Editor básico | En curso | Abrir, crear, edición fuente/dividida, historial, guardado atómico, conflictos explícitos y recuperación local con debounce real están implementados; la fuente se actualiza localmente por líneas y renders, recargas y comprobaciones externas se versionan por solicitud. Falta sincronización incremental del render Markdown, accesibilidad de selección/IME y QA real de archivos y diálogos. |
 | Aplicación diaria | En curso | Pestañas reordenables, cierre protegido, acciones comunes, barra de estado, paneles plegables y chrome sin borde de Windows ya existen. La comparación fuente/vista admite disposición lado a lado o apilada sin duplicar datos; faltan paneles simultáneos, ventanas separadas, accesibilidad y QA por plataforma. |
 | Corrección visual | En curso | La composición Papel + Tinta, jerarquía de superficies, tipografía, barras primaria/contextual, iconos nativos, ayuda contextual y paneles fueron realineados con diseño; faltan pulido de estados y QA humano. |
 | Workspace | En curso | Carpeta explícita, VFS, índice acotado/cancelable con cancelación visible, árbol, búsqueda y detección externa limitada ya existen. Las rutas secundarias inspeccionan reparse points antes de canonicalizar; faltan escala y QA adversarial multiplataforma. |
@@ -385,9 +385,12 @@ workspace, anotaciones y Obsidian, por lo que descubrirlo tarde sería costoso.
 - índice incremental;
 - búsqueda en carpeta;
 - navegación rápida;
-- papelera recuperable;
 - confianza temporal delimitada;
 - detección de cambios externos.
+
+La gestión destructiva de archivos, incluida una papelera, queda fuera de v2.0:
+Visor MD abre, edita y guarda solo bajo acciones explícitas, pero no organiza ni
+elimina contenido de la bóveda.
 
 ### Criterios de salida
 

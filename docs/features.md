@@ -41,7 +41,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 
 | Función | Estado | Criterio mínimo |
 | --- | --- | --- |
-| Modo fuente | Parcial | Buffer Rope, selección, IME, undo y atajos; navegación vertical por caracteres Unicode y CRLF atómico para cursor, selección y borrado; falta actualización incremental de la vista fuente |
+| Modo fuente | Parcial | Buffer Rope, selección, IME, undo y atajos; navegación vertical por caracteres Unicode y CRLF atómico para cursor, selección y borrado; la fuente actualiza sus líneas localmente, mientras el render Markdown derivado aún se reconstruye de forma asíncrona |
 | Ayudas de formato | Parcial | Negrita, cursiva, enlace, encabezado, viñeta, tarea, cita, código, tabla, resaltado, wikilink y callout editan fuente Unicode como cambios reversibles desde atajo, menú, barra o paleta; faltan QA de descubribilidad y variantes contextuales |
 | Vista dividida | Parcial | `F3` compara fuente editable y render de la misma revisión; falta QA de edición prolongada, DPI y accesibilidad |
 | Modo por documento | Parcial | Recuerda lectura, edición o vista dividida mediante hasta 128 claves hash locales; falta QA de reinicio |
@@ -113,7 +113,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Backlinks | Parcial | Panel plegable muestra y navega backlinks contenidos; falta incrementalidad |
 | Callouts | Parcial | Sintaxis Obsidian elegida y render nativo; la bóveda fixture cubre aliases, callouts, duplicados, código literal y rutas hostiles; falta corpus de compatibilidad ampliado |
 | Etiquetas y frontmatter | Planificado | Lectura sin reescritura |
-| Link peek | Planificado | Reusa renderer con límites |
+| Vista previa renderizada de nota enlazada | Planificado | Reusa renderer con límites; no confundir con el destino textual que ya se muestra al hover |
 | Referencias de bloque | Futuro | Requiere identidad estable |
 | Grafo visual | Futuro | Solo con valor demostrado |
 
