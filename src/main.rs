@@ -745,6 +745,7 @@ fn abbreviated_label(text: &str, limit: usize) -> String {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ContextAction {
+    ToggleTask,
     Paste,
     Cut,
     Bold,
@@ -770,6 +771,10 @@ enum ContextAction {
 struct ContextMenu {
     origin: (f32, f32),
     actions: Vec<ContextAction>,
+    /// La acción contextual conserva el bloque que se eligió antes de abrir
+    /// el menú. Al pulsar una fila, el puntero ya está sobre el menú, no sobre
+    /// la tarea original.
+    task_block: Option<usize>,
     /// Los menús largos conservan objetivos de puntero razonables incluso en
     /// la ventana mínima, sin quedar recortados fuera del área visible.
     row_height: f32,
@@ -959,6 +964,7 @@ enum CommandPaletteScope {
 impl ContextAction {
     fn label(self) -> &'static str {
         match self {
+            Self::ToggleTask => "Marcar o desmarcar tarea",
             Self::Paste => "Pegar",
             Self::Cut => "Cortar",
             Self::Bold => "Negrita",
@@ -986,7 +992,11 @@ impl ContextAction {
     }
 }
 
-fn context_actions(mode: DocumentMode, table_available: bool) -> Vec<ContextAction> {
+fn context_actions(
+    mode: DocumentMode,
+    table_available: bool,
+    task_available: bool,
+) -> Vec<ContextAction> {
     let mut actions = match mode {
         DocumentMode::Reading => vec![
             ContextAction::CopyText,
@@ -1013,6 +1023,9 @@ fn context_actions(mode: DocumentMode, table_available: bool) -> Vec<ContextActi
             ContextAction::CopyMarkdown,
         ],
     };
+    if mode == DocumentMode::Reading && task_available {
+        actions.insert(0, ContextAction::ToggleTask);
+    }
     if table_available {
         actions.push(ContextAction::CopyTableTsv);
     }
@@ -1965,6 +1978,15 @@ fn source_selection_at(
         anchor: source_block_cursor_at(blocks, anchor_offset)?,
         focus: source_block_cursor_at(blocks, focus_offset)?,
     })
+}
+
+fn task_block_at_cursor(blocks: &[Block], cursor: Option<BlockCursor>) -> Option<usize> {
+    let index = cursor?.block;
+    matches!(
+        blocks.get(index).map(|block| &block.marker),
+        Some(Some(Marker::Task { .. }))
+    )
+    .then_some(index)
 }
 
 impl DocumentSelection {
@@ -6299,6 +6321,11 @@ impl ApplicationHandler<AppEvent> for App {
                             .and_then(|pointer| context_action_at(&menu, pointer))
                         {
                             match action {
+                                ContextAction::ToggleTask => {
+                                    if let Some(block) = menu.task_block {
+                                        self.toggle_task(block);
+                                    }
+                                }
                                 ContextAction::Paste => self.paste_into_source(),
                                 ContextAction::Cut => self.perform_action(AppAction::Cut),
                                 ContextAction::Bold => self.perform_action(AppAction::FormatBold),
@@ -6564,8 +6591,12 @@ impl ApplicationHandler<AppEvent> for App {
                     );
                     return;
                 }
-                let actions =
-                    context_actions(self.document.mode, self.table_action_is_available_at(x, y));
+                let task_block = self.task_action_block_at(x, y);
+                let actions = context_actions(
+                    self.document.mode,
+                    self.table_action_is_available_at(x, y),
+                    task_block.is_some(),
+                );
                 let (x, y, row_height) = if let Some(window) = &self.window {
                     let size = window.inner_size();
                     let row_height = context_menu_row_height(size.height as f32, actions.len());
@@ -6580,6 +6611,7 @@ impl ApplicationHandler<AppEvent> for App {
                 self.context_menu = Some(ContextMenu {
                     origin: (x, y),
                     actions,
+                    task_block,
                     row_height,
                 });
                 if let Some(w) = &self.window {
@@ -10452,6 +10484,16 @@ impl App {
         })
     }
 
+    /// El menú contextual puede abrirse sobre el texto de la tarea, no solo
+    /// sobre su pequeña casilla. Se resuelve antes de mostrarlo para que la
+    /// acción posterior no dependa de coordenadas dentro del menú flotante.
+    fn task_action_block_at(&self, x: f32, y: f32) -> Option<usize> {
+        let cursor = self
+            .cursor_at(x, y)
+            .or_else(|| self.selection.map(|selection| selection.focus));
+        task_block_at_cursor(&self.document.blocks, cursor)
+    }
+
     fn code_copy_at(&self, x: f32, y: f32) -> Option<usize> {
         let window = self.window.as_ref()?;
         if self.document.mode == DocumentMode::Split {
@@ -13403,10 +13445,14 @@ mod pruebas {
             contextual_toolbar_actions(DocumentMode::Split)
                 .contains(&AppAction::ToggleSplitOrientation)
         );
-        assert!(!context_actions(DocumentMode::Reading, false).contains(&ContextAction::Paste));
-        assert!(context_actions(DocumentMode::Reading, false).contains(&ContextAction::CopyText));
         assert!(
-            context_actions(DocumentMode::SourceEditing, false)
+            !context_actions(DocumentMode::Reading, false, false).contains(&ContextAction::Paste)
+        );
+        assert!(
+            context_actions(DocumentMode::Reading, false, false).contains(&ContextAction::CopyText)
+        );
+        assert!(
+            context_actions(DocumentMode::SourceEditing, false, false)
                 .contains(&ContextAction::StudyTools)
         );
     }
@@ -14106,26 +14152,38 @@ mod pruebas {
     fn el_menu_contextual_solo_habilita_pegado_en_el_editor() {
         let reading_menu = ContextMenu {
             origin: (100.0, 200.0),
-            actions: context_actions(DocumentMode::Reading, false),
+            actions: context_actions(DocumentMode::Reading, false, false),
+            task_block: None,
             row_height: CONTEXT_MENU_ROW_HEIGHT,
         };
         let table_menu = ContextMenu {
             origin: (100.0, 200.0),
-            actions: context_actions(DocumentMode::Reading, true),
+            actions: context_actions(DocumentMode::Reading, true, false),
+            task_block: None,
+            row_height: CONTEXT_MENU_ROW_HEIGHT,
+        };
+        let task_menu = ContextMenu {
+            origin: (100.0, 200.0),
+            actions: context_actions(DocumentMode::Reading, false, true),
+            task_block: Some(7),
             row_height: CONTEXT_MENU_ROW_HEIGHT,
         };
         let editing_menu = ContextMenu {
             origin: (100.0, 200.0),
-            actions: context_actions(DocumentMode::SourceEditing, false),
+            actions: context_actions(DocumentMode::SourceEditing, false, false),
+            task_block: None,
             row_height: CONTEXT_MENU_ROW_HEIGHT,
         };
         assert_eq!(reading_menu.actions.len(), 3);
         assert_eq!(table_menu.actions.len(), 4);
+        assert_eq!(task_menu.actions.len(), 4);
         assert_eq!(editing_menu.actions.len(), 17);
         assert!(!reading_menu.actions.contains(&ContextAction::Paste));
         assert!(!reading_menu.actions.contains(&ContextAction::Cut));
         assert!(!reading_menu.actions.contains(&ContextAction::CopyTableTsv));
         assert!(table_menu.actions.contains(&ContextAction::CopyTableTsv));
+        assert_eq!(task_menu.actions.first(), Some(&ContextAction::ToggleTask));
+        assert_eq!(task_menu.task_block, Some(7));
         assert!(editing_menu.actions.contains(&ContextAction::Cut));
         assert!(editing_menu.actions.contains(&ContextAction::Task));
         assert!(editing_menu.actions.contains(&ContextAction::Quote));
@@ -16125,6 +16183,34 @@ Pagina 14 de 14"#;
             hit_left + hit_width < slot.x,
             "el objetivo de clic invadió el texto de la tarea"
         );
+    }
+
+    #[test]
+    fn el_menu_de_lectura_identifica_solo_la_tarea_bajo_el_cursor() {
+        let blocks = parse_blocks("- [ ] pendiente\n\ntexto normal")
+            .expect("el Markdown de prueba es válido")
+            .blocks;
+        assert_eq!(
+            task_block_at_cursor(
+                &blocks,
+                Some(BlockCursor {
+                    block: 0,
+                    offset: 0,
+                })
+            ),
+            Some(0)
+        );
+        assert_eq!(
+            task_block_at_cursor(
+                &blocks,
+                Some(BlockCursor {
+                    block: 1,
+                    offset: 0,
+                })
+            ),
+            None
+        );
+        assert_eq!(task_block_at_cursor(&blocks, None), None);
     }
 
     #[test]
