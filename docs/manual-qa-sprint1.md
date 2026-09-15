@@ -65,6 +65,9 @@ Registrar antes de comenzar:
 - Las tareas abiertas y completadas se distinguen en ambos temas. Un clic sobre
   la casilla cambia solo `[ ]`/`[x]` de la fuente, marca el documento como
   modificado y `Ctrl+Z` revierte ese cambio desde lectura.
+- Con una tarea enfocada, Espacio aplica la misma mutación. Clic derecho sobre
+  su texto ofrece “Marcar o desmarcar tarea”; ninguna de las tres rutas debe
+  tocar texto vecino.
 - Las citas anidadas muestran profundidad sin consumir un ancho excesivo.
 - La regla horizontal es visible pero no domina la página.
 - HTML no permitido aparece como fuente inerte y no cambia la interfaz.

@@ -83,6 +83,9 @@ Usar `tests/fixtures/sprint1-visual.md` y luego un Markdown propio no sensible.
 - [ ] Las tareas muestran estados distintos y las casillas se ven completas.
 - [ ] Hacer clic en una tarea disponible cambia exclusivamente `[ ]` y `[x]` de
   su fuente, marca el documento como modificado y `Ctrl+Z` lo revierte.
+- [ ] Con una tarea enfocada, Espacio alterna el mismo marcador; clic derecho
+  sobre el texto de esa tarea ofrece “Marcar o desmarcar tarea” y ambas rutas
+  conservan el mismo `Ctrl+Z`.
 - [ ] Citas simples y anidadas se distinguen por profundidad, sin solaparse.
 - [ ] Reglas horizontales, bloques de código y botón de copia de código se ven
   y funcionan sin seleccionar texto ajeno.
