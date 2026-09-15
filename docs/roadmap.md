@@ -337,8 +337,9 @@ workspace, anotaciones y Obsidian, por lo que descubrirlo tarde sería costoso.
 - mapeo fuente y render;
 - undo y redo;
 - ayudas Markdown discretas;
-  negrita, cursiva, enlace, encabezado H2 y viñeta ya comparten operaciones
-  reversibles entre teclado, menú y paleta; faltan variantes y su barra visual;
+  negrita, cursiva, tachado, código en línea, enlace, encabezado H2, listas,
+  tarea, cita, código, tabla y resaltado comparten operaciones reversibles;
+  las variantes quedan reunidas bajo `Más formato`; faltan QA de descubribilidad;
 - crear, abrir, guardar y guardar como;
 - guardado atómico;
 - cambios externos y conflictos;
@@ -396,7 +397,7 @@ elimina contenido de la bóveda.
 
 - una carpeta grande no bloquea UI;
 - índice respeta VFS, ignores y límites;
-- borrar es recuperable;
+- no existe gestión destructiva de archivos: borrar queda fuera de v2.0;
 - confiar no habilita red o ejecución;
 - cambios externos se reflejan de manera predecible.
 

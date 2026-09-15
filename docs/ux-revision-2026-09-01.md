@@ -102,15 +102,18 @@ sienten parte del mismo producto.
 
 ### C. Kit de escritura y toma de notas
 
-- **Primer cierre ampliado:** la barra ofrece negrita, cursiva, encabezado,
-  lista, tarea, cita, enlace, bloque de código, tabla, resaltado y comparación.
-  Todas escriben sintaxis Markdown estándar o portable y se deshacen como una
-  edición normal. Los bloques y tablas conservan el tipo de salto de línea del
-  documento.
+- **Primer cierre ampliado:** la barra ofrece negrita, cursiva, tachado,
+  código en línea, resaltado, encabezado, listas, tarea, cita, enlace, bloque
+  de código, tabla, `Más formato` y comparación. `Más formato` reúne la regla
+  horizontal y variantes de Obsidian sin expulsar acciones frecuentes de la
+  ventana mínima. Todas escriben sintaxis Markdown estándar o portable y se
+  deshacen como una edición normal. Los bloques y tablas conservan el tipo de
+  salto de línea del documento.
 - **Añadido:** la paleta permite insertar wikilinks `[[nota]]` y callouts de
   nota de Obsidian sin resolver rutas, abrir archivos ni cambiar preferencias.
-  El menú contextual de edición ofrece también código, tabla, resaltado, enlace
-  de bóveda y callout, además de cortar, pegar y formato básico. Pendiente:
+  El menú contextual de edición ofrece código, tabla, enlace de bóveda, callout
+  y `Más formato`, además de cortar, pegar y formato básico. `Más formato`
+  evita que el menú se extienda fuera de una ventana mínima. Pendiente:
   recursos locales seguros como acciones de escritura completas.
 - Un menú contextual largo reduce moderadamente su altura de fila en la ventana
   mínima en vez de quedar fuera de pantalla; conserva objetivos de puntero de
