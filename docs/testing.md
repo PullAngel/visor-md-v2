@@ -38,7 +38,10 @@ de un parche sin romper el archivo.
 
 Las actualizaciones locales de la vista de fuente se comparan contra la
 reconstrucción completa para inserciones, borrados, Unicode y bordes de línea.
-Los casos que no pueden demostrar rangos válidos deben caer en ese respaldo.
+El mapeo del cursor cubre cada límite legal de la fuente, incluidos LF, CRLF,
+líneas vacías y final de archivo; si una selección no se puede reconstruir se
+limpia en lugar de reutilizar geometría vieja. Los casos que no pueden demostrar
+rangos válidos deben caer en ese respaldo.
 
 La vista dividida prueba que un resultado de render actualiza la lectura sin
 reemplazar los bloques fuente editables, conserva el modo y reserva una

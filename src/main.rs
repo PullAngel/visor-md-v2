@@ -1925,6 +1925,48 @@ fn selection_fits_blocks(selection: DocumentSelection, blocks: &[Block]) -> bool
         })
 }
 
+/// Traduce un offset válido de la fuente al bloque inerte que lo representa en
+/// el editor. La ruta habitual toma el tramo visible de una línea; el respaldo
+/// cubre el final de línea cuando una reconstrucción todavía no expuso una
+/// línea vacía final. Así un cursor legal nunca reutiliza geometría anterior.
+fn source_block_cursor_at(blocks: &[Block], source_offset: usize) -> Option<BlockCursor> {
+    blocks
+        .iter()
+        .enumerate()
+        .find_map(|(block, item)| {
+            let text_end = item.source.start + item.text.len();
+            (item.source.start <= source_offset && source_offset <= text_end).then_some(
+                BlockCursor {
+                    block,
+                    offset: source_offset - item.source.start,
+                },
+            )
+        })
+        .or_else(|| {
+            blocks.iter().enumerate().find_map(|(block, item)| {
+                (item.source.start <= source_offset && source_offset <= item.source.end).then_some(
+                    BlockCursor {
+                        block,
+                        offset: source_offset
+                            .saturating_sub(item.source.start)
+                            .min(item.text.len()),
+                    },
+                )
+            })
+        })
+}
+
+fn source_selection_at(
+    blocks: &[Block],
+    anchor_offset: usize,
+    focus_offset: usize,
+) -> Option<DocumentSelection> {
+    Some(DocumentSelection {
+        anchor: source_block_cursor_at(blocks, anchor_offset)?,
+        focus: source_block_cursor_at(blocks, focus_offset)?,
+    })
+}
+
 impl DocumentSelection {
     fn collapsed(cursor: BlockCursor) -> Self {
         Self {
@@ -7880,7 +7922,7 @@ impl App {
                 self.slots.clear();
                 self.live.clear();
                 self.laid_for_width = -1.0;
-                self.selection = None;
+                self.sync_source_selection();
                 self.set_notice("edición de fuente · F2 para volver a lectura");
                 if let Some(window) = &self.window {
                     window.set_cursor(CursorIcon::Text);
@@ -7922,6 +7964,7 @@ impl App {
                 self.remember_current_document_mode();
                 self.document.blocks = blocks;
                 self.reset_document_view();
+                self.sync_source_selection();
                 self.request_render_async();
                 self.set_notice("vista dividida · fuente editable y lectura sincronizada");
                 if let Some(window) = &self.window {
@@ -9184,30 +9227,12 @@ impl App {
         true
     }
 
-    fn source_block_cursor(&self, source_offset: usize) -> Option<BlockCursor> {
-        self.document
-            .blocks
-            .iter()
-            .enumerate()
-            .find_map(|(block, item)| {
-                let text_end = item.source.start + item.text.len();
-                (item.source.start <= source_offset && source_offset <= text_end).then_some(
-                    BlockCursor {
-                        block,
-                        offset: source_offset - item.source.start,
-                    },
-                )
-            })
-    }
-
     fn sync_source_selection(&mut self) {
-        let Some(anchor) = self.source_block_cursor(self.document.source_editor.anchor()) else {
-            return;
-        };
-        let Some(focus) = self.source_block_cursor(self.document.source_editor.cursor()) else {
-            return;
-        };
-        self.selection = Some(DocumentSelection { anchor, focus });
+        self.selection = source_selection_at(
+            &self.document.blocks,
+            self.document.source_editor.anchor(),
+            self.document.source_editor.cursor(),
+        );
     }
 
     fn set_source_cursor_from_block(&mut self, cursor: BlockCursor, extend: bool) {
@@ -13759,6 +13784,37 @@ mod pruebas {
                 "caso {start}..{end}"
             );
         }
+    }
+
+    #[test]
+    fn el_cursor_de_fuente_cubre_lf_crlf_lineas_vacias_y_final() {
+        let source = TextBuffer::from_text("á\r\n\r\ndos\n\nfinal");
+        let blocks = safe_buffer_blocks(&source).expect("la fuente es válida");
+
+        for offset in 0..=source.len_bytes() {
+            let mut editor = SourceEditor::new();
+            if editor.set_cursor(&source, offset, false).is_ok() {
+                let cursor = source_block_cursor_at(&blocks, offset)
+                    .unwrap_or_else(|| panic!("sin bloque visible para offset legal {offset}"));
+                assert!(
+                    cursor.offset <= blocks[cursor.block].text.len(),
+                    "el cursor {offset} salió del texto visible"
+                );
+            }
+        }
+
+        let crlf_interior = "á\r".len();
+        assert!(
+            SourceEditor::new()
+                .set_cursor(&source, crlf_interior, false)
+                .is_err(),
+            "el cursor no puede quedar entre CR y LF"
+        );
+        assert!(source_selection_at(&blocks, 0, source.len_bytes()).is_some());
+        assert!(
+            source_selection_at(&blocks, 0, source.len_bytes() + 1).is_none(),
+            "una selección imposible debe limpiarse, no reutilizar geometría vieja"
+        );
     }
 
     #[test]
