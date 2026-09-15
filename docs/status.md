@@ -17,7 +17,7 @@ el mismo diálogo al recuperar foco. También mantiene la recuperación si una
 escritura terminó pero su verificación final no pudo completarse.
 
 El lector y el editor tienen gates automáticos verdes: la suite local actual
-reúne 234 regresiones en Windows. El gate de Windows del 9 de septiembre también verificó
+reúne 236 regresiones en Windows. El gate de Windows del 9 de septiembre también verificó
 Clippy, SBOM, documentación y un release de 3.524.096 bytes (3,361 MiB).
 La medición posterior de rutas secundarias y previews vigentes da 3.532.288
 bytes (3,369 MiB), aún con 4,631 MiB de margen frente al límite deseado.
@@ -115,8 +115,9 @@ exacto del traspaso.
 - los rangos que Comrak informa para enlaces cubren hoy el destino y no toda su
   sintaxis; es suficiente para el lector inerte actual, pero debe resolverse
   antes de edición, round-trip fino o activación de enlaces.
-- menú contextual propio inicial: solo ofrece copia de una selección y reutiliza
-  el portapapeles explícito; no abre rutas, navegador ni acciones de documento.
+- menú contextual propio: ofrece copia explícita y, sobre una tarea en lectura,
+  su cambio reversible; en edición expone ayudas Markdown. No abre rutas,
+  navegador ni acciones de documento implícitas.
 - los límites de render muestran una banda superior de modo seguro dentro de la
   ventana y mantienen la fuente inerte disponible para lectura y copia.
 - un fallo de apertura asíncrona conserva la ventana y muestra un mensaje
