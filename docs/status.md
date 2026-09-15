@@ -144,9 +144,9 @@ exacto del traspaso.
   prolongada, ventanas estrechas, DPI y correspondencia de desplazamiento.
 - las task lists se dibujan sin depender de glifos de fuente y permiten cambiar
   `[ ]` por `[x]` con clic sobre la casilla o desde el menú contextual de esa
-  tarea. La mutación toca un solo byte de la fuente, vuelve a derivar la lectura
-  con un token asíncrono propio y entra al mismo historial reversible que el
-  editor.
+  tarea. Una tarea seleccionada también responde a Espacio. La mutación toca un
+  solo byte de la fuente, vuelve a derivar la lectura con un token asíncrono
+  propio y entra al mismo historial reversible que el editor.
 - una recarga o un cambio de extensión no puede aceptar un render viejo aunque
   el contador del editor vuelva a cero. Guardar y Guardar como esperan una
   recarga pendiente, y una verificación externa vieja no abre un diálogo sobre

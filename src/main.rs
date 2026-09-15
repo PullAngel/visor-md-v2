@@ -964,7 +964,7 @@ enum CommandPaletteScope {
 impl ContextAction {
     fn label(self) -> &'static str {
         match self {
-            Self::ToggleTask => "Marcar o desmarcar tarea",
+            Self::ToggleTask => "Marcar o desmarcar tarea · Espacio",
             Self::Paste => "Pegar",
             Self::Cut => "Cortar",
             Self::Bold => "Negrita",
@@ -1987,6 +1987,10 @@ fn task_block_at_cursor(blocks: &[Block], cursor: Option<BlockCursor>) -> Option
         Some(Some(Marker::Task { .. }))
     )
     .then_some(index)
+}
+
+fn selected_task_block(blocks: &[Block], selection: Option<DocumentSelection>) -> Option<usize> {
+    task_block_at_cursor(blocks, selection.map(|selection| selection.focus))
 }
 
 impl DocumentSelection {
@@ -7125,6 +7129,18 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::Space),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } if self.document.mode == DocumentMode::Reading => {
+                self.toggle_selected_task();
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
                         physical_key: PhysicalKey::Code(KeyCode::Enter),
                         state: ElementState::Pressed,
                         repeat: false,
@@ -10558,6 +10574,14 @@ impl App {
         });
         self.selection = None;
         self.set_notice("tarea actualizada · Ctrl+Z para deshacer");
+    }
+
+    fn toggle_selected_task(&mut self) {
+        let Some(block) = selected_task_block(&self.document.blocks, self.selection) else {
+            self.set_notice("selecciona una tarea para marcarla con Espacio");
+            return;
+        };
+        self.toggle_task(block);
     }
 
     fn target_at(&self, x: f32, y: f32) -> Option<&InlineTarget> {
@@ -16211,6 +16235,17 @@ Pagina 14 de 14"#;
             None
         );
         assert_eq!(task_block_at_cursor(&blocks, None), None);
+        assert_eq!(
+            selected_task_block(
+                &blocks,
+                Some(DocumentSelection::collapsed(BlockCursor {
+                    block: 0,
+                    offset: 0,
+                }))
+            ),
+            Some(0)
+        );
+        assert_eq!(selected_task_block(&blocks, None), None);
     }
 
     #[test]
