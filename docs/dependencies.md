@@ -106,6 +106,14 @@ Esta rama llega mediante la feature `wayland-csd-adwaita` incluida por defecto e
 `winit`. No está activa en el binario Windows medido. Sí es relevante para las
 decoraciones de cliente de una ventana Wayland en Linux.
 
+### Revisión del 16 de septiembre de 2026
+
+Con la base RustSec actualizada, `cargo audit` inspeccionó 293 paquetes del
+lockfile. No informó vulnerabilidades conocidas y conservó exclusivamente
+`RUSTSEC-2026-0192` como advertencia permitida para la misma ruta transitiva.
+La advertencia no se considera cerrada: antes de distribuir Linux se revisará
+la alternativa upstream de `winit` junto con build y QA de Wayland reales.
+
 ## Decisión pendiente
 
 Alternativas razonables:
