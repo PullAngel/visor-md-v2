@@ -1,6 +1,6 @@
 # Estado actual
 
-Última revisión: 15 de septiembre de 2026.
+Última revisión: 16 de septiembre de 2026.
 
 ## Resumen
 
@@ -17,10 +17,11 @@ el mismo diálogo al recuperar foco. También mantiene la recuperación si una
 escritura terminó pero su verificación final no pudo completarse.
 
 El lector y el editor tienen gates automáticos verdes: la suite local actual
-reúne 236 regresiones en Windows. El gate de Windows del 9 de septiembre también verificó
+reúne 237 regresiones en Windows. El gate de Windows del 9 de septiembre también verificó
 Clippy, SBOM, documentación y un release de 3.524.096 bytes (3,361 MiB).
 La medición posterior de rutas secundarias y previews vigentes da 3.532.288
-bytes (3,369 MiB), aún con 4,631 MiB de margen frente al límite deseado.
+bytes (3,369 MiB). La revisión actual del selector de modo da 3.535.872 bytes
+(3,372 MiB), aún con 4,628 MiB de margen frente al límite deseado.
 Permanecen pendientes el QA humano acumulado, la
 actualización incremental de algunos modelos visibles, accesibilidad completa,
 exportación y distribución.
@@ -208,8 +209,10 @@ exacto del traspaso.
 - una barra superior sobria separa archivo de estado y navegación: Nuevo, Abrir,
   Guardar, Buscar, Espacio de trabajo y Más conservan su sitio; un selector
   segmentado lleva directamente a Leer, Editar o Comparar. Cada segmento expone
-  una ayuda breve al pasar el mouse y el estado activo usa el acento de forma
-  tenue. La segunda franja conserva formato en edición y navegación en lectura.
+  una ayuda breve al pasar el mouse y el estado activo usa un indicador de
+  acento tenue que transiciona durante 180 ms sin desplazar contenido ni
+  retrasar la acción. Reducir movimiento elimina esa transición. La segunda
+  franja conserva formato en edición y navegación en lectura.
   Todas las rutas comparten catálogo, atajo, menú y paleta, para evitar
   comportamientos distintos según cómo se invoque una operación.
 - el viewport reserva la franja inferior completa. El final del documento ya no
