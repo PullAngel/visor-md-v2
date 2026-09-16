@@ -113,6 +113,9 @@ const WINDOW_CHROME_HEIGHT: f32 = 40.0;
 /// event loop despierta solo los cuadros necesarios durante este intervalo.
 const THEME_TRANSITION_DURATION: Duration = Duration::from_millis(200);
 const THEME_TRANSITION_FRAME: Duration = Duration::from_millis(16);
+/// El selector de lectura, edición y comparación responde rápido, pero el
+/// indicador acompaña la decisión sin desplazar el documento ni el cursor.
+const MODE_SWITCH_TRANSITION_DURATION: Duration = Duration::from_millis(180);
 /// Espera una pausa breve de escritura antes de materializar la recuperación.
 /// El event loop despierta en este deadline; no se crea un hilo por pulsación.
 const RECOVERY_DEBOUNCE: Duration = Duration::from_secs(3);
@@ -160,6 +163,22 @@ const fn mode_target_label(target: ModeTarget) -> &'static str {
         ModeTarget::Reading => "Vista de lectura",
         ModeTarget::Editing => "Editar Markdown · F2",
         ModeTarget::Compare => "Comparar fuente y vista · F3",
+    }
+}
+
+const fn mode_target_slot(target: ModeTarget) -> f32 {
+    match target {
+        ModeTarget::Reading => 0.0,
+        ModeTarget::Editing => 1.0,
+        ModeTarget::Compare => 2.0,
+    }
+}
+
+const fn mode_target_for_document(mode: DocumentMode) -> ModeTarget {
+    match mode {
+        DocumentMode::Reading => ModeTarget::Reading,
+        DocumentMode::SourceEditing => ModeTarget::Editing,
+        DocumentMode::Split => ModeTarget::Compare,
     }
 }
 const READING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 6] = [
@@ -5460,6 +5479,10 @@ struct App {
     /// Preferencia de accesibilidad explícita. Mientras no exista una API
     /// uniforme de plataforma, prevalece sobre las transiciones visuales.
     reduce_motion: bool,
+    /// Animación puramente decorativa del indicador de modo. El modo real se
+    /// actualiza de inmediato; una transición nunca bloquea edición, guardado
+    /// ni render.
+    mode_transition: Option<ModeTransition>,
     /// Punto actual del cursor dentro de la ventana, en pixeles físicos.
     pointer: Option<(f32, f32)>,
     /// Texto que un IME todavía está componiendo. No forma parte de la fuente
@@ -5533,6 +5556,34 @@ struct ThemeTransition {
     started: Instant,
 }
 
+#[derive(Clone, Copy)]
+struct ModeTransition {
+    from_slot: f32,
+    to_slot: f32,
+    started: Instant,
+}
+
+impl ModeTransition {
+    fn position_at(self, now: Instant) -> f32 {
+        let progress = (now.saturating_duration_since(self.started).as_secs_f32()
+            / MODE_SWITCH_TRANSITION_DURATION.as_secs_f32())
+        .clamp(0.0, 1.0);
+        // Curva suave: acelera al salir y frena al llegar, sin rebotes.
+        let eased = progress * progress * (3.0 - 2.0 * progress);
+        self.from_slot + (self.to_slot - self.from_slot) * eased
+    }
+
+    fn finished(self, now: Instant) -> bool {
+        now.saturating_duration_since(self.started) >= MODE_SWITCH_TRANSITION_DURATION
+    }
+
+    fn next_frame_at(self, now: Instant) -> Instant {
+        let elapsed = now.saturating_duration_since(self.started);
+        let elapsed_frames = elapsed.as_nanos() / THEME_TRANSITION_FRAME.as_nanos();
+        self.started + THEME_TRANSITION_FRAME.mul_f64((elapsed_frames + 1) as f64)
+    }
+}
+
 impl ThemeTransition {
     fn palette_at(self, now: Instant) -> Palette {
         let elapsed = now.saturating_duration_since(self.started);
@@ -5566,12 +5617,20 @@ impl ApplicationHandler<AppEvent> for App {
                 Some(transition.next_frame_at(now))
             }
         });
-        let next = match (theme_deadline, self.next_recovery_deadline()) {
-            (Some(theme), Some(recovery)) => Some(theme.min(recovery)),
-            (Some(theme), None) => Some(theme),
-            (None, Some(recovery)) => Some(recovery),
-            (None, None) => None,
-        };
+        let mode_deadline = self.mode_transition.and_then(|transition| {
+            if transition.finished(now) {
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+                None
+            } else {
+                Some(transition.next_frame_at(now))
+            }
+        });
+        let next = [theme_deadline, mode_deadline, self.next_recovery_deadline()]
+            .into_iter()
+            .flatten()
+            .min();
         if let Some(next) = next.filter(|next| *next > now) {
             event_loop.set_control_flow(ControlFlow::WaitUntil(next));
         }
@@ -7321,6 +7380,9 @@ impl ApplicationHandler<AppEvent> for App {
 
 impl App {
     fn select_mode(&mut self, target: ModeTarget) {
+        if mode_target_for_document(self.document.mode) != target {
+            self.begin_mode_transition(target);
+        }
         match target {
             ModeTarget::Reading if self.document.mode != DocumentMode::Reading => {
                 self.refresh_reading_async("vista de lectura")
@@ -7344,14 +7406,16 @@ impl App {
             AppAction::CloseDocument => self.close_active_document_tab(),
             AppAction::TogglePinTab => self.toggle_active_tab_pin(),
             AppAction::ToggleMode => match self.document.mode {
-                DocumentMode::Reading => self.enter_source_mode(),
+                DocumentMode::Reading => self.select_mode(ModeTarget::Editing),
                 DocumentMode::SourceEditing | DocumentMode::Split => {
-                    self.refresh_reading_async("actualizando vista de lectura")
+                    self.select_mode(ModeTarget::Reading)
                 }
             },
             AppAction::ToggleSplit => match self.document.mode {
-                DocumentMode::Split => self.refresh_reading_async("cerrando vista dividida"),
-                DocumentMode::Reading | DocumentMode::SourceEditing => self.enter_split_mode(),
+                DocumentMode::Split => self.select_mode(ModeTarget::Reading),
+                DocumentMode::Reading | DocumentMode::SourceEditing => {
+                    self.select_mode(ModeTarget::Compare)
+                }
             },
             AppAction::ToggleSplitOrientation => {
                 if self.document.mode != DocumentMode::Split {
@@ -7462,6 +7526,24 @@ impl App {
         self.preview_live.clear();
     }
 
+    fn begin_mode_transition(&mut self, target: ModeTarget) {
+        let now = Instant::now();
+        let from_slot = self
+            .mode_transition
+            .map(|transition| transition.position_at(now))
+            .unwrap_or_else(|| mode_target_slot(mode_target_for_document(self.document.mode)));
+        let to_slot = mode_target_slot(target);
+        if self.reduce_motion || (from_slot - to_slot).abs() <= f32::EPSILON {
+            self.mode_transition = None;
+            return;
+        }
+        self.mode_transition = Some(ModeTransition {
+            from_slot,
+            to_slot,
+            started: now,
+        });
+    }
+
     /// Aplica un escalón de color solo al comenzar un cuadro. Como las
     /// cachés de texto contienen el color de cada tramo, se invalidan los
     /// bloques visibles, nunca el modelo Markdown ni la medición geométrica.
@@ -7482,6 +7564,15 @@ impl App {
         }
     }
 
+    fn advance_mode_transition(&mut self) {
+        let Some(transition) = self.mode_transition else {
+            return;
+        };
+        if transition.finished(Instant::now()) {
+            self.mode_transition = None;
+        }
+    }
+
     fn toggle_reduce_motion(&mut self) {
         self.reduce_motion = !self.reduce_motion;
         if self.reduce_motion
@@ -7490,6 +7581,9 @@ impl App {
             self.palette = transition.to;
             self.live.clear();
             self.preview_live.clear();
+        }
+        if self.reduce_motion {
+            self.mode_transition = None;
         }
         self.settings.reduce_motion = self.reduce_motion;
         if self.settings.store().is_err() {
@@ -10980,6 +11074,7 @@ impl App {
 
     fn redraw(&mut self) -> Result<(), String> {
         self.advance_theme_transition();
+        self.advance_mode_transition();
         let Some(window) = self.window.clone() else {
             return Ok(());
         };
@@ -12097,10 +12192,23 @@ impl App {
         }
         let accent = palette.accent;
         let mut mode_active_paint = Paint::default();
-        mode_active_paint.set_color(Color::from_rgba8(accent.0, accent.1, accent.2, 36));
+        mode_active_paint.set_color(Color::from_rgba8(accent.0, accent.1, accent.2, 48));
+        let mode_width = MODE_SWITCH_WIDTH / 3.0;
+        let mode_indicator_slot = self
+            .mode_transition
+            .map(|transition| transition.position_at(Instant::now()))
+            .unwrap_or_else(|| mode_target_slot(mode_target_for_document(context_mode)));
+        if let Some(rect) = Rect::from_xywh(
+            MODE_SWITCH_X + mode_indicator_slot * mode_width + 2.0,
+            TOOLBAR_Y + 2.0,
+            mode_width - 4.0,
+            MODE_SWITCH_HEIGHT - 4.0,
+        ) {
+            pixmap.fill_rect(rect, &mode_active_paint, Transform::identity(), None);
+        }
         for separator in 1..3 {
             if let Some(rect) = Rect::from_xywh(
-                MODE_SWITCH_X + separator as f32 * (MODE_SWITCH_WIDTH / 3.0),
+                MODE_SWITCH_X + separator as f32 * mode_width,
                 TOOLBAR_Y + 5.0,
                 1.0,
                 MODE_SWITCH_HEIGHT - 10.0,
@@ -12116,7 +12224,7 @@ impl App {
         .into_iter()
         .enumerate()
         {
-            let width = MODE_SWITCH_WIDTH / 3.0;
+            let width = mode_width;
             let x = MODE_SWITCH_X + index as f32 * width;
             let active = matches!(
                 (target, context_mode),
@@ -12125,9 +12233,6 @@ impl App {
                     | (ModeTarget::Compare, DocumentMode::Split)
             );
             let focused = toolbar_focus == Some(PRIMARY_TOOLBAR_ACTIONS.len() + index);
-            if active && let Some(rect) = Rect::from_xywh(x, TOOLBAR_Y, width, MODE_SWITCH_HEIGHT) {
-                pixmap.fill_rect(rect, &mode_active_paint, Transform::identity(), None);
-            }
             if focused
                 && let Some(rect) =
                     Rect::from_xywh(x, TOOLBAR_Y + MODE_SWITCH_HEIGHT - 2.0, width, 2.0)
@@ -12140,7 +12245,9 @@ impl App {
                 x + (width - 18.0) * 0.5,
                 TOOLBAR_Y + 5.0,
                 18.0,
-                if active || focused {
+                if active {
+                    palette.text
+                } else if focused {
                     palette.accent
                 } else {
                     palette.dim
@@ -12959,6 +13066,7 @@ fn main() {
         palette: NIGHT,
         theme_transition: None,
         reduce_motion,
+        mode_transition: None,
         pointer: None,
         ime_preedit: None,
         tab_drag_id: None,
@@ -13796,6 +13904,30 @@ mod pruebas {
         assert!(
             transition.next_frame_at(started) > started,
             "un cuadro futuro evita redibujar en bucle"
+        );
+    }
+
+    #[test]
+    fn el_indicador_de_modo_anima_sin_rebasar_sus_destinos() {
+        let started = Instant::now();
+        let transition = ModeTransition {
+            from_slot: mode_target_slot(ModeTarget::Reading),
+            to_slot: mode_target_slot(ModeTarget::Compare),
+            started,
+        };
+
+        assert_eq!(transition.position_at(started), 0.0);
+        let middle = transition.position_at(started + MODE_SWITCH_TRANSITION_DURATION / 2);
+        assert!(middle > 0.0 && middle < 2.0);
+        assert_eq!(
+            transition.position_at(started + MODE_SWITCH_TRANSITION_DURATION),
+            2.0
+        );
+        assert!(transition.finished(started + MODE_SWITCH_TRANSITION_DURATION));
+        assert!(transition.next_frame_at(started) > started);
+        assert_eq!(
+            mode_target_for_document(DocumentMode::SourceEditing),
+            ModeTarget::Editing
         );
     }
 

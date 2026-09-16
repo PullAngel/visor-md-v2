@@ -97,7 +97,9 @@ en reposo**. En la v1 todos lo llevan y compiten con el documento. Estados:
 La barra superior contiene solo acciones del documento: Nuevo, Abrir, Guardar,
 Buscar, Espacio de trabajo y Más. A continuación incorpora un selector segmentado
 de tres estados, claramente separado: Leer, Editar y Comparar. El selector muestra
-el estado actual con fondo del acento al 14 %, icono en acento y separadores sobrios;
+el estado actual con un indicador interior del acento, icono en acento y
+separadores sobrios; al cambiar de destino, ese indicador viaja durante 180 ms
+sin desplazar el documento ni retrasar el cambio de modo;
 cada segmento es un destino directo, no un botón que obliga a recorrer modos. Debajo vive una segunda franja contextual, que
 evita mezclar archivo, formato y navegación: en edición muestra Negrita,
 Cursiva, Tachado, Código en línea, Resaltado, H2, Lista, Lista ordenada,
@@ -201,7 +203,8 @@ solo en confirmaciones.
 
 La acción local **Reducir movimiento** prevalece sobre estas duraciones cuando
 la plataforma todavía no expone una preferencia equivalente: el cambio de tema
-se vuelve instantáneo y las futuras transiciones deben seguir la misma regla.
+y el indicador del selector de modo se vuelven instantáneos, y las futuras
+transiciones deben seguir la misma regla.
 
 **Reglas:** el texto nunca se mueve · solo `transform` y `opacity` · lo que sale
 sale más rápido que lo que entra · se respeta `prefers-reduced-motion` · nada en

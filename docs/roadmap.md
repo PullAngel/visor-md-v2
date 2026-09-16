@@ -149,10 +149,11 @@ lógica dentro de la sesión.
    permitir sacar una vista a otra ventana. La ventana secundaria comparte la
    sesión, no duplica autoridad de guardado; su cierre, DPI, foco y retorno a
    la ventana principal tendrán pruebas propias.
-5. **Movimiento y reducción de movimiento.** Aplicar transiciones breves a
-   pestañas, toggles, paneles y divisiones sin mover el texto ni retrasar la
-   entrada. Respeta la preferencia de reducción de movimiento cuando la
-   plataforma la expone y conserva una ruta instantánea accesible.
+5. **Movimiento y reducción de movimiento.** El indicador del selector de modo
+   ya transiciona sin mover el texto ni retrasar la entrada y tiene ruta
+   instantánea. Aplicar el mismo criterio a pestañas, paneles y divisiones;
+   respeta la preferencia de reducción de movimiento cuando la plataforma la
+   expone.
 
 El modelo seguro de paneles ya existe con pruebas de identidad, colapso y
 geometría. Cada hoja tiene ahora una identidad de vista distinta de la del

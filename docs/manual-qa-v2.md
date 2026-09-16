@@ -125,13 +125,16 @@ Usar `tests/fixtures/sprint1-visual.md` y luego un Markdown propio no sensible.
 - [ ] El selector Leer, Editar y Comparar se reconoce como un control de estado:
   el segmento activo se distingue sin llenar la barra de color y cada segmento
   lleva directamente a su vista.
+- [ ] Al cambiar entre Leer, Editar y Comparar, el indicador interior se mueve
+  con fluidez y termina en el segmento correcto sin mover el texto, el cursor ni
+  retrasar la escritura o el guardado.
 - [ ] Pasar el mouse por cada segmento muestra una ayuda comprensible; el cursor
   cambia a puntero y esa zona nunca arrastra la ventana.
 - [ ] Con `F6`, las flechas recorren también Leer, Editar y Comparar; Enter o
   Espacio activa el segmento enfocado y Escape devuelve el foco al documento.
 - [ ] La transición de tema es breve, no desplaza el contenido y termina.
-- [ ] Con reducir movimiento activado, el cambio de tema es inmediato y la
-  preferencia sobrevive al reinicio.
+- [ ] Con reducir movimiento activado, el cambio de tema y el indicador del
+  selector de modo son inmediatos y la preferencia sobrevive al reinicio.
 - [ ] En 100 %, 125 %, 150 % y, si es posible, 200 % DPI, tipografía, iconos,
   paneles, barras y áreas de clic siguen alineados.
 - [ ] Al mover la ventana entre monitores con escalas distintas, no aparecen
