@@ -9,14 +9,16 @@ Para comprender el proyecto en poco tiempo:
 
 1. [`../AGENTS.md`](../AGENTS.md): reglas operativas y decisiones que no deben
    cambiarse accidentalmente.
-2. [`status.md`](status.md): qué funciona realmente y qué está incompleto.
-3. [`product.md`](product.md): usuarios, experiencias y alcance.
-4. [`architecture.md`](architecture.md): dirección técnica y distancia respecto
+2. [`project-dashboard.md`](project-dashboard.md): avance, deuda, riesgos y
+   próximo orden de trabajo en una sola vista.
+3. [`status.md`](status.md): qué funciona realmente y qué está incompleto.
+4. [`product.md`](product.md): usuarios, experiencias y alcance.
+5. [`architecture.md`](architecture.md): dirección técnica y distancia respecto
    de la implementación actual.
-5. [`security.md`](security.md): políticas de seguridad explicadas y controles.
-6. [`roadmap.md`](roadmap.md): orden de recuperación y desarrollo.
-7. [`testing.md`](testing.md): estrategia de QA y evidencia necesaria.
-8. [`glossary.md`](glossary.md): jerga de ciberseguridad y QA en lenguaje
+6. [`security.md`](security.md): políticas de seguridad explicadas y controles.
+7. [`roadmap.md`](roadmap.md): orden de recuperación y desarrollo.
+8. [`testing.md`](testing.md): estrategia de QA y evidencia necesaria.
+9. [`glossary.md`](glossary.md): jerga de ciberseguridad y QA en lenguaje
    natural.
 
 ## Documentos vivos
@@ -41,6 +43,7 @@ Estos documentos deben cambiar cuando cambia el producto o su implementación:
 | [`budget.md`](budget.md) | Tamaño, arranque, memoria y reproducción |
 | [`benchmarks/`](benchmarks/) | Reportes crudos de rendimiento versionados |
 | [`roadmap.md`](roadmap.md) | Secuencia, dependencias y criterios de salida |
+| [`project-dashboard.md`](project-dashboard.md) | Fotografía compacta de avance, deuda, riesgos y siguiente orden |
 | [`design.md`](design.md) | Sistema visual e interacción |
 | [`design-audit.md`](design-audit.md) | Evidencia y plan vigente de corrección visual |
 | [`editor-workspace-ui-audit.md`](editor-workspace-ui-audit.md) | Auditoría y secuencia UX de edición, índice y bóvedas |
