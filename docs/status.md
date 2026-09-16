@@ -17,11 +17,11 @@ el mismo diálogo al recuperar foco. También mantiene la recuperación si una
 escritura terminó pero su verificación final no pudo completarse.
 
 El lector y el editor tienen gates automáticos verdes: la suite local actual
-reúne 237 regresiones en Windows. El gate de Windows del 9 de septiembre también verificó
+reúne 238 regresiones en Windows. El gate de Windows del 9 de septiembre también verificó
 Clippy, SBOM, documentación y un release de 3.524.096 bytes (3,361 MiB).
 La medición posterior de rutas secundarias y previews vigentes da 3.532.288
-bytes (3,369 MiB). La revisión actual del selector de modo da 3.535.872 bytes
-(3,372 MiB), aún con 4,628 MiB de margen frente al límite deseado.
+bytes (3,369 MiB). La revisión actual del selector de modo da 3.536.896 bytes
+(3,373 MiB), aún con 4,627 MiB de margen frente al límite deseado.
 
 El gate completo del 16 de septiembre confirmó formato, Clippy estricto, las
 237 regresiones, SBOM CycloneDX vigente, enlaces de documentación y build

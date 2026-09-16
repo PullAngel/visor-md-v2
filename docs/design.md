@@ -84,6 +84,11 @@ justo lo que le faltaba al modo noche de la v1. La paleta de arriba ya cumple.
 
 Trazo 1.5, terminaciones y uniones redondeadas, rejilla de 24.
 
+Los controles que expresan una elección sostenida pueden usar radio moderado;
+el selector Leer, Editar y Comparar usa 6 px en su base y 4 px en su indicador.
+No se aplica esta forma al documento ni a cada botón de barra: conserva una
+sensación orgánica sin volver la interfaz una sucesión de cápsulas.
+
 **Corrección respecto de la v1:** los botones de barra **no llevan fondo verde
 en reposo**. En la v1 todos lo llevan y compiten con el documento. Estados:
 

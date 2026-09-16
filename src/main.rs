@@ -2987,6 +2987,82 @@ fn draw_checkbox(pixmap: &mut Pixmap, x: f32, y: f32, size: f32, done: bool, pal
     }
 }
 
+/// Rellena un control con un radio moderado. Se usa solo en elementos que
+/// comunican una elección o una capa elevada; el documento continúa plano.
+fn fill_rounded_rect(
+    pixmap: &mut Pixmap,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    radius: f32,
+    paint: &Paint,
+) {
+    if width <= 0.0 || height <= 0.0 {
+        return;
+    }
+    let radius = radius.clamp(0.0, width.min(height) * 0.5);
+    if radius <= f32::EPSILON {
+        if let Some(rect) = Rect::from_xywh(x, y, width, height) {
+            pixmap.fill_rect(rect, paint, Transform::identity(), None);
+        }
+        return;
+    }
+
+    // Aproximación cúbica estándar de un cuarto de círculo.
+    let handle = radius * 0.552_284_8;
+    let right = x + width;
+    let bottom = y + height;
+    let mut path = tiny_skia::PathBuilder::new();
+    path.move_to(x + radius, y);
+    path.line_to(right - radius, y);
+    path.cubic_to(
+        right - radius + handle,
+        y,
+        right,
+        y + radius - handle,
+        right,
+        y + radius,
+    );
+    path.line_to(right, bottom - radius);
+    path.cubic_to(
+        right,
+        bottom - radius + handle,
+        right - radius + handle,
+        bottom,
+        right - radius,
+        bottom,
+    );
+    path.line_to(x + radius, bottom);
+    path.cubic_to(
+        x + radius - handle,
+        bottom,
+        x,
+        bottom - radius + handle,
+        x,
+        bottom - radius,
+    );
+    path.line_to(x, y + radius);
+    path.cubic_to(
+        x,
+        y + radius - handle,
+        x + radius - handle,
+        y,
+        x + radius,
+        y,
+    );
+    path.close();
+    if let Some(path) = path.finish() {
+        pixmap.fill_path(
+            &path,
+            paint,
+            tiny_skia::FillRule::Winding,
+            Transform::identity(),
+            None,
+        );
+    }
+}
+
 /// Iconos pequeños, dibujados sin una fuente de pictogramas para conservar el
 /// binario y los estados visuales bajo el control del renderer nativo.
 fn draw_toolbar_icon(
@@ -12185,14 +12261,15 @@ impl App {
                 icon_color,
             );
         }
-        if let Some(rect) = Rect::from_xywh(
+        fill_rounded_rect(
+            pixmap,
             MODE_SWITCH_X,
             TOOLBAR_Y,
             MODE_SWITCH_WIDTH,
             MODE_SWITCH_HEIGHT,
-        ) {
-            pixmap.fill_rect(rect, &elevated_paint, Transform::identity(), None);
-        }
+            6.0,
+            &elevated_paint,
+        );
         let accent = palette.accent;
         let mut mode_active_paint = Paint::default();
         mode_active_paint.set_color(Color::from_rgba8(accent.0, accent.1, accent.2, 48));
@@ -12201,14 +12278,15 @@ impl App {
             .mode_transition
             .map(|transition| transition.position_at(Instant::now()))
             .unwrap_or_else(|| mode_target_slot(mode_target_for_document(context_mode)));
-        if let Some(rect) = Rect::from_xywh(
+        fill_rounded_rect(
+            pixmap,
             MODE_SWITCH_X + mode_indicator_slot * mode_width + 2.0,
             TOOLBAR_Y + 2.0,
             mode_width - 4.0,
             MODE_SWITCH_HEIGHT - 4.0,
-        ) {
-            pixmap.fill_rect(rect, &mode_active_paint, Transform::identity(), None);
-        }
+            4.0,
+            &mode_active_paint,
+        );
         for separator in 1..3 {
             if let Some(rect) = Rect::from_xywh(
                 MODE_SWITCH_X + separator as f32 * mode_width,
@@ -14654,6 +14732,28 @@ mod pruebas {
             terminada.data(),
             pendiente.data(),
             "los dos estados de tarea producen la misma imagen"
+        );
+    }
+
+    #[test]
+    fn un_control_redondeado_conserva_esquinas_planas_y_centro_visible() {
+        let mut pixmap = Pixmap::new(20, 20).unwrap();
+        let before = pixmap.data().to_vec();
+        let mut paint = Paint::default();
+        paint.set_color(Color::from_rgba8(80, 180, 120, 255));
+
+        fill_rounded_rect(&mut pixmap, 2.0, 2.0, 16.0, 16.0, 5.0, &paint);
+
+        assert_eq!(
+            &pixmap.data()[..4],
+            &before[..4],
+            "la esquina exterior se relleno"
+        );
+        let center = (10 * 20 + 10) * 4;
+        assert_ne!(
+            &pixmap.data()[center..center + 4],
+            &before[center..center + 4],
+            "el centro del control no se dibujo"
         );
     }
 
