@@ -22,6 +22,12 @@ Clippy, SBOM, documentación y un release de 3.524.096 bytes (3,361 MiB).
 La medición posterior de rutas secundarias y previews vigentes da 3.532.288
 bytes (3,369 MiB). La revisión actual del selector de modo da 3.535.872 bytes
 (3,372 MiB), aún con 4,628 MiB de margen frente al límite deseado.
+
+El gate completo del 16 de septiembre confirmó formato, Clippy estricto, las
+237 regresiones, SBOM CycloneDX vigente, enlaces de documentación y build
+release. La validación visual, de accesibilidad y por plataforma permanece como
+trabajo humano explícito; no se presenta una suite automatizada como sustituto
+de esa evidencia.
 Permanecen pendientes el QA humano acumulado, la
 actualización incremental de algunos modelos visibles, accesibilidad completa,
 exportación y distribución.
