@@ -7542,6 +7542,9 @@ impl App {
             to_slot,
             started: now,
         });
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
     }
 
     /// Aplica un escalón de color solo al comenzar un cuadro. Como las
