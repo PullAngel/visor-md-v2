@@ -132,11 +132,11 @@ duplicar documentos, buffers, historial, guardados ni recuperaciones. Cada
 panel solo referencia un documento que continúa teniendo una única propiedad
 lógica dentro de la sesión.
 
-1. **Modelo seguro de paneles.** Introducir un árbol binario de paneles con
-   hojas que referencian identificadores de documento y divisiones horizontal o
-   vertical. Probar sus invariantes: una división conserva los documentos,
-   evita IDs ausentes, mantiene proporciones acotadas y no crea una segunda
-   recuperación ni buffer.
+1. **Modelo seguro de paneles.** Introducir un árbol binario de hasta cuatro
+   paneles con hojas que referencian identificadores de documentos distintos y
+   divisiones horizontal o vertical. Probar sus invariantes: una división
+   conserva los documentos, evita IDs ausentes o repetidos, mantiene
+   proporciones acotadas y no crea una segunda recuperación ni buffer.
 2. **Interacción y dibujo por panel.** Asignar foco, scroll, selección y
    geometría a cada panel; permitir dividir la pestaña activa y elegir qué
    documento muestra cada lado. Las pestañas siguen siendo la lista de
@@ -157,8 +157,8 @@ lógica dentro de la sesión.
 
 El modelo seguro de paneles ya existe con pruebas de identidad, colapso y
 geometría. Cada hoja tiene ahora una identidad de vista distinta de la del
-documento: una misma nota puede ocupar dos paneles sin duplicar fuente, historial
-ni recuperación, y cambiar de pestaña solo sustituye la vista enfocada. El
+documento: cada panel requiere una nota distinta, con un máximo de cuatro por
+ventana, y cambiar de pestaña solo sustituye la vista enfocada. El
 siguiente bloque activo es conectarlo a dibujo, foco, scroll y selección reales
 sin convertir esas pruebas de base en una función declarada antes de tiempo. Las
 animaciones se integran sobre geometría estable: no se añadirán efectos que

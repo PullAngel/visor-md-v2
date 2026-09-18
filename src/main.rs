@@ -270,9 +270,10 @@ const WRITING_ACTIONS: [AppAction; 15] = [
 ];
 static NEXT_DOCUMENT_ID: AtomicU64 = AtomicU64::new(1);
 /// Identidad efímera de una vista. No coincide con la identidad del documento:
-/// dos paneles pueden observar la misma fuente sin crear otro buffer, historial
-/// ni archivo de recuperación.
+/// cada panel muestra un documento distinto de la misma sesión, sin crear
+/// buffers, historiales ni archivos de recuperación adicionales.
 static NEXT_DOCUMENT_PANE_ID: AtomicU64 = AtomicU64::new(1);
+const MAX_DOCUMENT_PANES: usize = 4;
 
 /// Windows recibe chrome propio para realizar la dirección visual aprobada. En
 /// otras plataformas se conserva el chrome nativo hasta tener el mismo nivel
@@ -1375,6 +1376,13 @@ impl DocumentPaneTree {
         }
     }
 
+    fn pane_count(&self) -> usize {
+        match self {
+            Self::Leaf { .. } => 1,
+            Self::Split { first, second, .. } => first.pane_count() + second.pane_count(),
+        }
+    }
+
     #[cfg_attr(not(test), allow(dead_code))]
     fn document_ids(&self, output: &mut Vec<u64>) {
         match self {
@@ -1397,6 +1405,9 @@ impl DocumentPaneTree {
     }
 
     fn replace_pane_document(&mut self, pane_id: u64, document_id: u64) -> bool {
+        if self.pane_for_document(document_id).is_some() {
+            return false;
+        }
         match self {
             Self::Leaf {
                 pane_id: current_pane,
@@ -1420,6 +1431,10 @@ impl DocumentPaneTree {
         adjacent_id: u64,
         axis: DocumentPaneAxis,
     ) -> Option<u64> {
+        if self.pane_count() >= MAX_DOCUMENT_PANES || self.pane_for_document(adjacent_id).is_some()
+        {
+            return None;
+        }
         match self {
             Self::Leaf {
                 pane_id: current_pane,
@@ -13856,7 +13871,7 @@ mod pruebas {
     }
 
     #[test]
-    fn los_paneles_referencian_documentos_sin_duplicar_su_estado() {
+    fn los_paneles_referencian_hasta_cuatro_documentos_distintos() {
         let mut panes = DocumentPaneTree::single(10);
         let principal = panes.first_pane_id();
         let secundario = panes
@@ -13866,16 +13881,26 @@ mod pruebas {
         assert_eq!(panes.pane_for_document(10), Some(principal));
         assert_eq!(panes.pane_for_document(20), Some(secundario));
 
-        // Dos vistas pueden observar la misma fuente. La identidad de vista
-        // sigue siendo distinta y el árbol no crea otro documento de sesión.
-        let duplicado = panes
-            .split_pane(principal, 10, DocumentPaneAxis::Horizontal)
-            .expect("una segunda vista del mismo documento es válida");
-        assert_ne!(principal, duplicado);
+        assert_eq!(
+            panes.split_pane(principal, 10, DocumentPaneAxis::Horizontal),
+            None
+        );
+        let tercero = panes
+            .split_pane(principal, 30, DocumentPaneAxis::Horizontal)
+            .expect("un tercer documento cabe en la ventana");
+        let cuarto = panes
+            .split_pane(tercero, 40, DocumentPaneAxis::Vertical)
+            .expect("un cuarto documento cabe en la ventana");
+        assert_ne!(tercero, cuarto);
+        assert_eq!(panes.pane_count(), MAX_DOCUMENT_PANES);
+        assert_eq!(
+            panes.split_pane(cuarto, 50, DocumentPaneAxis::Vertical),
+            None
+        );
         let mut ids = Vec::new();
         panes.document_ids(&mut ids);
-        assert_eq!(ids, vec![10, 10, 20]);
-        assert!(panes.references_only(&HashSet::from([10, 20])));
+        assert_eq!(ids, vec![10, 30, 40, 20]);
+        assert!(panes.references_only(&HashSet::from([10, 20, 30, 40])));
         assert!(!panes.references_only(&HashSet::from([10])));
 
         let collapsed = panes
@@ -13883,8 +13908,8 @@ mod pruebas {
             .expect("el panel restante se conserva");
         let mut retained = Vec::new();
         collapsed.document_ids(&mut retained);
-        assert_eq!(retained, vec![20]);
-        assert_eq!(collapsed.first_pane_id(), secundario);
+        assert_eq!(retained, vec![30, 40, 20]);
+        assert_eq!(collapsed.first_pane_id(), tercero);
     }
 
     #[test]
@@ -13899,6 +13924,7 @@ mod pruebas {
         assert_eq!(panes.pane_for_document(10), Some(principal));
         assert_eq!(panes.pane_for_document(20), None);
         assert_eq!(panes.pane_for_document(30), Some(secundario));
+        assert!(!panes.replace_pane_document(secundario, 10));
         assert!(!panes.replace_pane_document(999, 40));
     }
 
