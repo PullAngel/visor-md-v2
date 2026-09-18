@@ -8211,9 +8211,13 @@ impl App {
             document: current,
             recovery: current_recovery,
         });
-        let _ = self
-            .document_panes
-            .replace_pane_document(self.focused_document_pane, document_id);
+        if let Some(existing_pane) = self.document_panes.pane_for_document(document_id) {
+            self.focused_document_pane = existing_pane;
+        } else {
+            let _ = self
+                .document_panes
+                .replace_pane_document(self.focused_document_pane, document_id);
+        }
         self.reset_document_view();
         self.refresh_title();
         self.check_external_change();
