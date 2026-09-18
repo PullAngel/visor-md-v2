@@ -1079,6 +1079,7 @@ fn context_actions(
     mode: DocumentMode,
     table_available: bool,
     task_available: bool,
+    source_selection_available: bool,
 ) -> Vec<ContextAction> {
     let mut actions = match mode {
         DocumentMode::Reading => vec![
@@ -1088,7 +1089,6 @@ fn context_actions(
         ],
         DocumentMode::SourceEditing | DocumentMode::Split => vec![
             ContextAction::Paste,
-            ContextAction::Cut,
             ContextAction::Bold,
             ContextAction::Italic,
             ContextAction::Link,
@@ -1102,10 +1102,13 @@ fn context_actions(
             ContextAction::WikiLink,
             ContextAction::Callout,
             ContextAction::StudyTools,
-            ContextAction::CopyText,
-            ContextAction::CopyMarkdown,
         ],
     };
+    if mode.is_editable() && source_selection_available {
+        actions.insert(1, ContextAction::Cut);
+        actions.push(ContextAction::CopyText);
+        actions.push(ContextAction::CopyMarkdown);
+    }
     if mode == DocumentMode::Reading && task_available {
         actions.insert(0, ContextAction::ToggleTask);
     }
@@ -1130,6 +1133,12 @@ fn context_action_at(menu: &ContextMenu, pointer: (f32, f32)) -> Option<ContextA
     menu.actions
         .get(((y - top) / menu.row_height) as usize)
         .copied()
+}
+
+/// Un menú contextual propio es una capa efímera: Escape lo descarta y el
+/// resto del teclado no llega al editor que queda visualmente detrás.
+fn transient_menu_dismisses_for(key: KeyCode, state: ElementState) -> bool {
+    state == ElementState::Pressed && key == KeyCode::Escape
 }
 
 #[derive(Default)]
@@ -6832,6 +6841,7 @@ impl ApplicationHandler<AppEvent> for App {
                     self.document.mode,
                     self.table_action_is_available_at(x, y),
                     task_block.is_some(),
+                    !self.document.source_editor.selection().is_empty(),
                 );
                 let (x, y, row_height) = if let Some(window) = &self.window {
                     let size = window.inner_size();
@@ -6876,6 +6886,15 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::Ime(Ime::Commit(text)) if self.document.mode.is_editable() => {
                 self.ime_preedit = None;
                 self.edit_source(|editor, source| editor.insert(source, text.as_str()));
+            }
+            WindowEvent::KeyboardInput { event, .. } if self.context_menu.is_some() => {
+                if matches!(event.physical_key, PhysicalKey::Code(key) if transient_menu_dismisses_for(key, event.state))
+                {
+                    self.context_menu = None;
+                    if let Some(window) = &self.window {
+                        window.request_redraw();
+                    }
+                }
             }
             WindowEvent::KeyboardInput { event, .. } if self.command_palette.is_some() => {
                 self.handle_command_palette_key(&event);
@@ -13802,13 +13821,15 @@ mod pruebas {
                 .contains(&AppAction::ToggleSplitOrientation)
         );
         assert!(
-            !context_actions(DocumentMode::Reading, false, false).contains(&ContextAction::Paste)
+            !context_actions(DocumentMode::Reading, false, false, false)
+                .contains(&ContextAction::Paste)
         );
         assert!(
-            context_actions(DocumentMode::Reading, false, false).contains(&ContextAction::CopyText)
+            context_actions(DocumentMode::Reading, false, false, false)
+                .contains(&ContextAction::CopyText)
         );
         assert!(
-            context_actions(DocumentMode::SourceEditing, false, false)
+            context_actions(DocumentMode::SourceEditing, false, false, false)
                 .contains(&ContextAction::StudyTools)
         );
     }
@@ -14529,42 +14550,62 @@ mod pruebas {
     }
 
     #[test]
-    fn el_menu_contextual_solo_habilita_pegado_en_el_editor() {
+    fn el_menu_contextual_muestra_cortar_solo_con_seleccion_de_fuente() {
         let reading_menu = ContextMenu {
             origin: (100.0, 200.0),
-            actions: context_actions(DocumentMode::Reading, false, false),
+            actions: context_actions(DocumentMode::Reading, false, false, false),
             task_block: None,
             row_height: CONTEXT_MENU_ROW_HEIGHT,
         };
         let table_menu = ContextMenu {
             origin: (100.0, 200.0),
-            actions: context_actions(DocumentMode::Reading, true, false),
+            actions: context_actions(DocumentMode::Reading, true, false, false),
             task_block: None,
             row_height: CONTEXT_MENU_ROW_HEIGHT,
         };
         let task_menu = ContextMenu {
             origin: (100.0, 200.0),
-            actions: context_actions(DocumentMode::Reading, false, true),
+            actions: context_actions(DocumentMode::Reading, false, true, false),
             task_block: Some(7),
             row_height: CONTEXT_MENU_ROW_HEIGHT,
         };
         let editing_menu = ContextMenu {
             origin: (100.0, 200.0),
-            actions: context_actions(DocumentMode::SourceEditing, false, false),
+            actions: context_actions(DocumentMode::SourceEditing, false, false, false),
+            task_block: None,
+            row_height: CONTEXT_MENU_ROW_HEIGHT,
+        };
+        let selected_editing_menu = ContextMenu {
+            origin: (100.0, 200.0),
+            actions: context_actions(DocumentMode::SourceEditing, false, false, true),
             task_block: None,
             row_height: CONTEXT_MENU_ROW_HEIGHT,
         };
         assert_eq!(reading_menu.actions.len(), 3);
         assert_eq!(table_menu.actions.len(), 4);
         assert_eq!(task_menu.actions.len(), 4);
-        assert_eq!(editing_menu.actions.len(), 17);
+        assert_eq!(editing_menu.actions.len(), 14);
+        assert_eq!(selected_editing_menu.actions.len(), 17);
         assert!(!reading_menu.actions.contains(&ContextAction::Paste));
         assert!(!reading_menu.actions.contains(&ContextAction::Cut));
         assert!(!reading_menu.actions.contains(&ContextAction::CopyTableTsv));
         assert!(table_menu.actions.contains(&ContextAction::CopyTableTsv));
         assert_eq!(task_menu.actions.first(), Some(&ContextAction::ToggleTask));
         assert_eq!(task_menu.task_block, Some(7));
-        assert!(editing_menu.actions.contains(&ContextAction::Cut));
+        assert!(!editing_menu.actions.contains(&ContextAction::Cut));
+        assert!(!editing_menu.actions.contains(&ContextAction::CopyText));
+        assert!(!editing_menu.actions.contains(&ContextAction::CopyMarkdown));
+        assert!(selected_editing_menu.actions.contains(&ContextAction::Cut));
+        assert!(
+            selected_editing_menu
+                .actions
+                .contains(&ContextAction::CopyText)
+        );
+        assert!(
+            selected_editing_menu
+                .actions
+                .contains(&ContextAction::CopyMarkdown)
+        );
         assert!(editing_menu.actions.contains(&ContextAction::Task));
         assert!(editing_menu.actions.contains(&ContextAction::Quote));
         assert!(editing_menu.actions.contains(&ContextAction::CodeBlock));
@@ -14594,11 +14635,31 @@ mod pruebas {
         );
         assert_eq!(
             context_action_at(&editing_menu, (110.0, 250.0)),
+            Some(ContextAction::Bold)
+        );
+        assert_eq!(
+            context_action_at(&selected_editing_menu, (110.0, 250.0)),
             Some(ContextAction::Cut)
         );
         assert_eq!(context_action_at(&editing_menu, (50.0, 210.0)), None);
         assert!(!ContextAction::CopyText.source_markdown());
         assert!(ContextAction::CopyMarkdown.source_markdown());
+    }
+
+    #[test]
+    fn escape_descarta_un_menu_contextual_sin_enviar_teclas_al_editor() {
+        assert!(transient_menu_dismisses_for(
+            KeyCode::Escape,
+            ElementState::Pressed
+        ));
+        assert!(!transient_menu_dismisses_for(
+            KeyCode::Escape,
+            ElementState::Released
+        ));
+        assert!(!transient_menu_dismisses_for(
+            KeyCode::KeyA,
+            ElementState::Pressed
+        ));
     }
 
     #[test]

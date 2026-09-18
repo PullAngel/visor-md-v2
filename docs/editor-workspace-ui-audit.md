@@ -48,7 +48,7 @@ indexación en una ventana real.
 
 | Estado real | Riesgo de UX | Corrección prioritaria |
 | --- | --- | --- |
-| Hay comandos para negrita, cursiva, enlace, encabezado y lista, por teclado, menú contextual y paleta. | La barra de edición muestra demasiados rótulos seguidos y el menú contextual mezcla edición, archivos, modos y acciones globales. Parece una lista técnica, no una ayuda según el contexto. | Separar acciones de selección de acciones globales. El menú contextual debe mostrar solo lo aplicable; la paleta conserva el catálogo completo. |
+| Hay comandos para negrita, cursiva, enlace, encabezado y lista, por teclado, menú contextual y paleta. | La barra de edición muestra demasiados rótulos seguidos y el menú contextual mezcla edición, archivos, modos y acciones globales. Parece una lista técnica, no una ayuda según el contexto. | Separar acciones de selección de acciones globales. El menú ya oculta Cortar y las copias de fuente si no hay selección; debe extender la misma regla a otras acciones dependientes del contexto. |
 | Fuente, lectura y vista dividida están diferenciadas. | Falta una indicación visual compacta y persistente de qué modo está activo y qué puede hacerse allí. | Reforzar el modo actual en barra de estado y toolbar con una sola acción primaria, sin repetir controles. |
 | Undo/redo, selección Unicode, pegado explícito, BOM/EOL y guardado fiable existen. | El éxito o rechazo se comunica casi siempre en un aviso breve; un conflicto, recuperación o guardado bloqueado merece una explicación recuperable. | Añadir estado de documento con severidad y una acción breve de detalles, sin diálogos intrusivos para éxitos normales. |
 | Copiar Markdown y TSV existen. | `Copiar TSV` solo aparece al abrir el menú sobre una tabla; el resto del menú conserva las operaciones aplicables al modo. | Mantener esta regla al añadir acciones puntuales y ofrecer explicación breve cuando una acción global se rechace. |
@@ -76,11 +76,15 @@ de escribir Markdown con comodidad.
    resultados quedan fuera de la ventana ni la posición de la selección. Esto
    queda resuelto para listas largas por el pie de rango; falta conservar esa
    claridad en estados vacíos y resultados enriquecidos.
-3. Elegir y actualizar una carpeta está disponible mediante paleta o atajo. Es
+3. **Corregido para el menú contextual:** un clic fuera lo descarta; `Esc`
+   también lo cierra y evita que una tecla llegue al editor que permanece
+   detrás. Falta navegación completa por teclado antes de convertirlo en un
+   menú accesible de primera clase.
+4. Elegir y actualizar una carpeta está disponible mediante paleta o atajo. Es
    correcto para personas expertas, pero demasiado oculto para un flujo central
    de Obsidian. Debe quedar accesible desde `Más` o desde un único punto de
    navegación contextual, no como un nuevo conjunto de botones permanentes.
-4. **Corregido en la barra inferior:** ahora prioriza modo, estado de guardado
+5. **Corregido en la barra inferior:** ahora prioriza modo, estado de guardado
    y actualización de carpeta. Las métricas siguen siendo locales y disponibles
    para las capacidades que las usan, pero dejaron de competir con advertencias
    de integridad o de workspace en la franja persistente.
