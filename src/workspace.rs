@@ -107,6 +107,55 @@ pub(crate) struct WorkspaceNote {
     source_modified: Option<SystemTime>,
 }
 
+impl WorkspaceNote {
+    /// Explica de forma acotada por qué una búsqueda local encontró esta nota.
+    /// Todo deriva del texto ya retenido por el índice: no relee el archivo ni
+    /// aumenta la capacidad de la búsqueda sobre la bóveda.
+    pub(crate) fn search_context(&self, query: &str) -> Option<String> {
+        let query = query.trim().to_lowercase();
+        if query.is_empty() {
+            return None;
+        }
+        if self.title.to_lowercase().contains(&query) {
+            return Some("título".to_string());
+        }
+        if self
+            .relative_path
+            .to_string_lossy()
+            .to_lowercase()
+            .contains(&query)
+        {
+            return Some("ruta".to_string());
+        }
+        if let Some(heading) = self
+            .headings
+            .iter()
+            .find(|heading| heading.text.to_lowercase().contains(&query))
+        {
+            return Some(format!(
+                "encabezado: {}",
+                compact_search_excerpt(&heading.text)
+            ));
+        }
+        self.search_text
+            .lines()
+            .find(|line| line.to_lowercase().contains(&query))
+            .map(|line| format!("contenido: {}", compact_search_excerpt(line)))
+    }
+}
+
+fn compact_search_excerpt(text: &str) -> String {
+    const MAX_CHARS: usize = 52;
+    let compact = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut chars = compact.chars();
+    let excerpt = chars.by_ref().take(MAX_CHARS).collect::<String>();
+    if chars.next().is_some() {
+        format!("{excerpt}…")
+    } else {
+        excerpt
+    }
+}
+
 /// Resultado explícito de resolver un wikilink. No se elige una coincidencia
 /// por nombre de archivo cuando la bóveda contiene más de una alternativa.
 pub(crate) enum WikiResolution<'a> {
@@ -678,6 +727,28 @@ mod tests {
 
     fn obsidian_fixture_root() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/obsidian-vault")
+    }
+
+    #[test]
+    fn el_contexto_de_busqueda_explica_titulo_encabezado_y_contenido() {
+        let (note, _, _) = note_from_source(
+            PathBuf::from("clases/redes.md"),
+            "# Redes locales\n\n## Modelo OSI\n\nLa ciberseguridad necesita límites claros.",
+            90,
+            None,
+            1_024,
+        );
+
+        assert_eq!(note.search_context("redes"), Some("título".to_string()));
+        assert_eq!(
+            note.search_context("modelo"),
+            Some("encabezado: Modelo OSI".to_string())
+        );
+        assert_eq!(
+            note.search_context("límites"),
+            Some("contenido: La ciberseguridad necesita límites claros.".to_string())
+        );
+        assert_eq!(note.search_context("ausente"), None);
     }
 
     #[test]

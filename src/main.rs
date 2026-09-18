@@ -536,11 +536,17 @@ impl WorkspaceTreeRow {
 struct WorkspaceSearchResult {
     relative_path: PathBuf,
     title: String,
+    context: String,
 }
 
 impl WorkspaceSearchResult {
     fn label(&self) -> String {
-        format!("{} · {}", self.title, self.relative_path.display())
+        format!(
+            "{} · {} · {}",
+            self.title,
+            self.context,
+            self.relative_path.display()
+        )
     }
 }
 
@@ -10411,6 +10417,9 @@ impl App {
                 .map(|note| WorkspaceSearchResult {
                     relative_path: note.relative_path.clone(),
                     title: note.title.clone(),
+                    context: note
+                        .search_context(query)
+                        .unwrap_or_else(|| "coincidencia indexada".to_string()),
                 })
                 .collect()
         })
@@ -13749,12 +13758,16 @@ mod pruebas {
     }
 
     #[test]
-    fn los_resultados_de_busqueda_muestran_titulo_y_ruta_relativa() {
+    fn los_resultados_de_busqueda_muestran_contexto_y_ruta_relativa() {
         let result = WorkspaceSearchResult {
             relative_path: PathBuf::from("universidad/redes.md"),
             title: "Redes y seguridad".to_string(),
+            context: "encabezado: Modelo OSI".to_string(),
         };
-        assert_eq!(result.label(), "Redes y seguridad · universidad/redes.md");
+        assert_eq!(
+            result.label(),
+            "Redes y seguridad · encabezado: Modelo OSI · universidad/redes.md"
+        );
     }
 
     #[test]

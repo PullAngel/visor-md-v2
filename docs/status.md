@@ -17,7 +17,7 @@ el mismo diálogo al recuperar foco. También mantiene la recuperación si una
 escritura terminó pero su verificación final no pudo completarse.
 
 El lector y el editor tienen gates automáticos verdes: la suite local actual
-reúne 238 regresiones en Windows. El gate de Windows del 9 de septiembre también verificó
+reúne 239 regresiones en Windows. El gate de Windows del 9 de septiembre también verificó
 Clippy, SBOM, documentación y un release de 3.524.096 bytes (3,361 MiB).
 La medición posterior de rutas secundarias y previews vigentes da 3.532.288
 bytes (3,369 MiB). La revisión actual del selector de modo da 3.536.896 bytes

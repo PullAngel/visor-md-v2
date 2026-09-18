@@ -45,7 +45,7 @@ QA humano asociado ya esté cerrado.
 | Trabajo diario | Crear, abrir, guardar, pestañas reordenables/fijables, cierre protegido, paleta, menú contextual, barra de estado y tema. | [`features.md`](features.md), [`manual-qa-v2.md`](manual-qa-v2.md) |
 | Workspace | Carpeta explícita, VFS contenida, índice en memoria/cancelable, árbol, búsqueda, encabezados, wikilinks, aliases y backlinks. | [`connectivity.md`](connectivity.md), [`editor-workspace-ui-audit.md`](editor-workspace-ui-audit.md) |
 | Recursos locales | Placeholder seguro e imagen PNG local solo tras confirmación y validación dentro de la raíz autorizada. | [`security.md`](security.md), [`dependencies.md`](dependencies.md) |
-| Calidad actual | 238 pruebas locales, Clippy estricto, SBOM vigente y release Windows de 3,373 MiB. | [`status.md`](status.md), [`budget.md`](budget.md) |
+| Calidad actual | 239 pruebas locales, Clippy estricto, SBOM vigente y release Windows de 3,373 MiB. | [`status.md`](status.md), [`budget.md`](budget.md) |
 
 ## Trabajo iniciado pero no cerrado
 
@@ -55,7 +55,7 @@ QA humano asociado ya esté cerrado.
 | Editor resistente | Buffer, historial, archivos y render asíncrono versionado. | Render Markdown incremental, accesibilidad de IME/selección y QA de diálogos/archivos reales. | Casos Unicode, CRLF, conflicto externo y escritura prolongada de [`manual-qa-v2.md`](manual-qa-v2.md). |
 | Chrome y multitarea | Pestañas, comparación fuente/vista y árbol de paneles interno. | Dibujar, enfocar, desplazar y seleccionar por panel; divisiones horizontal/vertical reales y luego ventanas separadas. | Pruebas de identidad por vista y QA de foco/DPI. |
 | Movimiento y estados | Tema y selector de modo animados con ruta instantánea. | Aplicar el mismo criterio a pestañas, paneles y futuras divisiones, sin animar texto ni entrada. | QA con reducir movimiento y ventanas de varios DPI. |
-| Workspace | Índice y navegación segura ya funcionan. | Escala de bóvedas grandes, actualización granular, corpus adversarial y UX de estados largos/vacíos. | Benchmark sintético y QA de bóveda fixture. |
+| Workspace | Índice y navegación segura ya funcionan; la búsqueda explica si coincidió por título, ruta, encabezado o contenido. | Escala de bóvedas grandes, actualización granular, corpus adversarial y QA de estados largos/vacíos. | Benchmark sintético y QA de bóveda fixture. |
 | Obsidian | Vínculos, aliases, encabezados, callouts y backlinks. | Corpus de bóvedas más amplio, QA real de compatibilidad y recursos secundarios limitados. | Abrir, editar y reabrir fixture sin cambios ajenos. |
 | Estudio/IA | Preguntas plegables, callouts de estado, conceptos, resúmenes y fragmentos. | Comparación no destructiva y selección/guardado individual de fragmentos. | Pruebas de preservación y UX de una nota larga. |
 
