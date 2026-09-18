@@ -45,7 +45,7 @@ QA humano asociado ya esté cerrado.
 | Trabajo diario | Crear, abrir, guardar, pestañas reordenables/fijables, cierre protegido, paleta, menú contextual, barra de estado y tema. | [`features.md`](features.md), [`manual-qa-v2.md`](manual-qa-v2.md) |
 | Workspace | Carpeta explícita, VFS contenida, índice en memoria/cancelable, árbol, búsqueda, encabezados, wikilinks, aliases y backlinks. | [`connectivity.md`](connectivity.md), [`editor-workspace-ui-audit.md`](editor-workspace-ui-audit.md) |
 | Recursos locales | Placeholder seguro e imagen PNG local solo tras confirmación y validación dentro de la raíz autorizada. | [`security.md`](security.md), [`dependencies.md`](dependencies.md) |
-| Calidad actual | 239 pruebas locales, Clippy estricto, SBOM vigente y release Windows de 3,373 MiB. | [`status.md`](status.md), [`budget.md`](budget.md) |
+| Calidad actual | 240 pruebas locales, Clippy estricto, SBOM vigente y release Windows de 3,373 MiB. | [`status.md`](status.md), [`budget.md`](budget.md) |
 
 ## Trabajo iniciado pero no cerrado
 
