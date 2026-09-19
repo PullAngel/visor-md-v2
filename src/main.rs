@@ -1336,6 +1336,9 @@ enum DocumentPaneTree {
     Leaf {
         pane_id: u64,
         document_id: u64,
+        /// El desplazamiento pertenece a la vista, no a la fuente. Cuando el
+        /// mosaico sea visible, cada archivo conservará su propia posición.
+        scroll: f32,
     },
     Split {
         axis: DocumentPaneAxis,
@@ -1354,6 +1357,7 @@ impl DocumentPaneTree {
         Self::Leaf {
             pane_id: NEXT_DOCUMENT_PANE_ID.fetch_add(1, Ordering::Relaxed),
             document_id,
+            scroll: 0.0,
         }
     }
 
@@ -1369,6 +1373,7 @@ impl DocumentPaneTree {
             Self::Leaf {
                 pane_id,
                 document_id: current,
+                ..
             } => (*current == document_id).then_some(*pane_id),
             Self::Split { first, second, .. } => first
                 .pane_for_document(document_id)
@@ -1380,6 +1385,37 @@ impl DocumentPaneTree {
         match self {
             Self::Leaf { .. } => 1,
             Self::Split { first, second, .. } => first.pane_count() + second.pane_count(),
+        }
+    }
+
+    fn pane_scroll(&self, pane_id: u64) -> Option<f32> {
+        match self {
+            Self::Leaf {
+                pane_id: current,
+                scroll,
+                ..
+            } => (*current == pane_id).then_some(*scroll),
+            Self::Split { first, second, .. } => first
+                .pane_scroll(pane_id)
+                .or_else(|| second.pane_scroll(pane_id)),
+        }
+    }
+
+    fn set_pane_scroll(&mut self, pane_id: u64, scroll: f32) -> bool {
+        let scroll = scroll.max(0.0);
+        match self {
+            Self::Leaf {
+                pane_id: current,
+                scroll: current_scroll,
+                ..
+            } if *current == pane_id => {
+                *current_scroll = scroll;
+                true
+            }
+            Self::Leaf { .. } => false,
+            Self::Split { first, second, .. } => {
+                first.set_pane_scroll(pane_id, scroll) || second.set_pane_scroll(pane_id, scroll)
+            }
         }
     }
 
@@ -1412,8 +1448,10 @@ impl DocumentPaneTree {
             Self::Leaf {
                 pane_id: current_pane,
                 document_id: current_document,
+                scroll,
             } if *current_pane == pane_id => {
                 *current_document = document_id;
+                *scroll = 0.0;
                 true
             }
             Self::Leaf { .. } => false,
@@ -1439,6 +1477,7 @@ impl DocumentPaneTree {
             Self::Leaf {
                 pane_id: current_pane,
                 document_id: current_document,
+                scroll,
             } if *current_pane == pane_id => {
                 let adjacent = Self::new_leaf(adjacent_id);
                 let adjacent_pane_id = adjacent.first_pane_id();
@@ -1448,6 +1487,7 @@ impl DocumentPaneTree {
                     first: Box::new(Self::Leaf {
                         pane_id,
                         document_id: *current_document,
+                        scroll: *scroll,
                     }),
                     second: Box::new(adjacent),
                 };
@@ -1493,6 +1533,7 @@ impl DocumentPaneTree {
             Self::Leaf {
                 pane_id,
                 document_id,
+                ..
             } => output.push(DocumentPaneLayout {
                 pane_id: *pane_id,
                 document_id: *document_id,
@@ -8135,6 +8176,19 @@ impl App {
         }
     }
 
+    fn save_focused_pane_scroll(&mut self) {
+        let _ = self
+            .document_panes
+            .set_pane_scroll(self.focused_document_pane, self.scroll);
+    }
+
+    fn restore_focused_pane_scroll(&mut self) {
+        if let Some(scroll) = self.document_panes.pane_scroll(self.focused_document_pane) {
+            self.scroll = scroll;
+            self.document.scroll = scroll;
+        }
+    }
+
     fn invalidate_document_layout(&mut self) {
         self.slots.clear();
         self.visible_blocks.clear();
@@ -8157,6 +8211,7 @@ impl App {
 
     fn open_document_in_tab(&mut self, document: DocumentState) {
         let new_id = document.id;
+        self.save_focused_pane_scroll();
         self.document.scroll = self.scroll;
         if self.document.mode == DocumentMode::Reading {
             self.document.reading_selection = self.selection;
@@ -8173,6 +8228,7 @@ impl App {
             .document_panes
             .replace_pane_document(self.focused_document_pane, new_id);
         self.reset_document_view();
+        self.restore_focused_pane_scroll();
     }
 
     fn switch_document_tab(&mut self, backwards: bool) {
@@ -8201,6 +8257,7 @@ impl App {
             return;
         };
         let next = self.inactive_documents.remove(index);
+        self.save_focused_pane_scroll();
         self.document.scroll = self.scroll;
         if self.document.mode == DocumentMode::Reading {
             self.document.reading_selection = self.selection;
@@ -8219,6 +8276,7 @@ impl App {
                 .replace_pane_document(self.focused_document_pane, document_id);
         }
         self.reset_document_view();
+        self.restore_focused_pane_scroll();
         self.refresh_title();
         self.check_external_change();
         if let Some(window) = &self.window {
@@ -13884,6 +13942,9 @@ mod pruebas {
         assert_ne!(principal, secundario);
         assert_eq!(panes.pane_for_document(10), Some(principal));
         assert_eq!(panes.pane_for_document(20), Some(secundario));
+        assert!(panes.set_pane_scroll(principal, 240.0));
+        assert_eq!(panes.pane_scroll(principal), Some(240.0));
+        assert_eq!(panes.pane_scroll(secundario), Some(0.0));
 
         assert_eq!(
             panes.split_pane(principal, 10, DocumentPaneAxis::Horizontal),
@@ -13999,10 +14060,12 @@ mod pruebas {
             first: Box::new(DocumentPaneTree::Leaf {
                 pane_id: 1,
                 document_id: 1,
+                scroll: 0.0,
             }),
             second: Box::new(DocumentPaneTree::Leaf {
                 pane_id: 2,
                 document_id: 2,
+                scroll: 0.0,
             }),
         };
         let mut layout = Vec::new();
