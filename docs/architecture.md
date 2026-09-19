@@ -361,6 +361,12 @@ historial, guardado ni recuperación. Al cambiar una pestaña se actualiza
 únicamente la vista con foco. El dibujo, scroll, selección y foco por vista
 siguen siendo el siguiente bloque de integración.
 
+La primera separación ya conserva un scroll y una caché de layout por panel al
+alternar el foco. Esa caché no contiene fuente, historial, guardado ni
+recuperación y se elimina al colapsar una hoja. Falta usarla para dibujar los
+paneles simultáneamente y trasladar la selección y los overlays al panel con
+foco.
+
 ### Workspace e índice
 
 La primera implementación usa un índice regenerable en memoria, sin SQLite ni

@@ -1388,6 +1388,17 @@ impl DocumentPaneTree {
         }
     }
 
+    fn contains_pane(&self, pane_id: u64) -> bool {
+        match self {
+            Self::Leaf {
+                pane_id: current, ..
+            } => *current == pane_id,
+            Self::Split { first, second, .. } => {
+                first.contains_pane(pane_id) || second.contains_pane(pane_id)
+            }
+        }
+    }
+
     fn pane_scroll(&self, pane_id: u64) -> Option<f32> {
         match self {
             Self::Leaf {
@@ -4280,6 +4291,41 @@ struct DocumentPaneLayout {
     geometry: PaneGeometry,
 }
 
+/// Caché de dibujo asociada a una vista, no al archivo. El texto, el historial
+/// y la recuperación siguen en `DocumentState`; esto solo evita que dos
+/// paneles distintos reciclen alturas o layouts incompatibles.
+struct PaneRenderCache {
+    slots: Vec<Slot>,
+    visible_blocks: Vec<usize>,
+    live: HashMap<usize, (CachedBlockLayout, Option<CachedMarker>)>,
+    doc_height: f32,
+    laid_for_width: f32,
+    preview_slots: Vec<Slot>,
+    preview_visible_blocks: Vec<usize>,
+    preview_live: HashMap<usize, (CachedBlockLayout, Option<CachedMarker>)>,
+    preview_height: f32,
+    preview_laid_for_width: f32,
+    exact_after_edit: bool,
+}
+
+impl Default for PaneRenderCache {
+    fn default() -> Self {
+        Self {
+            slots: Vec::new(),
+            visible_blocks: Vec::new(),
+            live: HashMap::new(),
+            doc_height: 0.0,
+            laid_for_width: -1.0,
+            preview_slots: Vec::new(),
+            preview_visible_blocks: Vec::new(),
+            preview_live: HashMap::new(),
+            preview_height: 0.0,
+            preview_laid_for_width: -1.0,
+            exact_after_edit: true,
+        }
+    }
+}
+
 impl PaneGeometry {
     fn contains(self, x: f32, y: f32) -> bool {
         (self.x..self.x + self.width).contains(&x) && (self.y..self.y + self.height).contains(&y)
@@ -5612,6 +5658,10 @@ struct App {
     /// posterior se mide completa para que un slot estimado no superponga
     /// bloques; después vuelve a regir la política normal de virtualización.
     exact_after_edit: bool,
+    /// Caches de paneles no enfocados. El panel enfocado mantiene los campos
+    /// directos de arriba para no convertir el camino de lectura actual en un
+    /// mapa dinámico antes de que haya una división visible.
+    inactive_pane_caches: HashMap<u64, PaneRenderCache>,
     /// Las mediciones se acumulan y se imprimen al final. Escribir a stderr
     /// en el medio distorsiona lo que se esta midiendo: con la salida
     /// redirigida a un archivo, cada `eprintln` costaba mas que el trabajo
@@ -8189,6 +8239,52 @@ impl App {
         }
     }
 
+    fn take_focused_pane_cache(&mut self) -> PaneRenderCache {
+        PaneRenderCache {
+            slots: std::mem::take(&mut self.slots),
+            visible_blocks: std::mem::take(&mut self.visible_blocks),
+            live: std::mem::take(&mut self.live),
+            doc_height: std::mem::take(&mut self.doc_height),
+            laid_for_width: std::mem::replace(&mut self.laid_for_width, -1.0),
+            preview_slots: std::mem::take(&mut self.preview_slots),
+            preview_visible_blocks: std::mem::take(&mut self.preview_visible_blocks),
+            preview_live: std::mem::take(&mut self.preview_live),
+            preview_height: std::mem::take(&mut self.preview_height),
+            preview_laid_for_width: std::mem::replace(&mut self.preview_laid_for_width, -1.0),
+            exact_after_edit: std::mem::replace(&mut self.exact_after_edit, true),
+        }
+    }
+
+    fn install_focused_pane_cache(&mut self, cache: PaneRenderCache) {
+        self.slots = cache.slots;
+        self.visible_blocks = cache.visible_blocks;
+        self.live = cache.live;
+        self.doc_height = cache.doc_height;
+        self.laid_for_width = cache.laid_for_width;
+        self.preview_slots = cache.preview_slots;
+        self.preview_visible_blocks = cache.preview_visible_blocks;
+        self.preview_live = cache.preview_live;
+        self.preview_height = cache.preview_height;
+        self.preview_laid_for_width = cache.preview_laid_for_width;
+        self.exact_after_edit = cache.exact_after_edit;
+    }
+
+    fn focus_document_pane_cache(&mut self, pane_id: u64) {
+        if pane_id == self.focused_document_pane {
+            return;
+        }
+        let current_pane = self.focused_document_pane;
+        let current_cache = self.take_focused_pane_cache();
+        self.inactive_pane_caches
+            .insert(current_pane, current_cache);
+        let next_cache = self
+            .inactive_pane_caches
+            .remove(&pane_id)
+            .unwrap_or_default();
+        self.install_focused_pane_cache(next_cache);
+        self.focused_document_pane = pane_id;
+    }
+
     fn invalidate_document_layout(&mut self) {
         self.slots.clear();
         self.visible_blocks.clear();
@@ -8269,7 +8365,7 @@ impl App {
             recovery: current_recovery,
         });
         if let Some(existing_pane) = self.document_panes.pane_for_document(document_id) {
-            self.focused_document_pane = existing_pane;
+            self.focus_document_pane_cache(existing_pane);
         } else {
             let _ = self
                 .document_panes
@@ -8326,6 +8422,8 @@ impl App {
             .document_panes
             .without_document(closing_id)
             .unwrap_or_else(|| DocumentPaneTree::single(self.document.id));
+        self.inactive_pane_caches
+            .retain(|pane_id, _| self.document_panes.contains_pane(*pane_id));
         self.focused_document_pane = self
             .document_panes
             .pane_for_document(self.document.id)
@@ -13248,6 +13346,7 @@ fn main() {
         bench,
         exact_measure,
         exact_after_edit: false,
+        inactive_pane_caches: HashMap::new(),
         log,
         palette: NIGHT,
         theme_transition: None,
