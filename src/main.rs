@@ -7550,7 +7550,7 @@ impl ApplicationHandler<AppEvent> for App {
                     .map(|window| document_viewport_height(window.inner_size().height as f32))
                     .unwrap_or(0.0);
                 let max = max_scroll(self.doc_height.max(self.preview_height), viewport_height);
-                self.scroll = (self.scroll - dy).clamp(0.0, max);
+                self.set_focused_pane_scroll((self.scroll - dy).clamp(0.0, max));
                 if let Some(w) = &self.window {
                     w.request_redraw();
                 }
@@ -7581,7 +7581,7 @@ impl ApplicationHandler<AppEvent> for App {
                         let max =
                             max_scroll(self.doc_height.max(self.preview_height), viewport_height)
                                 .max(1.0);
-                        self.scroll = (self.scroll + max / total as f32) % max;
+                        self.set_focused_pane_scroll((self.scroll + max / total as f32) % max);
                         if let Some(w) = &self.window {
                             w.request_redraw();
                         }
@@ -8235,6 +8235,14 @@ impl App {
     }
 
     fn save_focused_pane_scroll(&mut self) {
+        let _ = self
+            .document_panes
+            .set_pane_scroll(self.focused_document_pane, self.scroll);
+    }
+
+    fn set_focused_pane_scroll(&mut self, scroll: f32) {
+        self.scroll = scroll.max(0.0);
+        self.document.scroll = self.scroll;
         let _ = self
             .document_panes
             .set_pane_scroll(self.focused_document_pane, self.scroll);
@@ -11162,16 +11170,16 @@ impl App {
     }
 
     fn scroll_page(&mut self, down: bool) {
-        let Some(window) = &self.window else {
+        let Some(window) = self.window.clone() else {
             return;
         };
         let viewport = document_viewport_height(window.inner_size().height as f32);
         let step = (viewport * 0.88).max(1.0);
         let delta = if down { step } else { -step };
-        self.scroll = (self.scroll + delta).clamp(
+        self.set_focused_pane_scroll((self.scroll + delta).clamp(
             0.0,
             max_scroll(self.doc_height.max(self.preview_height), viewport),
-        );
+        ));
         window.request_redraw();
     }
 
