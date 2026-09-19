@@ -395,6 +395,7 @@ pub(crate) fn save_new_primary(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::editor::{SourceEditor, TextBuffer};
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -566,6 +567,58 @@ mod tests {
         assert_eq!(fs::read(&path).unwrap(), b"\xef\xbb\xbfuno\r\ntres\r\n");
         assert_eq!(saved.baseline_bytes, b"\xef\xbb\xbfuno\r\ntres\r\n");
         assert!(saved.identity.still_matches(&path).unwrap());
+    }
+
+    #[test]
+    fn round_trip_de_archivo_editor_y_guardado_conserva_bytes_y_sintaxis_inerte() {
+        let cases: &[(&str, &str)] = &[
+            ("lf", "# Titulo\nLinea estable\n<custom data-x=\"1\">\n"),
+            (
+                "bom-crlf-unicode",
+                "\u{feff}# 日本語\r\nLinea estable con 😀\r\n<custom data-x=\"1\">\r\n",
+            ),
+            (
+                "mixed-html",
+                "# Nota\nLinea estable\r\n<script>inert</script>\n[[nota desconocida]]\r\n",
+            ),
+        ];
+
+        for (name, original) in cases {
+            let path = temporary_file(&format!("round-trip-{name}"), original.as_bytes());
+            let opened = open_explicit_primary(&path, 4_096).expect("la fixture es UTF-8 válida");
+            let marker = opened
+                .source
+                .find("estable")
+                .expect("cada fixture tiene un punto de edición");
+            let mut source = TextBuffer::from_text(&opened.source);
+            let mut editor = SourceEditor::new();
+            editor
+                .set_cursor(&source, marker, false)
+                .expect("el marcador es un límite UTF-8 y no cae dentro de CRLF");
+            editor
+                .insert(&mut source, "editada ")
+                .expect("el parche local es válido");
+            assert!(editor.undo(&mut source).expect("undo es válido"));
+            assert_eq!(source.to_string(), opened.source);
+            assert!(editor.redo(&mut source).expect("redo es válido"));
+            let expected = opened.source.replacen("estable", "editada estable", 1);
+            assert_eq!(source.to_string(), expected);
+
+            let saved = save_explicit_primary(
+                &path,
+                &source.to_string(),
+                opened.metadata,
+                &opened.identity,
+                &opened.baseline_bytes,
+            )
+            .expect("el reemplazo atómico conserva el archivo");
+            let reopened = open_explicit_primary(&path, 4_096).expect("el archivo guardado reabre");
+
+            assert_eq!(reopened.source, expected);
+            assert_eq!(reopened.metadata, opened.metadata);
+            assert_eq!(fs::read(&path).unwrap(), opened.metadata.encode(&expected));
+            assert_eq!(saved.baseline_bytes, opened.metadata.encode(&expected));
+        }
     }
 
     #[test]
