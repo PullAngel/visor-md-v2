@@ -4332,6 +4332,14 @@ impl PaneGeometry {
     }
 }
 
+/// Un borde compartido no pertenece a dos vistas. `contains` usa el extremo
+/// superior inclusivo e inferior exclusivo, por lo que el siguiente panel es
+/// el único receptor al cruzar una división.
+#[cfg_attr(not(test), allow(dead_code))]
+fn document_pane_at(layouts: &[DocumentPaneLayout], x: f32, y: f32) -> Option<&DocumentPaneLayout> {
+    layouts.iter().find(|layout| layout.geometry.contains(x, y))
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct SplitGeometry {
     source: PaneGeometry,
@@ -14136,6 +14144,19 @@ mod pruebas {
                 height: 300.0,
             }
         );
+        assert_eq!(
+            document_pane_at(&layout, 509.0, 21.0).map(|pane| pane.document_id),
+            Some(1)
+        );
+        assert_eq!(
+            document_pane_at(&layout, 510.0, 21.0).map(|pane| pane.document_id),
+            Some(2)
+        );
+        assert_eq!(
+            document_pane_at(&layout, 510.0, 320.0).map(|pane| pane.document_id),
+            Some(3)
+        );
+        assert_eq!(document_pane_at(&layout, 1_010.0, 20.0), None);
     }
 
     #[test]
