@@ -226,6 +226,15 @@ exacto del traspaso.
   franja conserva formato en edición y navegación en lectura.
   Todas las rutas comparten catálogo, atajo, menú y paleta, para evitar
   comportamientos distintos según cómo se invoque una operación.
+- Archivos, Índice, Buscar y Backlinks ya comparten una columna izquierda
+  acoplada. Abrirla reserva ancho real al documento en vez de cubrirlo, conserva
+  el destino activo y permite cambiar de herramienta o cerrar la columna. Los
+  selectores breves de comandos y divisiones continúan flotando porque son
+  acciones efímeras, no espacios de trabajo.
+- el modo de edición conserva acciones frecuentes directas y organiza el kit
+  amplio de Markdown en menús de Bloques, Listas, Insertar, Estudio y Más
+  formato. Esos menús reutilizan el catálogo probado de comandos; no crean una
+  segunda implementación de edición ni transforman el resto del documento.
 - el viewport reserva la franja inferior completa. El final del documento ya no
   queda bajo pestañas o estado, y bordes de tablas, separadores de pestañas y la
   división de la vista usan el color estructural definido por el sistema visual.

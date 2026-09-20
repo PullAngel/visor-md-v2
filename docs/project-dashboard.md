@@ -39,13 +39,13 @@ QA humano asociado ya esté cerrado.
 | --- | --- | --- |
 | Render Markdown | Encabezados, énfasis anidado, código, listas, tareas, citas, tablas, notas al pie, autolinks, callouts, resaltado y allowlist HTML semántica sin atributos. | [`features.md`](features.md), [`testing.md`](testing.md) |
 | Seguridad de contenido | Sin WebView, DOM ni JavaScript; sin red implícita; HTML hostil visible e inerte; límites de entrada y fallback seguro. | [`security.md`](security.md), [`threat-model.md`](threat-model.md) |
-| Tipografía y tema | Fuentes embebidas, día/noche, selector Leer/Editar/Comparar con indicador animado y opción de reducir movimiento. | [`design.md`](design.md), [`status.md`](status.md) |
+| Tipografía y tema | Fuentes embebidas, día sepia y noche bosque, selector Leer/Editar/Comparar con indicador animado y opción de reducir movimiento. | [`design.md`](design.md), [`status.md`](status.md) |
 | Edición | Rope UTF-8, IME, selección, pegado explícito, cortar/copiar, undo/redo, CRLF atómico, vista dividida y ayudas Markdown. | [`architecture.md`](architecture.md), [`features.md`](features.md) |
 | Integridad de archivos | Límite de apertura, UTF-8 válido, preservación BOM/EOL, guardado atómico, detección de conflicto y recuperación local explícita. | [`security.md`](security.md), [`test-matrix.md`](test-matrix.md) |
-| Trabajo diario | Crear, abrir, guardar, pestañas reordenables/fijables, cierre protegido, paleta, menú contextual, barra de estado y tema. | [`features.md`](features.md), [`manual-qa-v2.md`](manual-qa-v2.md) |
-| Workspace | Carpeta explícita, VFS contenida, índice en memoria/cancelable, árbol, búsqueda, encabezados, wikilinks, aliases y backlinks. | [`connectivity.md`](connectivity.md), [`editor-workspace-ui-audit.md`](editor-workspace-ui-audit.md) |
+| Trabajo diario | Crear, abrir, guardar, pestañas reordenables/fijables, cierre protegido, paleta, menú contextual, barra de estado y kit Markdown agrupado. | [`features.md`](features.md), [`manual-qa-v2.md`](manual-qa-v2.md) |
+| Workspace | Carpeta explícita, VFS contenida, índice en memoria/cancelable, árbol, búsqueda, encabezados, wikilinks, aliases y backlinks en columna acoplada. | [`connectivity.md`](connectivity.md), [`editor-workspace-ui-audit.md`](editor-workspace-ui-audit.md) |
 | Recursos locales | Placeholder seguro e imagen PNG local solo tras confirmación y validación dentro de la raíz autorizada. | [`security.md`](security.md), [`dependencies.md`](dependencies.md) |
-| Calidad actual | 245 pruebas locales, Clippy estricto y SBOM vigente; el release local tras las divisiones mide 3,400 MiB. | [`status.md`](status.md), [`budget.md`](budget.md) |
+| Calidad actual | 247 pruebas locales y Clippy estricto en verde; el último release medido tras las divisiones fue 3,400 MiB. | [`status.md`](status.md), [`budget.md`](budget.md) |
 
 ## Trabajo iniciado pero no cerrado
 

@@ -94,6 +94,10 @@ const MAX_TAB_WIDTH: f32 = 220.0;
 const PANEL_X: f32 = MARGIN;
 const PANEL_Y: f32 = 116.0;
 const PANEL_WIDTH: f32 = 420.0;
+const WORKSPACE_COLUMN_MIN_WIDTH: f32 = 240.0;
+const WORKSPACE_COLUMN_MAX_WIDTH: f32 = 304.0;
+const WORKSPACE_DOCUMENT_MIN_WIDTH: f32 = 360.0;
+const WORKSPACE_DESTINATION_HEIGHT: f32 = 38.0;
 const PANEL_ROW_HEIGHT: f32 = 28.0;
 const PANEL_CAPACITY: usize = 9;
 const PANEL_PADDING: f32 = 4.0;
@@ -195,16 +199,16 @@ const EDITING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 15] = [
     AppAction::FormatStrikethrough,
     AppAction::FormatInlineCode,
     AppAction::FormatHighlight,
-    AppAction::InsertHeading,
-    AppAction::InsertBulletList,
-    AppAction::InsertOrderedList,
+    AppAction::BlockTools,
+    AppAction::ListTools,
     AppAction::InsertTask,
     AppAction::InsertQuote,
     AppAction::InsertLink,
     AppAction::InsertCodeBlock,
     AppAction::InsertTable,
+    AppAction::InsertTools,
+    AppAction::StudyTools,
     AppAction::WritingTools,
-    AppAction::ToggleSplit,
 ];
 /// La comparación conserva el mismo kit de escritura, pero el último control
 /// cambia a orientación porque la vista ya está abierta y se puede cerrar con
@@ -215,16 +219,16 @@ const SPLIT_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 15] = [
     AppAction::FormatStrikethrough,
     AppAction::FormatInlineCode,
     AppAction::FormatHighlight,
-    AppAction::InsertHeading,
-    AppAction::InsertBulletList,
-    AppAction::InsertOrderedList,
+    AppAction::BlockTools,
+    AppAction::ListTools,
     AppAction::InsertTask,
     AppAction::InsertQuote,
     AppAction::InsertLink,
     AppAction::InsertCodeBlock,
     AppAction::InsertTable,
+    AppAction::InsertTools,
+    AppAction::StudyTools,
     AppAction::WritingTools,
-    AppAction::ToggleSplitOrientation,
 ];
 const WORKSPACE_HUB_ACTIONS: [AppAction; 8] = [
     AppAction::ChooseWorkspace,
@@ -249,9 +253,29 @@ const STUDY_ACTIONS: [AppAction; 9] = [
     AppAction::PrepareStudyConceptList,
     AppAction::PrepareAiFragments,
 ];
+const BLOCK_ACTIONS: [AppAction; 5] = [
+    AppAction::InsertHeading,
+    AppAction::InsertQuote,
+    AppAction::InsertCodeBlock,
+    AppAction::InsertHorizontalRule,
+    AppAction::InsertCallout,
+];
+const LIST_ACTIONS: [AppAction; 3] = [
+    AppAction::InsertBulletList,
+    AppAction::InsertOrderedList,
+    AppAction::InsertTask,
+];
+const INSERT_ACTIONS: [AppAction; 6] = [
+    AppAction::InsertLink,
+    AppAction::InsertWikiLink,
+    AppAction::InsertTable,
+    AppAction::InsertCallout,
+    AppAction::InsertCodeBlock,
+    AppAction::InsertHorizontalRule,
+];
 /// Variantes de escritura reunidas en un segundo nivel. No desplazan las
 /// acciones frecuentes ni convierten la barra en una lista de iconos opacos.
-const WRITING_ACTIONS: [AppAction; 15] = [
+const WRITING_ACTIONS: [AppAction; 16] = [
     AppAction::FormatBold,
     AppAction::FormatItalic,
     AppAction::FormatStrikethrough,
@@ -267,6 +291,7 @@ const WRITING_ACTIONS: [AppAction; 15] = [
     AppAction::InsertHorizontalRule,
     AppAction::InsertWikiLink,
     AppAction::InsertCallout,
+    AppAction::ToggleSplitOrientation,
 ];
 static NEXT_DOCUMENT_ID: AtomicU64 = AtomicU64::new(1);
 /// Identidad efímera de una vista. No coincide con la identidad del documento:
@@ -446,6 +471,44 @@ fn navigation_panel_geometry(
     }
 }
 
+/// La navegación de carpeta no flota sobre el documento. Reserva una columna
+/// completa y deja siempre un ancho mínimo útil para leer o editar. La paleta
+/// de comandos y el selector de divisiones siguen usando el panel flotante.
+fn workspace_column_geometry(window_width: f32, window_height: f32) -> PanelGeometry {
+    let width = WORKSPACE_COLUMN_MAX_WIDTH
+        .min((window_width - WORKSPACE_DOCUMENT_MIN_WIDTH).max(WORKSPACE_COLUMN_MIN_WIDTH))
+        .min(window_width.max(0.0));
+    let height = document_viewport_height(window_height);
+    PanelGeometry {
+        x: 0.0,
+        y: DOCUMENT_VIEWPORT_TOP,
+        width,
+        height,
+        items_y: DOCUMENT_VIEWPORT_TOP
+            + WORKSPACE_DESTINATION_HEIGHT
+            + PANEL_PADDING
+            + PANEL_ROW_HEIGHT,
+    }
+}
+
+fn document_area_geometry(
+    window_width: f32,
+    window_height: f32,
+    workspace_column_open: bool,
+) -> PaneGeometry {
+    let column_width = if workspace_column_open {
+        workspace_column_geometry(window_width, window_height).width
+    } else {
+        0.0
+    };
+    PaneGeometry {
+        x: column_width,
+        y: 0.0,
+        width: (window_width - column_width).max(0.0),
+        height: document_viewport_height(window_height),
+    }
+}
+
 fn panel_item_at(
     x: f32,
     y: f32,
@@ -453,17 +516,84 @@ fn panel_item_at(
     selected: usize,
     geometry: PanelGeometry,
 ) -> Option<usize> {
+    let capacity = panel_capacity(geometry);
     if x < geometry.x
         || x >= geometry.x + geometry.width
         || y < geometry.items_y
         || y >= geometry.items_y
-            + PANEL_ROW_HEIGHT * panel_window(total, selected, PANEL_CAPACITY).len() as f32
+            + PANEL_ROW_HEIGHT * panel_window(total, selected, capacity).len() as f32
     {
         return None;
     }
-    let range = panel_window(total, selected, PANEL_CAPACITY);
+    let range = panel_window(total, selected, capacity);
     let item_offset = ((y - geometry.items_y) / PANEL_ROW_HEIGHT) as usize;
     (item_offset < range.len()).then_some(range.start + item_offset)
+}
+
+fn panel_capacity(geometry: PanelGeometry) -> usize {
+    ((geometry.height - (geometry.items_y - geometry.y) - PANEL_FOOTER_HEIGHT - PANEL_PADDING)
+        / PANEL_ROW_HEIGHT)
+        .floor()
+        .max(0.0) as usize
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum WorkspaceDestination {
+    Files,
+    Outline,
+    Search,
+    Backlinks,
+}
+
+const WORKSPACE_DESTINATIONS: [WorkspaceDestination; 4] = [
+    WorkspaceDestination::Files,
+    WorkspaceDestination::Outline,
+    WorkspaceDestination::Search,
+    WorkspaceDestination::Backlinks,
+];
+
+impl WorkspaceDestination {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Files => "Archivos",
+            Self::Outline => "Índice",
+            Self::Search => "Buscar",
+            Self::Backlinks => "Backlinks",
+        }
+    }
+
+    const fn action(self) -> AppAction {
+        match self {
+            Self::Files => AppAction::WorkspaceFiles,
+            Self::Outline => AppAction::DocumentOutline,
+            Self::Search => AppAction::SearchWorkspace,
+            Self::Backlinks => AppAction::Backlinks,
+        }
+    }
+}
+
+fn workspace_destination_at(
+    x: f32,
+    y: f32,
+    geometry: PanelGeometry,
+) -> Option<WorkspaceDestination> {
+    if !(geometry.x..geometry.x + geometry.width).contains(&x)
+        || !(geometry.y..geometry.y + WORKSPACE_DESTINATION_HEIGHT).contains(&y)
+    {
+        return None;
+    }
+    let slot_width = geometry.width / WORKSPACE_DESTINATIONS.len() as f32;
+    WORKSPACE_DESTINATIONS
+        .get(((x - geometry.x) / slot_width) as usize)
+        .copied()
+}
+
+fn workspace_column_close_at(x: f32, y: f32, geometry: PanelGeometry) -> bool {
+    let right = geometry.x + geometry.width;
+    (right - 30.0..right - 4.0).contains(&x)
+        && (geometry.y + WORKSPACE_DESTINATION_HEIGHT + 2.0
+            ..geometry.y + WORKSPACE_DESTINATION_HEIGHT + PANEL_ROW_HEIGHT - 2.0)
+            .contains(&y)
 }
 
 fn panel_contains_point(x: f32, y: f32, geometry: PanelGeometry) -> bool {
@@ -881,6 +1011,10 @@ enum AppAction {
     FormatHighlight,
     InsertWikiLink,
     InsertCallout,
+    BlockTools,
+    ListTools,
+    InsertTools,
+    StudyTools,
     WritingTools,
     InsertStudyQuestion,
     InsertStudySummary,
@@ -909,7 +1043,7 @@ enum AppAction {
     CommandPalette,
 }
 
-const APP_ACTIONS: [AppAction; 56] = [
+const APP_ACTIONS: [AppAction; 60] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -943,6 +1077,10 @@ const APP_ACTIONS: [AppAction; 56] = [
     AppAction::FormatHighlight,
     AppAction::InsertWikiLink,
     AppAction::InsertCallout,
+    AppAction::BlockTools,
+    AppAction::ListTools,
+    AppAction::InsertTools,
+    AppAction::StudyTools,
     AppAction::WritingTools,
     AppAction::InsertStudyQuestion,
     AppAction::InsertStudySummary,
@@ -1002,6 +1140,10 @@ impl AppAction {
             Self::FormatHighlight => "Resaltar texto",
             Self::InsertWikiLink => "Insertar enlace de bóveda",
             Self::InsertCallout => "Insertar callout de nota",
+            Self::BlockTools => "Bloques y estructura",
+            Self::ListTools => "Listas y tareas",
+            Self::InsertTools => "Insertar enlaces y bloques",
+            Self::StudyTools => "Estudio y notas",
             Self::WritingTools => "Más formato Markdown",
             Self::InsertStudyQuestion => "Insertar pregunta de estudio",
             Self::InsertStudySummary => "Insertar resumen de estudio",
@@ -1050,6 +1192,9 @@ fn filtered_actions(query: &str) -> Vec<AppAction> {
 enum CommandPaletteScope {
     All,
     Writing,
+    Blocks,
+    Lists,
+    Insert,
     Workspace,
     Study,
 }
@@ -1690,6 +1835,19 @@ impl DocumentMode {
 
 fn toolbar_action_is_active(action: AppAction, mode: DocumentMode) -> bool {
     action == AppAction::ToggleMode && mode.is_editable()
+}
+
+fn toolbar_action_has_menu(action: AppAction) -> bool {
+    matches!(
+        action,
+        AppAction::BlockTools
+            | AppAction::ListTools
+            | AppAction::InsertTools
+            | AppAction::StudyTools
+            | AppAction::WritingTools
+            | AppAction::WorkspaceHub
+            | AppAction::CommandPalette
+    )
 }
 
 impl From<DocumentModePreference> for DocumentMode {
@@ -3383,7 +3541,7 @@ fn draw_toolbar_icon(
             path.move_to(left + 9.0, top + 5.0);
             path.line_to(right - 9.0, bottom - 5.0);
         }
-        AppAction::InsertHeading => {
+        AppAction::InsertHeading | AppAction::BlockTools => {
             path.move_to(left + 4.0, top + 3.0);
             path.line_to(left + 4.0, bottom - 3.0);
             path.move_to(right - 4.0, top + 3.0);
@@ -3391,7 +3549,7 @@ fn draw_toolbar_icon(
             path.move_to(left + 4.0, center_y);
             path.line_to(right - 4.0, center_y);
         }
-        AppAction::InsertBulletList => {
+        AppAction::InsertBulletList | AppAction::ListTools => {
             for row in [top + 5.0, center_y, bottom - 5.0] {
                 if let Some(rect) = Rect::from_xywh(left + 3.0, row - 1.5, 3.0, 3.0) {
                     pixmap.fill_rect(rect, &paint, Transform::identity(), None);
@@ -3465,7 +3623,7 @@ fn draw_toolbar_icon(
             path.move_to(left + 4.0, center_y);
             path.line_to(right - 4.0, center_y);
         }
-        AppAction::InsertLink => {
+        AppAction::InsertLink | AppAction::InsertTools => {
             path.move_to(left + 3.0, center_y);
             path.line_to(left + 7.0, top + 5.0);
             path.line_to(center_x, top + 5.0);
@@ -3476,6 +3634,18 @@ fn draw_toolbar_icon(
             path.line_to(right - 3.0, center_y);
             path.move_to(left + 8.0, center_y);
             path.line_to(right - 8.0, center_y);
+        }
+        AppAction::StudyTools => {
+            path.move_to(left + 3.0, top + 4.0);
+            path.line_to(center_x, top + 6.0);
+            path.line_to(center_x, bottom - 3.0);
+            path.line_to(left + 3.0, bottom - 5.0);
+            path.close();
+            path.move_to(right - 3.0, top + 4.0);
+            path.line_to(center_x, top + 6.0);
+            path.line_to(center_x, bottom - 3.0);
+            path.line_to(right - 3.0, bottom - 5.0);
+            path.close();
         }
         AppAction::ToggleSplit => {
             path.move_to(left + 3.0, top + 3.0);
@@ -3508,6 +3678,28 @@ fn draw_toolbar_icon(
                 line_join: tiny_skia::LineJoin::Round,
                 ..Default::default()
             },
+            Transform::identity(),
+            None,
+        );
+    }
+}
+
+fn draw_menu_chevron(pixmap: &mut Pixmap, x: f32, y: f32, color: (u8, u8, u8)) {
+    let mut path = tiny_skia::PathBuilder::new();
+    path.move_to(x, y);
+    path.line_to(x + 4.0, y);
+    path.line_to(x + 2.0, y + 2.5);
+    path.close();
+    let mut paint = Paint {
+        anti_alias: true,
+        ..Default::default()
+    };
+    paint.set_color(Color::from_rgba8(color.0, color.1, color.2, 220));
+    if let Some(path) = path.finish() {
+        pixmap.fill_path(
+            &path,
+            &paint,
+            tiny_skia::FillRule::Winding,
             Transform::identity(),
             None,
         );
@@ -4422,6 +4614,10 @@ struct PreparedDocumentPane {
 /// Mide y maqueta únicamente los bloques visibles de una vista de documento.
 /// El documento se recibe prestado y la caché se recibe por separado: nunca se
 /// copia la fuente, el historial ni la recuperación para dibujar un mosaico.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "la frontera de render conserva explícitos documento, caché, viewport y contextos prestados"
+)]
 fn prepare_document_pane(
     document: &DocumentState,
     cache: &mut PaneRenderCache,
@@ -4621,18 +4817,17 @@ fn document_pane_at(layouts: &[DocumentPaneLayout], x: f32, y: f32) -> Option<&D
 /// Calcula una sola vez la geometría de las hojas visibles. Sus coordenadas
 /// viven dentro del área documental, por eso el puntero de ventana debe
 /// restar `DOCUMENT_VIEWPORT_TOP` antes de consultar `document_pane_at`.
-fn document_pane_layouts(
+fn document_pane_layouts_in(
     tree: &DocumentPaneTree,
-    viewport_width: f32,
-    viewport_height: f32,
+    viewport: PaneGeometry,
 ) -> Vec<DocumentPaneLayout> {
     let mut layouts = Vec::with_capacity(tree.pane_count());
     tree.layout(
         PaneGeometry {
-            x: 0.0,
-            y: 0.0,
-            width: viewport_width.max(0.0),
-            height: viewport_height.max(0.0),
+            x: viewport.x,
+            y: viewport.y,
+            width: viewport.width.max(0.0),
+            height: viewport.height.max(0.0),
         },
         &mut layouts,
     );
@@ -5375,6 +5570,10 @@ fn pane_text_width(pane: PaneGeometry, scale: f32) -> f32 {
 /// Dibuja un conjunto de bloques ya maquetados dentro de una región local de
 /// un panel. El pixmap receptor tiene el tamaño de la hoja, de modo que hasta
 /// los glifos rasterizados quedan recortados por la propia memoria del panel.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "la frontera de rasterizado recibe recursos prestados sin ocultar su propiedad en estado global"
+)]
 fn draw_cached_blocks_in_pane(
     pixmap: &mut Pixmap,
     blocks: &[Block],
@@ -5576,6 +5775,10 @@ fn draw_cached_blocks_in_pane(
 /// Compone los documentos no enfocados del mosaico. Cada panel se rasteriza en
 /// su propio lienzo reutilizable antes de copiarse al framebuffer principal;
 /// así el clipping no depende de una API de recorte implícita del rasterizador.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "el compositor coordina contextos prestados y cachés por panel sin duplicar buffers"
+)]
 fn draw_inactive_document_panes(
     pixmap: &mut Pixmap,
     layouts: &[DocumentPaneLayout],
@@ -7448,14 +7651,20 @@ impl ApplicationHandler<AppEvent> for App {
                             if let Some((x, y)) = self.pointer {
                                 self.activate_panel_at(x, y);
                             }
-                        } else {
+                            self.selecting = false;
+                            if let Some(window) = &self.window {
+                                window.request_redraw();
+                            }
+                            return;
+                        }
+                        if !self.workspace_column_is_open() {
                             self.dismiss_navigation_panel();
+                            self.selecting = false;
+                            if let Some(window) = &self.window {
+                                window.request_redraw();
+                            }
+                            return;
                         }
-                        self.selecting = false;
-                        if let Some(window) = &self.window {
-                            window.request_redraw();
-                        }
-                        return;
                     }
                     let resize_direction = self.window.as_ref().and_then(|window| {
                         let size = window.inner_size();
@@ -8403,6 +8612,10 @@ impl App {
             AppAction::FormatHighlight => self.apply_markdown_surround("==", "==", "texto"),
             AppAction::InsertWikiLink => self.apply_markdown_surround("[[", "]]", "nota"),
             AppAction::InsertCallout => self.insert_callout(),
+            AppAction::BlockTools => self.open_block_actions(),
+            AppAction::ListTools => self.open_list_actions(),
+            AppAction::InsertTools => self.open_insert_actions(),
+            AppAction::StudyTools => self.open_study_actions(),
             AppAction::WritingTools => self.open_writing_actions(),
             AppAction::InsertStudyQuestion => self.insert_study_question(),
             AppAction::InsertStudySummary => self.insert_study_summary(),
@@ -8740,6 +8953,9 @@ impl App {
         let actions = match self.command_palette_scope {
             CommandPaletteScope::All => &APP_ACTIONS[..],
             CommandPaletteScope::Writing => &WRITING_ACTIONS[..],
+            CommandPaletteScope::Blocks => &BLOCK_ACTIONS[..],
+            CommandPaletteScope::Lists => &LIST_ACTIONS[..],
+            CommandPaletteScope::Insert => &INSERT_ACTIONS[..],
             CommandPaletteScope::Workspace => &WORKSPACE_HUB_ACTIONS[..],
             CommandPaletteScope::Study => &STUDY_ACTIONS[..],
         };
@@ -8747,6 +8963,10 @@ impl App {
     }
 
     fn open_workspace_hub(&mut self) {
+        if self.workspace.is_some() {
+            self.show_workspace_files();
+            return;
+        }
         self.clear_pane_split_picker();
         self.context_menu = None;
         self.search_query = None;
@@ -8782,7 +9002,35 @@ impl App {
         }
     }
 
+    fn open_block_actions(&mut self) {
+        self.open_writing_scope(
+            CommandPaletteScope::Blocks,
+            "bloques y estructura · elegí una variante",
+        );
+    }
+
+    fn open_list_actions(&mut self) {
+        self.open_writing_scope(
+            CommandPaletteScope::Lists,
+            "listas y tareas · elegí una variante",
+        );
+    }
+
+    fn open_insert_actions(&mut self) {
+        self.open_writing_scope(
+            CommandPaletteScope::Insert,
+            "insertar · elegí enlace, tabla o bloque",
+        );
+    }
+
     fn open_writing_actions(&mut self) {
+        self.open_writing_scope(
+            CommandPaletteScope::Writing,
+            "más formato Markdown · elegí una variante",
+        );
+    }
+
+    fn open_writing_scope(&mut self, scope: CommandPaletteScope, notice: &str) {
         self.clear_pane_split_picker();
         self.context_menu = None;
         self.search_query = None;
@@ -8792,9 +9040,9 @@ impl App {
         self.outline_headings = None;
         self.command_palette = Some(0);
         self.command_palette_query.clear();
-        self.command_palette_scope = CommandPaletteScope::Writing;
+        self.command_palette_scope = scope;
         self.toolbar_focus = None;
-        self.set_notice("más formato Markdown · elegí una variante");
+        self.set_notice(notice);
         if let Some(window) = &self.window {
             window.request_redraw();
         }
@@ -8928,10 +9176,48 @@ impl App {
             || self.outline_headings.is_some()
     }
 
+    fn workspace_column_is_open(&self) -> bool {
+        (self.command_palette.is_some()
+            && self.command_palette_scope == CommandPaletteScope::Workspace)
+            || self.workspace_search_query.is_some()
+            || self.workspace_paths.is_some()
+            || self.backlink_paths.is_some()
+            || self.link_diagnostics.is_some()
+            || self.outline_headings.is_some()
+    }
+
+    fn active_workspace_destination(&self) -> Option<WorkspaceDestination> {
+        if self.workspace_paths.is_some() {
+            Some(WorkspaceDestination::Files)
+        } else if self.outline_headings.is_some() {
+            Some(WorkspaceDestination::Outline)
+        } else if self.workspace_search_query.is_some() {
+            Some(WorkspaceDestination::Search)
+        } else if self.backlink_paths.is_some() || self.link_diagnostics.is_some() {
+            Some(WorkspaceDestination::Backlinks)
+        } else {
+            None
+        }
+    }
+
+    fn navigation_panel_geometry(&self, item_count: usize) -> Option<PanelGeometry> {
+        let window = self.window.as_ref()?;
+        let size = window.inner_size();
+        Some(if self.workspace_column_is_open() {
+            workspace_column_geometry(size.width as f32, size.height as f32)
+        } else {
+            navigation_panel_geometry(
+                size.width as f32,
+                size.height as f32,
+                panel_window(item_count, 0, PANEL_CAPACITY).len(),
+            )
+        })
+    }
+
     fn navigation_panel_contains(&self, x: f32, y: f32) -> bool {
-        let Some(window) = self.window.as_ref() else {
+        if self.window.is_none() {
             return false;
-        };
+        }
         let item_count = if self.pane_split_picker.is_some() {
             self.pane_split_candidates.len()
         } else if self.command_palette.is_some() {
@@ -8949,21 +9235,13 @@ impl App {
         } else {
             return false;
         };
-        panel_contains_point(
-            x,
-            y,
-            navigation_panel_geometry(
-                window.inner_size().width as f32,
-                window.inner_size().height as f32,
-                panel_window(item_count, 0, PANEL_CAPACITY).len(),
-            ),
-        )
+        self.navigation_panel_geometry(item_count)
+            .is_some_and(|geometry| panel_contains_point(x, y, geometry))
     }
 
-    /// Los paneles de navegación son transitorios: un clic fuera de su marco
-    /// los descarta sin activar el contenido que quedó debajo. Se conserva la
-    /// búsqueda dentro del documento porque pertenece a la lectura actual, no
-    /// a este grupo de capas flotantes.
+    /// Descarta la navegación efímera. La columna de workspace invoca esta
+    /// ruta con Escape o al cambiar de documento, no por un clic en el lienzo:
+    /// una columna acoplada debe permanecer hasta que la persona la cierre.
     fn dismiss_navigation_panel(&mut self) {
         self.clear_pane_split_picker();
         self.workspace_search_query = None;
@@ -8981,25 +9259,40 @@ impl App {
             return false;
         };
         let size = window.inner_size();
+        let docked = self.workspace_column_is_open();
+        let panel_geometry = |count: usize, selected: usize| {
+            if docked {
+                workspace_column_geometry(size.width as f32, size.height as f32)
+            } else {
+                navigation_panel_geometry(
+                    size.width as f32,
+                    size.height as f32,
+                    panel_window(count, selected, PANEL_CAPACITY).len(),
+                )
+            }
+        };
+        if docked {
+            let geometry = workspace_column_geometry(size.width as f32, size.height as f32);
+            if workspace_column_close_at(x, y, geometry) {
+                self.dismiss_navigation_panel();
+                return true;
+            }
+            if let Some(destination) = workspace_destination_at(x, y, geometry) {
+                self.perform_action(destination.action());
+                return true;
+            }
+        }
         if self.pane_split_picker.is_some() {
             let count = self.pane_split_candidates.len();
             let selected = self.pane_split_match;
-            let geometry = navigation_panel_geometry(
-                size.width as f32,
-                size.height as f32,
-                panel_window(count, selected, PANEL_CAPACITY).len(),
-            );
+            let geometry = panel_geometry(count, selected);
             if let Some(index) = panel_item_at(x, y, count, selected, geometry) {
                 self.choose_document_pane_split(index);
                 return true;
             }
         } else if let Some(selected) = self.command_palette {
             let actions = self.command_palette_actions();
-            let geometry = navigation_panel_geometry(
-                size.width as f32,
-                size.height as f32,
-                panel_window(actions.len(), selected, PANEL_CAPACITY).len(),
-            );
+            let geometry = panel_geometry(actions.len(), selected);
             if let Some(index) = panel_item_at(x, y, actions.len(), selected, geometry) {
                 self.command_palette = None;
                 self.command_palette_query.clear();
@@ -9010,11 +9303,7 @@ impl App {
         } else if self.workspace_search_query.is_some() {
             let count = self.workspace_search_matches().len();
             let selected = self.workspace_search_match;
-            let geometry = navigation_panel_geometry(
-                size.width as f32,
-                size.height as f32,
-                panel_window(count, selected, PANEL_CAPACITY).len(),
-            );
+            let geometry = panel_geometry(count, selected);
             if let Some(index) = panel_item_at(x, y, count, selected, geometry) {
                 self.workspace_search_match = index;
                 self.open_workspace_search_match();
@@ -9022,11 +9311,7 @@ impl App {
             }
         } else if let Some(paths) = &self.workspace_paths {
             let selected = self.workspace_path_match;
-            let geometry = navigation_panel_geometry(
-                size.width as f32,
-                size.height as f32,
-                panel_window(paths.len(), selected, PANEL_CAPACITY).len(),
-            );
+            let geometry = panel_geometry(paths.len(), selected);
             if let Some(index) = panel_item_at(x, y, paths.len(), selected, geometry) {
                 self.workspace_path_match = index;
                 self.open_workspace_path_match();
@@ -9034,11 +9319,7 @@ impl App {
             }
         } else if let Some(paths) = &self.backlink_paths {
             let selected = self.backlink_match;
-            let geometry = navigation_panel_geometry(
-                size.width as f32,
-                size.height as f32,
-                panel_window(paths.len(), selected, PANEL_CAPACITY).len(),
-            );
+            let geometry = panel_geometry(paths.len(), selected);
             if let Some(index) = panel_item_at(x, y, paths.len(), selected, geometry) {
                 self.backlink_match = index;
                 self.open_backlink_match();
@@ -9046,11 +9327,7 @@ impl App {
             }
         } else if let Some(rows) = &self.link_diagnostics {
             let selected = self.link_diagnostic_match;
-            let geometry = navigation_panel_geometry(
-                size.width as f32,
-                size.height as f32,
-                panel_window(rows.len(), selected, PANEL_CAPACITY).len(),
-            );
+            let geometry = panel_geometry(rows.len(), selected);
             if let Some(index) = panel_item_at(x, y, rows.len(), selected, geometry) {
                 self.link_diagnostic_match = index;
                 return true;
@@ -9061,11 +9338,7 @@ impl App {
                 y,
                 headings.len(),
                 self.outline_match,
-                navigation_panel_geometry(
-                    size.width as f32,
-                    size.height as f32,
-                    panel_window(headings.len(), self.outline_match, PANEL_CAPACITY).len(),
-                ),
+                panel_geometry(headings.len(), self.outline_match),
             )
         {
             self.outline_match = index;
@@ -9253,10 +9526,13 @@ impl App {
             return Vec::new();
         };
         let size = window.inner_size();
-        document_pane_layouts(
+        document_pane_layouts_in(
             &self.document_panes,
-            size.width as f32,
-            document_viewport_height(size.height as f32),
+            document_area_geometry(
+                size.width as f32,
+                size.height as f32,
+                self.workspace_column_is_open(),
+            ),
         )
     }
 
@@ -12429,11 +12705,10 @@ impl App {
         };
 
         let frame_start = Instant::now();
-        let document_layouts = document_pane_layouts(
-            &self.document_panes,
-            size.width as f32,
-            document_viewport_height(size.height as f32),
-        );
+        let workspace_column_open = self.workspace_column_is_open();
+        let document_area =
+            document_area_geometry(size.width as f32, size.height as f32, workspace_column_open);
+        let document_layouts = document_pane_layouts_in(&self.document_panes, document_area);
         let focused_outer = document_layouts
             .iter()
             .find(|layout| layout.pane_id == self.focused_document_pane)
@@ -12443,12 +12718,7 @@ impl App {
                     .find(|layout| layout.document_id == self.document.id)
             })
             .map(|layout| layout.geometry)
-            .unwrap_or(PaneGeometry {
-                x: 0.0,
-                y: 0.0,
-                width: size.width as f32,
-                height: document_viewport_height(size.height as f32),
-            });
+            .unwrap_or(document_area);
         let split = self.document.mode == DocumentMode::Split;
         let panes = document_pane_geometry_in(
             focused_outer,
@@ -12669,6 +12939,8 @@ impl App {
                 })
                 .collect::<Vec<_>>()
         });
+        let workspace_panel_capacity =
+            panel_capacity(workspace_column_geometry(w.get() as f32, h.get() as f32));
         let navigation_panel_rows = if let (Some(axis), Some(candidates)) =
             (pane_split_axis, pane_split_candidates.as_ref())
         {
@@ -12690,11 +12962,19 @@ impl App {
             (self.command_palette, palette_actions.as_ref())
         {
             let selected = selected % actions.len().max(1);
-            let range = panel_window(actions.len(), selected, PANEL_CAPACITY);
+            let capacity = if self.command_palette_scope == CommandPaletteScope::Workspace {
+                workspace_panel_capacity
+            } else {
+                PANEL_CAPACITY
+            };
+            let range = panel_window(actions.len(), selected, capacity);
             let title = if self.command_palette_query.is_empty() {
                 match self.command_palette_scope {
                     CommandPaletteScope::All => "Acciones · escribe para filtrar".to_string(),
                     CommandPaletteScope::Writing => "Más formato Markdown".to_string(),
+                    CommandPaletteScope::Blocks => "Bloques y estructura".to_string(),
+                    CommandPaletteScope::Lists => "Listas y tareas".to_string(),
+                    CommandPaletteScope::Insert => "Insertar".to_string(),
                     CommandPaletteScope::Workspace => "Espacio de trabajo".to_string(),
                     CommandPaletteScope::Study => "Herramientas de estudio".to_string(),
                 }
@@ -12723,7 +13003,7 @@ impl App {
             workspace_search_results.as_ref(),
         ) {
             let selected = self.workspace_search_match % paths.len().max(1);
-            let range = panel_window(paths.len(), selected, PANEL_CAPACITY);
+            let range = panel_window(paths.len(), selected, workspace_panel_capacity);
             let workspace_root = self.workspace.as_ref().map(|(root, _)| root.root());
             let workspace_name = workspace_name(workspace_root);
             let title = if query.is_empty() {
@@ -12749,7 +13029,7 @@ impl App {
             })
         } else if let Some(paths) = self.workspace_paths.as_ref() {
             let selected = self.workspace_path_match % paths.len().max(1);
-            let range = panel_window(paths.len(), selected, PANEL_CAPACITY);
+            let range = panel_window(paths.len(), selected, workspace_panel_capacity);
             let (workspace_root, note_count) = self
                 .workspace
                 .as_ref()
@@ -12770,7 +13050,7 @@ impl App {
             })
         } else if let Some(paths) = self.backlink_paths.as_ref() {
             let selected = self.backlink_match % paths.len().max(1);
-            let range = panel_window(paths.len(), selected, PANEL_CAPACITY);
+            let range = panel_window(paths.len(), selected, workspace_panel_capacity);
             Some(NavigationPanelRows {
                 title: backlinks_panel_title(paths.len()),
                 items: range
@@ -12786,7 +13066,7 @@ impl App {
             })
         } else if let Some(rows) = self.link_diagnostics.as_ref() {
             let selected = self.link_diagnostic_match % rows.len().max(1);
-            let range = panel_window(rows.len(), selected, PANEL_CAPACITY);
+            let range = panel_window(rows.len(), selected, workspace_panel_capacity);
             Some(NavigationPanelRows {
                 title: format!("Enlaces de bóveda · {}", rows.len()),
                 items: range
@@ -12797,7 +13077,7 @@ impl App {
             })
         } else if let Some(headings) = self.outline_headings.as_ref() {
             let selected = self.outline_match % headings.len().max(1);
-            let range = panel_window(headings.len(), selected, PANEL_CAPACITY);
+            let range = panel_window(headings.len(), selected, workspace_panel_capacity);
             Some(NavigationPanelRows {
                 title: format!("Índice · {} encabezados", headings.len()),
                 items: range
@@ -12813,6 +13093,20 @@ impl App {
             rows.labels()
                 .map(|label| {
                     build_menu_layout(label, &mut self.font_cx, &mut self.layout_cx, self.palette)
+                })
+                .collect::<Vec<_>>()
+        });
+        let active_workspace_destination = self.active_workspace_destination();
+        let workspace_destination_layouts = workspace_column_open.then(|| {
+            WORKSPACE_DESTINATIONS
+                .iter()
+                .map(|destination| {
+                    build_menu_layout(
+                        destination.label(),
+                        &mut self.font_cx,
+                        &mut self.layout_cx,
+                        self.palette,
+                    )
                 })
                 .collect::<Vec<_>>()
         });
@@ -13703,6 +13997,14 @@ impl App {
                 18.0,
                 icon_color,
             );
+            if toolbar_action_has_menu(action) {
+                draw_menu_chevron(
+                    pixmap,
+                    x + width - 9.0,
+                    TOOLBAR_Y + TOOLBAR_HEIGHT - 8.0,
+                    icon_color,
+                );
+            }
         }
         fill_rounded_rect(
             pixmap,
@@ -13844,6 +14146,14 @@ impl App {
                 18.0,
                 icon_color,
             );
+            if toolbar_action_has_menu(action) {
+                draw_menu_chevron(
+                    pixmap,
+                    x + width - 8.0,
+                    CONTEXT_TOOLBAR_Y + CONTEXT_TOOLBAR_HEIGHT - 8.0,
+                    icon_color,
+                );
+            }
         }
 
         if let Some(layout) = toolbar_hint_layout {
@@ -14072,18 +14382,133 @@ impl App {
             navigation_panel_rows.as_ref(),
             navigation_panel_layouts.as_ref(),
         ) {
-            let geometry =
-                navigation_panel_geometry(w.get() as f32, h.get() as f32, rows.items.len());
+            let geometry = if workspace_column_open {
+                workspace_column_geometry(w.get() as f32, h.get() as f32)
+            } else {
+                navigation_panel_geometry(w.get() as f32, h.get() as f32, rows.items.len())
+            };
             if let Some(rect) =
                 Rect::from_xywh(geometry.x, geometry.y, geometry.width, geometry.height)
             {
-                pixmap.fill_rect(rect, &floating_paint, Transform::identity(), None);
+                pixmap.fill_rect(
+                    rect,
+                    if workspace_column_open {
+                        &elevated_paint
+                    } else {
+                        &floating_paint
+                    },
+                    Transform::identity(),
+                    None,
+                );
+            }
+            if workspace_column_open
+                && let Some(rect) = Rect::from_xywh(
+                    geometry.x + geometry.width - 1.0,
+                    geometry.y,
+                    1.0,
+                    geometry.height,
+                )
+            {
+                pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
+            }
+            if let Some(destination_layouts) = workspace_destination_layouts.as_ref() {
+                let slot_width = geometry.width / WORKSPACE_DESTINATIONS.len() as f32;
+                for (index, (destination, layout)) in WORKSPACE_DESTINATIONS
+                    .iter()
+                    .zip(destination_layouts.iter())
+                    .enumerate()
+                {
+                    let x = geometry.x + index as f32 * slot_width;
+                    let active = active_workspace_destination == Some(*destination);
+                    let hovered = menu_pointer.is_some_and(|(pointer_x, pointer_y)| {
+                        workspace_destination_at(pointer_x, pointer_y, geometry)
+                            == Some(*destination)
+                    });
+                    if (active || hovered)
+                        && let Some(rect) = Rect::from_xywh(
+                            x + 3.0,
+                            geometry.y + 3.0,
+                            slot_width - 6.0,
+                            WORKSPACE_DESTINATION_HEIGHT - 6.0,
+                        )
+                    {
+                        if active {
+                            let ac = palette.accent;
+                            let mut active_paint = Paint::default();
+                            active_paint.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 38));
+                            pixmap.fill_rect(rect, &active_paint, Transform::identity(), None);
+                        } else {
+                            pixmap.fill_rect(rect, &floating_paint, Transform::identity(), None);
+                        }
+                    }
+                    if active
+                        && let Some(rect) = Rect::from_xywh(
+                            x + 8.0,
+                            geometry.y + WORKSPACE_DESTINATION_HEIGHT - 2.0,
+                            slot_width - 16.0,
+                            2.0,
+                        )
+                    {
+                        pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
+                    }
+                    for line in layout.lines() {
+                        for entry in line.items() {
+                            if let PositionedLayoutItem::GlyphRun(run) = entry {
+                                let text_x = x + (slot_width - layout.width()).max(8.0) * 0.5;
+                                draw_run_background(pixmap, &run, text_x, geometry.y + 11.0);
+                                draw_glyph_run(
+                                    pixmap,
+                                    scale_cx,
+                                    glyphs,
+                                    &run,
+                                    text_x,
+                                    geometry.y + 11.0,
+                                );
+                            }
+                        }
+                    }
+                }
+                if let Some(rect) = Rect::from_xywh(
+                    geometry.x,
+                    geometry.y + WORKSPACE_DESTINATION_HEIGHT,
+                    geometry.width,
+                    1.0,
+                ) {
+                    pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
+                }
+                let close_center_x = geometry.x + geometry.width - 17.0;
+                let close_center_y =
+                    geometry.y + WORKSPACE_DESTINATION_HEIGHT + PANEL_ROW_HEIGHT * 0.5;
+                let mut close_path = tiny_skia::PathBuilder::new();
+                close_path.move_to(close_center_x - 4.0, close_center_y - 4.0);
+                close_path.line_to(close_center_x + 4.0, close_center_y + 4.0);
+                close_path.move_to(close_center_x + 4.0, close_center_y - 4.0);
+                close_path.line_to(close_center_x - 4.0, close_center_y + 4.0);
+                if let Some(close_path) = close_path.finish() {
+                    pixmap.stroke_path(
+                        &close_path,
+                        &dim_paint,
+                        &tiny_skia::Stroke {
+                            width: 1.4,
+                            line_cap: tiny_skia::LineCap::Round,
+                            ..Default::default()
+                        },
+                        Transform::identity(),
+                        None,
+                    );
+                }
             }
             for (row, layout) in layouts.iter().enumerate() {
                 let is_item = row > 0 && row <= rows.items.len();
                 let selected = is_item && rows.items[row - 1].0;
                 let y = if row == 0 {
-                    geometry.y + PANEL_PADDING
+                    geometry.y
+                        + if workspace_column_open {
+                            WORKSPACE_DESTINATION_HEIGHT
+                        } else {
+                            0.0
+                        }
+                        + PANEL_PADDING
                 } else if is_item {
                     geometry.items_y + (row - 1) as f32 * PANEL_ROW_HEIGHT
                 } else {
@@ -14884,11 +15309,11 @@ mod pruebas {
         );
         assert_eq!(
             toolbar_action_at(230.0, 50.0, 900.0, DocumentMode::SourceEditing),
-            Some(AppAction::InsertHeading)
+            Some(AppAction::BlockTools)
         );
         assert_eq!(
             toolbar_action_at(250.0, 50.0, 900.0, DocumentMode::SourceEditing),
-            Some(AppAction::InsertBulletList)
+            Some(AppAction::ListTools)
         );
         for (index, action) in READING_CONTEXT_TOOLBAR_ACTIONS.iter().copied().enumerate() {
             let geometry = contextual_toolbar_item_geometry(index, 640.0)
@@ -14946,17 +15371,31 @@ mod pruebas {
         );
         assert!(EDITING_CONTEXT_TOOLBAR_ACTIONS.contains(&AppAction::FormatStrikethrough));
         assert!(EDITING_CONTEXT_TOOLBAR_ACTIONS.contains(&AppAction::FormatInlineCode));
-        assert!(EDITING_CONTEXT_TOOLBAR_ACTIONS.contains(&AppAction::InsertOrderedList));
+        assert!(EDITING_CONTEXT_TOOLBAR_ACTIONS.contains(&AppAction::BlockTools));
+        assert!(EDITING_CONTEXT_TOOLBAR_ACTIONS.contains(&AppAction::ListTools));
+        assert!(EDITING_CONTEXT_TOOLBAR_ACTIONS.contains(&AppAction::InsertTools));
+        assert!(EDITING_CONTEXT_TOOLBAR_ACTIONS.contains(&AppAction::StudyTools));
         assert!(EDITING_CONTEXT_TOOLBAR_ACTIONS.contains(&AppAction::WritingTools));
+        assert_eq!(LIST_ACTIONS[1], AppAction::InsertOrderedList);
         assert!(WRITING_ACTIONS.contains(&AppAction::InsertHorizontalRule));
         assert!(WRITING_ACTIONS.contains(&AppAction::InsertWikiLink));
         assert!(WRITING_ACTIONS.contains(&AppAction::InsertCallout));
+        assert!(WRITING_ACTIONS.contains(&AppAction::ToggleSplitOrientation));
+        assert_eq!(BLOCK_ACTIONS[0], AppAction::InsertHeading);
+        assert_eq!(LIST_ACTIONS[2], AppAction::InsertTask);
+        assert!(INSERT_ACTIONS.contains(&AppAction::InsertTable));
+        assert!(toolbar_action_has_menu(AppAction::BlockTools));
+        assert!(toolbar_action_has_menu(AppAction::ListTools));
+        assert!(toolbar_action_has_menu(AppAction::InsertTools));
+        assert!(toolbar_action_has_menu(AppAction::StudyTools));
+        assert!(toolbar_action_has_menu(AppAction::WritingTools));
+        assert!(!toolbar_action_has_menu(AppAction::FormatBold));
         assert_eq!(
             toolbar_focus_action(
                 contextual_toolbar_focus_start() + EDITING_CONTEXT_TOOLBAR_ACTIONS.len() - 1,
                 DocumentMode::SourceEditing,
             ),
-            Some(AppAction::ToggleSplit)
+            Some(AppAction::WritingTools)
         );
         let reading_focus_count = toolbar_focus_count(DocumentMode::Reading);
         assert_eq!(
@@ -15042,7 +15481,7 @@ mod pruebas {
                 640.0,
                 DocumentMode::SourceEditing,
             ),
-            Some(AppAction::ToggleSplit.label())
+            Some(AppAction::WritingTools.label())
         );
     }
 
@@ -15058,9 +15497,9 @@ mod pruebas {
 
         // Incluye documento, workspace, estudio y accesibilidad sin convertir
         // la paleta en un menú de IDE: las familias densas también tienen
-        // ámbitos propios desde el menú contextual. Superar 56 exige revisar
+        // ámbitos propios desde el menú contextual. Superar 60 exige revisar
         // esa jerarquía antes de añadir otra acción.
-        assert!(original_len <= 56, "el catálogo dejó de ser pequeño");
+        assert!(original_len <= 60, "el catálogo dejó de ser pequeño");
         assert_eq!(labels.len(), original_len);
     }
 
@@ -15213,6 +15652,58 @@ mod pruebas {
     }
 
     #[test]
+    fn la_columna_de_workspace_reserva_el_lienzo_sin_tapar_el_documento() {
+        let column = workspace_column_geometry(1_200.0, 800.0);
+        let document = document_area_geometry(1_200.0, 800.0, true);
+
+        assert_eq!(column.x, 0.0);
+        assert_eq!(column.y, DOCUMENT_VIEWPORT_TOP);
+        assert_eq!(column.height, document_viewport_height(800.0));
+        assert!((WORKSPACE_COLUMN_MIN_WIDTH..=WORKSPACE_COLUMN_MAX_WIDTH).contains(&column.width));
+        assert_eq!(document.x, column.width);
+        assert_eq!(document.x + document.width, 1_200.0);
+        assert!(document.width >= WORKSPACE_DOCUMENT_MIN_WIDTH);
+        assert!(panel_capacity(column) > PANEL_CAPACITY);
+
+        let narrow = document_area_geometry(640.0, 480.0, true);
+        assert_eq!(narrow.width, WORKSPACE_DOCUMENT_MIN_WIDTH);
+        assert_eq!(narrow.x, 640.0 - WORKSPACE_DOCUMENT_MIN_WIDTH);
+        assert_eq!(document_area_geometry(640.0, 480.0, false).x, 0.0);
+
+        let slot_width = column.width / WORKSPACE_DESTINATIONS.len() as f32;
+        assert_eq!(
+            workspace_destination_at(
+                column.x + slot_width * 0.5,
+                column.y + WORKSPACE_DESTINATION_HEIGHT * 0.5,
+                column,
+            ),
+            Some(WorkspaceDestination::Files)
+        );
+        assert_eq!(
+            workspace_destination_at(
+                column.x + slot_width * 2.5,
+                column.y + WORKSPACE_DESTINATION_HEIGHT * 0.5,
+                column,
+            ),
+            Some(WorkspaceDestination::Search)
+        );
+        assert_eq!(
+            workspace_destination_at(column.width + 1.0, column.y + 4.0, column),
+            None
+        );
+        assert!(workspace_column_close_at(
+            column.x + column.width - 17.0,
+            column.y + WORKSPACE_DESTINATION_HEIGHT + PANEL_ROW_HEIGHT * 0.5,
+            column,
+        ));
+        assert!(!workspace_column_close_at(
+            column.x + 12.0,
+            column.y + WORKSPACE_DESTINATION_HEIGHT + PANEL_ROW_HEIGHT * 0.5,
+            column,
+        ));
+    }
+
+    #[test]
     fn el_arbol_del_workspace_muestra_jerarquia_sin_inventar_destinos() {
         let paths = vec![
             PathBuf::from("universidad/redes/uno.md"),
@@ -15301,10 +15792,8 @@ mod pruebas {
         assert!(APP_ACTIONS.contains(&AppAction::InsertStudyDoubt));
         assert!(APP_ACTIONS.contains(&AppAction::InsertStudyPending));
         assert!(APP_ACTIONS.contains(&AppAction::CopyPlatform));
-        assert!(
-            contextual_toolbar_actions(DocumentMode::Split)
-                .contains(&AppAction::ToggleSplitOrientation)
-        );
+        assert!(contextual_toolbar_actions(DocumentMode::Split).contains(&AppAction::WritingTools));
+        assert!(WRITING_ACTIONS.contains(&AppAction::ToggleSplitOrientation));
         assert!(
             !context_actions(DocumentMode::Reading, false, false, false)
                 .contains(&ContextAction::Paste)

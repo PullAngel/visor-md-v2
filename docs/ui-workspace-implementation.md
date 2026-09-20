@@ -87,6 +87,10 @@ hit testing, scroll y accesibilidad no pueden mantener copias divergentes.
 
 **Salida:** el workspace elegido se reconoce en lectura, edición y divisiones.
 
+**Estado:** implementada en código y pruebas geométricas. La columna reserva el
+viewport y reúne Archivos, Índice, Buscar y Backlinks; queda pendiente su QA
+visual en día, noche y ventanas estrechas.
+
 ### Fase 4. Panel documental
 
 - mover título, modo local y acciones de división a la cabecera de cada hoja;
@@ -102,6 +106,11 @@ hit testing, scroll y accesibilidad no pueden mantener copias divergentes.
 - completar degradación de controles por ancho.
 
 **Salida:** pestaña, hoja activa y modo actual son inequívocos.
+
+**Estado:** el kit de escritura ya separa acciones frecuentes y menús de
+Bloques, Listas, Insertar, Estudio y Más formato. Continúan pendientes la
+cabecera local por hoja y el QA visual de densidad, textos y degradación por
+ancho.
 
 ### Fase 5. Componentes y estados
 

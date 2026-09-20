@@ -48,7 +48,7 @@ contradicen esta fotografía.
 | Lector completo | En curso | Tablas legibles con copia TSV, notas al pie, autolinks, búsqueda, índice, métricas, plegado y placeholder/PNG local confirmado están presentes; faltan corpus sistemático, imágenes inline y accesibilidad de interacción. |
 | Editor básico | En curso | Abrir, crear, edición fuente/dividida, historial, guardado atómico, conflictos explícitos y recuperación local con debounce real están implementados; la fuente se actualiza localmente por líneas y renders, recargas y comprobaciones externas se versionan por solicitud. Falta sincronización incremental del render Markdown, accesibilidad de selección/IME y QA real de archivos y diálogos. |
 | Aplicación diaria | En curso | Pestañas reordenables, cierre protegido, acciones comunes, barra de estado, paneles plegables y chrome sin borde de Windows ya existen. Hasta cuatro documentos distintos pueden dividirse a la derecha o abajo mediante selección explícita; dibujo, scroll y foco quedan aislados por hoja sin duplicar datos. Faltan navegación de foco por teclado, transiciones con reducir movimiento, ventanas separadas, accesibilidad y QA por plataforma. |
-| Corrección visual | En curso | La composición Papel + Tinta, jerarquía de superficies, tipografía, barras primaria/contextual, iconos nativos, ayuda contextual y paneles fueron realineados con diseño; faltan pulido de estados y QA humano. |
+| Corrección visual | En curso | La composición Papel + Tinta usa la paleta sepia/bosque aprobada; la navegación de workspace ya ocupa una columna acoplada y el editor agrupa un kit Markdown amplio por intención. Faltan cabeceras locales por hoja, pulido de estados y QA humano. |
 | Workspace | En curso | Carpeta explícita, VFS, índice acotado/cancelable con cancelación visible, árbol, búsqueda y detección externa limitada ya existen. Las rutas secundarias inspeccionan reparse points antes de canonicalizar; faltan escala y QA adversarial multiplataforma. |
 | Obsidian | En curso | Wikilinks, aliases, encabezados, callouts, backlinks y PNG local confirmado se resuelven dentro de la raíz autorizada; una bóveda fixture cubre alias, callouts, ambigüedad y rutas hostiles; falta ampliar corpus y realizar QA de compatibilidad. |
 | Estudio | En curso | Resaltado portable, preguntas plegables, estados mediante callouts, listas de conceptos, copia para Discord/correo, fragmentación por bloques y plantillas de resumen o conceptos desde selección en pestañas derivadas; faltan selección o guardado individual de fragmentos y comparación. |
@@ -102,11 +102,12 @@ pestañas, los paneles de workspace y su interacción hasta que la aplicación s
 cómoda y segura en una jornada real. En paralelo se cierran los gates formales
 del lector cuando la evidencia correspondiente esté disponible.
 
-La interfaz mantiene dos niveles: una barra primaria para acciones del
-documento y una barra contextual para lectura o edición. Los iconos se apoyan
-en atajos, paleta y ayudas breves para que el minimalismo no reduzca la
-descubribilidad. Los paneles permanecen plegables para no competir con la
-lectura.
+La interfaz mantiene dos niveles: una barra primaria para acciones globales y
+una barra contextual para lectura o edición. El modo de edición no se reduce a
+una hilera mínima: las acciones frecuentes son directas y las variantes se
+agrupan en menús de Bloques, Listas, Insertar, Estudio y Más formato. Archivos,
+Índice, Buscar y Backlinks comparten una columna acoplada y plegable para no
+competir con la lectura cuando no se necesitan.
 
 ### Orden inmediato
 
