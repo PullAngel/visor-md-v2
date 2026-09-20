@@ -25,6 +25,28 @@ Explora el modo oscuro de bosque profundo y dos archivos distintos acoplados en
 una misma ventana. Cada hoja conserva su propio modo. El menú de destino hace
 explícitas cuatro opciones: pestaña, derecha, abajo u otra ventana.
 
+## C. Workspace refinado, día y noche
+
+![Workspace refinado en modo día y noche](visor-md-concept-c-workspace-day-night.png)
+
+Es la evolución más conservadora del workspace bosque. Mantiene la columna
+completa, las dos hojas y el menú de destino, pero elimina controles globales
+redundantes y refuerza pestaña, panel y modo activos. Día y noche representan
+exactamente la misma disposición. El modo claro usa papel marfil y sepia suave,
+sin convertir la aplicación en una superficie blanca fría.
+
+## D. Canvas editorial, día y noche
+
+![Canvas editorial en modo día y noche](visor-md-concept-d-editorial-day-night.png)
+
+Reduce el protagonismo del chrome y hace más visible el kit Markdown del editor.
+La lectura ocupa más espacio que la fuente y los destinos de la columna izquierda
+se separan de su contenido. Conserva las mismas capacidades del concepto C, con
+una jerarquía más tranquila y orgánica.
+
+Los conceptos C y D son alternativas para evaluación visual. No implican que
+ambas composiciones deban implementarse ni añaden nuevas funciones al roadmap.
+
 ## Decisiones compartidas
 
 - un documento grande es el estado normal;
