@@ -21,31 +21,31 @@ pub(crate) struct Palette {
 }
 
 pub(crate) const NIGHT: Palette = Palette {
-    bg: (0x0C, 0x0F, 0x0D),
-    surface: (0x12, 0x15, 0x13),
-    elevated: (0x1A, 0x1F, 0x1C),
-    floating: (0x23, 0x2A, 0x26),
-    border: (0x1D, 0x23, 0x20),
-    text: (0xE9, 0xE9, 0xE4),
-    dim: (0x8B, 0x91, 0x8C),
-    accent: (0x5F, 0xD0, 0x8A),
+    bg: (0x08, 0x10, 0x0C),
+    surface: (0x0D, 0x17, 0x12),
+    elevated: (0x14, 0x21, 0x19),
+    floating: (0x1B, 0x2B, 0x21),
+    border: (0x24, 0x37, 0x2C),
+    text: (0xEC, 0xE8, 0xDE),
+    dim: (0x9B, 0xA3, 0x99),
+    accent: (0x62, 0xC9, 0x8A),
     external_link: (0x7D, 0xB3, 0xFF),
-    mark: (0x2D, 0x53, 0x35),
-    kbd: (0x21, 0x28, 0x23),
+    mark: (0x2C, 0x4B, 0x35),
+    kbd: (0x18, 0x27, 0x1E),
 };
 
 pub(crate) const DAY: Palette = Palette {
-    bg: (0xEB, 0xFA, 0xDC),
-    surface: (0xF7, 0xFD, 0xEF),
-    elevated: (0xEE, 0xF6, 0xE3),
-    floating: (0xE2, 0xED, 0xD5),
-    border: (0xD6, 0xE5, 0xC6),
-    text: (0x13, 0x2A, 0x0A),
-    dim: (0x5A, 0x6B, 0x4F),
-    accent: (0x2E, 0x9E, 0x5B),
+    bg: (0xE8, 0xDD, 0xC7),
+    surface: (0xF5, 0xEE, 0xDC),
+    elevated: (0xED, 0xE2, 0xCC),
+    floating: (0xFA, 0xF4, 0xE7),
+    border: (0xD3, 0xC4, 0xA7),
+    text: (0x2B, 0x25, 0x1C),
+    dim: (0x6C, 0x61, 0x51),
+    accent: (0x2F, 0x6B, 0x45),
     external_link: (0x1E, 0x68, 0xC4),
-    mark: (0xC9, 0xEA, 0xAA),
-    kbd: (0xDE, 0xE8, 0xD4),
+    mark: (0xD9, 0xE4, 0xC9),
+    kbd: (0xE5, 0xDA, 0xC3),
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -94,6 +94,24 @@ impl Palette {
 mod tests {
     use super::{DAY, NIGHT};
 
+    fn relative_luminance((red, green, blue): (u8, u8, u8)) -> f64 {
+        let channel = |value: u8| {
+            let value = f64::from(value) / 255.0;
+            if value <= 0.04045 {
+                value / 12.92
+            } else {
+                ((value + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * channel(red) + 0.7152 * channel(green) + 0.0722 * channel(blue)
+    }
+
+    fn contrast(left: (u8, u8, u8), right: (u8, u8, u8)) -> f64 {
+        let left = relative_luminance(left);
+        let right = relative_luminance(right);
+        (left.max(right) + 0.05) / (left.min(right) + 0.05)
+    }
+
     #[test]
     fn la_interpolacion_conserva_los_extremos_exactos() {
         assert_eq!(NIGHT.interpolate(DAY, -1.0), NIGHT);
@@ -110,5 +128,14 @@ mod tests {
         assert_ne!(middle.text, NIGHT.text);
         assert_ne!(middle.accent, DAY.accent);
         assert_ne!(middle.external_link, NIGHT.external_link);
+    }
+
+    #[test]
+    fn ambos_temas_conservan_contraste_para_lectura_y_controles() {
+        for palette in [DAY, NIGHT] {
+            assert!(contrast(palette.text, palette.surface) >= 7.0);
+            assert!(contrast(palette.dim, palette.surface) >= 4.5);
+            assert!(contrast(palette.accent, palette.surface) >= 4.5);
+        }
     }
 }

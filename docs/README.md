@@ -47,7 +47,8 @@ Estos documentos deben cambiar cuando cambia el producto o su implementación:
 | [`design.md`](design.md) | Sistema visual e interacción |
 | [`design-audit.md`](design-audit.md) | Evidencia y plan vigente de corrección visual |
 | [`ui-exploration-brief.md`](ui-exploration-brief.md) | Prompts y criterios para comparar propuestas visuales externas sin convertirlas en especificación |
-| [`design-proposals/`](design-proposals/) | Dos lecturas visuales de septiembre de 2026 y sus decisiones compartidas |
+| [`design-proposals/`](design-proposals/) | Exploraciones visuales y dirección elegida en septiembre de 2026 |
+| [`ui-workspace-implementation.md`](ui-workspace-implementation.md) | Contrato trazable y secuencia del workspace visual elegido |
 | [`editor-workspace-ui-audit.md`](editor-workspace-ui-audit.md) | Auditoría y secuencia UX de edición, índice y bóvedas |
 | [`research/08-export-evaluation.md`](research/08-export-evaluation.md) | Evaluación de dependencias y aislamiento para PDF/DOCX antes de incorporarlas |
 | [`decisions.md`](decisions.md) | ADR y decisiones reemplazadas |

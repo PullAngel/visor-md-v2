@@ -4,6 +4,11 @@ Sistema visual aprobado para construir y evaluar. Las decisiones de identidad so
 estables; medidas, contrastes e interacción pueden ajustarse cuando QA,
 accesibilidad o pruebas de uso aporten evidencia mejor.
 
+La composición vigente es el **workspace refinado, día y noche** del
+[`concepto C`](design-proposals/README.md#c-workspace-refinado-día-y-noche). Su
+secuencia de implementación y criterios trazables están en
+[`ui-workspace-implementation.md`](ui-workspace-implementation.md).
+
 ## Identidad: Papel + Tinta
 
 Casi monocromo. El verde aparece **solo como hilo**: pestaña activa, enlace,
@@ -15,15 +20,19 @@ interfaz se calla.
 
 | Rol | Noche | Día |
 | --- | --- | --- |
-| Fondo | `#0C0F0D` | `#EBFADC` |
-| Superficie (código) | `#121513` | `#F7FDEF` |
-| Borde | `#1D2320` | `#D6E5C6` |
-| Texto | `#E9E9E4` | `#132A0A` |
-| Tenue | `#8B918C` | `#5A6B4F` |
-| Acento | `#5FD08A` | `#2E9E5B` |
+| Fondo | `#08100C` | `#E8DDC7` |
+| Superficie del documento | `#0D1712` | `#F5EEDC` |
+| Superficie elevada | `#142119` | `#EDE2CC` |
+| Superficie flotante | `#1B2B21` | `#FAF4E7` |
+| Borde | `#24372C` | `#D3C4A7` |
+| Texto | `#ECE8DE` | `#2B251C` |
+| Tenue | `#9BA399` | `#6C6151` |
+| Acento | `#62C98A` | `#2F6B45` |
 
-El acento cambia de tono entre temas para mantener el contraste: el verde claro
-que funciona sobre negro se lava sobre papel.
+El modo día es papel cálido, no blanco ni verde pálido. Su acento es verde de
+tinta de hoja, deliberadamente menos azul que la primera propuesta. El acento
+cambia de luminosidad entre temas para mantener contraste: el verde claro que
+funciona sobre bosque se lava sobre papel.
 
 ## Jerarquía de superficies: barra, menús y configuración
 
@@ -35,14 +44,16 @@ quiere ninguno de los dos.
 
 Cuatro niveles, del más visible al más escondido:
 
-1. **Barra de formato.** Solo lo que se usa en casi todo documento: negrita,
-   listas, encabezados, enlace, imagen. Si una función no pasa ese filtro, no
-   entra acá aunque sea barata.
-2. **Menús desplegables de la propia barra.** Variantes de una acción ya
-   presente se agregan como segunda opción de su desplegable, no como botón
-   nuevo. Ejemplos ya decididos: insertar enlace de referencia (junto al
-   wikilink), insertar bloque de terminal (junto al bloque de código),
-   insertar fecha y hora (en el menú de símbolos y entidades).
+1. **Kit de escritura.** En edición no se busca minimalismo: las acciones de
+   trabajo diario deben ser visibles y estar agrupadas como texto, estructura,
+   listas, inserción, estudio y segundo cerebro. Negrita, cursiva, resaltado,
+   listas, tarea, enlace, cita, código y tabla tienen acceso directo cuando el
+   ancho lo permite.
+2. **Menús desplegables de la propia barra.** El kit no es únicamente una
+   hilera de botones. Niveles de título, variantes de lista, enlaces web o de
+   bóveda, callouts, bloques de estudio, símbolos y formatos de copia se
+   organizan en menús con nombre. Al reducir ancho se conservan los grupos y
+   sus nombres antes que comprimir controles hasta hacerlos ambiguos.
 3. **Menú contextual (click derecho).** Todo lo que actúa sobre una selección
    o un elemento puntual y no necesita descubrirse por curioseo: cambiar
    mayúsculas y minúsculas de la selección, fijar una pestaña, las acciones
@@ -59,9 +70,10 @@ Cuatro niveles, del más visible al más escondido:
    la lectura de quien no lo esperaba. Cuando se activan, se pintan del color
    de hipervínculo para que quede claro que son un enlace.
 
-**El criterio para dudar:** si hay que preguntarse "¿esto va en la barra?", ya
-la respuesta es no. La barra es para lo que casi todo el mundo usa en cada
-documento; todo lo demás vive un nivel más adentro, disponible pero sin gritar.
+**El criterio para dudar:** una acción frecuente merece acceso directo; una
+familia de variantes merece un menú reconocible; una herramienta contextual o
+avanzada vive un nivel más adentro. Ocultar una acción cotidiana por parecer
+minimalista es tan incorrecto como mostrar cada variante simultáneamente.
 
 ## Ventana: sin borde
 
@@ -206,10 +218,10 @@ elevación, con la sombra suavizada respecto de la propuesta original:
 
 | Nivel | Color | Uso |
 | --- | --- | --- |
-| 0 · fondo | `#0C0F0D` | Lienzo de la ventana |
-| 1 · base | `#121513` | Área del documento |
-| 2 · elevado | `#1A1F1C` | Bloques, barra |
-| 3 · flotante | `#232A26` | Menús, diálogos |
+| 0 · fondo | `#08100C` | Lienzo de la ventana |
+| 1 · base | `#0D1712` | Área del documento |
+| 2 · elevado | `#142119` | Bloques, barra |
+| 3 · flotante | `#1B2B21` | Menús, diálogos |
 
 ## Movimiento
 

@@ -35,6 +35,11 @@ redundantes y refuerza pestaña, panel y modo activos. Día y noche representan
 exactamente la misma disposición. El modo claro usa papel marfil y sepia suave,
 sin convertir la aplicación en una superficie blanca fría.
 
+**Dirección elegida:** este es el modelo que se implementará. El fondo diurno
+se llevará a un papel más sepia y los estados activos usarán verde de tinta de
+hoja, sin el matiz azulado del primer mockup. El contrato de ejecución vive en
+[`ui-workspace-implementation.md`](../ui-workspace-implementation.md).
+
 ## D. Canvas editorial, día y noche
 
 ![Canvas editorial en modo día y noche](visor-md-concept-d-editorial-day-night.png)
@@ -44,8 +49,8 @@ La lectura ocupa más espacio que la fuente y los destinos de la columna izquier
 se separan de su contenido. Conserva las mismas capacidades del concepto C, con
 una jerarquía más tranquila y orgánica.
 
-Los conceptos C y D son alternativas para evaluación visual. No implican que
-ambas composiciones deban implementarse ni añaden nuevas funciones al roadmap.
+El concepto D queda como exploración secundaria y no se implementará en
+paralelo. Ninguna propuesta añade funciones al roadmap por sí misma.
 
 ## Decisiones compartidas
 
