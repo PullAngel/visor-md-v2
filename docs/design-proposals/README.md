@@ -8,6 +8,10 @@ implementadas ni autorizan copiar capacidades ajenas al producto.
 
 ![Estudio editorial claro](visor-md-concept-a-editorial-light.png)
 
+La [variante con fondo transparente](visor-md-concept-a-editorial-light-transparent.png)
+permite reutilizar la ventana aislada en comparaciones y presentaciones sin
+alterar la propuesta original.
+
 Prioriza un documento grande, el modo diurno Papel + Tinta y un índice completo
 acoplado a la izquierda solo porque fue invocado. El kit Markdown ocupa una
 segunda barra contextual y el selector Leer, Editar y Comparar pertenece al
