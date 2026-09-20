@@ -107,9 +107,11 @@ visual en día, noche y ventanas estrechas.
 
 **Salida:** pestaña, hoja activa y modo actual son inequívocos.
 
-**Estado:** el kit de escritura ya separa acciones frecuentes y menús de
-Bloques, Listas, Insertar, Estudio y Más formato. Continúan pendientes la
-cabecera local por hoja y el QA visual de densidad, textos y degradación por
+**Estado:** el kit de escritura ya separa acciones frecuentes y menús rotulados
+de Bloques, Listas, Insertar, Estudio y Más formato; en ancho mínimo conserva
+iconos y ayuda. Bloques ofrece niveles H1–H6 sin acumular marcadores y el menú
+contextual reutiliza esas categorías. Continúan pendientes la cabecera local por
+hoja, variantes de callout y el QA visual de densidad, textos y degradación por
 ancho.
 
 ### Fase 5. Componentes y estados

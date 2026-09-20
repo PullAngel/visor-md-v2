@@ -112,6 +112,8 @@ const CONTEXT_TOOLBAR_HEIGHT: f32 = 28.0;
 /// siguen disponibles con hover, foco F6 y la paleta.
 const CONTEXT_TOOLBAR_ITEM_WIDTH: f32 = 38.0;
 const CONTEXT_TOOLBAR_ITEM_GAP: f32 = 4.0;
+const CONTEXT_TOOLBAR_LABELED_MIN_WIDTH: f32 = 1_100.0;
+const CONTEXT_TOOLBAR_GROUP_WIDTH: f32 = 88.0;
 const WINDOW_CHROME_HEIGHT: f32 = 40.0;
 /// La transición no desplaza contenido ni mantiene un render continuo: el
 /// event loop despierta solo los cuadros necesarios durante este intervalo.
@@ -253,8 +255,13 @@ const STUDY_ACTIONS: [AppAction; 9] = [
     AppAction::PrepareStudyConceptList,
     AppAction::PrepareAiFragments,
 ];
-const BLOCK_ACTIONS: [AppAction; 5] = [
+const BLOCK_ACTIONS: [AppAction; 10] = [
+    AppAction::InsertHeading1,
     AppAction::InsertHeading,
+    AppAction::InsertHeading3,
+    AppAction::InsertHeading4,
+    AppAction::InsertHeading5,
+    AppAction::InsertHeading6,
     AppAction::InsertQuote,
     AppAction::InsertCodeBlock,
     AppAction::InsertHorizontalRule,
@@ -824,13 +831,40 @@ struct ContextToolbarItemGeometry {
 fn contextual_toolbar_item_geometry(
     index: usize,
     window_width: f32,
+    mode: DocumentMode,
 ) -> Option<ContextToolbarItemGeometry> {
-    let x = TOOLBAR_X + index as f32 * CONTEXT_TOOLBAR_ITEM_WIDTH;
-    let width = CONTEXT_TOOLBAR_ITEM_WIDTH - CONTEXT_TOOLBAR_ITEM_GAP;
+    let actions = contextual_toolbar_actions(mode);
+    let action = *actions.get(index)?;
+    let labeled = window_width >= CONTEXT_TOOLBAR_LABELED_MIN_WIDTH;
+    let x = TOOLBAR_X
+        + actions[..index]
+            .iter()
+            .map(|action| contextual_toolbar_item_stride(*action, labeled))
+            .sum::<f32>();
+    let width = contextual_toolbar_item_stride(action, labeled) - CONTEXT_TOOLBAR_ITEM_GAP;
     if x + width > window_width - MARGIN {
         return None;
     }
     Some(ContextToolbarItemGeometry { x, width })
+}
+
+fn contextual_toolbar_item_stride(action: AppAction, labeled: bool) -> f32 {
+    if labeled && toolbar_group_label(action).is_some() {
+        CONTEXT_TOOLBAR_GROUP_WIDTH
+    } else {
+        CONTEXT_TOOLBAR_ITEM_WIDTH
+    }
+}
+
+const fn toolbar_group_label(action: AppAction) -> Option<&'static str> {
+    match action {
+        AppAction::BlockTools => Some("Bloques"),
+        AppAction::ListTools => Some("Listas"),
+        AppAction::InsertTools => Some("Insertar"),
+        AppAction::StudyTools => Some("Estudio"),
+        AppAction::WritingTools => Some("Más"),
+        _ => None,
+    }
 }
 
 fn toolbar_action_at(x: f32, y: f32, window_width: f32, mode: DocumentMode) -> Option<AppAction> {
@@ -847,7 +881,7 @@ fn toolbar_action_at(x: f32, y: f32, window_width: f32, mode: DocumentMode) -> O
             .copied()
             .enumerate()
             .find_map(|(index, action)| {
-                let geometry = contextual_toolbar_item_geometry(index, window_width)?;
+                let geometry = contextual_toolbar_item_geometry(index, window_width, mode)?;
                 ((geometry.x..geometry.x + geometry.width).contains(&x)).then_some(action)
             });
     }
@@ -949,15 +983,11 @@ enum ContextAction {
     Bold,
     Italic,
     Link,
-    Heading,
-    BulletList,
     Task,
-    Quote,
-    CodeBlock,
-    Table,
+    BlockTools,
+    ListTools,
+    InsertTools,
     WritingTools,
-    WikiLink,
-    Callout,
     StudyTools,
     CopyText,
     CopyMarkdown,
@@ -1000,7 +1030,12 @@ enum AppAction {
     FormatStrikethrough,
     FormatInlineCode,
     InsertLink,
+    InsertHeading1,
     InsertHeading,
+    InsertHeading3,
+    InsertHeading4,
+    InsertHeading5,
+    InsertHeading6,
     InsertBulletList,
     InsertOrderedList,
     InsertTask,
@@ -1043,7 +1078,7 @@ enum AppAction {
     CommandPalette,
 }
 
-const APP_ACTIONS: [AppAction; 60] = [
+const APP_ACTIONS: [AppAction; 65] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -1066,7 +1101,12 @@ const APP_ACTIONS: [AppAction; 60] = [
     AppAction::FormatStrikethrough,
     AppAction::FormatInlineCode,
     AppAction::InsertLink,
+    AppAction::InsertHeading1,
     AppAction::InsertHeading,
+    AppAction::InsertHeading3,
+    AppAction::InsertHeading4,
+    AppAction::InsertHeading5,
+    AppAction::InsertHeading6,
     AppAction::InsertBulletList,
     AppAction::InsertOrderedList,
     AppAction::InsertTask,
@@ -1129,7 +1169,12 @@ impl AppAction {
             Self::FormatStrikethrough => "Aplicar tachado",
             Self::FormatInlineCode => "Aplicar código en línea",
             Self::InsertLink => "Insertar enlace · Ctrl+K",
+            Self::InsertHeading1 => "Convertir línea en encabezado H1",
             Self::InsertHeading => "Convertir línea en encabezado H2",
+            Self::InsertHeading3 => "Convertir línea en encabezado H3",
+            Self::InsertHeading4 => "Convertir línea en encabezado H4",
+            Self::InsertHeading5 => "Convertir línea en encabezado H5",
+            Self::InsertHeading6 => "Convertir línea en encabezado H6",
             Self::InsertBulletList => "Convertir línea en lista con viñetas",
             Self::InsertOrderedList => "Convertir línea en lista ordenada",
             Self::InsertTask => "Convertir línea en tarea",
@@ -1208,15 +1253,11 @@ impl ContextAction {
             Self::Bold => "Negrita",
             Self::Italic => "Cursiva",
             Self::Link => "Insertar enlace",
-            Self::Heading => "Encabezado H2",
-            Self::BulletList => "Lista con viñetas",
             Self::Task => "Tarea",
-            Self::Quote => "Cita",
-            Self::CodeBlock => "Bloque de código",
-            Self::Table => "Tabla Markdown",
+            Self::BlockTools => "Bloques y encabezados",
+            Self::ListTools => "Listas y tareas",
+            Self::InsertTools => "Insertar enlaces y bloques",
             Self::WritingTools => "Más formato Markdown",
-            Self::WikiLink => "Enlace de bóveda",
-            Self::Callout => "Callout de nota",
             Self::StudyTools => "Herramientas de estudio",
             Self::CopyText => "Copiar texto",
             Self::CopyMarkdown => "Copiar Markdown original",
@@ -1247,15 +1288,11 @@ fn context_actions(
             ContextAction::Bold,
             ContextAction::Italic,
             ContextAction::Link,
-            ContextAction::Heading,
-            ContextAction::BulletList,
             ContextAction::Task,
-            ContextAction::Quote,
-            ContextAction::CodeBlock,
-            ContextAction::Table,
+            ContextAction::BlockTools,
+            ContextAction::ListTools,
+            ContextAction::InsertTools,
             ContextAction::WritingTools,
-            ContextAction::WikiLink,
-            ContextAction::Callout,
             ContextAction::StudyTools,
         ],
     };
@@ -3541,7 +3578,13 @@ fn draw_toolbar_icon(
             path.move_to(left + 9.0, top + 5.0);
             path.line_to(right - 9.0, bottom - 5.0);
         }
-        AppAction::InsertHeading | AppAction::BlockTools => {
+        AppAction::InsertHeading1
+        | AppAction::InsertHeading
+        | AppAction::InsertHeading3
+        | AppAction::InsertHeading4
+        | AppAction::InsertHeading5
+        | AppAction::InsertHeading6
+        | AppAction::BlockTools => {
             path.move_to(left + 4.0, top + 3.0);
             path.line_to(left + 4.0, bottom - 3.0);
             path.move_to(right - 4.0, top + 3.0);
@@ -7607,25 +7650,11 @@ impl ApplicationHandler<AppEvent> for App {
                                     self.perform_action(AppAction::FormatItalic)
                                 }
                                 ContextAction::Link => self.perform_action(AppAction::InsertLink),
-                                ContextAction::Heading => {
-                                    self.perform_action(AppAction::InsertHeading)
-                                }
-                                ContextAction::BulletList => {
-                                    self.perform_action(AppAction::InsertBulletList)
-                                }
                                 ContextAction::Task => self.perform_action(AppAction::InsertTask),
-                                ContextAction::Quote => self.perform_action(AppAction::InsertQuote),
-                                ContextAction::CodeBlock => {
-                                    self.perform_action(AppAction::InsertCodeBlock)
-                                }
-                                ContextAction::Table => self.perform_action(AppAction::InsertTable),
+                                ContextAction::BlockTools => self.open_block_actions(),
+                                ContextAction::ListTools => self.open_list_actions(),
+                                ContextAction::InsertTools => self.open_insert_actions(),
                                 ContextAction::WritingTools => self.open_writing_actions(),
-                                ContextAction::WikiLink => {
-                                    self.perform_action(AppAction::InsertWikiLink)
-                                }
-                                ContextAction::Callout => {
-                                    self.perform_action(AppAction::InsertCallout)
-                                }
                                 ContextAction::StudyTools => self.open_study_actions(),
                                 ContextAction::CopyText | ContextAction::CopyMarkdown => {
                                     if self.document.mode.is_editable() {
@@ -8601,7 +8630,12 @@ impl App {
             AppAction::FormatStrikethrough => self.apply_markdown_surround("~~", "~~", "texto"),
             AppAction::FormatInlineCode => self.apply_markdown_surround("`", "`", "código"),
             AppAction::InsertLink => self.insert_markdown_link(),
-            AppAction::InsertHeading => self.prefix_markdown_line("## "),
+            AppAction::InsertHeading1 => self.set_markdown_heading_level(1),
+            AppAction::InsertHeading => self.set_markdown_heading_level(2),
+            AppAction::InsertHeading3 => self.set_markdown_heading_level(3),
+            AppAction::InsertHeading4 => self.set_markdown_heading_level(4),
+            AppAction::InsertHeading5 => self.set_markdown_heading_level(5),
+            AppAction::InsertHeading6 => self.set_markdown_heading_level(6),
             AppAction::InsertBulletList => self.prefix_markdown_line("- "),
             AppAction::InsertOrderedList => self.prefix_markdown_line("1. "),
             AppAction::InsertTask => self.prefix_markdown_line("- [ ] "),
@@ -9916,6 +9950,14 @@ impl App {
             return;
         }
         self.edit_source(|editor, source| editor.prefix_current_line(source, prefix));
+    }
+
+    fn set_markdown_heading_level(&mut self, level: u8) {
+        if !self.document.mode.is_editable() {
+            self.set_notice("activa edición para cambiar el nivel del encabezado");
+            return;
+        }
+        self.edit_source(|editor, source| editor.set_heading_level(source, level));
     }
 
     fn document_line_ending(&self) -> &'static str {
@@ -13130,6 +13172,22 @@ impl App {
             self.palette,
         );
         let contextual_toolbar_actions = contextual_toolbar_actions(self.document.mode);
+        let contextual_toolbar_label_layouts = contextual_toolbar_actions
+            .iter()
+            .map(|action| {
+                (w.get() as f32 >= CONTEXT_TOOLBAR_LABELED_MIN_WIDTH)
+                    .then(|| toolbar_group_label(*action))
+                    .flatten()
+                    .map(|label| {
+                        build_menu_layout(
+                            label,
+                            &mut self.font_cx,
+                            &mut self.layout_cx,
+                            self.palette,
+                        )
+                    })
+            })
+            .collect::<Vec<_>>();
         let toolbar_focus = self.toolbar_focus;
         let toolbar_hint_label = toolbar_hint_label(
             toolbar_focus,
@@ -13155,7 +13213,11 @@ impl App {
                     index
                         .checked_sub(contextual_toolbar_focus_start())
                         .and_then(|context_index| {
-                            contextual_toolbar_item_geometry(context_index, w.get() as f32)
+                            contextual_toolbar_item_geometry(
+                                context_index,
+                                w.get() as f32,
+                                self.document.mode,
+                            )
                         })
                         .map_or(TOOLBAR_X, |geometry| geometry.x)
                 }
@@ -14085,7 +14147,9 @@ impl App {
             pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
         }
         for (index, action) in contextual_toolbar_actions.iter().copied().enumerate() {
-            let Some(geometry) = contextual_toolbar_item_geometry(index, w.get() as f32) else {
+            let Some(geometry) =
+                contextual_toolbar_item_geometry(index, w.get() as f32, context_mode)
+            else {
                 break;
             };
             let x = geometry.x;
@@ -14138,14 +14202,39 @@ impl App {
             } else {
                 palette.dim
             };
+            let group_label = contextual_toolbar_label_layouts
+                .get(index)
+                .and_then(Option::as_ref);
+            let icon_x = if group_label.is_some() {
+                x + 8.0
+            } else {
+                x + (width - 18.0) * 0.5
+            };
             draw_toolbar_icon(
                 pixmap,
                 action,
-                x + (width - 18.0) * 0.5,
+                icon_x,
                 CONTEXT_TOOLBAR_Y + 5.0,
                 18.0,
                 icon_color,
             );
+            if let Some(layout) = group_label {
+                for line in layout.lines() {
+                    for entry in line.items() {
+                        if let PositionedLayoutItem::GlyphRun(run) = entry {
+                            draw_run_background(pixmap, &run, x + 31.0, CONTEXT_TOOLBAR_Y + 6.0);
+                            draw_glyph_run(
+                                pixmap,
+                                scale_cx,
+                                glyphs,
+                                &run,
+                                x + 31.0,
+                                CONTEXT_TOOLBAR_Y + 6.0,
+                            );
+                        }
+                    }
+                }
+            }
             if toolbar_action_has_menu(action) {
                 draw_menu_chevron(
                     pixmap,
@@ -15316,7 +15405,7 @@ mod pruebas {
             Some(AppAction::ListTools)
         );
         for (index, action) in READING_CONTEXT_TOOLBAR_ACTIONS.iter().copied().enumerate() {
-            let geometry = contextual_toolbar_item_geometry(index, 640.0)
+            let geometry = contextual_toolbar_item_geometry(index, 640.0, DocumentMode::Reading)
                 .expect("cada herramienta de lectura cabe en el mínimo");
             assert_eq!(
                 toolbar_action_at(
@@ -15336,8 +15425,9 @@ mod pruebas {
             );
         }
         for (index, action) in EDITING_CONTEXT_TOOLBAR_ACTIONS.iter().copied().enumerate() {
-            let geometry = contextual_toolbar_item_geometry(index, 640.0)
-                .expect("cada herramienta de edición cabe en el mínimo");
+            let geometry =
+                contextual_toolbar_item_geometry(index, 640.0, DocumentMode::SourceEditing)
+                    .expect("cada herramienta de edición cabe en el mínimo");
             assert_eq!(
                 toolbar_action_at(
                     geometry.x + geometry.width * 0.5,
@@ -15366,8 +15456,12 @@ mod pruebas {
             "el hueco visual entre botones no ejecuta una acción"
         );
         assert!(
-            contextual_toolbar_item_geometry(EDITING_CONTEXT_TOOLBAR_ACTIONS.len(), 640.0)
-                .is_none()
+            contextual_toolbar_item_geometry(
+                EDITING_CONTEXT_TOOLBAR_ACTIONS.len(),
+                640.0,
+                DocumentMode::SourceEditing,
+            )
+            .is_none()
         );
         assert!(EDITING_CONTEXT_TOOLBAR_ACTIONS.contains(&AppAction::FormatStrikethrough));
         assert!(EDITING_CONTEXT_TOOLBAR_ACTIONS.contains(&AppAction::FormatInlineCode));
@@ -15381,7 +15475,9 @@ mod pruebas {
         assert!(WRITING_ACTIONS.contains(&AppAction::InsertWikiLink));
         assert!(WRITING_ACTIONS.contains(&AppAction::InsertCallout));
         assert!(WRITING_ACTIONS.contains(&AppAction::ToggleSplitOrientation));
-        assert_eq!(BLOCK_ACTIONS[0], AppAction::InsertHeading);
+        assert_eq!(BLOCK_ACTIONS[0], AppAction::InsertHeading1);
+        assert_eq!(BLOCK_ACTIONS[1], AppAction::InsertHeading);
+        assert_eq!(BLOCK_ACTIONS[5], AppAction::InsertHeading6);
         assert_eq!(LIST_ACTIONS[2], AppAction::InsertTask);
         assert!(INSERT_ACTIONS.contains(&AppAction::InsertTable));
         assert!(toolbar_action_has_menu(AppAction::BlockTools));
@@ -15390,6 +15486,32 @@ mod pruebas {
         assert!(toolbar_action_has_menu(AppAction::StudyTools));
         assert!(toolbar_action_has_menu(AppAction::WritingTools));
         assert!(!toolbar_action_has_menu(AppAction::FormatBold));
+        assert_eq!(toolbar_group_label(AppAction::BlockTools), Some("Bloques"));
+        assert_eq!(toolbar_group_label(AppAction::FormatBold), None);
+        let compact_blocks =
+            contextual_toolbar_item_geometry(5, 640.0, DocumentMode::SourceEditing)
+                .expect("el grupo compacto cabe en el ancho mínimo");
+        let labeled_blocks =
+            contextual_toolbar_item_geometry(5, 1_200.0, DocumentMode::SourceEditing)
+                .expect("el grupo rotulado cabe en un workspace amplio");
+        assert_eq!(
+            compact_blocks.width,
+            CONTEXT_TOOLBAR_ITEM_WIDTH - CONTEXT_TOOLBAR_ITEM_GAP
+        );
+        assert_eq!(
+            labeled_blocks.width,
+            CONTEXT_TOOLBAR_GROUP_WIDTH - CONTEXT_TOOLBAR_ITEM_GAP
+        );
+        assert_eq!(compact_blocks.x, labeled_blocks.x);
+        assert_eq!(
+            toolbar_action_at(
+                labeled_blocks.x + labeled_blocks.width * 0.5,
+                CONTEXT_TOOLBAR_Y + 8.0,
+                1_200.0,
+                DocumentMode::SourceEditing,
+            ),
+            Some(AppAction::BlockTools)
+        );
         assert_eq!(
             toolbar_focus_action(
                 contextual_toolbar_focus_start() + EDITING_CONTEXT_TOOLBAR_ACTIONS.len() - 1,
@@ -15497,9 +15619,9 @@ mod pruebas {
 
         // Incluye documento, workspace, estudio y accesibilidad sin convertir
         // la paleta en un menú de IDE: las familias densas también tienen
-        // ámbitos propios desde el menú contextual. Superar 60 exige revisar
+        // ámbitos propios desde el menú contextual. Superar 65 exige revisar
         // esa jerarquía antes de añadir otra acción.
-        assert!(original_len <= 60, "el catálogo dejó de ser pequeño");
+        assert!(original_len <= 65, "el catálogo dejó de ser pequeño");
         assert_eq!(labels.len(), original_len);
     }
 
@@ -16673,8 +16795,8 @@ mod pruebas {
         assert_eq!(reading_menu.actions.len(), 3);
         assert_eq!(table_menu.actions.len(), 4);
         assert_eq!(task_menu.actions.len(), 4);
-        assert_eq!(editing_menu.actions.len(), 14);
-        assert_eq!(selected_editing_menu.actions.len(), 17);
+        assert_eq!(editing_menu.actions.len(), 10);
+        assert_eq!(selected_editing_menu.actions.len(), 13);
         assert!(!reading_menu.actions.contains(&ContextAction::Paste));
         assert!(!reading_menu.actions.contains(&ContextAction::Cut));
         assert!(!reading_menu.actions.contains(&ContextAction::CopyTableTsv));
@@ -16696,12 +16818,10 @@ mod pruebas {
                 .contains(&ContextAction::CopyMarkdown)
         );
         assert!(editing_menu.actions.contains(&ContextAction::Task));
-        assert!(editing_menu.actions.contains(&ContextAction::Quote));
-        assert!(editing_menu.actions.contains(&ContextAction::CodeBlock));
-        assert!(editing_menu.actions.contains(&ContextAction::Table));
+        assert!(editing_menu.actions.contains(&ContextAction::BlockTools));
+        assert!(editing_menu.actions.contains(&ContextAction::ListTools));
+        assert!(editing_menu.actions.contains(&ContextAction::InsertTools));
         assert!(editing_menu.actions.contains(&ContextAction::WritingTools));
-        assert!(editing_menu.actions.contains(&ContextAction::WikiLink));
-        assert!(editing_menu.actions.contains(&ContextAction::Callout));
         assert!(editing_menu.actions.contains(&ContextAction::StudyTools));
         let editing_height = context_menu_row_height(480.0, editing_menu.actions.len());
         assert!(editing_height * editing_menu.actions.len() as f32 <= 480.0);

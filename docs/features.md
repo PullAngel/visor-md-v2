@@ -42,7 +42,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Función | Estado | Criterio mínimo |
 | --- | --- | --- |
 | Modo fuente | Parcial | Buffer Rope, selección, IME, undo y atajos; navegación vertical por caracteres Unicode y CRLF atómico para cursor, selección y borrado; la fuente actualiza sus líneas localmente, mientras el render Markdown derivado aún se reconstruye de forma asíncrona |
-| Ayudas de formato | Parcial | Negrita, cursiva, tachado, código en línea, enlace, encabezado, viñeta, lista ordenada, tarea, cita, código, tabla, regla, resaltado, wikilink y callout editan fuente Unicode como cambios reversibles desde atajo, menú, barra o paleta; `Más formato` agrupa variantes sin saturar la barra; faltan QA de descubribilidad y variantes contextuales |
+| Ayudas de formato | Parcial | Negrita, cursiva, tachado, código en línea, enlace, encabezados H1–H6, viñeta, lista ordenada, tarea, cita, código, tabla, regla, resaltado, wikilink y callout editan fuente Unicode como cambios reversibles. En ancho normal la barra rotula Bloques, Listas, Insertar, Estudio y Más; en ancho mínimo conserva iconos y ayuda. El menú contextual abre las mismas familias según el modo y la selección. Faltan QA de descubribilidad y variantes de callout. |
 | Vista dividida | Parcial | `F3` compara fuente editable y render de la misma revisión; falta QA de edición prolongada, DPI y accesibilidad |
 | Modo por documento | Parcial | Recuerda lectura, edición o vista dividida mediante hasta 128 claves hash locales; falta QA de reinicio |
 | Guardado atómico | Parcial | Sin corrupción ante fallo y conflictos probados; un destino borrado, no regular o inaccesible conserva la edición y solo ofrece Guardar como; falta QA multiplataforma |

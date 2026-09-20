@@ -606,6 +606,54 @@ impl SourceEditor {
         Ok(changed)
     }
 
+    /// Establece un encabezado ATX entre H1 y H6 sobre la línea actual. Si la
+    /// línea ya empieza con un encabezado válido, reemplaza únicamente ese
+    /// marcador; no acumula almohadillas ni reescribe el contenido restante.
+    pub fn set_heading_level(
+        &mut self,
+        source: &mut TextBuffer,
+        level: u8,
+    ) -> Result<bool, EditError> {
+        let level = level.clamp(1, 6) as usize;
+        let line = source.line_at_byte(self.cursor);
+        let line_start = source.line_start_byte(line);
+        let line_text = source.line_text(line);
+        let bytes = line_text.as_bytes();
+        let indent = bytes
+            .iter()
+            .take(3)
+            .take_while(|byte| **byte == b' ')
+            .count();
+        let hashes = bytes[indent..]
+            .iter()
+            .take(6)
+            .take_while(|byte| **byte == b'#')
+            .count();
+        let marker_bytes = if hashes > 0 && bytes.get(indent + hashes) == Some(&b' ') {
+            hashes + 1
+        } else {
+            0
+        };
+        let range = line_start + indent..line_start + indent + marker_bytes;
+        let marker = format!("{} ", "#".repeat(level));
+        let changed = self.history.apply(source, range.clone(), &marker)?;
+        if changed {
+            let rebase = |position: usize| {
+                if position <= range.start {
+                    position
+                } else if position >= range.end {
+                    range.start + marker.len() + position - range.end
+                } else {
+                    range.start + marker.len()
+                }
+            };
+            self.cursor = source.normalize_edit_boundary(rebase(self.cursor));
+            self.anchor = source.normalize_edit_boundary(rebase(self.anchor));
+            self.preferred_column = None;
+        }
+        Ok(changed)
+    }
+
     pub fn backspace(&mut self, source: &mut TextBuffer) -> Result<bool, EditError> {
         let selection = self.selection();
         let range = if selection.is_empty() {
@@ -928,6 +976,34 @@ mod tests {
         assert_eq!(source.to_string(), "primera\n## segunda\ntercera");
         assert_eq!(editor.anchor(), 0);
         assert_eq!(editor.cursor(), "primera\n## segunda".len());
+    }
+
+    #[test]
+    fn cambiar_nivel_de_encabezado_no_acumula_marcadores_y_es_reversible() {
+        let mut source = buffer("intro\r\n  ## Título ágil\r\nfinal");
+        let mut editor = SourceEditor::new();
+        let content_start = "intro\r\n  ## ".len();
+        editor.set_cursor(&source, content_start, false).unwrap();
+        editor
+            .set_cursor(&source, content_start + "Título ágil".len(), true)
+            .unwrap();
+
+        assert!(editor.set_heading_level(&mut source, 4).unwrap());
+        assert_eq!(source.to_string(), "intro\r\n  #### Título ágil\r\nfinal");
+        assert_eq!(
+            source.slice_bytes(editor.selection()).unwrap(),
+            "Título ágil"
+        );
+        assert!(editor.undo(&mut source).unwrap());
+        assert_eq!(source.to_string(), "intro\r\n  ## Título ágil\r\nfinal");
+
+        let mut plain = buffer("sin encabezado");
+        let mut plain_editor = SourceEditor::new();
+        plain_editor
+            .set_cursor(&plain, plain.len_bytes(), false)
+            .unwrap();
+        assert!(plain_editor.set_heading_level(&mut plain, 1).unwrap());
+        assert_eq!(plain.to_string(), "# sin encabezado");
     }
 
     #[test]

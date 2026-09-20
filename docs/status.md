@@ -235,6 +235,10 @@ exacto del traspaso.
   amplio de Markdown en menús de Bloques, Listas, Insertar, Estudio y Más
   formato. Esos menús reutilizan el catálogo probado de comandos; no crean una
   segunda implementación de edición ni transforman el resto del documento.
+  En ventanas amplias muestran sus nombres y en el ancho mínimo degradan a
+  iconos con ayuda. Bloques ofrece H1 a H6 y cambia un nivel existente sin
+  acumular marcadores; el menú contextual abre las mismas familias en vez de
+  repetir una lista plana y difícil de recorrer.
 - el viewport reserva la franja inferior completa. El final del documento ya no
   queda bajo pestañas o estado, y bordes de tablas, separadores de pestañas y la
   división de la vista usan el color estructural definido por el sistema visual.
