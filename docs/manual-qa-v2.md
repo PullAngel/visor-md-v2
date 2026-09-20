@@ -219,6 +219,15 @@ Usar `tests/fixtures/sprint1-visual.md` y luego un Markdown propio no sensible.
   coherentes; una acción buscada tiene etiqueta comprensible y no se duplica.
 - [ ] La paleta puede abrirse, buscar, elegir con teclado, cancelar y devolver
   foco correctamente.
+- [ ] Con cuatro documentos abiertos, usar Más acciones o `Ctrl+Shift+P` para
+  elegir explícitamente una pestaña y dividir a la derecha y abajo. Confirmar
+  que cada hoja muestra un documento distinto, que texto, tablas y fondos no
+  atraviesan el separador y que una quinta división se explica sin elegir nada.
+- [ ] Hacer clic en una hoja pasiva: el primer clic solo debe enfocarla. Probar
+  rueda, búsqueda, enlaces y edición en hojas distintas; scroll, cursor y
+  cambios deben permanecer en el documento enfocado. Cerrar una hoja debe
+  conservar su pestaña; cerrar una pestaña visible no debe dejar el foco en un
+  documento que ya no se muestra.
 - [ ] Índice, búsqueda de documento, árbol de carpeta, búsqueda de workspace y
   backlinks se pueden abrir y cerrar sin tapar permanentemente la lectura.
 - [ ] Los paneles mantienen selección visible, permiten teclado/mouse y no

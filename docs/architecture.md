@@ -353,19 +353,32 @@ documentos modificados que una solicitud del sistema. En otras plataformas la
 ventana conserva las decoraciones nativas mientras no haya una alternativa con
 las mismas affordances y QA accesible.
 
-El árbol de futuras divisiones distingue la identidad efímera de una **vista**
-de la identidad de su **documento**. Una hoja conserva un `pane_id` estable y
-solo referencia un documento de la sesión. Una ventana admite como máximo cuatro
+El árbol de divisiones distingue la identidad efímera de una **vista** de la
+identidad de su **documento**. Una hoja conserva un `pane_id` estable y solo
+referencia un documento de la sesión. Una ventana admite como máximo cuatro
 paneles y cada uno muestra un archivo distinto: no se duplican `TextBuffer`,
-historial, guardado ni recuperación. Al cambiar una pestaña se actualiza
-únicamente la vista con foco. El dibujo, scroll, selección y foco por vista
-siguen siendo el siguiente bloque de integración.
+historial, guardado ni recuperación.
 
-La primera separación ya conserva un scroll y una caché de layout por panel al
-alternar el foco. Esa caché no contiene fuente, historial, guardado ni
-recuperación y se elimina al colapsar una hoja. Falta usarla para dibujar los
-paneles simultáneamente y trasladar la selección y los overlays al panel con
-foco.
+Dividir abre un selector explícito de pestañas elegibles; excluye el documento
+activo, los que ya están visibles y los que aún tienen una tarea de apertura o
+render vigente. La elección se valida otra vez justo antes de cambiar el árbol,
+por lo que una respuesta tardía no puede crear una hoja duplicada o apuntar a
+un documento que ya no existe. No hay una selección automática escondida.
+
+Cada panel conserva solo scroll y caché de layout. El render de cada hoja,
+incluida la enfocada, ocurre primero en un `Pixmap` local reutilizable y luego
+se compone dentro de su rectángulo. Así glifos, fondos de código, tablas,
+marcadores y selecciones no pueden invadir visualmente un panel vecino. El
+primer clic izquierdo en una hoja pasiva únicamente le entrega el foco; teclado,
+IME, selección, menús y overlays siguen perteneciendo al panel enfocado. La
+rueda cambia de foco y desplaza solo la hoja bajo el puntero.
+
+Cerrar una hoja colapsa el árbol y conserva su pestaña, fuente, historial,
+guardado y recuperación. Cerrar una pestaña sigue usando la protección de
+cambios; si quedan hojas visibles, prioriza una de ellas como documento activo
+para que árbol y foco no diverjan. Falta QA humano de divisiones, navegación de
+foco por teclado, transición con reducir movimiento, accesibilidad completa y
+ventanas nativas separadas.
 
 ### Workspace e índice
 

@@ -17,7 +17,7 @@ el mismo diálogo al recuperar foco. También mantiene la recuperación si una
 escritura terminó pero su verificación final no pudo completarse.
 
 El lector y el editor tienen gates automáticos verdes: la suite local actual
-reúne 241 regresiones en Windows. El gate de Windows del 9 de septiembre también verificó
+reúne 245 regresiones en Windows. El gate de Windows del 9 de septiembre también verificó
 Clippy, SBOM, documentación y un release de 3.524.096 bytes (3,361 MiB).
 La medición posterior de rutas secundarias y previews vigentes da 3.532.288
 bytes (3,369 MiB). La revisión actual del selector de modo da 3.536.896 bytes
@@ -206,12 +206,17 @@ exacto del traspaso.
 - una pestaña puede fijarse desde la paleta o el menú contextual. La marca `•`
   es solo de sesión, no se escribe ni se guarda en el Markdown, y evita su
   cierre hasta liberarla explícitamente.
-- la sesión ya conserva un árbol interno de paneles preparado para dividir
-  documentos sin copiar buffers, historial, guardados ni recuperaciones. Por
-  ahora contiene una sola hoja visible y se actualiza al abrir, cambiar o
-  cerrar pestañas. Su geometría horizontal/vertical acota proporciones y cubre
-  el área sin solaparse; el dibujo y foco de esas divisiones son el siguiente
-  bloque, no una función declarada antes de estar completa.
+- una ventana ya puede mostrar hasta cuatro documentos distintos en hojas
+  divididas horizontal o verticalmente, sin copiar buffers, historial,
+  guardados ni recuperaciones. Más acciones y la paleta abren un selector
+  explícito que excluye documentos visibles u ocupados; la elección se valida
+  antes de dividir. Cada hoja conserva su scroll y dibuja dentro de un raster
+  local, de modo que texto, tablas, código y selección no atraviesan los
+  separadores. Un clic izquierdo en una hoja pasiva solo enfoca esa hoja; rueda,
+  teclado, IME y overlays continúan dirigidos al foco. Cerrar una hoja no cierra
+  la pestaña y cerrar una pestaña prioriza una hoja superviviente para no
+  desalinear documento y vista. Quedan QA visual, foco por teclado, transiciones
+  y ventanas separadas.
 - una barra superior sobria separa archivo de estado y navegación: Nuevo, Abrir,
   Guardar, Buscar, Espacio de trabajo y Más conservan su sitio; un selector
   segmentado lleva directamente a Leer, Editar o Comparar. Cada segmento expone

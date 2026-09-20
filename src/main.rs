@@ -855,10 +855,13 @@ enum AppAction {
     Save,
     SaveAs,
     CloseDocument,
+    CloseDocumentPane,
     TogglePinTab,
     ToggleMode,
     ToggleSplit,
     ToggleSplitOrientation,
+    SplitDocumentRight,
+    SplitDocumentBelow,
     ToggleTheme,
     ToggleReduceMotion,
     Cut,
@@ -906,7 +909,7 @@ enum AppAction {
     CommandPalette,
 }
 
-const APP_ACTIONS: [AppAction; 53] = [
+const APP_ACTIONS: [AppAction; 56] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -917,9 +920,12 @@ const APP_ACTIONS: [AppAction; 53] = [
     AppAction::ToggleReduceMotion,
     AppAction::SaveAs,
     AppAction::CloseDocument,
+    AppAction::CloseDocumentPane,
     AppAction::TogglePinTab,
     AppAction::ToggleSplit,
     AppAction::ToggleSplitOrientation,
+    AppAction::SplitDocumentRight,
+    AppAction::SplitDocumentBelow,
     AppAction::Cut,
     AppAction::FormatBold,
     AppAction::FormatItalic,
@@ -970,10 +976,13 @@ impl AppAction {
             Self::Save => "Guardar · Ctrl+S",
             Self::SaveAs => "Guardar como · Ctrl+Shift+S",
             Self::CloseDocument => "Cerrar pestaña · Ctrl+W",
+            Self::CloseDocumentPane => "Cerrar panel sin cerrar la pestaña",
             Self::TogglePinTab => "Fijar o soltar pestaña",
             Self::ToggleMode => "Alternar lectura y edición · F2",
             Self::ToggleSplit => "Comparar fuente y vista · F3",
             Self::ToggleSplitOrientation => "Alternar disposición de comparación",
+            Self::SplitDocumentRight => "Dividir a la derecha con otra pestaña",
+            Self::SplitDocumentBelow => "Dividir abajo con otra pestaña",
             Self::ToggleTheme => "Cambiar tema día o noche · T en lectura",
             Self::ToggleReduceMotion => "Activar o desactivar movimiento reducido",
             Self::Cut => "Cortar · Ctrl+X",
@@ -1328,6 +1337,15 @@ enum DocumentPaneAxis {
     Horizontal,
 }
 
+impl DocumentPaneAxis {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Vertical => "a la derecha",
+            Self::Horizontal => "abajo",
+        }
+    }
+}
+
 /// Modelo de disposición de documentos para vistas divididas. Cada hoja tiene
 /// una identidad de vista estable y referencia un documento de sesión. No posee
 /// buffers ni recuperación: esos datos continúan perteneciendo al documento.
@@ -1396,6 +1414,19 @@ impl DocumentPaneTree {
             Self::Split { first, second, .. } => {
                 first.contains_pane(pane_id) || second.contains_pane(pane_id)
             }
+        }
+    }
+
+    fn document_for_pane(&self, pane_id: u64) -> Option<u64> {
+        match self {
+            Self::Leaf {
+                pane_id: current,
+                document_id,
+                ..
+            } => (*current == pane_id).then_some(*document_id),
+            Self::Split { first, second, .. } => first
+                .document_for_pane(pane_id)
+                .or_else(|| second.document_for_pane(pane_id)),
         }
     }
 
@@ -1538,6 +1569,32 @@ impl DocumentPaneTree {
         }
     }
 
+    /// Cierra solo una hoja visual. El documento queda abierto en su pestaña,
+    /// con fuente, historial y recuperación intactos, y el árbol colapsa la
+    /// rama que ya no tiene dos hijos.
+    fn without_pane(&self, pane_id: u64) -> Option<Self> {
+        match self {
+            Self::Leaf {
+                pane_id: current, ..
+            } => (*current != pane_id).then(|| self.clone()),
+            Self::Split {
+                axis,
+                fraction,
+                first,
+                second,
+            } => match (first.without_pane(pane_id), second.without_pane(pane_id)) {
+                (Some(first), Some(second)) => Some(Self::Split {
+                    axis: *axis,
+                    fraction: normalized_pane_fraction(*fraction),
+                    first: Box::new(first),
+                    second: Box::new(second),
+                }),
+                (Some(remaining), None) | (None, Some(remaining)) => Some(remaining),
+                (None, None) => None,
+            },
+        }
+    }
+
     #[cfg_attr(not(test), allow(dead_code))]
     fn layout(&self, available: PaneGeometry, output: &mut Vec<DocumentPaneLayout>) {
         match self {
@@ -1592,6 +1649,18 @@ impl DocumentPaneTree {
             }
         }
     }
+}
+
+/// Al cerrar una pestaña que estaba visible, el siguiente documento activo se
+/// toma de una hoja superviviente. Esto conserva la coherencia entre árbol,
+/// foco y caché aunque el orden de las pestañas haya sido reordenado aparte.
+fn remaining_document_panes_after_close(
+    panes: &DocumentPaneTree,
+    closing_document: u64,
+) -> Option<(DocumentPaneTree, u64)> {
+    let remaining = panes.without_document(closing_document)?;
+    let successor = remaining.document_for_pane(remaining.first_pane_id())?;
+    Some((remaining, successor))
 }
 
 /// Reparte una dimensión incluso cuando una llamada de plataforma entrega un
@@ -4268,6 +4337,7 @@ fn document_viewport_height(window_height: f32) -> f32 {
 
 /// Convierte una coordenada vertical estable del documento a una coordenada
 /// de pantalla. Dibujo, selección y hit testing comparten esta frontera.
+#[cfg_attr(not(test), allow(dead_code))]
 fn document_screen_y(document_y: f32, scroll: f32) -> f32 {
     DOCUMENT_VIEWPORT_TOP + document_y - scroll
 }
@@ -4295,6 +4365,12 @@ struct DocumentPaneLayout {
 /// y la recuperación siguen en `DocumentState`; esto solo evita que dos
 /// paneles distintos reciclen alturas o layouts incompatibles.
 struct PaneRenderCache {
+    /// Defensa contra reutilizar por accidente una geometría de otro archivo
+    /// cuando una pestaña cambia de panel. La caché no es autoridad sobre el
+    /// documento: solo identifica para quién se midió.
+    document_id: Option<u64>,
+    source_revision: u64,
+    mode: DocumentMode,
     slots: Vec<Slot>,
     visible_blocks: Vec<usize>,
     live: HashMap<usize, (CachedBlockLayout, Option<CachedMarker>)>,
@@ -4306,11 +4382,18 @@ struct PaneRenderCache {
     preview_height: f32,
     preview_laid_for_width: f32,
     exact_after_edit: bool,
+    /// Lienzo reutilizable de una vista no enfocada. Renderizar primero aquí
+    /// confina glifos y decoraciones al panel antes de componerlos en la
+    /// ventana; no guarda datos de la fuente.
+    raster: Option<Pixmap>,
 }
 
 impl Default for PaneRenderCache {
     fn default() -> Self {
         Self {
+            document_id: None,
+            source_revision: 0,
+            mode: DocumentMode::Reading,
             slots: Vec::new(),
             visible_blocks: Vec::new(),
             live: HashMap::new(),
@@ -4322,7 +4405,202 @@ impl Default for PaneRenderCache {
             preview_height: 0.0,
             preview_laid_for_width: -1.0,
             exact_after_edit: true,
+            raster: None,
         }
+    }
+}
+
+/// Resultado efímero de preparar una hoja del mosaico. La geometría es local
+/// al panel; el compositor la traslada después al framebuffer de la ventana.
+struct PreparedDocumentPane {
+    panes: SplitGeometry,
+    visible: Vec<usize>,
+    preview_visible: Vec<usize>,
+    max_scroll: f32,
+}
+
+/// Mide y maqueta únicamente los bloques visibles de una vista de documento.
+/// El documento se recibe prestado y la caché se recibe por separado: nunca se
+/// copia la fuente, el historial ni la recuperación para dibujar un mosaico.
+fn prepare_document_pane(
+    document: &DocumentState,
+    cache: &mut PaneRenderCache,
+    font_cx: &mut FontContext,
+    layout_cx: &mut LayoutContext<Brush>,
+    palette: Palette,
+    outer_width: f32,
+    outer_height: f32,
+    scroll: f32,
+    scale: f32,
+    exact_measure: bool,
+) -> PreparedDocumentPane {
+    let revision = document.source_editor.revision();
+    if cache.document_id != Some(document.id)
+        || cache.source_revision != revision
+        || cache.mode != document.mode
+    {
+        *cache = PaneRenderCache {
+            document_id: Some(document.id),
+            source_revision: revision,
+            mode: document.mode,
+            ..PaneRenderCache::default()
+        };
+    }
+
+    let panes = document_pane_geometry(
+        outer_width,
+        outer_height,
+        document.mode,
+        document.split_orientation,
+    );
+    let layout_width = panes.source.width;
+    let preview_width = panes.preview.width;
+    let viewport_height = panes.source.height;
+
+    if cache.exact_after_edit || layout_width_is_stale(cache.laid_for_width, layout_width) {
+        let hidden = if document.mode == DocumentMode::Reading {
+            folded_block_mask(
+                &document.blocks,
+                &document.folded_headings,
+                &document.folded_callouts,
+            )
+        } else {
+            Vec::new()
+        };
+        let (slots, visible_blocks, height) = measure_all(
+            &document.blocks,
+            font_cx,
+            layout_cx,
+            layout_width,
+            scale,
+            exact_measure || cache.exact_after_edit,
+            &hidden,
+        );
+        cache.slots = slots;
+        cache.visible_blocks = visible_blocks;
+        cache.doc_height = height;
+        cache.laid_for_width = layout_width;
+        cache.exact_after_edit = false;
+        cache.live.clear();
+    }
+
+    if document.mode == DocumentMode::Split
+        && layout_width_is_stale(cache.preview_laid_for_width, preview_width)
+    {
+        let (slots, visible_blocks, height) = measure_all(
+            &document.rendered_blocks,
+            font_cx,
+            layout_cx,
+            preview_width,
+            scale,
+            false,
+            &[],
+        );
+        cache.preview_slots = slots;
+        cache.preview_visible_blocks = visible_blocks;
+        cache.preview_height = height;
+        cache.preview_laid_for_width = preview_width;
+        cache.preview_live.clear();
+    }
+
+    let max_scroll = max_scroll(cache.doc_height.max(cache.preview_height), viewport_height);
+    let effective_scroll = scroll.clamp(0.0, max_scroll);
+    let visible_positions = visible_order_range(
+        &cache.slots,
+        &cache.visible_blocks,
+        effective_scroll,
+        effective_scroll + viewport_height,
+    );
+    let visible = cache.visible_blocks[visible_positions].to_vec();
+    cache
+        .live
+        .retain(|index, _| visible.binary_search(index).is_ok());
+    for &index in &visible {
+        if cache.live.contains_key(&index) {
+            continue;
+        }
+        let block = &document.blocks[index];
+        let layout = if matches!(block.kind, Kind::TableRow { .. }) {
+            CachedBlockLayout::Table(build_table_layouts(
+                block,
+                font_cx,
+                layout_cx,
+                layout_width,
+                scale,
+                palette,
+            ))
+        } else {
+            CachedBlockLayout::Text(Box::new(build_layout(
+                block,
+                font_cx,
+                layout_cx,
+                layout_width,
+                scale,
+                palette,
+            )))
+        };
+        let marker = block.marker.as_ref().map(|marker| match marker {
+            Marker::Text(text) => CachedMarker::Text(Box::new(build_marker_layout(
+                text, block.kind, font_cx, layout_cx, scale, palette,
+            ))),
+            Marker::Task { done } => CachedMarker::Task { done: *done },
+        });
+        cache.live.insert(index, (layout, marker));
+    }
+
+    let preview_visible = if document.mode == DocumentMode::Split {
+        let positions = visible_order_range(
+            &cache.preview_slots,
+            &cache.preview_visible_blocks,
+            effective_scroll,
+            effective_scroll + viewport_height,
+        );
+        let visible = cache.preview_visible_blocks[positions].to_vec();
+        cache
+            .preview_live
+            .retain(|index, _| visible.binary_search(index).is_ok());
+        for &index in &visible {
+            if cache.preview_live.contains_key(&index) {
+                continue;
+            }
+            let block = &document.rendered_blocks[index];
+            let layout = if matches!(block.kind, Kind::TableRow { .. }) {
+                CachedBlockLayout::Table(build_table_layouts(
+                    block,
+                    font_cx,
+                    layout_cx,
+                    preview_width,
+                    scale,
+                    palette,
+                ))
+            } else {
+                CachedBlockLayout::Text(Box::new(build_layout(
+                    block,
+                    font_cx,
+                    layout_cx,
+                    preview_width,
+                    scale,
+                    palette,
+                )))
+            };
+            let marker = block.marker.as_ref().map(|marker| match marker {
+                Marker::Text(text) => CachedMarker::Text(Box::new(build_marker_layout(
+                    text, block.kind, font_cx, layout_cx, scale, palette,
+                ))),
+                Marker::Task { done } => CachedMarker::Task { done: *done },
+            });
+            cache.preview_live.insert(index, (layout, marker));
+        }
+        visible
+    } else {
+        Vec::new()
+    };
+
+    PreparedDocumentPane {
+        panes,
+        visible,
+        preview_visible,
+        max_scroll,
     }
 }
 
@@ -4338,6 +4616,27 @@ impl PaneGeometry {
 #[cfg_attr(not(test), allow(dead_code))]
 fn document_pane_at(layouts: &[DocumentPaneLayout], x: f32, y: f32) -> Option<&DocumentPaneLayout> {
     layouts.iter().find(|layout| layout.geometry.contains(x, y))
+}
+
+/// Calcula una sola vez la geometría de las hojas visibles. Sus coordenadas
+/// viven dentro del área documental, por eso el puntero de ventana debe
+/// restar `DOCUMENT_VIEWPORT_TOP` antes de consultar `document_pane_at`.
+fn document_pane_layouts(
+    tree: &DocumentPaneTree,
+    viewport_width: f32,
+    viewport_height: f32,
+) -> Vec<DocumentPaneLayout> {
+    let mut layouts = Vec::with_capacity(tree.pane_count());
+    tree.layout(
+        PaneGeometry {
+            x: 0.0,
+            y: 0.0,
+            width: viewport_width.max(0.0),
+            height: viewport_height.max(0.0),
+        },
+        &mut layouts,
+    );
+    layouts
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -4415,6 +4714,21 @@ fn document_pane_geometry(
             preview: source,
         }
     }
+}
+
+/// Traduce la disposición interna de lectura/fuente de un documento al lugar
+/// que ocupa dentro del mosaico de la ventana.
+fn document_pane_geometry_in(
+    outer: PaneGeometry,
+    mode: DocumentMode,
+    orientation: SplitOrientation,
+) -> SplitGeometry {
+    let mut panes = document_pane_geometry(outer.width, outer.height, mode, orientation);
+    panes.source.x += outer.x;
+    panes.source.y += outer.y;
+    panes.preview.x += outer.x;
+    panes.preview.y += outer.y;
+    panes
 }
 
 fn pane_screen_y(document_y: f32, scroll: f32, pane: PaneGeometry) -> f32 {
@@ -5049,6 +5363,347 @@ fn draw_decorations(pixmap: &mut Pixmap, run: &GlyphRun<'_, Brush>, origin_x: f3
     }
 }
 
+/// Ancho real de texto dentro de una columna del mosaico. Compartir este
+/// cálculo con tablas, fondos de código y reglas evita que un detalle gráfico
+/// invada el panel contiguo al reducir una ventana.
+fn pane_text_width(pane: PaneGeometry, scale: f32) -> f32 {
+    (pane.width - MARGIN * scale * 2.0)
+        .min(MAX_MEASURE * scale)
+        .max(0.0)
+}
+
+/// Dibuja un conjunto de bloques ya maquetados dentro de una región local de
+/// un panel. El pixmap receptor tiene el tamaño de la hoja, de modo que hasta
+/// los glifos rasterizados quedan recortados por la propia memoria del panel.
+fn draw_cached_blocks_in_pane(
+    pixmap: &mut Pixmap,
+    blocks: &[Block],
+    slots: &[Slot],
+    live: &HashMap<usize, (CachedBlockLayout, Option<CachedMarker>)>,
+    visible: &[usize],
+    pane: PaneGeometry,
+    scroll: f32,
+    scale: f32,
+    palette: Palette,
+    scale_cx: &mut ScaleContext,
+    glyphs: &mut GlyphCache,
+) {
+    let text_width = pane_text_width(pane, scale);
+    let mut surface = Paint::default();
+    surface.set_color(Color::from_rgba8(
+        palette.surface.0,
+        palette.surface.1,
+        palette.surface.2,
+        255,
+    ));
+    if let Some(rect) = Rect::from_xywh(pane.x, pane.y, pane.width, pane.height) {
+        pixmap.fill_rect(rect, &surface, Transform::identity(), None);
+    }
+
+    let mut elevated = Paint::default();
+    elevated.set_color(Color::from_rgba8(
+        palette.elevated.0,
+        palette.elevated.1,
+        palette.elevated.2,
+        255,
+    ));
+    let mut accent = Paint::default();
+    accent.set_color(Color::from_rgba8(
+        palette.accent.0,
+        palette.accent.1,
+        palette.accent.2,
+        255,
+    ));
+    let mut dim = Paint::default();
+    dim.set_color(Color::from_rgba8(
+        palette.dim.0,
+        palette.dim.1,
+        palette.dim.2,
+        160,
+    ));
+    let mut border = Paint::default();
+    border.set_color(Color::from_rgba8(
+        palette.border.0,
+        palette.border.1,
+        palette.border.2,
+        255,
+    ));
+
+    for &index in visible {
+        let Some(slot) = slots.get(index) else {
+            continue;
+        };
+        let Some((cached_layout, marker)) = live.get(&index) else {
+            continue;
+        };
+        let top = pane.y + slot.y - scroll;
+
+        if let CachedBlockLayout::Table(cells) = cached_layout {
+            let columns = cells.len().max(1) as f32;
+            let left = pane.x + slot.x - 6.0;
+            let table_width = text_width + 12.0;
+            if matches!(slot.kind, Kind::TableRow { header: true }) {
+                let mut header = Paint::default();
+                header.set_color(Color::from_rgba8(
+                    palette.accent.0,
+                    palette.accent.1,
+                    palette.accent.2,
+                    26,
+                ));
+                if let Some(rect) = Rect::from_xywh(left, top - 1.0, table_width, slot.height + 2.0)
+                {
+                    pixmap.fill_rect(rect, &header, Transform::identity(), None);
+                }
+            }
+            for (x, y, width, height) in [
+                (left, top - 1.0, table_width, 1.0),
+                (left, top + slot.height, table_width, 1.0),
+                (left, top - 1.0, 1.0, slot.height + 2.0),
+                (left + table_width - 1.0, top - 1.0, 1.0, slot.height + 2.0),
+            ] {
+                if let Some(rect) = Rect::from_xywh(x, y, width, height) {
+                    pixmap.fill_rect(rect, &border, Transform::identity(), None);
+                }
+            }
+            for column in 1..columns as usize {
+                let x = left + table_width * column as f32 / columns;
+                if let Some(rect) = Rect::from_xywh(x, top - 1.0, 1.0, slot.height + 2.0) {
+                    pixmap.fill_rect(rect, &border, Transform::identity(), None);
+                }
+            }
+            let column_width = text_width / columns;
+            for (column, layout) in cells.iter().enumerate() {
+                let x = pane.x + slot.x + column as f32 * column_width + TABLE_CELL_PADDING;
+                let y = top + (slot.height - layout.height()).max(0.0) * 0.5;
+                for line in layout.lines() {
+                    for entry in line.items() {
+                        if let PositionedLayoutItem::GlyphRun(run) = entry {
+                            draw_run_background(pixmap, &run, x, y);
+                            draw_decorations(pixmap, &run, x, y);
+                            draw_glyph_run(pixmap, scale_cx, glyphs, &run, x, y);
+                        }
+                    }
+                }
+            }
+            continue;
+        }
+
+        let CachedBlockLayout::Text(layout) = cached_layout else {
+            continue;
+        };
+        match slot.kind {
+            Kind::Code => {
+                if is_visible_code_group_start(blocks, slots, index, scroll)
+                    && let Some(range) = code_block_range(blocks, index)
+                    && let (Some(first), Some(last)) = (
+                        slots.get(range.start),
+                        slots.get(range.end.saturating_sub(1)),
+                    )
+                    && let Some(rect) = Rect::from_xywh(
+                        pane.x + first.x - 12.0,
+                        pane.y + first.y - scroll - 2.0,
+                        text_width + 24.0,
+                        last.y + last.height - first.y + 4.0,
+                    )
+                {
+                    pixmap.fill_rect(rect, &elevated, Transform::identity(), None);
+                }
+            }
+            Kind::Quote => {
+                if let Some(rect) = Rect::from_xywh(pane.x + slot.x - 20.0, top, 3.0, slot.height) {
+                    pixmap.fill_rect(rect, &accent, Transform::identity(), None);
+                }
+            }
+            Kind::Callout => {
+                if let Some(rect) = Rect::from_xywh(
+                    pane.x + slot.x - 20.0,
+                    top - 4.0,
+                    text_width + 20.0,
+                    slot.height + 8.0,
+                ) {
+                    pixmap.fill_rect(rect, &elevated, Transform::identity(), None);
+                }
+                if let Some(rect) =
+                    Rect::from_xywh(pane.x + slot.x - 20.0, top - 4.0, 3.0, slot.height + 8.0)
+                {
+                    pixmap.fill_rect(rect, &accent, Transform::identity(), None);
+                }
+            }
+            Kind::Rule => {
+                if let Some(rect) = Rect::from_xywh(pane.x + slot.x, top, text_width, 1.0) {
+                    pixmap.fill_rect(rect, &dim, Transform::identity(), None);
+                }
+                continue;
+            }
+            _ => {}
+        }
+
+        if let Some(marker) = marker {
+            match marker {
+                CachedMarker::Text(marker) => {
+                    let marker_width = marker.width();
+                    for line in marker.lines() {
+                        for entry in line.items() {
+                            if let PositionedLayoutItem::GlyphRun(run) = entry {
+                                let x = pane.x + slot.x - marker_width - 8.0;
+                                draw_run_background(pixmap, &run, x, top);
+                                draw_glyph_run(pixmap, scale_cx, glyphs, &run, x, top);
+                            }
+                        }
+                    }
+                }
+                CachedMarker::Task { done } => {
+                    let (left, checkbox_top, width, _) =
+                        task_checkbox_bounds_in_pane(slot, scroll, scale, pane);
+                    draw_checkbox(pixmap, left, checkbox_top, width, *done, palette);
+                }
+            }
+        }
+
+        let x = pane.x + slot.x;
+        for line in layout.lines() {
+            for entry in line.items() {
+                if let PositionedLayoutItem::GlyphRun(run) = entry {
+                    draw_run_background(pixmap, &run, x, top);
+                    draw_decorations(pixmap, &run, x, top);
+                    draw_glyph_run(pixmap, scale_cx, glyphs, &run, x, top);
+                }
+            }
+        }
+    }
+}
+
+/// Compone los documentos no enfocados del mosaico. Cada panel se rasteriza en
+/// su propio lienzo reutilizable antes de copiarse al framebuffer principal;
+/// así el clipping no depende de una API de recorte implícita del rasterizador.
+fn draw_inactive_document_panes(
+    pixmap: &mut Pixmap,
+    layouts: &[DocumentPaneLayout],
+    tree: &DocumentPaneTree,
+    focused_pane_id: u64,
+    inactive_documents: &[InactiveDocument],
+    caches: &mut HashMap<u64, PaneRenderCache>,
+    font_cx: &mut FontContext,
+    layout_cx: &mut LayoutContext<Brush>,
+    scale_cx: &mut ScaleContext,
+    glyphs: &mut GlyphCache,
+    palette: Palette,
+    scale: f32,
+    exact_measure: bool,
+) {
+    for layout in layouts {
+        if layout.pane_id == focused_pane_id {
+            continue;
+        }
+        let Some(document) = inactive_documents
+            .iter()
+            .find(|tab| tab.document.id == layout.document_id)
+            .map(|tab| &tab.document)
+        else {
+            continue;
+        };
+        let scroll = tree
+            .pane_scroll(layout.pane_id)
+            .unwrap_or(document.scroll)
+            .max(0.0);
+        let cache = caches.entry(layout.pane_id).or_default();
+        let prepared = prepare_document_pane(
+            document,
+            cache,
+            font_cx,
+            layout_cx,
+            palette,
+            layout.geometry.width,
+            layout.geometry.height,
+            scroll,
+            scale,
+            exact_measure,
+        );
+        let effective_scroll = scroll.min(prepared.max_scroll);
+        let width = layout.geometry.width.ceil().max(1.0) as u32;
+        let height = layout.geometry.height.ceil().max(1.0) as u32;
+        if cache
+            .raster
+            .as_ref()
+            .is_none_or(|raster| raster.width() != width || raster.height() != height)
+        {
+            cache.raster = Pixmap::new(width, height);
+        }
+        let Some(raster) = cache.raster.as_mut() else {
+            continue;
+        };
+        raster.fill(Color::from_rgba8(
+            palette.surface.0,
+            palette.surface.1,
+            palette.surface.2,
+            255,
+        ));
+        draw_cached_blocks_in_pane(
+            raster,
+            &document.blocks,
+            &cache.slots,
+            &cache.live,
+            &prepared.visible,
+            prepared.panes.source,
+            effective_scroll,
+            scale,
+            palette,
+            scale_cx,
+            glyphs,
+        );
+        if document.mode == DocumentMode::Split {
+            draw_cached_blocks_in_pane(
+                raster,
+                &document.rendered_blocks,
+                &cache.preview_slots,
+                &cache.preview_live,
+                &prepared.preview_visible,
+                prepared.panes.preview,
+                effective_scroll,
+                scale,
+                palette,
+                scale_cx,
+                glyphs,
+            );
+            let mut border = Paint::default();
+            border.set_color(Color::from_rgba8(
+                palette.border.0,
+                palette.border.1,
+                palette.border.2,
+                255,
+            ));
+            let divider = match document.split_orientation {
+                SplitOrientation::SideBySide => Rect::from_xywh(
+                    prepared.panes.preview.x - 1.0,
+                    0.0,
+                    1.0,
+                    layout.geometry.height,
+                ),
+                SplitOrientation::Stacked => Rect::from_xywh(
+                    0.0,
+                    prepared.panes.preview.y - 1.0,
+                    layout.geometry.width,
+                    1.0,
+                ),
+            };
+            if let Some(divider) = divider {
+                raster.fill_rect(divider, &border, Transform::identity(), None);
+            }
+        }
+        let Some(raster) = cache.raster.as_ref() else {
+            continue;
+        };
+        pixmap.draw_pixmap(
+            layout.geometry.x.round() as i32,
+            (DOCUMENT_VIEWPORT_TOP + layout.geometry.y).round() as i32,
+            raster.as_ref(),
+            &PixmapPaint::default(),
+            Transform::identity(),
+            None,
+        );
+    }
+}
+
 fn blit(
     pixmap: &mut Pixmap,
     g: &CachedGlyph,
@@ -5268,6 +5923,41 @@ fn document_by_id_mut<'a>(
         .iter_mut()
         .find(|tab| tab.document.id == document_id)
         .map(|tab| &mut tab.document)
+}
+
+fn document_by_id<'a>(
+    active: &'a DocumentState,
+    inactive: &'a [InactiveDocument],
+    document_id: u64,
+) -> Option<&'a DocumentState> {
+    if active.id == document_id {
+        return Some(active);
+    }
+    inactive
+        .iter()
+        .find(|tab| tab.document.id == document_id)
+        .map(|tab| &tab.document)
+}
+
+/// Calcula destinos seguros para una división de documentos. Una hoja no puede
+/// repetir una pestaña que ya está visible ni reclamar una operación que aún
+/// está abriendo, guardando o actualizando su vista.
+fn document_pane_targets(
+    tab_order: &[u64],
+    panes: &DocumentPaneTree,
+    active_document: u64,
+    busy_documents: &HashSet<u64>,
+) -> Vec<u64> {
+    if panes.pane_count() >= MAX_DOCUMENT_PANES {
+        return Vec::new();
+    }
+    tab_order
+        .iter()
+        .copied()
+        .filter(|document_id| *document_id != active_document)
+        .filter(|document_id| panes.pane_for_document(*document_id).is_none())
+        .filter(|document_id| !busy_documents.contains(document_id))
+        .collect()
 }
 
 fn apply_save_result(
@@ -5670,6 +6360,9 @@ struct App {
     /// directos de arriba para no convertir el camino de lectura actual en un
     /// mapa dinámico antes de que haya una división visible.
     inactive_pane_caches: HashMap<u64, PaneRenderCache>,
+    /// Lienzo reutilizable del panel enfocado. Viaja con la caché cuando el
+    /// foco cambia, igual que sus slots, pero nunca con el documento fuente.
+    focused_pane_raster: Option<Pixmap>,
     /// Las mediciones se acumulan y se imprimen al final. Escribir a stderr
     /// en el medio distorsiona lo que se esta midiendo: con la salida
     /// redirigida a un archivo, cada `eprintln` costaba mas que el trabajo
@@ -5739,6 +6432,12 @@ struct App {
     command_palette: Option<usize>,
     command_palette_query: String,
     command_palette_scope: CommandPaletteScope,
+    /// Elegir una pestaña antes de dividir evita duplicar una fuente o asumir
+    /// cuál documento quería ver la persona. Solo existe mientras el selector
+    /// flotante está abierto.
+    pane_split_picker: Option<DocumentPaneAxis>,
+    pane_split_candidates: Vec<u64>,
+    pane_split_match: usize,
     /// Foco visible de la barra superior. F6 lo activa; no sustituye los
     /// atajos directos ni simula semántica de lector de pantalla.
     toolbar_focus: Option<usize>,
@@ -5977,7 +6676,11 @@ impl ApplicationHandler<AppEvent> for App {
                         window.request_redraw();
                     }
                 } else {
+                    self.invalidate_document_pane_layout(document_id);
                     self.set_notice("otra pestaña terminó de abrirse");
+                    if let Some(window) = &self.window {
+                        window.request_redraw();
+                    }
                 }
             }
             AppEvent::DocumentFailed {
@@ -6014,7 +6717,13 @@ impl ApplicationHandler<AppEvent> for App {
                         window.request_redraw();
                     }
                 } else {
+                    if !preserve_document {
+                        self.invalidate_document_pane_layout(document_id);
+                    }
                     self.set_notice("no se pudo abrir otra pestaña");
+                    if let Some(window) = &self.window {
+                        window.request_redraw();
+                    }
                 }
             }
             AppEvent::ViewReady {
@@ -6068,7 +6777,11 @@ impl ApplicationHandler<AppEvent> for App {
                         window.request_redraw();
                     }
                 } else {
+                    self.invalidate_document_pane_layout(document_id);
                     self.set_notice("otra pestaña actualizó su vista de lectura");
+                    if let Some(window) = &self.window {
+                        window.request_redraw();
+                    }
                 }
             }
             AppEvent::ViewFailed {
@@ -6540,10 +7253,7 @@ impl ApplicationHandler<AppEvent> for App {
                 if let Some(window) = &self.window {
                     self.scale_factor = window.scale_factor() as f32;
                 }
-                self.live.clear();
-                self.preview_live.clear();
-                self.laid_for_width = -1.0;
-                self.preview_laid_for_width = -1.0;
+                self.invalidate_all_document_pane_layouts();
                 if let Some(w) = &self.window {
                     w.request_redraw();
                 }
@@ -6848,6 +7558,12 @@ impl ApplicationHandler<AppEvent> for App {
                             return;
                         }
                     }
+                    if let Some((x, y)) = self.pointer
+                        && self.focus_document_pane_at(x, y)
+                    {
+                        self.selecting = false;
+                        return;
+                    }
                     if let Some(block) = self
                         .pointer
                         .and_then(|(x, y)| self.heading_disclosure_at(x, y))
@@ -6934,16 +7650,11 @@ impl ApplicationHandler<AppEvent> for App {
                         self.activate_document_tab(document_id);
                     }
                 }
+                let _ = self.focus_document_pane_at(x, y);
                 if self.document.mode == DocumentMode::Split
-                    && self.window.as_ref().is_some_and(|window| {
-                        let size = window.inner_size();
-                        let panes = split_geometry(
-                            size.width as f32,
-                            document_viewport_height(size.height as f32),
-                            self.document.split_orientation,
-                        );
-                        panes.preview.contains(x, y - DOCUMENT_VIEWPORT_TOP)
-                    })
+                    && self
+                        .focused_document_panes()
+                        .is_some_and(|panes| panes.preview.contains(x, y - DOCUMENT_VIEWPORT_TOP))
                 {
                     self.set_notice(
                         "la vista previa es de lectura; edita la fuente en el otro panel",
@@ -6979,6 +7690,9 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
             WindowEvent::ModifiersChanged(modifiers) => self.modifiers = modifiers.state(),
+            WindowEvent::Ime(Ime::Preedit(_, _)) if self.pane_split_picker.is_some() => {
+                self.ime_preedit = None;
+            }
             WindowEvent::Ime(Ime::Preedit(text, _)) if self.document.mode.is_editable() => {
                 self.ime_preedit = (!text.is_empty()).then_some(text);
                 if let Some(window) = &self.window {
@@ -6997,6 +7711,7 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::Ime(Ime::Commit(text)) if self.command_palette.is_some() => {
                 self.append_command_palette_text(&text);
             }
+            WindowEvent::Ime(Ime::Commit(_)) if self.pane_split_picker.is_some() => {}
             WindowEvent::Ime(Ime::Commit(text)) if self.document.mode.is_editable() => {
                 self.ime_preedit = None;
                 self.edit_source(|editor, source| editor.insert(source, text.as_str()));
@@ -7009,6 +7724,9 @@ impl ApplicationHandler<AppEvent> for App {
                         window.request_redraw();
                     }
                 }
+            }
+            WindowEvent::KeyboardInput { event, .. } if self.pane_split_picker.is_some() => {
+                self.handle_pane_split_picker_key(&event);
             }
             WindowEvent::KeyboardInput { event, .. } if self.command_palette.is_some() => {
                 self.handle_command_palette_key(&event);
@@ -7540,14 +8258,21 @@ impl ApplicationHandler<AppEvent> for App {
                 self.perform_action(AppAction::ToggleTheme);
             }
             WindowEvent::MouseWheel { delta, .. } => {
+                if let Some((x, y)) = self.pointer {
+                    let _ = self.focus_document_pane_at(x, y);
+                }
                 let dy = match delta {
                     MouseScrollDelta::LineDelta(_, y) => y * 60.0,
                     MouseScrollDelta::PixelDelta(p) => p.y as f32,
                 };
                 let viewport_height = self
-                    .window
-                    .as_ref()
-                    .map(|window| document_viewport_height(window.inner_size().height as f32))
+                    .focused_document_panes()
+                    .map(|panes| panes.source.height)
+                    .or_else(|| {
+                        self.window.as_ref().map(|window| {
+                            document_viewport_height(window.inner_size().height as f32)
+                        })
+                    })
                     .unwrap_or(0.0);
                 let max = max_scroll(self.doc_height.max(self.preview_height), viewport_height);
                 self.set_focused_pane_scroll((self.scroll - dy).clamp(0.0, max));
@@ -7572,10 +8297,12 @@ impl ApplicationHandler<AppEvent> for App {
                         // documento entero para que la medicion no se quede
                         // midiendo siempre la misma pantalla.
                         let viewport_height = self
-                            .window
-                            .as_ref()
-                            .map(|window| {
-                                document_viewport_height(window.inner_size().height as f32)
+                            .focused_document_panes()
+                            .map(|panes| panes.source.height)
+                            .or_else(|| {
+                                self.window.as_ref().map(|window| {
+                                    document_viewport_height(window.inner_size().height as f32)
+                                })
                             })
                             .unwrap_or(0.0);
                         let max =
@@ -7619,6 +8346,7 @@ impl App {
             AppAction::Save => self.save_current_document(),
             AppAction::SaveAs => self.save_as_current_document(),
             AppAction::CloseDocument => self.close_active_document_tab(),
+            AppAction::CloseDocumentPane => self.close_focused_document_pane(),
             AppAction::TogglePinTab => self.toggle_active_tab_pin(),
             AppAction::ToggleMode => match self.document.mode {
                 DocumentMode::Reading => self.select_mode(ModeTarget::Editing),
@@ -7649,6 +8377,12 @@ impl App {
                 if let Some(window) = &self.window {
                     window.request_redraw();
                 }
+            }
+            AppAction::SplitDocumentRight => {
+                self.open_document_pane_picker(DocumentPaneAxis::Vertical)
+            }
+            AppAction::SplitDocumentBelow => {
+                self.open_document_pane_picker(DocumentPaneAxis::Horizontal)
             }
             AppAction::ToggleTheme => self.toggle_theme(),
             AppAction::ToggleReduceMotion => self.toggle_reduce_motion(),
@@ -7727,8 +8461,7 @@ impl App {
         if self.reduce_motion {
             self.theme_transition = None;
             self.palette = target;
-            self.live.clear();
-            self.preview_live.clear();
+            self.clear_all_pane_live_layouts();
             return;
         }
         self.palette = from;
@@ -7737,8 +8470,7 @@ impl App {
             to: target,
             started: now,
         });
-        self.live.clear();
-        self.preview_live.clear();
+        self.clear_all_pane_live_layouts();
     }
 
     fn begin_mode_transition(&mut self, target: ModeTarget) {
@@ -7773,8 +8505,7 @@ impl App {
         let palette = transition.palette_at(now);
         if palette != self.palette {
             self.palette = palette;
-            self.live.clear();
-            self.preview_live.clear();
+            self.clear_all_pane_live_layouts();
         }
         if transition.finished(now) {
             self.palette = transition.to;
@@ -7797,8 +8528,7 @@ impl App {
             && let Some(transition) = self.theme_transition.take()
         {
             self.palette = transition.to;
-            self.live.clear();
-            self.preview_live.clear();
+            self.clear_all_pane_live_layouts();
         }
         if self.reduce_motion {
             self.mode_transition = None;
@@ -7902,6 +8632,7 @@ impl App {
     }
 
     fn open_command_palette(&mut self) {
+        self.clear_pane_split_picker();
         self.context_menu = None;
         self.search_query = None;
         self.workspace_search_query = None;
@@ -8016,6 +8747,7 @@ impl App {
     }
 
     fn open_workspace_hub(&mut self) {
+        self.clear_pane_split_picker();
         self.context_menu = None;
         self.search_query = None;
         self.workspace_search_query = None;
@@ -8033,6 +8765,7 @@ impl App {
     }
 
     fn open_study_actions(&mut self) {
+        self.clear_pane_split_picker();
         self.context_menu = None;
         self.search_query = None;
         self.workspace_search_query = None;
@@ -8050,6 +8783,7 @@ impl App {
     }
 
     fn open_writing_actions(&mut self) {
+        self.clear_pane_split_picker();
         self.context_menu = None;
         self.search_query = None;
         self.workspace_search_query = None;
@@ -8066,8 +8800,127 @@ impl App {
         }
     }
 
+    fn available_document_pane_targets(&self) -> Vec<u64> {
+        let busy_documents = self
+            .open_requests
+            .keys()
+            .chain(self.view_requests.keys())
+            .chain(self.saves_in_flight.iter())
+            .copied()
+            .collect::<HashSet<_>>();
+        document_pane_targets(
+            &self.tab_order,
+            &self.document_panes,
+            self.document.id,
+            &busy_documents,
+        )
+    }
+
+    fn clear_pane_split_picker(&mut self) {
+        self.pane_split_picker = None;
+        self.pane_split_candidates.clear();
+        self.pane_split_match = 0;
+    }
+
+    fn open_document_pane_picker(&mut self, axis: DocumentPaneAxis) {
+        if self.document_panes.pane_count() >= MAX_DOCUMENT_PANES {
+            self.set_notice("la ventana ya muestra el máximo de cuatro documentos");
+            return;
+        }
+        let candidates = self.available_document_pane_targets();
+        if candidates.is_empty() {
+            self.set_notice("abrí otra pestaña lista para usar antes de dividir este panel");
+            return;
+        }
+        self.context_menu = None;
+        self.search_query = None;
+        self.dismiss_navigation_panel();
+        self.pane_split_picker = Some(axis);
+        self.pane_split_candidates = candidates;
+        self.pane_split_match = 0;
+        self.toolbar_focus = None;
+        self.set_notice(&format!(
+            "dividir {} · elegí una pestaña sin abrirla ni duplicarla",
+            axis.label()
+        ));
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    fn choose_document_pane_split(&mut self, selected: usize) {
+        let Some(axis) = self.pane_split_picker else {
+            return;
+        };
+        let available = self.available_document_pane_targets();
+        let document_id = self
+            .pane_split_candidates
+            .get(selected)
+            .copied()
+            .filter(|document_id| available.contains(document_id));
+        let Some(document_id) = document_id else {
+            self.clear_pane_split_picker();
+            self.set_notice("esa pestaña ya no está disponible para dividir");
+            if let Some(window) = &self.window {
+                window.request_redraw();
+            }
+            return;
+        };
+        if document_by_id(&self.document, &self.inactive_documents, document_id).is_none() {
+            self.clear_pane_split_picker();
+            self.set_notice("la pestaña elegida dejó de existir");
+            return;
+        }
+        self.save_focused_pane_scroll();
+        let Some(new_pane) =
+            self.document_panes
+                .split_pane(self.focused_document_pane, document_id, axis)
+        else {
+            self.clear_pane_split_picker();
+            self.set_notice("no se pudo crear un panel sin repetir documentos");
+            return;
+        };
+        self.inactive_pane_caches.remove(&new_pane);
+        self.clear_pane_split_picker();
+        self.set_notice(&format!(
+            "panel dividido {} · el nuevo documento se enfoca con un clic",
+            axis.label()
+        ));
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    fn handle_pane_split_picker_key(&mut self, event: &KeyEvent) {
+        if event.state != ElementState::Pressed || event.repeat {
+            return;
+        }
+        let count = self.pane_split_candidates.len();
+        match event.physical_key {
+            PhysicalKey::Code(KeyCode::Escape) => {
+                self.clear_pane_split_picker();
+                self.set_notice("división de panel cancelada");
+            }
+            PhysicalKey::Code(KeyCode::ArrowDown | KeyCode::Tab) if count > 0 => {
+                self.pane_split_match = (self.pane_split_match + 1) % count;
+            }
+            PhysicalKey::Code(KeyCode::ArrowUp) if count > 0 => {
+                self.pane_split_match = (self.pane_split_match + count - 1) % count;
+            }
+            PhysicalKey::Code(KeyCode::Enter) if count > 0 => {
+                self.choose_document_pane_split(self.pane_split_match % count);
+                return;
+            }
+            _ => return,
+        }
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
     fn navigation_panel_is_open(&self) -> bool {
-        self.command_palette.is_some()
+        self.pane_split_picker.is_some()
+            || self.command_palette.is_some()
             || self.workspace_search_query.is_some()
             || self.workspace_paths.is_some()
             || self.backlink_paths.is_some()
@@ -8079,7 +8932,9 @@ impl App {
         let Some(window) = self.window.as_ref() else {
             return false;
         };
-        let item_count = if self.command_palette.is_some() {
+        let item_count = if self.pane_split_picker.is_some() {
+            self.pane_split_candidates.len()
+        } else if self.command_palette.is_some() {
             self.command_palette_actions().len()
         } else if self.workspace_search_query.is_some() {
             self.workspace_search_matches().len()
@@ -8110,6 +8965,7 @@ impl App {
     /// búsqueda dentro del documento porque pertenece a la lectura actual, no
     /// a este grupo de capas flotantes.
     fn dismiss_navigation_panel(&mut self) {
+        self.clear_pane_split_picker();
         self.workspace_search_query = None;
         self.workspace_paths = None;
         self.backlink_paths = None;
@@ -8125,7 +8981,19 @@ impl App {
             return false;
         };
         let size = window.inner_size();
-        if let Some(selected) = self.command_palette {
+        if self.pane_split_picker.is_some() {
+            let count = self.pane_split_candidates.len();
+            let selected = self.pane_split_match;
+            let geometry = navigation_panel_geometry(
+                size.width as f32,
+                size.height as f32,
+                panel_window(count, selected, PANEL_CAPACITY).len(),
+            );
+            if let Some(index) = panel_item_at(x, y, count, selected, geometry) {
+                self.choose_document_pane_split(index);
+                return true;
+            }
+        } else if let Some(selected) = self.command_palette {
             let actions = self.command_palette_actions();
             let geometry = navigation_panel_geometry(
                 size.width as f32,
@@ -8207,8 +9075,10 @@ impl App {
         false
     }
 
-    fn reset_document_view(&mut self) {
-        self.invalidate_document_layout();
+    /// Descarta únicamente elementos efímeros de la interfaz al cambiar de
+    /// documento o de panel. No toca la geometría: una vista ya abierta puede
+    /// conservar sus mediciones sin heredar menús, selección o foco ajenos.
+    fn clear_document_view_overlays(&mut self) {
         self.scroll = self.document.scroll;
         self.selection = if self.document.mode == DocumentMode::Reading {
             self.document
@@ -8221,17 +9091,21 @@ impl App {
         self.focus_destination = None;
         self.context_menu = None;
         self.search_query = None;
-        self.workspace_search_query = None;
-        self.backlink_paths = None;
-        self.outline_headings = None;
-        self.command_palette = None;
-        self.command_palette_query.clear();
+        self.dismiss_navigation_panel();
         self.toolbar_focus = None;
         self.image_request = self.image_request.wrapping_add(1);
         self.image_preview = None;
         if self.document.mode.is_editable() {
             self.sync_source_selection();
         }
+    }
+
+    /// Un documento nuevo, una fuente actualizada o un cambio de modo sí
+    /// necesitan reconstruir su geometría. Mantenerlo separado de la limpieza
+    /// de overlays evita borrar la caché de otra vista ya visible.
+    fn reset_document_view(&mut self) {
+        self.invalidate_document_layout();
+        self.clear_document_view_overlays();
     }
 
     fn save_focused_pane_scroll(&mut self) {
@@ -8255,8 +9129,30 @@ impl App {
         }
     }
 
+    fn focused_document_viewport_height(&self) -> f32 {
+        self.focused_document_panes()
+            .map(|panes| panes.source.height)
+            .or_else(|| {
+                self.window
+                    .as_ref()
+                    .map(|window| document_viewport_height(window.inner_size().height as f32))
+            })
+            .unwrap_or(0.0)
+    }
+
+    /// Todas las navegaciones programáticas pasan por esta ruta para que el
+    /// scroll de una hoja sobreviva al foco, al resize y a volver a la pestaña.
+    fn set_clamped_focused_pane_scroll(&mut self, scroll: f32) {
+        let viewport = self.focused_document_viewport_height();
+        let maximum = max_scroll(self.doc_height.max(self.preview_height), viewport);
+        self.set_focused_pane_scroll(scroll.clamp(0.0, maximum));
+    }
+
     fn take_focused_pane_cache(&mut self) -> PaneRenderCache {
         PaneRenderCache {
+            document_id: Some(self.document.id),
+            source_revision: self.document.source_editor.revision(),
+            mode: self.document.mode,
             slots: std::mem::take(&mut self.slots),
             visible_blocks: std::mem::take(&mut self.visible_blocks),
             live: std::mem::take(&mut self.live),
@@ -8268,6 +9164,7 @@ impl App {
             preview_height: std::mem::take(&mut self.preview_height),
             preview_laid_for_width: std::mem::replace(&mut self.preview_laid_for_width, -1.0),
             exact_after_edit: std::mem::replace(&mut self.exact_after_edit, true),
+            raster: std::mem::take(&mut self.focused_pane_raster),
         }
     }
 
@@ -8283,6 +9180,7 @@ impl App {
         self.preview_height = cache.preview_height;
         self.preview_laid_for_width = cache.preview_laid_for_width;
         self.exact_after_edit = cache.exact_after_edit;
+        self.focused_pane_raster = cache.raster;
     }
 
     fn focus_document_pane_cache(&mut self, pane_id: u64) {
@@ -8313,6 +9211,100 @@ impl App {
         self.preview_height = 0.0;
         self.preview_laid_for_width = -1.0;
         self.exact_after_edit = true;
+    }
+
+    /// Un cambio de DPI o tamaño afecta la geometría de todos los paneles,
+    /// aunque solo uno reciba el foco. Vaciar las cachés de vista evita usar
+    /// alturas calculadas para un ancho anterior.
+    fn invalidate_all_document_pane_layouts(&mut self) {
+        self.invalidate_document_layout();
+        self.inactive_pane_caches.clear();
+    }
+
+    /// El tema cambia colores almacenados dentro de los layouts, no su alto.
+    /// Por eso se conservan slots y scroll, y se rehacen solo los bloques
+    /// visibles de cada panel.
+    fn clear_all_pane_live_layouts(&mut self) {
+        self.live.clear();
+        self.preview_live.clear();
+        for cache in self.inactive_pane_caches.values_mut() {
+            cache.live.clear();
+            cache.preview_live.clear();
+        }
+    }
+
+    /// Invalida solo la vista que referencia al documento modificado. Un
+    /// resultado asíncrono de otra pestaña no puede borrar las mediciones del
+    /// panel que la persona está leyendo o editando.
+    fn invalidate_document_pane_layout(&mut self, document_id: u64) {
+        let Some(pane_id) = self.document_panes.pane_for_document(document_id) else {
+            return;
+        };
+        if pane_id == self.focused_document_pane {
+            self.invalidate_document_layout();
+        } else {
+            self.inactive_pane_caches
+                .insert(pane_id, PaneRenderCache::default());
+        }
+    }
+
+    fn visible_document_pane_layouts(&self) -> Vec<DocumentPaneLayout> {
+        let Some(window) = &self.window else {
+            return Vec::new();
+        };
+        let size = window.inner_size();
+        document_pane_layouts(
+            &self.document_panes,
+            size.width as f32,
+            document_viewport_height(size.height as f32),
+        )
+    }
+
+    fn focused_document_panes(&self) -> Option<SplitGeometry> {
+        let outer = self
+            .visible_document_pane_layouts()
+            .into_iter()
+            .find(|layout| layout.pane_id == self.focused_document_pane)
+            .or_else(|| {
+                self.visible_document_pane_layouts()
+                    .into_iter()
+                    .find(|layout| layout.document_id == self.document.id)
+            })?
+            .geometry;
+        Some(document_pane_geometry_in(
+            outer,
+            self.document.mode,
+            self.document.split_orientation,
+        ))
+    }
+
+    /// El primer clic dentro de otra hoja cambia el foco de forma explícita.
+    /// No ejecuta enlaces, ediciones ni tareas del documento de fondo: la
+    /// siguiente interacción ya opera sobre su fuente, historial y caché.
+    fn focus_document_pane_at(&mut self, x: f32, y: f32) -> bool {
+        let Some(layout) = document_pane_at(
+            &self.visible_document_pane_layouts(),
+            x,
+            y - DOCUMENT_VIEWPORT_TOP,
+        )
+        .copied() else {
+            return false;
+        };
+        if layout.pane_id == self.focused_document_pane {
+            return false;
+        }
+        if layout.document_id == self.document.id {
+            self.focus_document_pane_cache(layout.pane_id);
+            self.clear_document_view_overlays();
+            self.restore_focused_pane_scroll();
+            self.refresh_title();
+            if let Some(window) = &self.window {
+                window.request_redraw();
+            }
+        } else {
+            self.activate_document_tab(layout.document_id);
+        }
+        true
     }
 
     fn document_busy(&self, document_id: u64) -> bool {
@@ -8380,17 +9372,76 @@ impl App {
             document: current,
             recovery: current_recovery,
         });
-        if let Some(existing_pane) = self.document_panes.pane_for_document(document_id) {
+        let reused_visible_pane = self.document_panes.pane_for_document(document_id);
+        if let Some(existing_pane) = reused_visible_pane {
             self.focus_document_pane_cache(existing_pane);
         } else {
             let _ = self
                 .document_panes
                 .replace_pane_document(self.focused_document_pane, document_id);
         }
-        self.reset_document_view();
+        if reused_visible_pane.is_some() {
+            self.clear_document_view_overlays();
+        } else {
+            self.reset_document_view();
+        }
         self.restore_focused_pane_scroll();
         self.refresh_title();
         self.check_external_change();
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    /// Quita la hoja activa del mosaico sin cerrar su pestaña. No hay diálogo
+    /// de guardado porque el documento sigue abierto y puede volver a
+    /// mostrarse desde el selector de división.
+    fn close_focused_document_pane(&mut self) {
+        if self.document_panes.pane_count() <= 1 {
+            self.set_notice("este es el único panel visible");
+            return;
+        }
+        let closing_pane = self.focused_document_pane;
+        self.save_focused_pane_scroll();
+        let Some(next_tree) = self.document_panes.without_pane(closing_pane) else {
+            self.set_notice("no se pudo cerrar el panel actual");
+            return;
+        };
+        let next_pane = next_tree.first_pane_id();
+        let Some(next_document) = next_tree.document_for_pane(next_pane) else {
+            self.set_notice("el panel restante no tiene un documento válido");
+            return;
+        };
+        let Some(next_index) = self
+            .inactive_documents
+            .iter()
+            .position(|tab| tab.document.id == next_document)
+        else {
+            self.set_notice("la pestaña del panel restante ya no está disponible");
+            return;
+        };
+        self.document.scroll = self.scroll;
+        if self.document.mode == DocumentMode::Reading {
+            self.document.reading_selection = self.selection;
+        }
+        let next = self.inactive_documents.remove(next_index);
+        let current = std::mem::replace(&mut self.document, next.document);
+        let current_recovery = std::mem::replace(&mut self.recovery, next.recovery);
+        self.inactive_documents.push(InactiveDocument {
+            document: current,
+            recovery: current_recovery,
+        });
+        self.document_panes = next_tree;
+        // Conserva la caché del panel superviviente y descarta después la de
+        // la hoja cerrada. No se copia ni comparte la fuente entre pestañas.
+        self.focus_document_pane_cache(next_pane);
+        self.inactive_pane_caches
+            .retain(|pane_id, _| self.document_panes.contains_pane(*pane_id));
+        self.clear_document_view_overlays();
+        self.restore_focused_pane_scroll();
+        self.refresh_title();
+        self.check_external_change();
+        self.set_notice("panel cerrado · la pestaña continúa abierta");
         if let Some(window) = &self.window {
             window.request_redraw();
         }
@@ -8415,11 +9466,16 @@ impl App {
             .position(|id| *id == self.document.id)
             .unwrap_or(0);
         self.tab_order.retain(|id| *id != self.document.id);
-        let next_id = self
+        let remaining = remaining_document_panes_after_close(&self.document_panes, closing_id);
+        // Si aún queda una hoja visible, su documento debe recibir el foco.
+        // Elegir primero por orden de pestañas podría activar una fuente que no
+        // aparece en el mosaico y dejar árbol, foco y caché desincronizados.
+        let visible_successor = remaining.as_ref().map(|(_, document)| *document);
+        let tab_successor = self
             .tab_order
             .get(active_position.min(self.tab_order.len().saturating_sub(1)))
             .copied();
-        let next = next_id.and_then(|id| {
+        let next = visible_successor.or(tab_successor).and_then(|id| {
             let index = self
                 .inactive_documents
                 .iter()
@@ -8434,9 +9490,8 @@ impl App {
             self.recovery = self.new_recovery_session();
             self.tab_order.push(self.document.id);
         }
-        self.document_panes = self
-            .document_panes
-            .without_document(closing_id)
+        self.document_panes = remaining
+            .map(|(tree, _)| tree)
             .unwrap_or_else(|| DocumentPaneTree::single(self.document.id));
         self.inactive_pane_caches
             .retain(|pane_id, _| self.document_panes.contains_pane(*pane_id));
@@ -8444,7 +9499,11 @@ impl App {
             .document_panes
             .pane_for_document(self.document.id)
             .unwrap_or_else(|| self.document_panes.first_pane_id());
+        self.inactive_pane_caches
+            .remove(&self.focused_document_pane);
+        self.focused_pane_raster = None;
         self.reset_document_view();
+        self.restore_focused_pane_scroll();
         self.set_notice("pestaña cerrada");
         if let Some(window) = &self.window {
             window.request_redraw();
@@ -10011,18 +11070,19 @@ impl App {
             self.refresh_title();
             return;
         }
-        if let (Some(slot), Some(window)) = (self.slots.get(block_index), &self.window) {
-            let viewport = document_viewport_height(window.inner_size().height as f32);
-            if slot.y < self.scroll {
-                self.scroll = slot.y;
+        if let Some(slot) = self.slots.get(block_index) {
+            let viewport = self.focused_document_viewport_height();
+            let scroll = if slot.y < self.scroll {
+                slot.y
             } else if slot.y + slot.height > self.scroll + viewport {
-                self.scroll = (slot.y + slot.height - viewport).max(0.0);
+                (slot.y + slot.height - viewport).max(0.0)
+            } else {
+                self.scroll
+            };
+            self.set_clamped_focused_pane_scroll(scroll);
+            if let Some(window) = &self.window {
+                window.request_redraw();
             }
-            self.scroll = self.scroll.min(max_scroll(
-                self.doc_height.max(self.preview_height),
-                viewport,
-            ));
-            window.request_redraw();
         }
         self.refresh_title();
     }
@@ -10431,12 +11491,9 @@ impl App {
                 offset: 0,
             }));
             if !self.reveal_block(block)
-                && let (Some(slot), Some(window)) = (self.slots.get(block), &self.window)
+                && let Some(slot) = self.slots.get(block)
             {
-                self.scroll = slot.y.min(max_scroll(
-                    self.doc_height,
-                    document_viewport_height(window.inner_size().height as f32),
-                ));
+                self.set_clamped_focused_pane_scroll(slot.y);
             }
         }
         self.outline_headings = None;
@@ -10464,13 +11521,7 @@ impl App {
             self.document.pending_heading = Some(heading.to_owned());
             return;
         };
-        let viewport = self.window.as_ref().map_or(0.0, |window| {
-            document_viewport_height(window.inner_size().height as f32)
-        });
-        self.scroll = slot.y.min(max_scroll(
-            self.doc_height.max(self.preview_height),
-            viewport,
-        ));
+        self.set_clamped_focused_pane_scroll(slot.y);
         self.set_notice("encabezado enfocado");
     }
 
@@ -10747,12 +11798,11 @@ impl App {
             }
             return;
         }
-        if let (Some(slot), Some(window)) = (self.slots.get(block), &self.window) {
-            self.scroll = slot.y.min(max_scroll(
-                self.doc_height,
-                document_viewport_height(window.inner_size().height as f32),
-            ));
-            window.request_redraw();
+        if let Some(slot) = self.slots.get(block) {
+            self.set_clamped_focused_pane_scroll(slot.y);
+            if let Some(window) = &self.window {
+                window.request_redraw();
+            }
         }
     }
 
@@ -10787,13 +11837,18 @@ impl App {
         if self.document.mode != DocumentMode::Reading {
             return None;
         }
+        let panes = self.focused_document_panes()?;
+        if !panes.source.contains(x, y - DOCUMENT_VIEWPORT_TOP) {
+            return None;
+        }
         self.slots.iter().enumerate().find_map(|(index, slot)| {
             if slot.height <= 0.0 || !matches!(slot.kind, Kind::Heading(_)) {
                 return None;
             }
-            let top = document_screen_y(slot.y, self.scroll);
-            let left = slot.x - 24.0 * self.scale_factor;
-            ((top..=top + slot.height).contains(&y) && (left..slot.x).contains(&x)).then_some(index)
+            let top = pane_screen_y(slot.y, self.scroll, panes.source);
+            let left = panes.source.x + slot.x - 24.0 * self.scale_factor;
+            ((top..=top + slot.height).contains(&y) && (left..panes.source.x + slot.x).contains(&x))
+                .then_some(index)
         })
     }
 
@@ -10801,14 +11856,19 @@ impl App {
         if self.document.mode != DocumentMode::Reading {
             return None;
         }
+        let panes = self.focused_document_panes()?;
+        if !panes.source.contains(x, y - DOCUMENT_VIEWPORT_TOP) {
+            return None;
+        }
         self.slots.iter().enumerate().find_map(|(index, slot)| {
             let block = self.document.blocks.get(index)?;
             if slot.height <= 0.0 || !is_callout_start(block) {
                 return None;
             }
-            let top = document_screen_y(slot.y, self.scroll);
-            let left = slot.x - 24.0 * self.scale_factor;
-            ((top..=top + slot.height).contains(&y) && (left..slot.x).contains(&x)).then_some(index)
+            let top = pane_screen_y(slot.y, self.scroll, panes.source);
+            let left = panes.source.x + slot.x - 24.0 * self.scale_factor;
+            ((top..=top + slot.height).contains(&y) && (left..panes.source.x + slot.x).contains(&x))
+                .then_some(index)
         })
     }
 
@@ -10941,23 +12001,14 @@ impl App {
     }
 
     fn cursor_at(&self, x: f32, y: f32) -> Option<BlockCursor> {
-        let window = self.window.as_ref()?;
-        let size = window.inner_size();
-        let panes = document_pane_geometry(
-            size.width as f32,
-            document_viewport_height(size.height as f32),
-            self.document.mode,
-            self.document.split_orientation,
-        );
-        if self.document.mode == DocumentMode::Split
-            && !panes.source.contains(x, y - DOCUMENT_VIEWPORT_TOP)
-        {
+        let panes = self.focused_document_panes()?;
+        if !panes.source.contains(x, y - DOCUMENT_VIEWPORT_TOP) {
             return None;
         }
         let table_width = (panes.source.width - MARGIN * self.scale_factor * 2.0)
             .min(MAX_MEASURE * self.scale_factor);
         self.slots.iter().enumerate().find_map(|(block, slot)| {
-            let top = document_screen_y(slot.y, self.scroll);
+            let top = pane_screen_y(slot.y, self.scroll, panes.source);
             if y < top || y > top + slot.height {
                 return None;
             }
@@ -10965,13 +12016,14 @@ impl App {
             if let CachedBlockLayout::Table(cells) = cached {
                 let columns = cells.len().max(1);
                 let cell_width = table_width / columns as f32;
-                let relative_x = x - slot.x;
+                let relative_x = x - panes.source.x - slot.x;
                 if relative_x < 0.0 || relative_x >= table_width {
                     return None;
                 }
                 let column = (relative_x / cell_width).floor() as usize;
                 let layout = cells.get(column)?;
-                let cell_x = slot.x + column as f32 * cell_width + TABLE_CELL_PADDING;
+                let cell_x =
+                    panes.source.x + slot.x + column as f32 * cell_width + TABLE_CELL_PADDING;
                 let cell_y = top + (slot.height - layout.height()).max(0.0) * 0.5;
                 let cursor = Cursor::from_point(layout, x - cell_x, y - cell_y);
                 let offset = table_cell_flat_range(&self.document.blocks[block], column)?.start
@@ -10981,7 +12033,7 @@ impl App {
             let CachedBlockLayout::Text(layout) = cached else {
                 return None;
             };
-            let cursor = Cursor::from_point(layout, x - slot.x, y - top);
+            let cursor = Cursor::from_point(layout, x - panes.source.x - slot.x, y - top);
             Some(BlockCursor {
                 block,
                 offset: cursor.index(),
@@ -10990,25 +12042,21 @@ impl App {
     }
 
     fn task_at(&self, x: f32, y: f32) -> Option<usize> {
-        if self.document.mode == DocumentMode::Split {
-            let window = self.window.as_ref()?;
-            let size = window.inner_size();
-            let panes = split_geometry(
-                size.width as f32,
-                document_viewport_height(size.height as f32),
-                self.document.split_orientation,
-            );
-            if !panes.source.contains(x, y - DOCUMENT_VIEWPORT_TOP) {
-                return None;
-            }
+        let panes = self.focused_document_panes()?;
+        if !panes.source.contains(x, y - DOCUMENT_VIEWPORT_TOP) {
+            return None;
         }
         self.slots.iter().enumerate().find_map(|(index, slot)| {
             let is_task = matches!(
                 self.document.blocks[index].marker,
                 Some(Marker::Task { .. })
             );
-            let (left, top, width, height) =
-                task_checkbox_hit_bounds(slot, self.scroll, self.scale_factor);
+            let (left, top, width, height) = task_checkbox_hit_bounds_in_pane(
+                slot,
+                self.scroll,
+                self.scale_factor,
+                panes.source,
+            );
             (is_task && (left..=left + width).contains(&x) && (top..=top + height).contains(&y))
                 .then_some(index)
         })
@@ -11025,26 +12073,22 @@ impl App {
     }
 
     fn code_copy_at(&self, x: f32, y: f32) -> Option<usize> {
-        let window = self.window.as_ref()?;
-        if self.document.mode == DocumentMode::Split {
-            let size = window.inner_size();
-            let panes = split_geometry(
-                size.width as f32,
-                document_viewport_height(size.height as f32),
-                self.document.split_orientation,
-            );
-            if !panes.source.contains(x, y - DOCUMENT_VIEWPORT_TOP) {
-                return None;
-            }
+        let panes = self.focused_document_panes()?;
+        if !panes.source.contains(x, y - DOCUMENT_VIEWPORT_TOP) {
+            return None;
         }
-        let text_width = (window.inner_size().width as f32 - MARGIN * self.scale_factor * 2.0)
-            .min(MAX_MEASURE * self.scale_factor);
+        let text_width = pane_text_width(panes.source, self.scale_factor);
         self.slots.iter().enumerate().find_map(|(index, slot)| {
             if !is_first_code_block(&self.document.blocks, index) {
                 return None;
             }
-            let (left, top, width, height) =
-                code_copy_bounds(slot, text_width, self.scroll, self.scale_factor);
+            let (left, top, width, height) = code_copy_bounds_in_pane(
+                slot,
+                text_width,
+                self.scroll,
+                self.scale_factor,
+                panes.source,
+            );
             ((left..=left + width).contains(&x) && (top..=top + height).contains(&y))
                 .then_some(index)
         })
@@ -11173,7 +12217,10 @@ impl App {
         let Some(window) = self.window.clone() else {
             return;
         };
-        let viewport = document_viewport_height(window.inner_size().height as f32);
+        let viewport = self
+            .focused_document_panes()
+            .map(|panes| panes.source.height)
+            .unwrap_or_else(|| document_viewport_height(window.inner_size().height as f32));
         let step = (viewport * 0.88).max(1.0);
         let delta = if down { step } else { -step };
         self.set_focused_pane_scroll((self.scroll + delta).clamp(
@@ -11347,14 +12394,14 @@ impl App {
     /// Desplaza mientras se arrastra cerca de un borde. El foco se recalcula
     /// contra el layout visible de este cuadro, nunca contra coordenadas de
     /// documento estimadas.
-    fn autoscroll_selection(&mut self, viewport_height: f32) -> bool {
+    fn autoscroll_selection(&mut self, pane_top: f32, viewport_height: f32) -> bool {
         if !self.selecting {
             return false;
         }
         let Some((x, y)) = self.pointer else {
             return false;
         };
-        let delta = selection_scroll_delta(y - DOCUMENT_VIEWPORT_TOP, viewport_height);
+        let delta = selection_scroll_delta(y - DOCUMENT_VIEWPORT_TOP - pane_top, viewport_height);
         if delta == 0.0 {
             return false;
         }
@@ -11365,7 +12412,7 @@ impl App {
         if (next - self.scroll).abs() < f32::EPSILON {
             return false;
         }
-        self.scroll = next;
+        self.set_focused_pane_scroll(next);
         self.extend_selection_to(x, y);
         true
     }
@@ -11382,10 +12429,29 @@ impl App {
         };
 
         let frame_start = Instant::now();
-        let split = self.document.mode == DocumentMode::Split;
-        let panes = document_pane_geometry(
+        let document_layouts = document_pane_layouts(
+            &self.document_panes,
             size.width as f32,
             document_viewport_height(size.height as f32),
+        );
+        let focused_outer = document_layouts
+            .iter()
+            .find(|layout| layout.pane_id == self.focused_document_pane)
+            .or_else(|| {
+                document_layouts
+                    .iter()
+                    .find(|layout| layout.document_id == self.document.id)
+            })
+            .map(|layout| layout.geometry)
+            .unwrap_or(PaneGeometry {
+                x: 0.0,
+                y: 0.0,
+                width: size.width as f32,
+                height: document_viewport_height(size.height as f32),
+            });
+        let split = self.document.mode == DocumentMode::Split;
+        let panes = document_pane_geometry_in(
+            focused_outer,
             self.document.mode,
             self.document.split_orientation,
         );
@@ -11419,10 +12485,7 @@ impl App {
             self.doc_height = height;
             self.laid_for_width = layout_width;
             self.exact_after_edit = false;
-            self.scroll = self.scroll.min(max_scroll(
-                self.doc_height.max(self.preview_height),
-                viewport_height,
-            ));
+            self.set_clamped_focused_pane_scroll(self.scroll);
             self.live.clear();
             self.log.push(format!(
                 "[medicion] posicionar {} bloques ({}): {:.0} ms  (alto {:.0} px)",
@@ -11452,10 +12515,7 @@ impl App {
             self.preview_height = height;
             self.preview_laid_for_width = preview_width;
             self.preview_live.clear();
-            self.scroll = self.scroll.min(max_scroll(
-                self.doc_height.max(self.preview_height),
-                viewport_height,
-            ));
+            self.set_clamped_focused_pane_scroll(self.scroll);
         }
 
         if let Some(heading) = self.document.pending_heading.take() {
@@ -11464,10 +12524,7 @@ impl App {
         if let Some(block) = self.document.pending_block.take()
             && let Some(slot) = self.slots.get(block)
         {
-            self.scroll = slot.y.min(max_scroll(
-                self.doc_height.max(self.preview_height),
-                viewport_height,
-            ));
+            self.set_clamped_focused_pane_scroll(slot.y);
         }
 
         // Que bloques caen en pantalla este cuadro.
@@ -11566,7 +12623,7 @@ impl App {
             }
         }
 
-        if self.autoscroll_selection(viewport_height) {
+        if self.autoscroll_selection(panes.source.y, viewport_height) {
             window.request_redraw();
         }
 
@@ -11599,7 +12656,37 @@ impl App {
             .as_ref()
             .map(|_| self.workspace_search_matches());
         let palette_actions = self.command_palette.map(|_| self.command_palette_actions());
-        let navigation_panel_rows = if let (Some(selected), Some(actions)) =
+        let pane_split_axis = self.pane_split_picker;
+        let pane_split_candidates = pane_split_axis.map(|_| {
+            self.pane_split_candidates
+                .iter()
+                .map(|document_id| {
+                    document_by_id(&self.document, &self.inactive_documents, *document_id)
+                        .map(|document| {
+                            tab_label(&document.path, document.is_dirty(), document.pinned, 42)
+                        })
+                        .unwrap_or_else(|| "Pestaña no disponible".to_string())
+                })
+                .collect::<Vec<_>>()
+        });
+        let navigation_panel_rows = if let (Some(axis), Some(candidates)) =
+            (pane_split_axis, pane_split_candidates.as_ref())
+        {
+            let selected = self.pane_split_match % candidates.len().max(1);
+            let range = panel_window(candidates.len(), selected, PANEL_CAPACITY);
+            Some(NavigationPanelRows {
+                title: format!("Dividir {} · elegí una pestaña", axis.label()),
+                items: range
+                    .clone()
+                    .map(|index| (index == selected, candidates[index].clone()))
+                    .collect(),
+                footer: if candidates.is_empty() {
+                    "No hay otra pestaña disponible · Esc para cerrar".to_string()
+                } else {
+                    format!("{} · Enter divide", panel_footer(candidates.len(), range))
+                },
+            })
+        } else if let (Some(selected), Some(actions)) =
             (self.command_palette, palette_actions.as_ref())
         {
             let selected = selected % actions.len().max(1);
@@ -11820,32 +12907,16 @@ impl App {
             .tab_order
             .iter()
             .filter_map(|id| {
-                if *id == self.document.id {
-                    Some((
-                        true,
-                        tab_label(
-                            &self.document.path,
-                            self.document.is_dirty(),
-                            self.document.pinned,
-                            tab_label_chars,
-                        ),
-                    ))
-                } else {
-                    self.inactive_documents
-                        .iter()
-                        .find(|tab| tab.document.id == *id)
-                        .map(|tab| {
-                            (
-                                false,
-                                tab_label(
-                                    &tab.document.path,
-                                    tab.document.is_dirty(),
-                                    tab.document.pinned,
-                                    tab_label_chars,
-                                ),
-                            )
-                        })
-                }
+                let document = document_by_id(&self.document, &self.inactive_documents, *id)?;
+                Some((
+                    document.id == self.document.id,
+                    tab_label(
+                        &document.path,
+                        document.is_dirty(),
+                        document.pinned,
+                        tab_label_chars,
+                    ),
+                ))
             })
             .collect::<Vec<_>>();
         let tab_layouts = tab_descriptors
@@ -11887,6 +12958,13 @@ impl App {
         let workspace_generation = self.workspace_generation;
         let App {
             pixmap,
+            inactive_documents,
+            inactive_pane_caches,
+            focused_pane_raster,
+            document_panes,
+            focused_document_pane,
+            font_cx,
+            layout_cx,
             slots,
             live,
             preview_slots,
@@ -11900,6 +12978,7 @@ impl App {
             selection,
             focused_link,
             scale_factor,
+            exact_measure,
             document,
             image_preview,
             ..
@@ -11950,359 +13029,83 @@ impl App {
         let bc = palette.border;
         border_paint.set_color(Color::from_rgba8(bc.0, bc.1, bc.2, 255));
 
-        let status_y = h.get() as f32 - STATUS_HEIGHT;
-        if let Some(rect) = Rect::from_xywh(
-            0.0,
-            DOCUMENT_VIEWPORT_TOP,
-            w.get() as f32,
-            (status_y - DOCUMENT_VIEWPORT_TOP).max(0.0),
-        ) {
-            pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+        if document_layouts.len() > 1 {
+            draw_inactive_document_panes(
+                pixmap,
+                &document_layouts,
+                document_panes,
+                *focused_document_pane,
+                inactive_documents,
+                inactive_pane_caches,
+                font_cx,
+                layout_cx,
+                scale_cx,
+                glyphs,
+                *palette,
+                *scale_factor,
+                *exact_measure,
+            );
         }
 
-        let ancho_texto =
-            (layout_width - MARGIN * *scale_factor * 2.0).min(MAX_MEASURE * *scale_factor);
-        let preview_ancho_texto =
-            (preview_width - MARGIN * *scale_factor * 2.0).min(MAX_MEASURE * *scale_factor);
-
-        for i in visible {
-            let slot = &slots[i];
-            let Some((cached_layout, marker)) = live.get(&i) else {
-                continue;
-            };
-            let top = document_screen_y(slot.y, *scroll);
-
-            if let CachedBlockLayout::Table(cells) = cached_layout {
-                let columns = cells.len().max(1) as f32;
-                let left = slot.x - 6.0;
-                let table_width = ancho_texto + 12.0;
-                if matches!(slot.kind, Kind::TableRow { header: true }) {
-                    let ac = palette.accent;
-                    let mut header = Paint::default();
-                    header.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 26));
-                    if let Some(rect) =
-                        Rect::from_xywh(left, top - 1.0, table_width, slot.height + 2.0)
-                    {
-                        pixmap.fill_rect(rect, &header, Transform::identity(), None);
-                    }
-                }
-                for (x, y, width, height) in [
-                    (left, top - 1.0, table_width, 1.0),
-                    (left, top + slot.height, table_width, 1.0),
-                    (left, top - 1.0, 1.0, slot.height + 2.0),
-                    (left + table_width - 1.0, top - 1.0, 1.0, slot.height + 2.0),
-                ] {
-                    if let Some(rect) = Rect::from_xywh(x, y, width, height) {
-                        pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
-                    }
-                }
-                for column in 1..columns as usize {
-                    let x = left + table_width * column as f32 / columns;
-                    if let Some(rect) = Rect::from_xywh(x, top - 1.0, 1.0, slot.height + 2.0) {
-                        pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
-                    }
-                }
-                let column_width = ancho_texto / columns;
-                for (column, layout) in cells.iter().enumerate() {
-                    let x = slot.x + column as f32 * column_width + TABLE_CELL_PADDING;
-                    let y = top + (slot.height - layout.height()).max(0.0) * 0.5;
-                    if let Some(range) = selection.and_then(|selection| {
-                        table_cell_selection_range(selection, i, &blocks[i], column)
-                    }) {
-                        let ac = palette.accent;
-                        let mut selection_paint = Paint::default();
-                        selection_paint.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 92));
-                        let geometry = if range.is_empty() {
-                            vec![(
-                                (Cursor::from_byte_index(
-                                    layout,
-                                    range.start,
-                                    Affinity::Downstream,
-                                )
-                                .geometry(layout, 1.25)),
-                                0,
-                            )]
-                        } else {
-                            Selection::new(
-                                Cursor::from_byte_index(layout, range.start, Affinity::Downstream),
-                                Cursor::from_byte_index(layout, range.end, Affinity::Downstream),
-                            )
-                            .geometry(layout)
-                        };
-                        for (rect, _) in geometry {
-                            let Some(rect) = Rect::from_xywh(
-                                x + rect.x0 as f32,
-                                y + rect.y0 as f32,
-                                rect.width() as f32,
-                                rect.height() as f32,
-                            ) else {
-                                continue;
-                            };
-                            pixmap.fill_rect(rect, &selection_paint, Transform::identity(), None);
-                        }
-                    }
-                    for line in layout.lines() {
-                        for entry in line.items() {
-                            if let PositionedLayoutItem::GlyphRun(run) = entry {
-                                draw_run_background(pixmap, &run, x, y);
-                                draw_decorations(pixmap, &run, x, y);
-                                draw_glyph_run(pixmap, scale_cx, glyphs, &run, x, y);
-                            }
-                        }
-                    }
-                }
-                continue;
-            }
-            let CachedBlockLayout::Text(layout) = cached_layout else {
-                continue;
-            };
-
-            if matches!(slot.kind, Kind::Heading(_)) && context_mode == DocumentMode::Reading {
-                let size = 11.0 * *scale_factor;
-                draw_disclosure(
-                    pixmap,
-                    slot.x - 21.0 * *scale_factor,
-                    top + (slot.height - size).max(0.0) * 0.5,
-                    size,
-                    document.folded_headings.contains(&blocks[i].source.start),
-                    *palette,
-                );
-            }
-            if context_mode == DocumentMode::Reading && is_callout_start(&blocks[i]) {
-                let size = 11.0 * *scale_factor;
-                draw_disclosure(
-                    pixmap,
-                    slot.x - 21.0 * *scale_factor,
-                    top + (slot.height - size).max(0.0) * 0.5,
-                    size,
-                    document.folded_callouts.contains(&blocks[i].source.start),
-                    *palette,
-                );
-            }
-
-            match slot.kind {
-                // Fondo de los bloques de codigo, dibujado con tiny-skia.
-                Kind::Code => {
-                    if is_visible_code_group_start(blocks, slots, i, view_top)
-                        && let Some(range) = code_block_range(blocks, i)
-                        && let (Some(first), Some(last)) = (
-                            slots.get(range.start),
-                            slots.get(range.end.saturating_sub(1)),
-                        )
-                        && let Some(rect) = Rect::from_xywh(
-                            first.x - 12.0,
-                            document_screen_y(first.y, *scroll) - 2.0,
-                            ancho_texto + 24.0,
-                            last.y + last.height - first.y + 4.0,
-                        )
-                    {
-                        pixmap.fill_rect(rect, &elevated_paint, Transform::identity(), None);
-                    }
-                    if context_mode == DocumentMode::Reading && is_first_code_block(blocks, i) {
-                        let (x, y, width, height) =
-                            code_copy_bounds(slot, ancho_texto, *scroll, *scale_factor);
-                        let ac = palette.accent;
-                        let mut button = Paint::default();
-                        button.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 42));
-                        if let Some(rect) = Rect::from_xywh(x, y, width, height) {
-                            pixmap.fill_rect(rect, &button, Transform::identity(), None);
-                        }
-                        for line in code_copy_layout.lines() {
-                            for entry in line.items() {
-                                if let PositionedLayoutItem::GlyphRun(run) = entry {
-                                    draw_run_background(pixmap, &run, x + 8.0, y + 4.0);
-                                    draw_glyph_run(
-                                        pixmap,
-                                        scale_cx,
-                                        glyphs,
-                                        &run,
-                                        x + 8.0,
-                                        y + 4.0,
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
-                // Filete de acento a la izquierda de la cita, como las alertas.
-                Kind::Quote => {
-                    if let Some(rect) = Rect::from_xywh(slot.x - 20.0, top, 3.0, slot.height) {
-                        pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
-                    }
-                }
-                // Un callout es una cita semántica con una superficie tenue y
-                // rótulo nativo. No interpreta atributos de Obsidian ni crea
-                // estado interactivo.
-                Kind::Callout => {
-                    if let Some(rect) = Rect::from_xywh(
-                        slot.x - 20.0,
-                        top - 4.0,
-                        ancho_texto + 20.0,
-                        slot.height + 8.0,
-                    ) {
-                        pixmap.fill_rect(rect, &elevated_paint, Transform::identity(), None);
-                    }
-                    if let Some(rect) =
-                        Rect::from_xywh(slot.x - 20.0, top - 4.0, 3.0, slot.height + 8.0)
-                    {
-                        pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
-                    }
-                }
-                // Linea horizontal: un filete tenue, no un borde grueso.
-                Kind::Rule => {
-                    if let Some(rect) = Rect::from_xywh(slot.x, top, ancho_texto, 1.0) {
-                        pixmap.fill_rect(rect, &dim_paint, Transform::identity(), None);
-                    }
-                    continue;
-                }
-                _ => {}
-            }
-
-            // La vineta va en el margen, a la izquierda del texto, para que
-            // las lineas siguientes de un item largo queden bajo el texto.
-            if let Some(marker) = marker {
-                match marker {
-                    CachedMarker::Text(marker) => {
-                        let ancho_marca = marker.width();
-                        for line in marker.lines() {
-                            for entry in line.items() {
-                                if let PositionedLayoutItem::GlyphRun(run) = entry {
-                                    draw_run_background(
-                                        pixmap,
-                                        &run,
-                                        slot.x - ancho_marca - 8.0,
-                                        top,
-                                    );
-                                    draw_glyph_run(
-                                        pixmap,
-                                        scale_cx,
-                                        glyphs,
-                                        &run,
-                                        slot.x - ancho_marca - 8.0,
-                                        top,
-                                    );
-                                }
-                            }
-                        }
-                    }
-                    CachedMarker::Task { done } => {
-                        let (left, top, width, _) =
-                            task_checkbox_bounds(slot, *scroll, *scale_factor);
-                        draw_checkbox(pixmap, left, top, width, *done, *palette);
-                    }
-                }
-            }
-
-            if let Some((start, end)) =
-                selection.and_then(|selection| selection.range_for(i, blocks[i].text.len()))
-            {
-                let ac = palette.accent;
-                let mut selection_paint = Paint::default();
-                selection_paint.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 92));
-                let geometry = if start == end {
-                    let focus = selection
-                        .filter(|selection| selection.focus.block == i)
-                        .map(|selection| {
-                            Cursor::from_byte_index(
-                                layout,
-                                selection.focus.offset,
-                                Affinity::Downstream,
-                            )
-                        });
-                    focus.map_or_else(Vec::new, |focus| vec![(focus.geometry(layout, 1.25), 0)])
-                } else {
-                    Selection::new(
-                        Cursor::from_byte_index(layout, start, Affinity::Downstream),
-                        Cursor::from_byte_index(layout, end, Affinity::Downstream),
-                    )
-                    .geometry(layout)
-                };
-                for (rect, _) in geometry {
-                    let Some(rect) = Rect::from_xywh(
-                        slot.x + rect.x0 as f32,
-                        top + rect.y0 as f32,
-                        rect.width() as f32,
-                        rect.height() as f32,
-                    ) else {
-                        continue;
-                    };
-                    pixmap.fill_rect(rect, &selection_paint, Transform::identity(), None);
-                }
-            }
-
-            if let Some((focus_block, focus_target)) = *focused_link
-                && focus_block == i
-                && let Some(target) = blocks[i].targets.get(focus_target)
-            {
-                let ac = palette.accent;
-                let mut focus_paint = Paint::default();
-                focus_paint.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 48));
-                for (rect, _) in Selection::new(
-                    Cursor::from_byte_index(layout, target.start, Affinity::Downstream),
-                    Cursor::from_byte_index(layout, target.end, Affinity::Downstream),
-                )
-                .geometry(layout)
-                {
-                    let Some(rect) = Rect::from_xywh(
-                        slot.x + rect.x0 as f32,
-                        top + rect.y0 as f32,
-                        rect.width() as f32,
-                        rect.height() as f32,
-                    ) else {
-                        continue;
-                    };
-                    pixmap.fill_rect(rect, &focus_paint, Transform::identity(), None);
-                }
-            }
-
-            for line in layout.lines() {
-                for entry in line.items() {
-                    if let PositionedLayoutItem::GlyphRun(run) = entry {
-                        draw_run_background(pixmap, &run, slot.x, top);
-                        draw_decorations(pixmap, &run, slot.x, top);
-                        draw_glyph_run(pixmap, scale_cx, glyphs, &run, slot.x, top);
-                    }
-                }
-            }
+        // El panel enfocado también se rasteriza fuera del framebuffer global.
+        // Así las decoraciones y los glifos siguen confinados aun cuando la
+        // hoja se vuelve muy angosta al combinar hasta cuatro documentos.
+        let raster_width = focused_outer.width.ceil().max(1.0) as u32;
+        let raster_height = focused_outer.height.ceil().max(1.0) as u32;
+        if focused_pane_raster
+            .as_ref()
+            .is_none_or(|raster| raster.width() != raster_width || raster.height() != raster_height)
+        {
+            *focused_pane_raster = Some(
+                Pixmap::new(raster_width, raster_height)
+                    .ok_or_else(|| "no hay memoria para el panel enfocado".to_string())?,
+            );
         }
+        let mut local_panes = document_pane_geometry(
+            focused_outer.width,
+            focused_outer.height,
+            document.mode,
+            document.split_orientation,
+        );
+        // `pane_screen_y` trabaja con coordenadas de ventana. Desplazar la
+        // hoja local compensa la franja superior sin duplicar el renderer.
+        local_panes.source.y -= DOCUMENT_VIEWPORT_TOP;
+        local_panes.preview.y -= DOCUMENT_VIEWPORT_TOP;
+        {
+            let pixmap = focused_pane_raster
+                .as_mut()
+                .ok_or_else(|| "el lienzo del panel enfocado no está disponible".to_string())?;
+            pixmap.fill(Color::from_rgba8(
+                surface_color.0,
+                surface_color.1,
+                surface_color.2,
+                255,
+            ));
+            let panes = local_panes;
+            let ancho_texto = pane_text_width(panes.source, *scale_factor);
+            let preview_ancho_texto = pane_text_width(panes.preview, *scale_factor);
 
-        if split {
-            let preview_pane = panes.preview;
-            if let Some(rect) = Rect::from_xywh(
-                preview_pane.x,
-                DOCUMENT_VIEWPORT_TOP + preview_pane.y,
-                preview_pane.width,
-                preview_pane.height,
-            ) {
-                pixmap.fill_rect(rect, &paint, Transform::identity(), None);
-            }
-            let divider = match document.split_orientation {
-                SplitOrientation::SideBySide => Rect::from_xywh(
-                    preview_pane.x - 1.0,
-                    DOCUMENT_VIEWPORT_TOP,
-                    1.0,
-                    document_viewport_height(h.get() as f32),
-                ),
-                SplitOrientation::Stacked => Rect::from_xywh(
-                    0.0,
-                    DOCUMENT_VIEWPORT_TOP + preview_pane.y - 1.0,
-                    w.get() as f32,
-                    1.0,
-                ),
-            };
-            if let Some(rect) = divider {
-                pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
-            }
-            for index in preview_visible {
-                let slot = &preview_slots[index];
-                let Some((cached_layout, marker)) = preview_live.get(&index) else {
+            for i in visible {
+                let slot = &slots[i];
+                let Some((cached_layout, marker)) = live.get(&i) else {
                     continue;
                 };
-                let top = pane_screen_y(slot.y, *scroll, preview_pane);
+                let top = pane_screen_y(slot.y, *scroll, panes.source);
+
                 if let CachedBlockLayout::Table(cells) = cached_layout {
                     let columns = cells.len().max(1) as f32;
-                    let left = preview_pane.x + slot.x - 6.0;
-                    let table_width = preview_ancho_texto + 12.0;
+                    let left = panes.source.x + slot.x - 6.0;
+                    let table_width = ancho_texto + 12.0;
+                    if matches!(slot.kind, Kind::TableRow { header: true }) {
+                        let ac = palette.accent;
+                        let mut header = Paint::default();
+                        header.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 26));
+                        if let Some(rect) =
+                            Rect::from_xywh(left, top - 1.0, table_width, slot.height + 2.0)
+                        {
+                            pixmap.fill_rect(rect, &header, Transform::identity(), None);
+                        }
+                    }
                     for (x, y, width, height) in [
                         (left, top - 1.0, table_width, 1.0),
                         (left, top + slot.height, table_width, 1.0),
@@ -12319,13 +13122,61 @@ impl App {
                             pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
                         }
                     }
-                    let column_width = preview_ancho_texto / columns;
+                    let column_width = ancho_texto / columns;
                     for (column, layout) in cells.iter().enumerate() {
-                        let x = preview_pane.x
+                        let x = panes.source.x
                             + slot.x
                             + column as f32 * column_width
                             + TABLE_CELL_PADDING;
                         let y = top + (slot.height - layout.height()).max(0.0) * 0.5;
+                        if let Some(range) = selection.and_then(|selection| {
+                            table_cell_selection_range(selection, i, &blocks[i], column)
+                        }) {
+                            let ac = palette.accent;
+                            let mut selection_paint = Paint::default();
+                            selection_paint.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 92));
+                            let geometry = if range.is_empty() {
+                                vec![(
+                                    (Cursor::from_byte_index(
+                                        layout,
+                                        range.start,
+                                        Affinity::Downstream,
+                                    )
+                                    .geometry(layout, 1.25)),
+                                    0,
+                                )]
+                            } else {
+                                Selection::new(
+                                    Cursor::from_byte_index(
+                                        layout,
+                                        range.start,
+                                        Affinity::Downstream,
+                                    ),
+                                    Cursor::from_byte_index(
+                                        layout,
+                                        range.end,
+                                        Affinity::Downstream,
+                                    ),
+                                )
+                                .geometry(layout)
+                            };
+                            for (rect, _) in geometry {
+                                let Some(rect) = Rect::from_xywh(
+                                    x + rect.x0 as f32,
+                                    y + rect.y0 as f32,
+                                    rect.width() as f32,
+                                    rect.height() as f32,
+                                ) else {
+                                    continue;
+                                };
+                                pixmap.fill_rect(
+                                    rect,
+                                    &selection_paint,
+                                    Transform::identity(),
+                                    None,
+                                );
+                            }
+                        }
                         for line in layout.lines() {
                             for entry in line.items() {
                                 if let PositionedLayoutItem::GlyphRun(run) = entry {
@@ -12341,80 +13192,450 @@ impl App {
                 let CachedBlockLayout::Text(layout) = cached_layout else {
                     continue;
                 };
-                let x = preview_pane.x + slot.x;
+
+                if matches!(slot.kind, Kind::Heading(_)) && context_mode == DocumentMode::Reading {
+                    let size = 11.0 * *scale_factor;
+                    draw_disclosure(
+                        pixmap,
+                        panes.source.x + slot.x - 21.0 * *scale_factor,
+                        top + (slot.height - size).max(0.0) * 0.5,
+                        size,
+                        document.folded_headings.contains(&blocks[i].source.start),
+                        *palette,
+                    );
+                }
+                if context_mode == DocumentMode::Reading && is_callout_start(&blocks[i]) {
+                    let size = 11.0 * *scale_factor;
+                    draw_disclosure(
+                        pixmap,
+                        panes.source.x + slot.x - 21.0 * *scale_factor,
+                        top + (slot.height - size).max(0.0) * 0.5,
+                        size,
+                        document.folded_callouts.contains(&blocks[i].source.start),
+                        *palette,
+                    );
+                }
+
                 match slot.kind {
+                    // Fondo de los bloques de codigo, dibujado con tiny-skia.
                     Kind::Code => {
-                        if is_visible_code_group_start(
-                            &document.rendered_blocks,
-                            preview_slots,
-                            index,
-                            view_top,
-                        ) && let Some(range) = code_block_range(&document.rendered_blocks, index)
+                        if is_visible_code_group_start(blocks, slots, i, view_top)
+                            && let Some(range) = code_block_range(blocks, i)
                             && let (Some(first), Some(last)) = (
-                                preview_slots.get(range.start),
-                                preview_slots.get(range.end.saturating_sub(1)),
+                                slots.get(range.start),
+                                slots.get(range.end.saturating_sub(1)),
                             )
                             && let Some(rect) = Rect::from_xywh(
-                                preview_pane.x + first.x - 12.0,
-                                pane_screen_y(first.y, *scroll, preview_pane) - 2.0,
-                                preview_ancho_texto + 24.0,
+                                panes.source.x + first.x - 12.0,
+                                pane_screen_y(first.y, *scroll, panes.source) - 2.0,
+                                ancho_texto + 24.0,
                                 last.y + last.height - first.y + 4.0,
                             )
                         {
                             pixmap.fill_rect(rect, &elevated_paint, Transform::identity(), None);
                         }
-                    }
-                    Kind::Callout => {
-                        if let Some(rect) = Rect::from_xywh(
-                            x - 12.0,
-                            top - 2.0,
-                            preview_ancho_texto + 24.0,
-                            slot.height + 4.0,
-                        ) {
-                            pixmap.fill_rect(rect, &elevated_paint, Transform::identity(), None);
+                        if context_mode == DocumentMode::Reading && is_first_code_block(blocks, i) {
+                            let (x, y, width, height) = code_copy_bounds_in_pane(
+                                slot,
+                                ancho_texto,
+                                *scroll,
+                                *scale_factor,
+                                panes.source,
+                            );
+                            let ac = palette.accent;
+                            let mut button = Paint::default();
+                            button.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 42));
+                            if let Some(rect) = Rect::from_xywh(x, y, width, height) {
+                                pixmap.fill_rect(rect, &button, Transform::identity(), None);
+                            }
+                            for line in code_copy_layout.lines() {
+                                for entry in line.items() {
+                                    if let PositionedLayoutItem::GlyphRun(run) = entry {
+                                        draw_run_background(pixmap, &run, x + 8.0, y + 4.0);
+                                        draw_glyph_run(
+                                            pixmap,
+                                            scale_cx,
+                                            glyphs,
+                                            &run,
+                                            x + 8.0,
+                                            y + 4.0,
+                                        );
+                                    }
+                                }
+                            }
                         }
                     }
+                    // Filete de acento a la izquierda de la cita, como las alertas.
                     Kind::Quote => {
-                        if let Some(rect) = Rect::from_xywh(x - 20.0, top, 3.0, slot.height) {
+                        if let Some(rect) =
+                            Rect::from_xywh(panes.source.x + slot.x - 20.0, top, 3.0, slot.height)
+                        {
                             pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
                         }
                     }
+                    // Un callout es una cita semántica con una superficie tenue y
+                    // rótulo nativo. No interpreta atributos de Obsidian ni crea
+                    // estado interactivo.
+                    Kind::Callout => {
+                        if let Some(rect) = Rect::from_xywh(
+                            panes.source.x + slot.x - 20.0,
+                            top - 4.0,
+                            ancho_texto + 20.0,
+                            slot.height + 8.0,
+                        ) {
+                            pixmap.fill_rect(rect, &elevated_paint, Transform::identity(), None);
+                        }
+                        if let Some(rect) = Rect::from_xywh(
+                            panes.source.x + slot.x - 20.0,
+                            top - 4.0,
+                            3.0,
+                            slot.height + 8.0,
+                        ) {
+                            pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
+                        }
+                    }
+                    // Linea horizontal: un filete tenue, no un borde grueso.
                     Kind::Rule => {
-                        if let Some(rect) = Rect::from_xywh(x, top, preview_ancho_texto, 1.0) {
+                        if let Some(rect) =
+                            Rect::from_xywh(panes.source.x + slot.x, top, ancho_texto, 1.0)
+                        {
                             pixmap.fill_rect(rect, &dim_paint, Transform::identity(), None);
                         }
                         continue;
                     }
                     _ => {}
                 }
+
+                // La vineta va en el margen, a la izquierda del texto, para que
+                // las lineas siguientes de un item largo queden bajo el texto.
                 if let Some(marker) = marker {
                     match marker {
                         CachedMarker::Text(marker) => {
-                            let marker_x = x - marker.width() - 8.0;
+                            let ancho_marca = marker.width();
                             for line in marker.lines() {
                                 for entry in line.items() {
                                     if let PositionedLayoutItem::GlyphRun(run) = entry {
+                                        draw_run_background(
+                                            pixmap,
+                                            &run,
+                                            panes.source.x + slot.x - ancho_marca - 8.0,
+                                            top,
+                                        );
                                         draw_glyph_run(
-                                            pixmap, scale_cx, glyphs, &run, marker_x, top,
+                                            pixmap,
+                                            scale_cx,
+                                            glyphs,
+                                            &run,
+                                            panes.source.x + slot.x - ancho_marca - 8.0,
+                                            top,
                                         );
                                     }
                                 }
                             }
                         }
                         CachedMarker::Task { done } => {
-                            let (font_size, _, _, _) = slot.kind.style();
-                            let size = (font_size * *scale_factor * 0.82).max(12.0 * *scale_factor);
-                            draw_checkbox(pixmap, x - size - 8.0, top, size, *done, *palette);
+                            let (left, top, width, _) = task_checkbox_bounds_in_pane(
+                                slot,
+                                *scroll,
+                                *scale_factor,
+                                panes.source,
+                            );
+                            draw_checkbox(pixmap, left, top, width, *done, *palette);
                         }
                     }
                 }
+
+                if let Some((start, end)) =
+                    selection.and_then(|selection| selection.range_for(i, blocks[i].text.len()))
+                {
+                    let ac = palette.accent;
+                    let mut selection_paint = Paint::default();
+                    selection_paint.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 92));
+                    let geometry = if start == end {
+                        let focus = selection
+                            .filter(|selection| selection.focus.block == i)
+                            .map(|selection| {
+                                Cursor::from_byte_index(
+                                    layout,
+                                    selection.focus.offset,
+                                    Affinity::Downstream,
+                                )
+                            });
+                        focus.map_or_else(Vec::new, |focus| vec![(focus.geometry(layout, 1.25), 0)])
+                    } else {
+                        Selection::new(
+                            Cursor::from_byte_index(layout, start, Affinity::Downstream),
+                            Cursor::from_byte_index(layout, end, Affinity::Downstream),
+                        )
+                        .geometry(layout)
+                    };
+                    for (rect, _) in geometry {
+                        let Some(rect) = Rect::from_xywh(
+                            panes.source.x + slot.x + rect.x0 as f32,
+                            top + rect.y0 as f32,
+                            rect.width() as f32,
+                            rect.height() as f32,
+                        ) else {
+                            continue;
+                        };
+                        pixmap.fill_rect(rect, &selection_paint, Transform::identity(), None);
+                    }
+                }
+
+                if let Some((focus_block, focus_target)) = *focused_link
+                    && focus_block == i
+                    && let Some(target) = blocks[i].targets.get(focus_target)
+                {
+                    let ac = palette.accent;
+                    let mut focus_paint = Paint::default();
+                    focus_paint.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 48));
+                    for (rect, _) in Selection::new(
+                        Cursor::from_byte_index(layout, target.start, Affinity::Downstream),
+                        Cursor::from_byte_index(layout, target.end, Affinity::Downstream),
+                    )
+                    .geometry(layout)
+                    {
+                        let Some(rect) = Rect::from_xywh(
+                            panes.source.x + slot.x + rect.x0 as f32,
+                            top + rect.y0 as f32,
+                            rect.width() as f32,
+                            rect.height() as f32,
+                        ) else {
+                            continue;
+                        };
+                        pixmap.fill_rect(rect, &focus_paint, Transform::identity(), None);
+                    }
+                }
+
                 for line in layout.lines() {
                     for entry in line.items() {
                         if let PositionedLayoutItem::GlyphRun(run) = entry {
+                            let x = panes.source.x + slot.x;
                             draw_run_background(pixmap, &run, x, top);
                             draw_decorations(pixmap, &run, x, top);
                             draw_glyph_run(pixmap, scale_cx, glyphs, &run, x, top);
                         }
+                    }
+                }
+            }
+
+            if split {
+                let preview_pane = panes.preview;
+                if let Some(rect) = Rect::from_xywh(
+                    preview_pane.x,
+                    DOCUMENT_VIEWPORT_TOP + preview_pane.y,
+                    preview_pane.width,
+                    preview_pane.height,
+                ) {
+                    pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+                }
+                let divider = match document.split_orientation {
+                    SplitOrientation::SideBySide => Rect::from_xywh(
+                        preview_pane.x - 1.0,
+                        DOCUMENT_VIEWPORT_TOP + panes.source.y,
+                        1.0,
+                        focused_outer.height,
+                    ),
+                    SplitOrientation::Stacked => Rect::from_xywh(
+                        panes.source.x,
+                        DOCUMENT_VIEWPORT_TOP + preview_pane.y - 1.0,
+                        focused_outer.width,
+                        1.0,
+                    ),
+                };
+                if let Some(rect) = divider {
+                    pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
+                }
+                for index in preview_visible {
+                    let slot = &preview_slots[index];
+                    let Some((cached_layout, marker)) = preview_live.get(&index) else {
+                        continue;
+                    };
+                    let top = pane_screen_y(slot.y, *scroll, preview_pane);
+                    if let CachedBlockLayout::Table(cells) = cached_layout {
+                        let columns = cells.len().max(1) as f32;
+                        let left = preview_pane.x + slot.x - 6.0;
+                        let table_width = preview_ancho_texto + 12.0;
+                        for (x, y, width, height) in [
+                            (left, top - 1.0, table_width, 1.0),
+                            (left, top + slot.height, table_width, 1.0),
+                            (left, top - 1.0, 1.0, slot.height + 2.0),
+                            (left + table_width - 1.0, top - 1.0, 1.0, slot.height + 2.0),
+                        ] {
+                            if let Some(rect) = Rect::from_xywh(x, y, width, height) {
+                                pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
+                            }
+                        }
+                        for column in 1..columns as usize {
+                            let x = left + table_width * column as f32 / columns;
+                            if let Some(rect) =
+                                Rect::from_xywh(x, top - 1.0, 1.0, slot.height + 2.0)
+                            {
+                                pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
+                            }
+                        }
+                        let column_width = preview_ancho_texto / columns;
+                        for (column, layout) in cells.iter().enumerate() {
+                            let x = preview_pane.x
+                                + slot.x
+                                + column as f32 * column_width
+                                + TABLE_CELL_PADDING;
+                            let y = top + (slot.height - layout.height()).max(0.0) * 0.5;
+                            for line in layout.lines() {
+                                for entry in line.items() {
+                                    if let PositionedLayoutItem::GlyphRun(run) = entry {
+                                        draw_run_background(pixmap, &run, x, y);
+                                        draw_decorations(pixmap, &run, x, y);
+                                        draw_glyph_run(pixmap, scale_cx, glyphs, &run, x, y);
+                                    }
+                                }
+                            }
+                        }
+                        continue;
+                    }
+                    let CachedBlockLayout::Text(layout) = cached_layout else {
+                        continue;
+                    };
+                    let x = preview_pane.x + slot.x;
+                    match slot.kind {
+                        Kind::Code => {
+                            if is_visible_code_group_start(
+                                &document.rendered_blocks,
+                                preview_slots,
+                                index,
+                                view_top,
+                            ) && let Some(range) =
+                                code_block_range(&document.rendered_blocks, index)
+                                && let (Some(first), Some(last)) = (
+                                    preview_slots.get(range.start),
+                                    preview_slots.get(range.end.saturating_sub(1)),
+                                )
+                                && let Some(rect) = Rect::from_xywh(
+                                    preview_pane.x + first.x - 12.0,
+                                    pane_screen_y(first.y, *scroll, preview_pane) - 2.0,
+                                    preview_ancho_texto + 24.0,
+                                    last.y + last.height - first.y + 4.0,
+                                )
+                            {
+                                pixmap.fill_rect(
+                                    rect,
+                                    &elevated_paint,
+                                    Transform::identity(),
+                                    None,
+                                );
+                            }
+                        }
+                        Kind::Callout => {
+                            if let Some(rect) = Rect::from_xywh(
+                                x - 12.0,
+                                top - 2.0,
+                                preview_ancho_texto + 24.0,
+                                slot.height + 4.0,
+                            ) {
+                                pixmap.fill_rect(
+                                    rect,
+                                    &elevated_paint,
+                                    Transform::identity(),
+                                    None,
+                                );
+                            }
+                        }
+                        Kind::Quote => {
+                            if let Some(rect) = Rect::from_xywh(x - 20.0, top, 3.0, slot.height) {
+                                pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
+                            }
+                        }
+                        Kind::Rule => {
+                            if let Some(rect) = Rect::from_xywh(x, top, preview_ancho_texto, 1.0) {
+                                pixmap.fill_rect(rect, &dim_paint, Transform::identity(), None);
+                            }
+                            continue;
+                        }
+                        _ => {}
+                    }
+                    if let Some(marker) = marker {
+                        match marker {
+                            CachedMarker::Text(marker) => {
+                                let marker_x = x - marker.width() - 8.0;
+                                for line in marker.lines() {
+                                    for entry in line.items() {
+                                        if let PositionedLayoutItem::GlyphRun(run) = entry {
+                                            draw_glyph_run(
+                                                pixmap, scale_cx, glyphs, &run, marker_x, top,
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                            CachedMarker::Task { done } => {
+                                let (font_size, _, _, _) = slot.kind.style();
+                                let size =
+                                    (font_size * *scale_factor * 0.82).max(12.0 * *scale_factor);
+                                draw_checkbox(pixmap, x - size - 8.0, top, size, *done, *palette);
+                            }
+                        }
+                    }
+                    for line in layout.lines() {
+                        for entry in line.items() {
+                            if let PositionedLayoutItem::GlyphRun(run) = entry {
+                                draw_run_background(pixmap, &run, x, top);
+                                draw_decorations(pixmap, &run, x, top);
+                                draw_glyph_run(pixmap, scale_cx, glyphs, &run, x, top);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(raster) = focused_pane_raster.as_ref() {
+            pixmap.draw_pixmap(
+                focused_outer.x.round() as i32,
+                (DOCUMENT_VIEWPORT_TOP + focused_outer.y).round() as i32,
+                raster.as_ref(),
+                &PixmapPaint::default(),
+                Transform::identity(),
+                None,
+            );
+        }
+
+        if document_layouts.len() > 1 {
+            for layout in &document_layouts {
+                let geometry = layout.geometry;
+                let color = if layout.pane_id == *focused_document_pane {
+                    palette.accent
+                } else {
+                    palette.border
+                };
+                let mut pane_border = Paint::default();
+                pane_border.set_color(Color::from_rgba8(color.0, color.1, color.2, 255));
+                for (x, y, width, height) in [
+                    (
+                        geometry.x,
+                        DOCUMENT_VIEWPORT_TOP + geometry.y,
+                        geometry.width,
+                        1.0,
+                    ),
+                    (
+                        geometry.x,
+                        DOCUMENT_VIEWPORT_TOP + geometry.y + geometry.height - 1.0,
+                        geometry.width,
+                        1.0,
+                    ),
+                    (
+                        geometry.x,
+                        DOCUMENT_VIEWPORT_TOP + geometry.y,
+                        1.0,
+                        geometry.height,
+                    ),
+                    (
+                        geometry.x + geometry.width - 1.0,
+                        DOCUMENT_VIEWPORT_TOP + geometry.y,
+                        1.0,
+                        geometry.height,
+                    ),
+                ] {
+                    if let Some(rect) = Rect::from_xywh(x, y, width.max(0.0), height.max(0.0)) {
+                        pixmap.fill_rect(rect, &pane_border, Transform::identity(), None);
                     }
                 }
             }
@@ -12424,9 +13645,12 @@ impl App {
         // marcas reutilizan ese resultado y la geometría compacta: no agregan
         // un recorrido completo a cada cuadro ni revelan secciones plegadas.
         for y in search_mark_positions(&search_mark_blocks, slots, *doc_height, viewport_height) {
-            if let Some(rect) =
-                Rect::from_xywh(w.get() as f32 - 5.0, DOCUMENT_VIEWPORT_TOP + y, 3.0, 4.0)
-            {
+            if let Some(rect) = Rect::from_xywh(
+                panes.source.x + panes.source.width - 5.0,
+                DOCUMENT_VIEWPORT_TOP + panes.source.y + y,
+                3.0,
+                4.0,
+            ) {
                 pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
             }
         }
@@ -13040,12 +14264,34 @@ fn task_marker_replacement(text: &str) -> Option<(usize, &'static str)> {
         .or_else(|| text.find("[X]").map(|offset| (offset + 1, " ")))
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn code_copy_bounds(slot: &Slot, text_width: f32, scroll: f32, scale: f32) -> (f32, f32, f32, f32) {
+    code_copy_bounds_in_pane(
+        slot,
+        text_width,
+        scroll,
+        scale,
+        PaneGeometry {
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 0.0,
+        },
+    )
+}
+
+fn code_copy_bounds_in_pane(
+    slot: &Slot,
+    text_width: f32,
+    scroll: f32,
+    scale: f32,
+    pane: PaneGeometry,
+) -> (f32, f32, f32, f32) {
     let width = CODE_COPY_WIDTH * scale;
     let height = CODE_COPY_HEIGHT * scale;
     (
-        slot.x + text_width - width - 4.0 * scale,
-        document_screen_y(slot.y, scroll) + 4.0 * scale,
+        pane.x + slot.x + text_width - width - 4.0 * scale,
+        pane_screen_y(slot.y, scroll, pane) + 4.0 * scale,
         width,
         height,
     )
@@ -13054,13 +14300,33 @@ fn code_copy_bounds(slot: &Slot, text_width: f32, scroll: f32, scale: f32) -> (f
 /// El área interactiva comparte la misma geometría que el dibujo. Mantenerla
 /// en una función evita que un ajuste visual convierta una casilla visible en
 /// un objetivo imposible de pulsar.
+#[cfg_attr(not(test), allow(dead_code))]
 fn task_checkbox_bounds(slot: &Slot, scroll: f32, scale: f32) -> (f32, f32, f32, f32) {
+    task_checkbox_bounds_in_pane(
+        slot,
+        scroll,
+        scale,
+        PaneGeometry {
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 0.0,
+        },
+    )
+}
+
+fn task_checkbox_bounds_in_pane(
+    slot: &Slot,
+    scroll: f32,
+    scale: f32,
+    pane: PaneGeometry,
+) -> (f32, f32, f32, f32) {
     let (font_size, _, _, _) = slot.kind.style();
     let size = (font_size * scale * 0.82).max(12.0 * scale);
     let line_box = font_size * scale * slot.kind.line_height();
     (
-        slot.x - size - 8.0 * scale,
-        document_screen_y(slot.y, scroll) + (line_box - size).max(0.0) * 0.5,
+        pane.x + slot.x - size - 8.0 * scale,
+        pane_screen_y(slot.y, scroll, pane) + (line_box - size).max(0.0) * 0.5,
         size,
         size,
     )
@@ -13070,8 +14336,28 @@ fn task_checkbox_bounds(slot: &Slot, scroll: f32, scale: f32) -> (f32, f32, f32,
 /// generoso para que una casilla pequeña sea utilizable en DPI alto. El margen
 /// extra queda antes del texto, así un clic sobre la frase sigue iniciando una
 /// selección en lugar de cambiar una tarea por accidente.
+#[cfg_attr(not(test), allow(dead_code))]
 fn task_checkbox_hit_bounds(slot: &Slot, scroll: f32, scale: f32) -> (f32, f32, f32, f32) {
-    let (left, top, width, height) = task_checkbox_bounds(slot, scroll, scale);
+    task_checkbox_hit_bounds_in_pane(
+        slot,
+        scroll,
+        scale,
+        PaneGeometry {
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 0.0,
+        },
+    )
+}
+
+fn task_checkbox_hit_bounds_in_pane(
+    slot: &Slot,
+    scroll: f32,
+    scale: f32,
+    pane: PaneGeometry,
+) -> (f32, f32, f32, f32) {
+    let (left, top, width, height) = task_checkbox_bounds_in_pane(slot, scroll, scale, pane);
     let padding = 5.0 * scale;
     (
         left - padding,
@@ -13363,6 +14649,7 @@ fn main() {
         exact_measure,
         exact_after_edit: false,
         inactive_pane_caches: HashMap::new(),
+        focused_pane_raster: None,
         log,
         palette: NIGHT,
         theme_transition: None,
@@ -13395,6 +14682,9 @@ fn main() {
         command_palette: None,
         command_palette_query: String::new(),
         command_palette_scope: CommandPaletteScope::All,
+        pane_split_picker: None,
+        pane_split_candidates: Vec::new(),
+        pane_split_match: 0,
         toolbar_focus: None,
         clipboard: None,
         notice: Some(if opening_path.is_some() {
@@ -14000,6 +15290,9 @@ mod pruebas {
         assert!(label.is_char_boundary(label.len()));
         assert!(APP_ACTIONS.contains(&AppAction::TogglePinTab));
         assert!(APP_ACTIONS.contains(&AppAction::ToggleSplitOrientation));
+        assert!(APP_ACTIONS.contains(&AppAction::SplitDocumentRight));
+        assert!(APP_ACTIONS.contains(&AppAction::SplitDocumentBelow));
+        assert!(APP_ACTIONS.contains(&AppAction::CloseDocumentPane));
         assert!(APP_ACTIONS.contains(&AppAction::ToggleReduceMotion));
         assert!(APP_ACTIONS.contains(&AppAction::InsertStudyQuestion));
         assert!(APP_ACTIONS.contains(&AppAction::InsertStudySummary));
@@ -14090,6 +15383,92 @@ mod pruebas {
         collapsed.document_ids(&mut retained);
         assert_eq!(retained, vec![30, 40, 20]);
         assert_eq!(collapsed.first_pane_id(), tercero);
+    }
+
+    #[test]
+    fn el_selector_de_division_excluye_documentos_visibles_y_ocupados() {
+        let mut panes = DocumentPaneTree::single(10);
+        let principal = panes.first_pane_id();
+        let secundario = panes
+            .split_pane(principal, 20, DocumentPaneAxis::Vertical)
+            .expect("la segunda hoja existe");
+        let busy = HashSet::from([40]);
+        assert_eq!(
+            document_pane_targets(&[10, 20, 30, 40, 50], &panes, 10, &busy),
+            vec![30, 50]
+        );
+
+        assert!(
+            panes
+                .split_pane(secundario, 30, DocumentPaneAxis::Horizontal)
+                .is_some()
+        );
+        let tercero = panes
+            .pane_for_document(30)
+            .expect("el tercer documento quedó visible");
+        assert!(
+            panes
+                .split_pane(tercero, 50, DocumentPaneAxis::Vertical)
+                .is_some()
+        );
+        assert!(document_pane_targets(&[10, 20, 30, 40, 50], &panes, 10, &busy).is_empty());
+    }
+
+    #[test]
+    fn cerrar_un_panel_colapsa_la_vista_y_conserva_los_documentos() {
+        let mut panes = DocumentPaneTree::single(10);
+        let principal = panes.first_pane_id();
+        let secundario = panes
+            .split_pane(principal, 20, DocumentPaneAxis::Vertical)
+            .expect("la segunda hoja existe");
+        let tercero = panes
+            .split_pane(secundario, 30, DocumentPaneAxis::Horizontal)
+            .expect("la tercera hoja existe");
+
+        let collapsed = panes
+            .without_pane(secundario)
+            .expect("quedan hojas después de cerrar una");
+        assert_eq!(collapsed.pane_count(), 2);
+        assert!(!collapsed.contains_pane(secundario));
+        assert_eq!(collapsed.document_for_pane(principal), Some(10));
+        assert_eq!(collapsed.document_for_pane(tercero), Some(30));
+        assert_eq!(collapsed.pane_for_document(20), None);
+        let only = DocumentPaneTree::single(10);
+        assert!(only.without_pane(only.first_pane_id()).is_none());
+    }
+
+    #[test]
+    fn cerrar_pestana_visible_prefiere_un_documento_que_permanece_en_el_mosaico() {
+        let mut panes = DocumentPaneTree::single(10);
+        let principal = panes.first_pane_id();
+        let secundario = panes
+            .split_pane(principal, 30, DocumentPaneAxis::Vertical)
+            .expect("la segunda hoja existe");
+
+        // El orden de pestañas podría ser 10, 20, 30. La siguiente pestaña
+        // normal sería 20, pero 30 es la única hoja visible superviviente.
+        let (remaining, successor) =
+            remaining_document_panes_after_close(&panes, 10).expect("queda una hoja");
+        assert_eq!(successor, 30);
+        assert_eq!(remaining.first_pane_id(), secundario);
+        assert_eq!(remaining.pane_for_document(successor), Some(secundario));
+        assert_eq!(remaining.pane_for_document(20), None);
+    }
+
+    #[test]
+    fn el_ancho_de_un_panel_minimo_no_puede_volverse_negativo() {
+        assert_eq!(
+            pane_text_width(
+                PaneGeometry {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1.0,
+                    height: 40.0,
+                },
+                1.0,
+            ),
+            0.0
+        );
     }
 
     #[test]
@@ -15243,6 +16622,18 @@ con dos lineas
         assert!(selection_scroll_delta(0.0, 800.0) < 0.0);
         assert!(selection_scroll_delta(799.0, 800.0) > 0.0);
         assert_eq!(selection_scroll_delta(10.0, 60.0), 0.0);
+
+        let pane_top = 260.0;
+        let viewport = 320.0;
+        let top_pointer = DOCUMENT_VIEWPORT_TOP + pane_top + 1.0;
+        let bottom_pointer = DOCUMENT_VIEWPORT_TOP + pane_top + viewport - 1.0;
+        assert!(
+            selection_scroll_delta(top_pointer - DOCUMENT_VIEWPORT_TOP - pane_top, viewport) < 0.0
+        );
+        assert!(
+            selection_scroll_delta(bottom_pointer - DOCUMENT_VIEWPORT_TOP - pane_top, viewport)
+                > 0.0
+        );
     }
 
     #[test]

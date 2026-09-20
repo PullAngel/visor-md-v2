@@ -20,7 +20,7 @@ capacidad de uso diario más los criterios de cierre de cada fila.
 | --- | --- | --- |
 | Lector seguro de Markdown | **Sólido, pendiente de QA formal** | Lee Markdown y texto inerte, aplica la sintaxis anunciada, se degrada de forma visible ante límites y no ejecuta contenido. |
 | Editor y preservación de archivos | **Funcional, pendiente de cierre** | Permite editar, deshacer, guardar atómicamente, detectar conflictos y preservar UTF-8, BOM y EOL; faltan QA humano y optimizaciones de render incremental. |
-| Aplicación de uso diario | **Funcional, parcial** | Tiene pestañas, acciones, cierre protegido, paneles, tema, comparación y chrome propio de Windows; faltan paneles simultáneos reales, ventanas separadas y accesibilidad completa. |
+| Aplicación de uso diario | **Funcional, parcial** | Tiene pestañas, acciones, cierre protegido, paneles, tema, comparación y chrome propio de Windows. Hasta cuatro documentos distintos pueden verse en divisiones aisladas; faltan QA visual, foco por teclado, ventanas separadas y accesibilidad completa. |
 | Workspace y Obsidian esencial | **Funcional, parcial** | Puede indexar una carpeta autorizada, buscar, navegar vínculos y backlinks dentro de VFS; faltan escala, corpus y QA multiplataforma. |
 | Estudio y preparación para IA | **Base funcional, parcial** | Ofrece Markdown portable, copias preparadas y fragmentos; faltan comparación entre versiones y controles más finos de fragmentos. |
 | Exportación y distribución | **No iniciado como producto** | Hay investigación; PDF, DOCX, paquetes e instaladores todavía no son capacidades de la aplicación. |
@@ -45,7 +45,7 @@ QA humano asociado ya esté cerrado.
 | Trabajo diario | Crear, abrir, guardar, pestañas reordenables/fijables, cierre protegido, paleta, menú contextual, barra de estado y tema. | [`features.md`](features.md), [`manual-qa-v2.md`](manual-qa-v2.md) |
 | Workspace | Carpeta explícita, VFS contenida, índice en memoria/cancelable, árbol, búsqueda, encabezados, wikilinks, aliases y backlinks. | [`connectivity.md`](connectivity.md), [`editor-workspace-ui-audit.md`](editor-workspace-ui-audit.md) |
 | Recursos locales | Placeholder seguro e imagen PNG local solo tras confirmación y validación dentro de la raíz autorizada. | [`security.md`](security.md), [`dependencies.md`](dependencies.md) |
-| Calidad actual | 241 pruebas locales, Clippy estricto, SBOM vigente y release Windows de 3,373 MiB. | [`status.md`](status.md), [`budget.md`](budget.md) |
+| Calidad actual | 245 pruebas locales, Clippy estricto y SBOM vigente; el release local tras las divisiones mide 3,400 MiB. | [`status.md`](status.md), [`budget.md`](budget.md) |
 
 ## Trabajo iniciado pero no cerrado
 
@@ -53,7 +53,7 @@ QA humano asociado ya esté cerrado.
 | --- | --- | --- | --- |
 | Sprint 1 lector | Modelo, renderer, límites y regresiones. | Corpus CommonMark/GFM consolidado y QA visual de release, tipografía, tablas y HTML permitido. | Recorrido de [`manual-qa-sprint1.md`](manual-qa-sprint1.md). |
 | Editor resistente | Buffer, historial, archivos y render asíncrono versionado. | Render Markdown incremental, accesibilidad de IME/selección y QA de diálogos/archivos reales. | Casos Unicode, CRLF, conflicto externo y escritura prolongada de [`manual-qa-v2.md`](manual-qa-v2.md). |
-| Chrome y multitarea | Pestañas, comparación fuente/vista y árbol de paneles interno. | Dibujar, enfocar, desplazar y seleccionar por panel; divisiones horizontal/vertical reales y luego ventanas separadas. | Pruebas de identidad por vista y QA de foco/DPI. |
+| Chrome y multitarea | Pestañas, comparación fuente/vista y divisiones reales de hasta cuatro documentos, con selector explícito, foco, scroll y raster aislados por hoja. | Foco por teclado, transición con reducir movimiento, ventanas separadas y accesibilidad. | QA de cuatro hojas, foco, scroll, DPI y cierre de hoja frente a cierre de pestaña. |
 | Movimiento y estados | Tema y selector de modo animados con ruta instantánea. | Aplicar el mismo criterio a pestañas, paneles y futuras divisiones, sin animar texto ni entrada. | QA con reducir movimiento y ventanas de varios DPI. |
 | Workspace | Índice y navegación segura ya funcionan; la búsqueda explica si coincidió por título, ruta, encabezado o contenido. | Escala de bóvedas grandes, actualización granular, corpus adversarial y QA de estados largos/vacíos. | Benchmark sintético y QA de bóveda fixture. |
 | Obsidian | Vínculos, aliases, encabezados, callouts y backlinks. | Corpus de bóvedas más amplio, QA real de compatibilidad y recursos secundarios limitados. | Abrir, editar y reabrir fixture sin cambios ajenos. |
@@ -76,7 +76,7 @@ QA humano asociado ya esté cerrado.
 | Tipo | Situación | Impacto | Tratamiento actual |
 | --- | --- | --- | --- |
 | QA humano | Hay un checklist amplio pendiente de ejecutar sobre builds recientes. | No permite declarar cierre visual, DPI, accesibilidad o compatibilidad real. | Se registra en manual QA; no bloquea trabajo independiente. |
-| Arquitectura | La sesión mantiene un documento activo y documentos inactivos; el árbol de paneles no puede mostrar varios sin extraer esa propiedad de forma segura. | Bloquea divisiones reales y ventanas separadas. | Refactor gradual con invariantes de buffer, historial, guardado y recuperación únicos. |
+| Multitarea | Las divisiones internas ya protegen la propiedad única de cada documento, pero no existe aún una sesión compartida entre ventanas ni foco de panel por teclado. | Impide declarar completa la multitarea y dificulta accesibilidad. | Cerrar QA de las cuatro hojas, añadir foco predecible y diseñar ventanas separadas sobre la misma propiedad. |
 | Linux/Wayland | `ttf-parser 0.25.1` llega de forma transitiva por decoraciones Wayland de `winit` y RustSec lo marca no mantenido. | Deuda de suministro para distribución Linux, no vulnerabilidad conocida ni código usado por el release Windows. | Monitorear upstream y revisar antes de publicar Linux; no cambiar el grafo sin QA. |
 | Renderer actual | La fuente se actualiza por líneas, pero el Markdown renderizado se deriva de nuevo tras editar. | Puede costar más en documentos extensos. | Mantener límites y versionado; optimizar solo con benchmark que demuestre necesidad. |
 | Tamaño y dependencias | El presupuesto permite margen, pero exportación e imágenes pueden aumentarlo rápido. | Riesgo de superar 8 MiB o ampliar superficie. | Toda dependencia nueva pasa por ADR, licencia, advisories, transitivas y medición. |
@@ -95,12 +95,11 @@ QA humano asociado ya esté cerrado.
 
 ## Próximo orden de trabajo
 
-1. cerrar inconsistencias restantes de lectura/edición y su QA focalizado;
-2. extraer la propiedad de documentos necesaria para paneles simultáneos sin
-   duplicar estado;
-3. integrar divisiones reales, foco y scroll por vista;
-4. endurecer escala y compatibilidad de workspace/Obsidian;
-5. completar comparación de versiones y herramientas de estudio pendientes;
+1. cerrar QA focalizado de lectura/edición y de las divisiones visibles;
+2. completar foco por teclado, estados de movimiento y lifecycle de paneles;
+3. endurecer escala y compatibilidad de workspace/Obsidian;
+4. completar comparación de versiones y herramientas de estudio pendientes;
+5. diseñar ventanas separadas sobre la propiedad única ya verificada;
 6. evaluar exportación aislada y luego distribución profesional.
 
 ## Cómo mantenerlo actualizado
