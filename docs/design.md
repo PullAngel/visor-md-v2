@@ -100,12 +100,15 @@ en reposo**. En la v1 todos lo llevan y compiten con el documento. Estados:
 | Inactivo | Icono al 25 % de opacidad, sin fondo |
 
 La barra superior contiene solo acciones del documento: Nuevo, Abrir, Guardar,
-Buscar, Espacio de trabajo y Más. A continuación incorpora un selector segmentado
-de tres estados, claramente separado: Leer, Editar y Comparar. El selector muestra
-el estado actual con un indicador interior del acento, icono en acento y
-separadores sobrios; al cambiar de destino, ese indicador viaja durante 180 ms
-sin desplazar el documento ni retrasar el cambio de modo;
-cada segmento es un destino directo, no un botón que obliga a recorrer modos. Debajo vive una segunda franja contextual, que
+Buscar, Espacio de trabajo y Más. Leer, Editar y Comparar no son un modo global
+de la ventana: cada panel de documento muestra su propio selector segmentado,
+cerca de su título y con jerarquía secundaria. En una ventana sin divisiones se
+percibe como un único control estable; con varios documentos, cada hoja puede
+estar en un modo distinto sin afectar a las demás. El selector muestra el estado
+actual con un indicador interior del acento, icono en acento y separadores
+sobrios; al cambiar de destino, ese indicador viaja durante 180 ms sin desplazar
+el documento ni retrasar el cambio de modo. Cada segmento es un destino directo,
+no un botón que obliga a recorrer modos. Debajo vive una segunda franja contextual, que
 evita mezclar archivo, formato y navegación: en edición muestra Negrita,
 Cursiva, Tachado, Código en línea, Resaltado, H2, Lista, Lista ordenada,
 Tarea, Cita, Enlace, Código, Tabla, Más formato y Comparar. `Más formato`
@@ -123,6 +126,19 @@ activo. En lectura, el segmento Leer informa el estado actual y Editar sigue
 siendo un destino disponible. Los iconos suaves se dibujan de
 forma nativa, sin fuente de pictogramas; la paleta y los atajos conservan el
 nombre completo de cada acción.
+
+Archivos, Índice, Buscar y Backlinks comparten una columna acoplada a la
+izquierda, de altura completa y entre 220 y 320 px. La columna aparece solo por
+una acción explícita relacionada con workspace o navegación; al cerrarla, el
+documento recupera todo el ancho. No se representan como una solapa flotante
+corta. Sus cuatro destinos permanecen en una cabecera compacta para que una
+persona que no usa bóvedas entienda que son distintas vistas del mismo espacio.
+
+El estado normal muestra una pestaña y un documento grande. Dividir a derecha o
+abajo es excepcional, pero debe encontrarse desde el documento enfocado sin
+recorrer configuración. Al abrir otro archivo se pueden ofrecer destinos
+explícitos: pestaña, panel acoplado u otra ventana. Ninguna opción se elige por
+suposición y cada panel conserva su propio modo.
 
 La franja inferior contiene pestañas y estado, por lo que forma parte del chrome
 y no del viewport del documento. El scroll debe reservar su altura: la última

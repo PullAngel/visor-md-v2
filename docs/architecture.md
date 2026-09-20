@@ -380,6 +380,17 @@ para que árbol y foco no diverjan. Falta QA humano de divisiones, navegación d
 foco por teclado, transición con reducir movimiento, accesibilidad completa y
 ventanas nativas separadas.
 
+La arquitectura objetivo para varias ventanas coloca la propiedad documental
+en una sesión de aplicación independiente de cada `Window`. Ventanas, pestañas
+y hojas solo referencian el identificador del documento: mover una pestaña a
+otra ventana o volver a acoplarla transfiere una vista, no duplica fuente,
+historial, recuperación, baseline ni tareas asíncronas. Abrir ofrece destinos
+explícitos —pestaña principal, panel a la derecha, panel abajo u otra ventana— y
+si el documento ya tiene una vista adecuada se enfoca o se mueve de forma
+visible, nunca se crea un segundo editor silencioso. El cierre de cada ventana
+mantiene protección local y el final de la sesión comprueba todos los
+documentos modificados. Este coordinador todavía no está implementado.
+
 ### Workspace e índice
 
 La primera implementación usa un índice regenerable en memoria, sin SQLite ni

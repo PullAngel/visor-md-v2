@@ -146,9 +146,11 @@ lógica dentro de la sesión.
    división vacía se colapsa de manera predecible; recuperación, guardados y
    conflictos conservan su identidad documental.
 4. **Ventanas nativas separadas.** Solo después de cerrar los puntos previos,
-   permitir sacar una vista a otra ventana. La ventana secundaria comparte la
-   sesión, no duplica autoridad de guardado; su cierre, DPI, foco y retorno a
-   la ventana principal tendrán pruebas propias.
+   ofrecer pestaña, panel derecho, panel inferior u otra ventana como destinos
+   explícitos al abrir. Sacar una pestaña transfiere su vista a una ventana que
+   comparte la sesión y permite volver a acoplarla; no duplica autoridad de
+   guardado. Su cierre, DPI, foco, recuperación y retorno a la ventana principal
+   tendrán pruebas propias.
 5. **Movimiento y reducción de movimiento.** El indicador del selector de modo
    ya transiciona sin mover el texto ni retrasar la entrada y tiene ruta
    instantánea. Aplicar el mismo criterio a pestañas, paneles y divisiones;
