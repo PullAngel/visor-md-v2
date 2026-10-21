@@ -1,0 +1,2 @@
+# El generador comprueba el SBOM byte a byte en Windows y Linux.
+/sbom.cdx.json text eol=lf

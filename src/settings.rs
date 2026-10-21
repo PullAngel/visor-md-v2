@@ -183,11 +183,9 @@ fn store_to(path: &Path, settings: &Settings) -> Result<(), std::io::Error> {
 
 fn document_key(path: &Path) -> String {
     let canonical = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    let mut normalized = canonical.to_string_lossy().replace('\\', "/");
+    let normalized = canonical.to_string_lossy().replace('\\', "/");
     #[cfg(target_os = "windows")]
-    {
-        normalized = normalized.to_lowercase();
-    }
+    let normalized = normalized.to_lowercase();
     // FNV-1a es estable entre versiones y plataformas. No pretende ser un
     // secreto criptográfico: evita guardar la ruta en claro, no anonimizarla
     // frente a alguien que ya controla el perfil local.

@@ -3,6 +3,20 @@
 Este documento registra checkpoints verificables del grafo de dependencias. No
 reemplaza una SBOM ni convierte una auditoría puntual en garantía permanente.
 
+## Reproducibilidad del SBOM en CI
+
+La revisión del 21 de octubre de 2026 detectó que el job Windows del
+[checkpoint `90ca7e3`](https://github.com/PullAngel/visor-md-v2/actions/runs/35540860308)
+fallaba en `generate-sbom.ps1 -Check`, después de superar formato, Clippy y
+pruebas. El inventario regenerado localmente coincide con el versionado: 292
+componentes externos, sin diferencias de componentes ni relaciones.
+
+El generador compara texto exacto y termina su salida con LF. `.gitattributes`
+fija LF para `sbom.cdx.json`, de modo que un checkout Windows no introduzca CRLF
+y provoque una diferencia de formato. No se relaja la comprobación ni se
+actualiza el grafo para pasar el gate. La confirmación de la corrección queda
+en la siguiente ejecución de CI.
+
 ## PNG local confirmado
 
 El 30 de agosto de 2026 se habilitó `png-format` en `tiny-skia 0.12.0`, ya
