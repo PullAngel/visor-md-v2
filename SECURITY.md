@@ -2,7 +2,7 @@
 
 ## Estado del proyecto
 
-Visor MD v2 está en desarrollo temprano y todavía no tiene una release estable
+Visor MD v2 está en desarrollo y todavía no tiene una release estable
 soportada. Aun así, los reportes de seguridad son valiosos desde ahora.
 
 ## Cómo reportar

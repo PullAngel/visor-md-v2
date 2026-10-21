@@ -1,7 +1,8 @@
 # Contribuir a Visor MD v2
 
-El proyecto está en recuperación temprana. Las contribuciones deben preservar su
-dirección de seguridad, tamaño y UX.
+El proyecto está en desarrollo activo y todavía no tiene una release estable.
+Las contribuciones deben preservar su dirección de seguridad, fidelidad de datos,
+tamaño y UX. El [dashboard](docs/project-dashboard.md) resume capacidades y deuda.
 
 ## Antes de empezar
 
@@ -17,8 +18,10 @@ función que altere producto, seguridad, diseño o alcance.
 
 ## Ramas y preservación
 
-- `main` representa el estado estable.
-- Usar una rama separada.
+- `main` es la rama principal de desarrollo; no implica una release estable.
+- Para contribuciones externas, usar una rama y un pull request. El workspace
+  del propietario puede trabajar directamente en `main` según el acuerdo vigente.
+- La rama `archive/claude-pre-codex` es histórica y se conserva intacta.
 - Inspeccionar `git status` y `git diff` antes de editar.
 - No descartar trabajo ajeno ni snapshots sin autorización.
 - No mezclar recuperación, refactor y función nueva en un mismo commit.
@@ -42,13 +45,13 @@ commits describen cambios del producto con lenguaje natural y concreto.
 Base habitual:
 
 ```powershell
-cargo fmt --check
-cargo clippy --all-targets --all-features
-cargo test
-cargo build --release
+cargo fmt -- --check
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --locked
+cargo build --locked --release
 ```
 
-Agregar las gates específicas de [`docs/testing.md`](docs/testing.md). Un test
+Aplicar los gates específicos de [`docs/testing.md`](docs/testing.md). Un test
 anterior o un binario cacheado no prueba el working tree actual.
 
 ## Dependencias

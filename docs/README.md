@@ -7,19 +7,22 @@ investigación histórica. No todos los documentos tienen la misma autoridad.
 
 Para comprender el proyecto en poco tiempo:
 
-1. [`../AGENTS.md`](../AGENTS.md): reglas operativas y decisiones que no deben
-   cambiarse accidentalmente.
-2. [`project-dashboard.md`](project-dashboard.md): avance, deuda, riesgos y
+1. [`project-dashboard.md`](project-dashboard.md): avance, deuda, riesgos y
    próximo orden de trabajo en una sola vista.
-3. [`status.md`](status.md): qué funciona realmente y qué está incompleto.
-4. [`product.md`](product.md): usuarios, experiencias y alcance.
-5. [`architecture.md`](architecture.md): dirección técnica y distancia respecto
+2. [`product.md`](product.md): usuarios, experiencias y alcance.
+3. [`architecture.md`](architecture.md): dirección técnica y distancia respecto
    de la implementación actual.
-6. [`security.md`](security.md): políticas de seguridad explicadas y controles.
-7. [`roadmap.md`](roadmap.md): orden de recuperación y desarrollo.
-8. [`testing.md`](testing.md): estrategia de QA y evidencia necesaria.
-9. [`glossary.md`](glossary.md): jerga de ciberseguridad y QA en lenguaje
-   natural.
+4. [`threat-model.md`](threat-model.md) y [`security.md`](security.md): riesgos,
+   controles y límites.
+5. [`testing.md`](testing.md) y [`test-matrix.md`](test-matrix.md): estrategia de
+   QA y evidencia por riesgo.
+
+Para una revisión de seguridad o QA, empezar por esos dos últimos puntos y
+contrastar los controles con `src/`, las fixtures y el workflow de CI. Para
+seguir el desarrollo, consultar [`status.md`](status.md) y
+[`roadmap.md`](roadmap.md). Las instrucciones para agentes están en
+[`../AGENTS.md`](../AGENTS.md); la jerga se explica en
+[`glossary.md`](glossary.md).
 
 ## Documentos vivos
 

@@ -1,6 +1,6 @@
 # Estado actual
 
-Última revisión: 16 de septiembre de 2026.
+Última revisión documental: 21 de octubre de 2026.
 
 ## Resumen
 
@@ -16,12 +16,17 @@ la edición local y dirige a Guardar como; no recrea rutas originales ni repite
 el mismo diálogo al recuperar foco. También mantiene la recuperación si una
 escritura terminó pero su verificación final no pudo completarse.
 
-El lector y el editor tienen gates automáticos verdes: la suite local actual
-reúne 245 regresiones en Windows. El gate de Windows del 9 de septiembre también verificó
-Clippy, SBOM, documentación y un release de 3.524.096 bytes (3,361 MiB).
-La medición posterior de rutas secundarias y previews vigentes da 3.532.288
-bytes (3,369 MiB). La revisión actual del selector de modo da 3.536.896 bytes
-(3,373 MiB), aún con 4,627 MiB de margen frente al límite deseado.
+La última suite registrada para el checkpoint `90ca7e3` reúne 248 pruebas en
+Windows y Clippy estricto en verde. Ese checkpoint incorpora la columna de
+workspace acoplada, la paleta sepia/bosque y el kit de escritura con menús de
+Bloques, Listas, Insertar, Estudio y Más; los encabezados H1–H6 se cambian como
+una edición reversible sin acumular marcadores.
+
+El release compilado el 14 de octubre de 2026 mide 3.572.224 bytes (3,407 MiB).
+La ruta alternativa de QA, el hash y las condiciones de apertura están en
+[`budget.md`](budget.md). La revisión documental del 21 de octubre no volvió a
+ejecutar la suite ni una auditoría de dependencias: conserva la evidencia de
+código anterior y corrige su presentación.
 
 El gate completo del 16 de septiembre confirmó formato, Clippy estricto, las
 237 regresiones, SBOM CycloneDX vigente, enlaces de documentación y build

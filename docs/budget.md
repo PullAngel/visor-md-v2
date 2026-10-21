@@ -38,11 +38,41 @@ compilado con `opt-level = "z"`, `lto = true`, `codegen-units = 1`,
 | **Interacción fiable de tareas** | **3.522.560 bytes, 3,359 MiB** |
 | **Selector directo de modo** | **3.524.096 bytes, 3,361 MiB** |
 | **Rutas secundarias y previews vigentes** | **3.532.288 bytes, 3,369 MiB** |
+| **Workspace acoplado y kit de escritura** | **3.572.224 bytes, 3,407 MiB** |
 
 Superar 8 MB exige medición, explicación y aprobación. El límite no se usa para
 recortar seguridad, estabilidad, accesibilidad, Unicode o funciones esenciales.
 Mermaid, correctores y otros componentes pesados no tienen permiso automático
 para ampliar el núcleo.
+
+### Workspace acoplado y kit de escritura: build del 14 de octubre de 2026
+
+El checkpoint `90ca7e3` se compiló en Windows en un directorio de salida
+alternativo para no interferir con un ejecutable anterior abierto:
+
+```powershell
+cargo build --locked --release --target-dir target/qa-build
+& .\target\qa-build\release\visor-md.exe .\tests\fixtures\sprint1-visual.md --bench=0
+```
+
+| Medida | Resultado |
+| --- | --- |
+| Ejecutable | 3.572.224 bytes (3,407 MiB) |
+| SHA-256 | `708fd87c907d0194b80d125f1c89f5667a6eb1f46a2b27fd13f2e1d3b45c9754` |
+| Fixture | `tests/fixtures/sprint1-visual.md`, 1.181 bytes, 23 bloques |
+| Segunda apertura: ventana visible | 534 ms |
+| Segunda apertura: primer pintado | 727 ms |
+
+La primera apertura registró 17.072 ms hasta ventana visible, de los cuales
+16.212 ms correspondieron a `FontContext::new`. La segunda registró 298 ms en
+ese contexto. Son dos observaciones de sesión con una diferencia importante;
+no constituyen un benchmark controlado ni permiten atribuir con certeza la
+variación a caché, carga del equipo o enumeración de fuentes. El README cita
+solo tamaño e identidad del build, sin prometer un tiempo de apertura.
+
+El 21 de octubre se comprobó nuevamente el tamaño y hash del artefacto local.
+No se recompiló ni se renovó una medición de rendimiento para la revisión
+documental. Continúa pendiente el protocolo reproducible de arranque y memoria.
 
 ### Rutas secundarias y previews vigentes del 15 de septiembre de 2026
 

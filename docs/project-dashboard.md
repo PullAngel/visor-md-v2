@@ -1,6 +1,6 @@
 # Dashboard operativo de Visor MD v2
 
-Última actualización: 16 de septiembre de 2026.
+Última actualización: 21 de octubre de 2026.
 
 Este documento resume el avance real sin sustituir las especificaciones. Sirve
 para responder tres preguntas rápidamente:
@@ -45,7 +45,7 @@ QA humano asociado ya esté cerrado.
 | Trabajo diario | Crear, abrir, guardar, pestañas reordenables/fijables, cierre protegido, paleta, menú contextual, barra de estado y kit Markdown agrupado. | [`features.md`](features.md), [`manual-qa-v2.md`](manual-qa-v2.md) |
 | Workspace | Carpeta explícita, VFS contenida, índice en memoria/cancelable, árbol, búsqueda, encabezados, wikilinks, aliases y backlinks en columna acoplada. | [`connectivity.md`](connectivity.md), [`editor-workspace-ui-audit.md`](editor-workspace-ui-audit.md) |
 | Recursos locales | Placeholder seguro e imagen PNG local solo tras confirmación y validación dentro de la raíz autorizada. | [`security.md`](security.md), [`dependencies.md`](dependencies.md) |
-| Calidad actual | 247 pruebas locales y Clippy estricto en verde; el último release medido tras las divisiones fue 3,400 MiB. | [`status.md`](status.md), [`budget.md`](budget.md) |
+| Calidad actual | Última suite registrada: 248 pruebas y Clippy estricto en verde para `90ca7e3`; build Windows del 14 de octubre: 3.572.224 bytes (3,407 MiB). Revisión documental del 21 de octubre sin cambios de código ni nueva auditoría. | [`status.md`](status.md), [`budget.md`](budget.md) |
 
 ## Trabajo iniciado pero no cerrado
 
