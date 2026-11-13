@@ -318,6 +318,13 @@ static NEXT_DOCUMENT_ID: AtomicU64 = AtomicU64::new(1);
 /// buffers, historiales ni archivos de recuperación adicionales.
 static NEXT_DOCUMENT_PANE_ID: AtomicU64 = AtomicU64::new(1);
 const MAX_DOCUMENT_PANES: usize = 4;
+/// Franja propia de cada panel cuando hay más de uno: nombre, modo y cierre.
+const PANE_HEADER_HEIGHT: f32 = 30.0;
+const PANE_HEADER_CLOSE_WIDTH: f32 = 28.0;
+const PANE_HEADER_MODE_SLOT: f32 = 62.0;
+/// Por debajo de este ancho la cabecera conserva nombre y cierre; el modo
+/// sigue disponible en la barra superior para el panel enfocado.
+const PANE_HEADER_MODE_MIN_WIDTH: f32 = 330.0;
 /// Opciones fijas del selector de división, antes de las pestañas abiertas.
 /// Los identificadores de documento nunca alcanzan estos valores.
 const SPLIT_NEW_DOCUMENT: u64 = u64::MAX;
@@ -5254,7 +5261,61 @@ fn document_pane_layouts_in(
         },
         &mut layouts,
     );
+    if layouts.len() > 1 {
+        // Con varias hojas, cada una reserva su cabecera arriba. El contenido,
+        // el foco y el scroll usan solo lo que queda debajo.
+        for layout in &mut layouts {
+            let header = PANE_HEADER_HEIGHT.min(layout.geometry.height);
+            layout.geometry.y += header;
+            layout.geometry.height -= header;
+        }
+    }
     layouts
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PaneHeaderHit {
+    Mode(ModeTarget),
+    Close,
+    Title,
+}
+
+/// Cabecera de una hoja, en coordenadas del área documental.
+fn pane_header_rect(geometry: PaneGeometry) -> PaneGeometry {
+    PaneGeometry {
+        x: geometry.x,
+        y: geometry.y - PANE_HEADER_HEIGHT,
+        width: geometry.width,
+        height: PANE_HEADER_HEIGHT,
+    }
+}
+
+fn pane_header_mode_x(header: PaneGeometry) -> Option<f32> {
+    (header.width >= PANE_HEADER_MODE_MIN_WIDTH).then_some(
+        header.x + header.width - PANE_HEADER_CLOSE_WIDTH - 8.0 - PANE_HEADER_MODE_SLOT * 3.0,
+    )
+}
+
+/// Qué control de la cabecera hay bajo el puntero. Dibujo y clic comparten
+/// esta misma descripción.
+fn pane_header_hit(header: PaneGeometry, x: f32, y: f32) -> Option<PaneHeaderHit> {
+    if !header.contains(x, y) {
+        return None;
+    }
+    if x >= header.x + header.width - PANE_HEADER_CLOSE_WIDTH {
+        return Some(PaneHeaderHit::Close);
+    }
+    if let Some(mode_x) = pane_header_mode_x(header)
+        && (mode_x..mode_x + PANE_HEADER_MODE_SLOT * 3.0).contains(&x)
+    {
+        let target = match ((x - mode_x) / PANE_HEADER_MODE_SLOT) as usize {
+            0 => ModeTarget::Reading,
+            1 => ModeTarget::Editing,
+            _ => ModeTarget::Compare,
+        };
+        return Some(PaneHeaderHit::Mode(target));
+    }
+    Some(PaneHeaderHit::Title)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -8259,6 +8320,12 @@ impl ApplicationHandler<AppEvent> for App {
                         }
                     }
                     if let Some((x, y)) = self.pointer
+                        && self.handle_pane_header_click(x, y)
+                    {
+                        self.selecting = false;
+                        return;
+                    }
+                    if let Some((x, y)) = self.pointer
                         && self.focus_document_pane_at(x, y)
                     {
                         self.selecting = false;
@@ -10189,6 +10256,35 @@ impl App {
         .copied() else {
             return false;
         };
+        self.focus_document_pane(layout)
+    }
+
+    /// Resuelve un clic en la cabecera de una hoja. Primero enfoca esa hoja;
+    /// así el modo o el cierre siempre actúan sobre el documento que se ve ahí.
+    fn handle_pane_header_click(&mut self, x: f32, y: f32) -> bool {
+        let layouts = self.visible_document_pane_layouts();
+        if layouts.len() < 2 {
+            return false;
+        }
+        let local_y = y - DOCUMENT_VIEWPORT_TOP;
+        let Some((layout, hit)) = layouts.iter().find_map(|layout| {
+            pane_header_hit(pane_header_rect(layout.geometry), x, local_y).map(|hit| (*layout, hit))
+        }) else {
+            return false;
+        };
+        self.focus_document_pane(layout);
+        match hit {
+            PaneHeaderHit::Mode(target) => self.select_mode(target),
+            PaneHeaderHit::Close => self.close_focused_document_pane(),
+            PaneHeaderHit::Title => {}
+        }
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+        true
+    }
+
+    fn focus_document_pane(&mut self, layout: DocumentPaneLayout) -> bool {
         if layout.pane_id == self.focused_document_pane {
             return false;
         }
@@ -14002,6 +14098,80 @@ impl App {
         let toolbar_hint_layout = toolbar_hint_label.map(|label| {
             build_menu_layout(label, &mut self.font_cx, &mut self.layout_cx, self.palette)
         });
+        // Un documento vacío en edición invita a escribir sin parecer un error.
+        let empty_hint = (self.document.mode.is_editable()
+            && self.document.source.is_empty()
+            && self.ime_preedit.is_none())
+        .then(|| {
+            build_ui_text_layout(
+                "Escribí aquí. El formato está en la barra de arriba; Ctrl+S guarda.",
+                &mut self.font_cx,
+                &mut self.layout_cx,
+                self.palette.dim,
+                13.0 * self.scale_factor,
+                false,
+                Some((panes.source.width - MARGIN * 2.0 * self.scale_factor).max(120.0)),
+            )
+        });
+        // Cabeceras de hoja: solo existen con dos o más paneles.
+        let pane_headers = {
+            let layouts = self.visible_document_pane_layouts();
+            if layouts.len() < 2 {
+                Vec::new()
+            } else {
+                let palette = self.palette;
+                layouts
+                    .iter()
+                    .filter_map(|layout| {
+                        let document = document_by_id(
+                            &self.document,
+                            &self.inactive_documents,
+                            layout.document_id,
+                        )?;
+                        let focused = layout.pane_id == self.focused_document_pane;
+                        let header = pane_header_rect(layout.geometry);
+                        let name = format!(
+                            "{}{}",
+                            document_display_name(&document.path),
+                            if document.is_dirty() { " *" } else { "" }
+                        );
+                        let title = build_ui_text_layout(
+                            &abbreviated_label(&name, 40),
+                            &mut self.font_cx,
+                            &mut self.layout_cx,
+                            if focused { palette.text } else { palette.dim },
+                            12.0,
+                            focused,
+                            None,
+                        );
+                        let active = mode_target_for_document(document.mode);
+                        let modes = [
+                            (ModeTarget::Reading, "Leer"),
+                            (ModeTarget::Editing, "Editar"),
+                            (ModeTarget::Compare, "Comparar"),
+                        ]
+                        .into_iter()
+                        .map(|(target, label)| {
+                            build_ui_text_layout(
+                                label,
+                                &mut self.font_cx,
+                                &mut self.layout_cx,
+                                if target == active {
+                                    palette.text
+                                } else {
+                                    palette.dim
+                                },
+                                12.0,
+                                target == active,
+                                None,
+                            )
+                        })
+                        .collect::<Vec<_>>();
+                        Some((header, focused, title, modes, mode_target_slot(active)))
+                    })
+                    .collect::<Vec<_>>()
+            }
+        };
         let mode_label_layouts = [
             (ModeTarget::Reading, "Leer"),
             (ModeTarget::Editing, "Editar"),
@@ -15017,6 +15187,89 @@ impl App {
                         pixmap.fill_rect(rect, &pane_border, Transform::identity(), None);
                     }
                 }
+            }
+        }
+
+        if let Some(hint) = &empty_hint {
+            draw_text_layout(
+                pixmap,
+                scale_cx,
+                glyphs,
+                hint,
+                (panes.source.x + MARGIN * *scale_factor + 6.0).round(),
+                (DOCUMENT_VIEWPORT_TOP + panes.source.y + MARGIN * *scale_factor + 2.0).round(),
+            );
+        }
+        for (header, focused, title, modes, active_slot) in &pane_headers {
+            let top = DOCUMENT_VIEWPORT_TOP + header.y;
+            let fill = if *focused {
+                palette.surface
+            } else {
+                palette.elevated
+            };
+            let mut header_paint = Paint::default();
+            header_paint.set_color(Color::from_rgba8(fill.0, fill.1, fill.2, 255));
+            if let Some(rect) = Rect::from_xywh(header.x, top, header.width, header.height) {
+                pixmap.fill_rect(rect, &header_paint, Transform::identity(), None);
+            }
+            if let Some(rect) =
+                Rect::from_xywh(header.x, top + header.height - 1.0, header.width, 1.0)
+            {
+                let paint = if *focused {
+                    &accent_paint
+                } else {
+                    &border_paint
+                };
+                pixmap.fill_rect(rect, paint, Transform::identity(), None);
+            }
+            let text_y = (top + (header.height - title.height()) * 0.5).round();
+            draw_text_layout(pixmap, scale_cx, glyphs, title, header.x + 12.0, text_y);
+            if let Some(mode_x) = pane_header_mode_x(*header) {
+                let mut active_paint = Paint {
+                    anti_alias: true,
+                    ..Default::default()
+                };
+                let accent = palette.accent;
+                active_paint.set_color(Color::from_rgba8(accent.0, accent.1, accent.2, 48));
+                fill_rounded_rect(
+                    pixmap,
+                    mode_x + active_slot * PANE_HEADER_MODE_SLOT + 2.0,
+                    top + 4.0,
+                    PANE_HEADER_MODE_SLOT - 4.0,
+                    header.height - 8.0,
+                    5.0,
+                    &active_paint,
+                );
+                for (index, label) in modes.iter().enumerate() {
+                    let slot_x = mode_x + index as f32 * PANE_HEADER_MODE_SLOT;
+                    draw_text_layout(
+                        pixmap,
+                        scale_cx,
+                        glyphs,
+                        label,
+                        (slot_x + (PANE_HEADER_MODE_SLOT - label.width()) * 0.5).round(),
+                        (top + (header.height - label.height()) * 0.5).round(),
+                    );
+                }
+            }
+            let close_x = header.x + header.width - PANE_HEADER_CLOSE_WIDTH * 0.5;
+            let close_y = top + header.height * 0.5;
+            let mut close_path = tiny_skia::PathBuilder::new();
+            close_path.move_to(close_x - 3.5, close_y - 3.5);
+            close_path.line_to(close_x + 3.5, close_y + 3.5);
+            close_path.move_to(close_x + 3.5, close_y - 3.5);
+            close_path.line_to(close_x - 3.5, close_y + 3.5);
+            if let Some(close_path) = close_path.finish() {
+                pixmap.stroke_path(
+                    &close_path,
+                    &dim_paint,
+                    &tiny_skia::Stroke {
+                        width: 1.3,
+                        ..Default::default()
+                    },
+                    Transform::identity(),
+                    None,
+                );
             }
         }
 
@@ -17626,6 +17879,52 @@ mod pruebas {
         assert_eq!(panes.pane_scroll(hoja), Some(0.0));
         assert!(panes.replace_pane_document(hoja, 10, 480.0));
         assert_eq!(panes.pane_scroll(hoja), Some(480.0));
+    }
+
+    #[test]
+    fn las_cabeceras_de_panel_aparecen_solo_al_dividir_y_no_tapan_contenido() {
+        let area = PaneGeometry {
+            x: 0.0,
+            y: 0.0,
+            width: 1_000.0,
+            height: 600.0,
+        };
+        let mut panes = DocumentPaneTree::single(1);
+        let unica = document_pane_layouts_in(&panes, area);
+        assert_eq!(unica[0].geometry, area);
+
+        let primero = panes.first_pane_id();
+        panes
+            .split_pane(primero, 2, DocumentPaneAxis::Vertical)
+            .expect("la división existe");
+        let layouts = document_pane_layouts_in(&panes, area);
+        for layout in &layouts {
+            let header = pane_header_rect(layout.geometry);
+            assert_eq!(header.y + header.height, layout.geometry.y);
+            assert!(header.y >= area.y);
+            assert!(!layout.geometry.contains(header.x + 5.0, header.y + 5.0));
+        }
+        let header = pane_header_rect(layouts[1].geometry);
+        let y = header.y + 10.0;
+        assert_eq!(
+            pane_header_hit(header, header.x + header.width - 5.0, y),
+            Some(PaneHeaderHit::Close)
+        );
+        let mode_x = pane_header_mode_x(header).expect("hay espacio para el modo");
+        assert_eq!(
+            pane_header_hit(header, mode_x + PANE_HEADER_MODE_SLOT * 1.5, y),
+            Some(PaneHeaderHit::Mode(ModeTarget::Editing))
+        );
+        assert_eq!(
+            pane_header_hit(header, header.x + 20.0, y),
+            Some(PaneHeaderHit::Title)
+        );
+        assert_eq!(pane_header_hit(header, header.x + 20.0, y + 40.0), None);
+        let angosta = PaneGeometry {
+            width: 200.0,
+            ..header
+        };
+        assert_eq!(pane_header_mode_x(angosta), None);
     }
 
     #[test]
