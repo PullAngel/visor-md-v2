@@ -84,7 +84,7 @@ const SELECTION_SCROLL_MAX_STEP: f32 = 18.0;
 const CONTEXT_MENU_WIDTH: f32 = 224.0;
 const CONTEXT_MENU_ROW_HEIGHT: f32 = 34.0;
 const CONTEXT_MENU_PADDING: f32 = 8.0;
-const CODE_COPY_WIDTH: f32 = 60.0;
+const CODE_COPY_WIDTH: f32 = 74.0;
 const CODE_COPY_HEIGHT: f32 = 22.0;
 const MAX_SEARCH_QUERY_CHARS: usize = 256;
 const MAX_OVERLAY_LABEL_CHARS: usize = 180;
@@ -318,6 +318,10 @@ static NEXT_DOCUMENT_ID: AtomicU64 = AtomicU64::new(1);
 /// buffers, historiales ni archivos de recuperación adicionales.
 static NEXT_DOCUMENT_PANE_ID: AtomicU64 = AtomicU64::new(1);
 const MAX_DOCUMENT_PANES: usize = 4;
+/// Opciones fijas del selector de división, antes de las pestañas abiertas.
+/// Los identificadores de documento nunca alcanzan estos valores.
+const SPLIT_NEW_DOCUMENT: u64 = u64::MAX;
+const SPLIT_OPEN_FILE: u64 = u64::MAX - 1;
 
 /// Windows recibe chrome propio para realizar la dirección visual aprobada. En
 /// otras plataformas se conserva el chrome nativo hasta tener el mismo nivel
@@ -1038,6 +1042,10 @@ enum ContextAction {
     CopyMarkdown,
     CopyPlatform,
     CopyTableTsv,
+    SplitRight,
+    SplitBelow,
+    PinTab,
+    CloseTab,
 }
 
 #[derive(Clone, Debug)]
@@ -1311,6 +1319,10 @@ impl ContextAction {
             Self::CopyMarkdown => "Copiar Markdown original",
             Self::CopyPlatform => "Copiar para Discord o correo",
             Self::CopyTableTsv => "Copiar tabla como TSV",
+            Self::SplitRight => "Dividir a la derecha",
+            Self::SplitBelow => "Dividir abajo",
+            Self::PinTab => "Fijar o soltar la pestaña",
+            Self::CloseTab => "Cerrar pestaña · Ctrl+W",
         }
     }
 
@@ -2020,6 +2032,9 @@ struct Emphasis {
     mark: bool,
     sub: bool,
     sup: bool,
+    /// Marcador Markdown en la vista de fuente: `#`, viñetas, números, `>`
+    /// y cercas. Solo cambia el color; el texto sigue siendo el de la fuente.
+    syntax: bool,
 }
 
 impl Emphasis {
@@ -4341,6 +4356,73 @@ fn safe_buffer_blocks(source: &TextBuffer) -> Result<Vec<Block>, &'static str> {
     safe_buffer_blocks_for_lines(source, 0, source.line_count().saturating_sub(1), MAX_BLOCKS)
 }
 
+/// Color mínimo de sintaxis para la vista de fuente. Reconoce solo marcadores
+/// de bloque al inicio de línea; no interpreta el contenido ni cambia bytes.
+fn source_syntax_spans(line: &str, line_start: usize) -> Vec<Span> {
+    let span = |start: usize, end: usize, style: Emphasis| Span {
+        start,
+        end,
+        source: SourceRange {
+            start: line_start + start,
+            end: line_start + end,
+        },
+        style,
+    };
+    let syntax = Emphasis {
+        syntax: true,
+        ..Emphasis::default()
+    };
+    let indent = line.len() - line.trim_start_matches(' ').len();
+    if indent > 3 && !line.trim_start().starts_with(['-', '*', '+', '>']) {
+        return Vec::new();
+    }
+    let rest = &line[indent..];
+    if rest.starts_with("```") || rest.starts_with("~~~") {
+        return vec![span(indent, line.len(), syntax)];
+    }
+    let hashes = rest.bytes().take_while(|byte| *byte == b'#').count();
+    if (1..=6).contains(&hashes) && matches!(rest.as_bytes().get(hashes), None | Some(b' ')) {
+        let marker_end = (indent + hashes + 1).min(line.len());
+        let mut spans = vec![span(indent, marker_end, syntax)];
+        if marker_end < line.len() {
+            spans.push(span(
+                marker_end,
+                line.len(),
+                Emphasis {
+                    strong: true,
+                    ..Emphasis::default()
+                },
+            ));
+        }
+        return spans;
+    }
+    let quote = rest
+        .bytes()
+        .take_while(|byte| matches!(byte, b'>' | b' '))
+        .count();
+    if rest.starts_with('>') {
+        return vec![span(indent, indent + quote, syntax)];
+    }
+    let marker = if rest.starts_with("- ") || rest.starts_with("* ") || rest.starts_with("+ ") {
+        Some(2)
+    } else {
+        let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+        (digits > 0
+            && digits < 10
+            && matches!(rest.as_bytes().get(digits), Some(b'.' | b')'))
+            && matches!(rest.as_bytes().get(digits + 1), None | Some(b' ')))
+        .then_some((digits + 2).min(rest.len()))
+    };
+    let Some(mut marker) = marker else {
+        return Vec::new();
+    };
+    let after = &rest[marker..];
+    if after.starts_with("[ ] ") || after.starts_with("[x] ") || after.starts_with("[X] ") {
+        marker += 4;
+    }
+    vec![span(indent, indent + marker, syntax)]
+}
+
 fn safe_buffer_blocks_for_lines(
     source: &TextBuffer,
     first_line: usize,
@@ -4379,9 +4461,14 @@ fn safe_buffer_blocks_for_lines(
                 end: if is_last { end } else { start + chunk_end },
             };
             debug_assert!(range.is_valid_for_buffer(source));
+            let spans = if chunk_start == 0 {
+                source_syntax_spans(&text[..chunk_end], start)
+            } else {
+                Vec::new()
+            };
             blocks.push(Block::new(
                 text[chunk_start..chunk_end].to_string(),
-                Vec::new(),
+                spans,
                 Kind::Code,
                 range,
                 Vec::new(),
@@ -4437,6 +4524,10 @@ fn refresh_safe_buffer_blocks_incrementally(
         let mut shifted = block.clone();
         shifted.source.start = shift_source_offset(shifted.source.start, delta)?;
         shifted.source.end = shift_source_offset(shifted.source.end, delta)?;
+        for span in &mut shifted.spans {
+            span.source.start = shift_source_offset(span.source.start, delta)?;
+            span.source.end = shift_source_offset(span.source.end, delta)?;
+        }
         if !shifted.source.is_valid_for_buffer(source) {
             return Ok(None);
         }
@@ -5397,6 +5488,12 @@ fn build_layout_with_advance(
         if span.style.strike {
             builder.push(StyleProperty::Strikethrough(true), range.clone());
         }
+        if span.style.syntax {
+            builder.push(
+                StyleProperty::Brush(Brush::text(palette.accent)),
+                range.clone(),
+            );
+        }
         if span.style.kbd {
             builder.push(
                 StyleProperty::FontFamily(FontFamily::List(std::borrow::Cow::Borrowed(mono_stack))),
@@ -6086,7 +6183,16 @@ fn draw_cached_blocks_in_pane(
                 CachedMarker::Task { done } => {
                     let (left, checkbox_top, width, _) =
                         task_checkbox_bounds_in_pane(slot, scroll, scale, pane);
-                    draw_checkbox(pixmap, left, checkbox_top, width, *done, palette);
+                    // Este raster usa coordenadas locales del panel: las
+                    // casillas no deben sumar la franja superior de la ventana.
+                    draw_checkbox(
+                        pixmap,
+                        left,
+                        checkbox_top - DOCUMENT_VIEWPORT_TOP,
+                        width,
+                        *done,
+                        palette,
+                    );
                 }
             }
         }
@@ -6993,7 +7099,9 @@ struct App {
     notice_visible_until: Option<Instant>,
     /// Bloque de código cuya copia se confirma en su propio botón mientras el
     /// aviso sigue visible.
-    code_copied: Option<(u64, usize)>,
+    code_copied: Option<(u64, usize, bool)>,
+    /// Scroll de la vista previa del último cuadro, para el hit testing.
+    preview_scroll: f32,
     /// Pide al próximo cuadro llevar el cursor de la fuente a la vista.
     reveal_cursor_pending: bool,
     /// Diálogo propio abierto. Mientras existe, captura teclado y mouse.
@@ -8002,6 +8110,18 @@ impl ApplicationHandler<AppEvent> for App {
                                 }
                                 ContextAction::CopyPlatform => self.copy_selection_for_platform(),
                                 ContextAction::CopyTableTsv => self.copy_current_table_tsv(),
+                                ContextAction::SplitRight => {
+                                    self.perform_action(AppAction::SplitDocumentRight)
+                                }
+                                ContextAction::SplitBelow => {
+                                    self.perform_action(AppAction::SplitDocumentBelow)
+                                }
+                                ContextAction::PinTab => {
+                                    self.perform_action(AppAction::TogglePinTab)
+                                }
+                                ContextAction::CloseTab => {
+                                    self.perform_action(AppAction::CloseDocument)
+                                }
                             }
                         }
                         if let Some(w) = &self.window {
@@ -8170,11 +8290,10 @@ impl ApplicationHandler<AppEvent> for App {
                         self.selecting = false;
                         return;
                     }
-                    if self.document.mode == DocumentMode::Reading
-                        && let Some((x, y)) = self.pointer
-                        && let Some(block) = self.code_copy_at(x, y)
+                    if let Some((x, y)) = self.pointer
+                        && let Some((block, preview)) = self.code_copy_at(x, y)
                     {
-                        self.copy_code_block(block);
+                        self.copy_code_block(block, preview);
                         self.selecting = false;
                         return;
                     }
@@ -8217,7 +8336,7 @@ impl ApplicationHandler<AppEvent> for App {
                 let Some((x, y)) = self.pointer else {
                     return;
                 };
-                if let Some(window) = &self.window {
+                let tab_menu = if let Some(window) = &self.window {
                     let size = window.inner_size();
                     if let Some(index) = tab_index_at(
                         x,
@@ -8228,7 +8347,46 @@ impl ApplicationHandler<AppEvent> for App {
                     ) && let Some(document_id) = self.tab_order.get(index).copied()
                     {
                         self.activate_document_tab(document_id);
+                        true
+                    } else {
+                        false
                     }
+                } else {
+                    false
+                };
+                if tab_menu {
+                    // Menú de pestaña: dividir es tan descubrible como cerrar.
+                    let actions = vec![
+                        ContextAction::SplitRight,
+                        ContextAction::SplitBelow,
+                        ContextAction::PinTab,
+                        ContextAction::CloseTab,
+                    ];
+                    let (menu_x, menu_y) = self
+                        .window
+                        .as_ref()
+                        .map(|window| {
+                            let size = window.inner_size();
+                            (
+                                x.min((size.width as f32 - CONTEXT_MENU_WIDTH).max(0.0)),
+                                (TAB_STRIP_Y + TAB_STRIP_HEIGHT).min(
+                                    (size.height as f32
+                                        - CONTEXT_MENU_ROW_HEIGHT * actions.len() as f32)
+                                        .max(0.0),
+                                ),
+                            )
+                        })
+                        .unwrap_or((x, y));
+                    self.context_menu = Some(ContextMenu {
+                        origin: (menu_x, menu_y),
+                        actions,
+                        task_block: None,
+                        row_height: CONTEXT_MENU_ROW_HEIGHT,
+                    });
+                    if let Some(w) = &self.window {
+                        w.request_redraw();
+                    }
+                    return;
                 }
                 let _ = self.focus_document_pane_at(x, y);
                 if self.document.mode == DocumentMode::Split
@@ -9459,11 +9617,8 @@ impl App {
             self.set_notice("la ventana ya muestra el máximo de cuatro documentos");
             return;
         }
-        let candidates = self.available_document_pane_targets();
-        if candidates.is_empty() {
-            self.set_notice("abrí otra pestaña lista para usar antes de dividir este panel");
-            return;
-        }
+        let mut candidates = vec![SPLIT_NEW_DOCUMENT, SPLIT_OPEN_FILE];
+        candidates.extend(self.available_document_pane_targets());
         self.context_menu = None;
         self.search_query = None;
         self.dismiss_navigation_panel();
@@ -9472,7 +9627,7 @@ impl App {
         self.pane_split_match = 0;
         self.toolbar_focus = None;
         self.set_notice(&format!(
-            "dividir {} · elegí una pestaña sin abrirla ni duplicarla",
+            "dividir {} · documento nuevo, abrir un archivo o una pestaña abierta",
             axis.label()
         ));
         if let Some(window) = &self.window {
@@ -9484,6 +9639,21 @@ impl App {
         let Some(axis) = self.pane_split_picker else {
             return;
         };
+        match self.pane_split_candidates.get(selected).copied() {
+            Some(SPLIT_NEW_DOCUMENT) => {
+                self.clear_pane_split_picker();
+                if self.split_with_new_document(axis, DocumentState::untitled()) {
+                    self.set_notice("documento nuevo en el panel dividido");
+                }
+                return;
+            }
+            Some(SPLIT_OPEN_FILE) => {
+                self.clear_pane_split_picker();
+                self.split_with_chosen_file(axis);
+                return;
+            }
+            _ => {}
+        }
         let available = self.available_document_pane_targets();
         let document_id = self
             .pane_split_candidates
@@ -9520,6 +9690,71 @@ impl App {
         ));
         if let Some(window) = &self.window {
             window.request_redraw();
+        }
+    }
+
+    /// Abre un documento nuevo en un panel nuevo junto al enfocado. El
+    /// documento entra como pestaña propia: tiene su historial y su
+    /// recuperación, y nunca comparte buffer con el panel vecino.
+    fn split_with_new_document(&mut self, axis: DocumentPaneAxis, document: DocumentState) -> bool {
+        if self.document_panes.pane_count() >= MAX_DOCUMENT_PANES {
+            self.set_notice("la ventana ya muestra el máximo de cuatro documentos");
+            return false;
+        }
+        let document_id = document.id;
+        let recovery = self.new_recovery_session();
+        self.inactive_documents
+            .push(InactiveDocument { document, recovery });
+        self.tab_order.push(document_id);
+        self.save_focused_pane_scroll();
+        let Some(new_pane) =
+            self.document_panes
+                .split_pane(self.focused_document_pane, document_id, axis)
+        else {
+            self.inactive_documents
+                .retain(|tab| tab.document.id != document_id);
+            self.tab_order.retain(|id| *id != document_id);
+            self.set_notice("no se pudo crear el panel");
+            return false;
+        };
+        self.inactive_pane_caches.remove(&new_pane);
+        self.activate_document_tab(document_id);
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+        true
+    }
+
+    fn split_with_chosen_file(&mut self, axis: DocumentPaneAxis) {
+        let Some(path) = self
+            .file_dialog()
+            .add_filter(
+                "Texto y Markdown",
+                &[
+                    "md", "markdown", "txt", "json", "yaml", "yml", "toml", "csv",
+                ],
+            )
+            .set_title("Abrir en un panel nuevo")
+            .pick_file()
+        else {
+            self.set_notice("abrir en panel cancelado");
+            return;
+        };
+        let already_open = std::iter::once(&self.document)
+            .chain(self.inactive_documents.iter().map(|tab| &tab.document))
+            .find(|document| paths_refer_to_same_file(std::path::Path::new(&document.path), &path))
+            .map(|document| document.id);
+        if let Some(document_id) = already_open {
+            // Un documento ya abierto no se duplica: se muestra donde está.
+            self.activate_document_tab(document_id);
+            self.set_notice("ese documento ya estaba abierto; se activó su pestaña");
+            return;
+        }
+        let mut pending = DocumentState::untitled();
+        pending.path = path.to_string_lossy().into_owned();
+        pending.mode = DocumentMode::Reading;
+        if self.split_with_new_document(axis, pending) {
+            self.start_open_request(path);
         }
     }
 
@@ -11582,6 +11817,13 @@ impl App {
         pending.path = path.to_string_lossy().into_owned();
         pending.mode = DocumentMode::Reading;
         self.open_document_in_tab(pending);
+        self.start_open_request(path);
+        true
+    }
+
+    /// Lee el archivo del documento activo fuera del hilo de interfaz. El
+    /// resultado lleva identidad y número de solicitud propios.
+    fn start_open_request(&mut self, path: PathBuf) {
         let document_id = self.document.id;
         self.document_request = self.document_request.wrapping_add(1);
         let request = self.document_request;
@@ -11621,7 +11863,6 @@ impl App {
             };
             let _ = proxy.send_event(event);
         });
-        true
     }
 
     fn sync_source_selection(&mut self) {
@@ -11812,6 +12053,8 @@ impl App {
     }
 
     fn set_notice(&mut self, notice: &str) {
+        // El estado "Copiado" pertenece solo al aviso de la copia.
+        self.code_copied = None;
         self.notice = Some(notice.to_owned());
         self.notice_visible_until = Some(Instant::now() + toast_duration(notice));
         self.refresh_title();
@@ -12862,9 +13105,37 @@ impl App {
         task_block_at_cursor(&self.document.blocks, cursor)
     }
 
-    fn code_copy_at(&self, x: f32, y: f32) -> Option<usize> {
+    /// Botón Copiar bajo el puntero. El booleano indica si está en la vista
+    /// previa de Comparar en lugar de la lectura principal.
+    fn code_copy_at(&self, x: f32, y: f32) -> Option<(usize, bool)> {
         let panes = self.focused_document_panes()?;
-        if !panes.source.contains(x, y - DOCUMENT_VIEWPORT_TOP) {
+        if self.document.mode == DocumentMode::Split {
+            if !panes.preview.contains(x, y - DOCUMENT_VIEWPORT_TOP) {
+                return None;
+            }
+            let text_width = pane_text_width(panes.preview, self.scale_factor);
+            return self
+                .preview_slots
+                .iter()
+                .enumerate()
+                .find_map(|(index, slot)| {
+                    if !is_first_code_block(&self.document.rendered_blocks, index) {
+                        return None;
+                    }
+                    let (left, top, width, height) = code_copy_bounds_in_pane(
+                        slot,
+                        text_width,
+                        self.preview_scroll,
+                        self.scale_factor,
+                        panes.preview,
+                    );
+                    ((left..=left + width).contains(&x) && (top..=top + height).contains(&y))
+                        .then_some((index, true))
+                });
+        }
+        if self.document.mode != DocumentMode::Reading
+            || !panes.source.contains(x, y - DOCUMENT_VIEWPORT_TOP)
+        {
             return None;
         }
         let text_width = pane_text_width(panes.source, self.scale_factor);
@@ -12880,12 +13151,21 @@ impl App {
                 panes.source,
             );
             ((left..=left + width).contains(&x) && (top..=top + height).contains(&y))
-                .then_some(index)
+                .then_some((index, false))
         })
     }
 
-    fn copy_code_block(&mut self, block: usize) {
-        let Some(range) = code_block_source_range(&self.document.blocks, block) else {
+    fn copy_code_block(&mut self, block: usize, preview: bool) {
+        if preview && self.view_requests.contains_key(&self.document.id) {
+            self.set_notice("la vista previa se está actualizando; probá de nuevo en un momento");
+            return;
+        }
+        let blocks = if preview {
+            &self.document.rendered_blocks
+        } else {
+            &self.document.blocks
+        };
+        let Some(range) = code_block_source_range(blocks, block) else {
             self.set_notice("no se pudo localizar el bloque de código en la fuente");
             return;
         };
@@ -12901,9 +13181,7 @@ impl App {
             .ok()
             .filter(|prefix| prefix.chars().all(|c| c == ' '))
             .map_or(0, |prefix| prefix.len());
-        let Some(source) = self
-            .document
-            .blocks
+        let Some(source) = blocks
             .get(block)
             .and_then(|_| self.document.source.slice_bytes(range).ok())
         else {
@@ -12912,7 +13190,7 @@ impl App {
         };
         let content = code_copy_text(&source, fence_indent);
         if self.write_text_to_clipboard(content, "código copiado al portapapeles") {
-            self.code_copied = Some((self.document.id, block));
+            self.code_copied = Some((self.document.id, block, preview));
         }
     }
 
@@ -13349,6 +13627,7 @@ impl App {
         } else {
             0.0
         };
+        self.preview_scroll = preview_scroll;
         let preview_visible = if split {
             let positions = visible_order_range(
                 &self.preview_slots,
@@ -13476,12 +13755,14 @@ impl App {
         let pane_split_candidates = pane_split_axis.map(|_| {
             self.pane_split_candidates
                 .iter()
-                .map(|document_id| {
-                    document_by_id(&self.document, &self.inactive_documents, *document_id)
+                .map(|document_id| match *document_id {
+                    SPLIT_NEW_DOCUMENT => "Documento nuevo".to_string(),
+                    SPLIT_OPEN_FILE => "Abrir un archivo…".to_string(),
+                    _ => document_by_id(&self.document, &self.inactive_documents, *document_id)
                         .map(|document| {
                             tab_label(&document.path, document.is_dirty(), document.pinned, 42)
                         })
-                        .unwrap_or_else(|| "Pestaña no disponible".to_string())
+                        .unwrap_or_else(|| "Pestaña no disponible".to_string()),
                 })
                 .collect::<Vec<_>>()
         });
@@ -13493,7 +13774,7 @@ impl App {
             let selected = self.pane_split_match % candidates.len().max(1);
             let range = panel_window(candidates.len(), selected, PANEL_CAPACITY);
             Some(NavigationPanelRows {
-                title: format!("Dividir {} · elegí una pestaña", axis.label()),
+                title: format!("Dividir {} · ¿qué mostrar en el panel nuevo?", axis.label()),
                 items: range
                     .clone()
                     .map(|index| (index == selected, candidates[index].clone()))
@@ -13681,14 +13962,19 @@ impl App {
             &mut self.layout_cx,
             self.palette,
         );
-        let copied_code_block = self
+        let copied = self
             .code_copied
-            .filter(|(document_id, _)| *document_id == self.document.id)
+            .filter(|(document_id, _, _)| *document_id == self.document.id)
             .filter(|_| {
                 self.notice_visible_until
                     .is_some_and(|until| until > Instant::now())
-            })
-            .map(|(_, block)| block);
+            });
+        let copied_code_block = copied
+            .filter(|(_, _, preview)| !preview)
+            .map(|(_, block, _)| block);
+        let copied_preview_block = copied
+            .filter(|(_, _, preview)| *preview)
+            .map(|(_, block, _)| block);
         let contextual_toolbar_actions = contextual_toolbar_actions(self.document.mode);
         let contextual_toolbar_label_layouts = contextual_toolbar_actions
             .iter()
@@ -14124,6 +14410,33 @@ impl App {
                     continue;
                 };
                 let top = pane_screen_y(slot.y, *scroll, panes.source);
+                // Número de línea en el margen de la fuente. Solo el primer
+                // tramo de una línea larga lo lleva.
+                if context_mode.is_editable()
+                    && let Some(block) = blocks.get(i)
+                {
+                    let line = document.source.line_at_byte(block.source.start);
+                    if document.source.line_start_byte(line) == block.source.start {
+                        let number = build_ui_text_layout(
+                            &(line + 1).to_string(),
+                            font_cx,
+                            layout_cx,
+                            palette.dim,
+                            11.0 * *scale_factor,
+                            false,
+                            None,
+                        );
+                        draw_text_layout(
+                            pixmap,
+                            scale_cx,
+                            glyphs,
+                            &number,
+                            (panes.source.x + slot.x - 16.0 * *scale_factor - number.width())
+                                .round(),
+                            (top + 2.0 * *scale_factor).round(),
+                        );
+                    }
+                }
 
                 if let CachedBlockLayout::Table(cells) = cached_layout {
                     let columns = cells.len().max(1) as f32;
@@ -14541,7 +14854,7 @@ impl App {
                                 &document.rendered_blocks,
                                 preview_slots,
                                 index,
-                                view_top,
+                                preview_scroll,
                             ) && let Some(range) =
                                 code_block_range(&document.rendered_blocks, index)
                                 && let (Some(first), Some(last)) = (
@@ -14560,6 +14873,34 @@ impl App {
                                     &elevated_paint,
                                     Transform::identity(),
                                     None,
+                                );
+                            }
+                            if is_first_code_block(&document.rendered_blocks, index) {
+                                let (bx, by, bw, bh) = code_copy_bounds_in_pane(
+                                    slot,
+                                    preview_ancho_texto,
+                                    preview_scroll,
+                                    *scale_factor,
+                                    preview_pane,
+                                );
+                                let ac = palette.accent;
+                                let mut button = Paint::default();
+                                button.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 42));
+                                if let Some(rect) = Rect::from_xywh(bx, by, bw, bh) {
+                                    pixmap.fill_rect(rect, &button, Transform::identity(), None);
+                                }
+                                let label = if copied_preview_block == Some(index) {
+                                    &code_copied_layout
+                                } else {
+                                    &code_copy_layout
+                                };
+                                draw_text_layout(
+                                    pixmap,
+                                    scale_cx,
+                                    glyphs,
+                                    label,
+                                    bx + 8.0,
+                                    by + 4.0,
                                 );
                             }
                         }
@@ -15466,14 +15807,17 @@ impl App {
 
         if let (Some(menu), Some(layouts)) = (menu.as_ref(), menu_layouts) {
             let (x, y) = menu.origin;
-            if let Some(rect) = Rect::from_xywh(
+            // Los menús flotan sobre el documento con la misma elevación
+            // suave que avisos y diálogos.
+            draw_floating_surface(
+                pixmap,
                 x,
                 y,
                 CONTEXT_MENU_WIDTH,
                 menu.row_height * menu.actions.len() as f32,
-            ) {
-                pixmap.fill_rect(rect, &floating_paint, Transform::identity(), None);
-            }
+                8.0,
+                *palette,
+            );
             for (row, (action, layout)) in
                 menu.actions.iter().copied().zip(layouts.iter()).enumerate()
             {
@@ -15482,14 +15826,16 @@ impl App {
                     let ac = palette.accent;
                     let mut hover = Paint::default();
                     hover.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 38));
-                    if let Some(rect) = Rect::from_xywh(
-                        x,
-                        y + row as f32 * menu.row_height,
-                        CONTEXT_MENU_WIDTH,
-                        menu.row_height,
-                    ) {
-                        pixmap.fill_rect(rect, &hover, Transform::identity(), None);
-                    }
+                    hover.anti_alias = true;
+                    fill_rounded_rect(
+                        pixmap,
+                        x + 4.0,
+                        y + row as f32 * menu.row_height + 2.0,
+                        CONTEXT_MENU_WIDTH - 8.0,
+                        menu.row_height - 4.0,
+                        6.0,
+                        &hover,
+                    );
                 }
                 for line in layout.lines() {
                     for entry in line.items() {
@@ -16189,6 +16535,7 @@ fn main() {
         }),
         notice_visible_until: None,
         code_copied: None,
+        preview_scroll: 0.0,
         reveal_cursor_pending: false,
         dialog: None,
         dialog_document: None,
@@ -17151,6 +17498,36 @@ mod pruebas {
                 kind: block.kind,
             })
             .collect()
+    }
+
+    #[test]
+    fn la_fuente_colorea_solo_marcadores_de_bloque() {
+        let marcados = |line: &str| {
+            source_syntax_spans(line, 100)
+                .iter()
+                .filter(|span| span.style.syntax)
+                .map(|span| {
+                    assert_eq!(span.source.start, 100 + span.start);
+                    &line[span.start..span.end]
+                })
+                .collect::<Vec<_>>()
+                .join("|")
+        };
+        assert_eq!(marcados("## Título"), "## ");
+        assert_eq!(marcados("- [ ] tarea"), "- [ ] ");
+        assert_eq!(marcados("  12. paso"), "12. ");
+        assert_eq!(marcados("> > cita"), "> > ");
+        assert_eq!(marcados("```rust"), "```rust");
+        assert_eq!(marcados("#hashtag sin espacio"), "");
+        assert_eq!(marcados("texto - con guion"), "");
+        assert_eq!(marcados("2026. año"), "2026. ");
+        assert_eq!(marcados(""), "");
+        let titulo = source_syntax_spans("# Hola", 0);
+        assert!(
+            titulo
+                .iter()
+                .any(|span| span.style.strong && span.start == 2)
+        );
     }
 
     #[test]
