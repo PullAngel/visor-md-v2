@@ -755,12 +755,16 @@ fn visible_workspace_tree_rows(
         .collect()
 }
 
+/// Nombre visible de la carpeta. Acepta ambos separadores para que una ruta
+/// escrita en Windows se muestre igual en Linux.
 fn workspace_name(root: Option<&Path>) -> String {
-    root.and_then(|path| path.file_name())
-        .and_then(|name| name.to_str())
-        .filter(|name| !name.is_empty())
-        .unwrap_or("Carpeta")
-        .to_string()
+    root.map(|path| path.to_string_lossy())
+        .and_then(|path| {
+            path.split(['/', '\\'])
+                .rfind(|segment| !segment.is_empty())
+                .map(str::to_owned)
+        })
+        .unwrap_or_else(|| "Carpeta".to_string())
 }
 
 fn workspace_panel_title(root: Option<&Path>, note_count: usize) -> String {
@@ -17057,6 +17061,9 @@ mod pruebas {
         fs::create_dir_all(root.join("sub")).unwrap();
 
         assert!(paths_refer_to_same_file(&path, &alternate));
+        // La equivalencia léxica de rutas UNC solo existe en Windows; en Linux
+        // la barra invertida es un carácter más del nombre.
+        #[cfg(windows)]
         assert!(paths_refer_to_same_file(
             std::path::Path::new(r"\\servidor\notas\nota.md"),
             std::path::Path::new(r"\\servidor\notas\.\nota.md")

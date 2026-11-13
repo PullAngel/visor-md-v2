@@ -176,10 +176,26 @@ pub(crate) fn is_reparse_point(metadata: &fs::Metadata) -> bool {
     }
 }
 
+/// Una bóveda puede viajar entre Windows y Linux. Por eso la forma léxica de
+/// una referencia se evalúa igual en ambos sistemas: `\` cuenta como
+/// separador, y una letra de unidad o un prefijo UNC nunca son relativos.
+fn validate_portable_reference(text: &str) -> Result<(), VfsError> {
+    let bytes = text.as_bytes();
+    let drive = bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':';
+    if drive || text.starts_with('/') || text.starts_with('\\') {
+        return Err(VfsError::AbsoluteOrPrefixedPath);
+    }
+    if text.split(['/', '\\']).any(|segment| segment == "..") {
+        return Err(VfsError::ParentTraversal);
+    }
+    Ok(())
+}
+
 fn validate_relative_reference(reference: &Path) -> Result<(), VfsError> {
     if reference.as_os_str().is_empty() {
         return Err(VfsError::EmptyPath);
     }
+    validate_portable_reference(&reference.to_string_lossy())?;
     for component in reference.components() {
         match component {
             Component::Prefix(_) | Component::RootDir => {
@@ -238,6 +254,27 @@ mod tests {
             vfs.resolve_existing(Path::new("apuntes/redes.md:oculto")),
             Err(VfsError::AlternateDataStream)
         );
+        // Las mismas referencias hostiles se rechazan igual en todo sistema.
+        for (reference, expected) in [
+            (
+                r"\\servidor\recurso\nota.md",
+                VfsError::AbsoluteOrPrefixedPath,
+            ),
+            (
+                "//servidor/recurso/nota.md",
+                VfsError::AbsoluteOrPrefixedPath,
+            ),
+            ("c:nota.md", VfsError::AbsoluteOrPrefixedPath),
+            ("/etc/passwd", VfsError::AbsoluteOrPrefixedPath),
+            (r"apuntes\..\..\secreto.md", VfsError::ParentTraversal),
+            (r"..\secreto.md", VfsError::ParentTraversal),
+        ] {
+            assert_eq!(
+                vfs.resolve_existing(Path::new(reference)),
+                Err(expected),
+                "{reference}"
+            );
+        }
     }
 
     #[test]

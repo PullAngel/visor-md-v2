@@ -361,7 +361,12 @@ fn index_workspace_with_previous(
             index.skipped += 1;
             continue;
         };
-        for entry in entries.flatten() {
+        // El orden de `read_dir` depende del sistema de archivos. Ordenar por
+        // nombre hace que los límites de contenido elijan las mismas notas en
+        // Windows y Linux, y que dos indexaciones seguidas coincidan.
+        let mut entries = entries.flatten().collect::<Vec<_>>();
+        entries.sort_by_key(|entry| entry.file_name());
+        for entry in entries {
             if cancelled.load(Ordering::Relaxed) {
                 index.cancelled = true;
                 return index;

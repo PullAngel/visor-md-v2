@@ -192,6 +192,13 @@ El contenido no puede cargar automáticamente:
 - destinos fuera del espacio permitido;
 - symlinks, junctions o reparse points en componentes secundarios.
 
+La forma de una referencia se evalúa igual en Windows y Linux, porque una
+bóveda viaja entre sistemas: la barra invertida cuenta como separador, una
+letra de unidad (`C:`) o un prefijo `//`/`\` nunca son relativos y `..` se
+rechaza con cualquiera de los dos separadores. En Linux esto rechaza algunos
+nombres de archivo legales pero inusuales; es una pérdida mínima frente a que
+una nota preparada para Windows se comporte distinto al abrirla en Linux.
+
 El hover de enlaces clasifica y etiqueta destinos web, correo, archivos
 relativos y formatos bloqueados. Esta clasificación no abre ni resuelve nada;
 una futura acción de clic deberá volver a aplicar la política correspondiente.
