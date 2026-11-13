@@ -161,19 +161,19 @@ impl WorkspaceRoot {
 /// de reparse point. La raíz elegida explícitamente queda fuera de esta regla;
 /// solo se aplica a componentes que proceden de una referencia secundaria.
 pub(crate) fn is_reparse_point(metadata: &fs::Metadata) -> bool {
-    if metadata.file_type().is_symlink() {
-        return true;
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
-        metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
-    }
-    #[cfg(not(windows))]
-    {
-        false
-    }
+    metadata.file_type().is_symlink() || has_windows_reparse_attribute(metadata)
+}
+
+#[cfg(windows)]
+fn has_windows_reparse_attribute(metadata: &fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+    metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+}
+
+#[cfg(not(windows))]
+fn has_windows_reparse_attribute(_metadata: &fs::Metadata) -> bool {
+    false
 }
 
 /// Una bóveda puede viajar entre Windows y Linux. Por eso la forma léxica de
