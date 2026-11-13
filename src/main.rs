@@ -286,13 +286,59 @@ const LIST_ACTIONS: [AppAction; 3] = [
     AppAction::InsertOrderedList,
     AppAction::InsertTask,
 ];
-const INSERT_ACTIONS: [AppAction; 6] = [
+/// Símbolos, entidades frecuentes y emojis de estudio. Se insertan como texto
+/// Unicode literal: el archivo sigue siendo Markdown portable.
+const SYMBOLS: [(&str, &str); 40] = [
+    ("→", "flecha a la derecha"),
+    ("←", "flecha a la izquierda"),
+    ("↔", "flecha doble"),
+    ("⇒", "implica"),
+    ("✓", "visto"),
+    ("≡", "equivalente"),
+    ("•", "viñeta"),
+    ("…", "puntos suspensivos"),
+    ("—", "raya"),
+    ("«»", "comillas latinas"),
+    ("±", "más o menos"),
+    ("×", "multiplicación"),
+    ("÷", "división"),
+    ("≠", "distinto"),
+    ("≈", "aproximado"),
+    ("≤", "menor o igual"),
+    ("≥", "mayor o igual"),
+    ("∞", "infinito"),
+    ("√", "raíz"),
+    ("π", "pi"),
+    ("Σ", "sumatoria"),
+    ("Δ", "delta"),
+    ("Ω", "ohm"),
+    ("µ", "micro"),
+    ("°", "grado"),
+    ("€", "euro"),
+    ("©", "copyright"),
+    ("™", "marca"),
+    ("§", "sección"),
+    ("¶", "párrafo"),
+    ("✅", "emoji hecho"),
+    ("❌", "emoji error"),
+    ("⚠️", "emoji atención"),
+    ("❓", "emoji duda"),
+    ("💡", "emoji idea"),
+    ("📌", "emoji importante"),
+    ("📚", "emoji estudio"),
+    ("⭐", "emoji destacado"),
+    ("🔥", "emoji urgente"),
+    ("👍", "emoji de acuerdo"),
+];
+
+const INSERT_ACTIONS: [AppAction; 7] = [
     AppAction::InsertLink,
     AppAction::InsertWikiLink,
     AppAction::InsertTable,
     AppAction::InsertCallout,
     AppAction::InsertCodeBlock,
     AppAction::InsertHorizontalRule,
+    AppAction::InsertSymbol,
 ];
 /// Variantes de escritura reunidas en un segundo nivel. No desplazan las
 /// acciones frecuentes ni convierten la barra en una lista de iconos opacos.
@@ -1083,6 +1129,8 @@ enum AppAction {
     ToggleTheme,
     ToggleReduceMotion,
     TogglePinOnTop,
+    InsertSymbol,
+    ToggleFloatingOutline,
     Cut,
     FormatBold,
     FormatItalic,
@@ -1137,7 +1185,7 @@ enum AppAction {
     CommandPalette,
 }
 
-const APP_ACTIONS: [AppAction; 66] = [
+const APP_ACTIONS: [AppAction; 68] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -1147,6 +1195,8 @@ const APP_ACTIONS: [AppAction; 66] = [
     AppAction::ToggleTheme,
     AppAction::ToggleReduceMotion,
     AppAction::TogglePinOnTop,
+    AppAction::InsertSymbol,
+    AppAction::ToggleFloatingOutline,
     AppAction::SaveAs,
     AppAction::CloseDocument,
     AppAction::CloseDocumentPane,
@@ -1224,6 +1274,8 @@ impl AppAction {
             Self::ToggleTheme => "Cambiar tema día o noche · T en lectura",
             Self::ToggleReduceMotion => "Activar o desactivar movimiento reducido",
             Self::TogglePinOnTop => "Fijar la ventana encima de las demás",
+            Self::InsertSymbol => "Insertar símbolo o emoji",
+            Self::ToggleFloatingOutline => "Mostrar u ocultar el índice flotante",
             Self::Cut => "Cortar · Ctrl+X",
             Self::FormatBold => "Aplicar negrita · Ctrl+B",
             Self::FormatItalic => "Aplicar cursiva · Ctrl+I",
@@ -1280,12 +1332,27 @@ impl AppAction {
     }
 }
 
+/// Minúsculas sin tildes ni diéresis: "simbolo" encuentra "Símbolo".
+fn search_fold(text: &str) -> String {
+    text.to_lowercase()
+        .chars()
+        .map(|character| match character {
+            'á' | 'à' | 'ä' | 'â' => 'a',
+            'é' | 'è' | 'ë' | 'ê' => 'e',
+            'í' | 'ì' | 'ï' | 'î' => 'i',
+            'ó' | 'ò' | 'ö' | 'ô' => 'o',
+            'ú' | 'ù' | 'ü' | 'û' => 'u',
+            other => other,
+        })
+        .collect()
+}
+
 fn filtered_actions_from(actions: &[AppAction], query: &str) -> Vec<AppAction> {
-    let query = query.trim().to_lowercase();
+    let query = search_fold(query.trim());
     actions
         .iter()
         .copied()
-        .filter(|action| query.is_empty() || action.label().to_lowercase().contains(&query))
+        .filter(|action| query.is_empty() || search_fold(action.label()).contains(&query))
         .collect()
 }
 
@@ -3490,6 +3557,20 @@ fn draw_toolbar_icon(
                 path.move_to(left + 3.0, y);
                 path.line_to(right - 3.0, y);
             }
+        }
+        AppAction::InsertSymbol => {
+            // Estrella de cinco puntas simplificada.
+            path.move_to(center_x, top + 1.0);
+            path.line_to(center_x + 2.5, center_y - 1.0);
+            path.line_to(right - 1.0, center_y - 1.0);
+            path.line_to(center_x + 3.5, center_y + 2.5);
+            path.line_to(center_x + 5.0, bottom - 1.0);
+            path.line_to(center_x, center_y + 4.5);
+            path.line_to(center_x - 5.0, bottom - 1.0);
+            path.line_to(center_x - 3.5, center_y + 2.5);
+            path.line_to(left + 1.0, center_y - 1.0);
+            path.line_to(center_x - 2.5, center_y - 1.0);
+            path.close();
         }
         AppAction::InsertHorizontalRule => {
             path.move_to(left + 3.0, center_y);
@@ -6374,6 +6455,7 @@ fn apply_view_outcome(document: &mut DocumentState, outcome: ParseOutcome) {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct DocumentMetrics {
     words: usize,
+    characters: usize,
     reading_minutes: usize,
     estimated_tokens: usize,
 }
@@ -6392,6 +6474,7 @@ impl DocumentMetrics {
             .count();
         Self {
             words,
+            characters: visible_characters,
             reading_minutes: words.div_ceil(200),
             // Regla deliberadamente simple: orienta fragmentación y copias,
             // no pretende reemplazar el tokenizer de un proveedor concreto.
@@ -6676,6 +6759,10 @@ struct App {
     /// cuál documento quería ver la persona. Solo existe mientras el selector
     /// flotante está abierto.
     pane_split_picker: Option<DocumentPaneAxis>,
+    /// Selector de símbolos abierto y su fila elegida.
+    symbol_picker: Option<usize>,
+    /// Filas del índice flotante del último cuadro: rectángulo y bloque.
+    floating_outline_rows: Vec<(DialogRect, usize)>,
     pane_split_candidates: Vec<u64>,
     pane_split_match: usize,
     /// Foco visible de la barra superior. F6 lo activa; no sustituye los
@@ -7853,6 +7940,12 @@ impl ApplicationHandler<AppEvent> for App {
                         }
                     }
                     if let Some((x, y)) = self.pointer
+                        && self.floating_outline_click(x, y)
+                    {
+                        self.selecting = false;
+                        return;
+                    }
+                    if let Some((x, y)) = self.pointer
                         && self.handle_pane_header_click(x, y)
                     {
                         self.selecting = false;
@@ -8049,7 +8142,8 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::Ime(Ime::Commit(text)) if self.command_palette.is_some() => {
                 self.append_command_palette_text(&text);
             }
-            WindowEvent::Ime(Ime::Commit(_)) if self.pane_split_picker.is_some() => {}
+            WindowEvent::Ime(Ime::Commit(_))
+                if self.pane_split_picker.is_some() || self.symbol_picker.is_some() => {}
             WindowEvent::Ime(Ime::Commit(text)) if self.document.mode.is_editable() => {
                 self.ime_preedit = None;
                 self.edit_source(|editor, source| editor.insert(source, text.as_str()));
@@ -8065,6 +8159,9 @@ impl ApplicationHandler<AppEvent> for App {
             }
             WindowEvent::KeyboardInput { event, .. } if self.pane_split_picker.is_some() => {
                 self.handle_pane_split_picker_key(&event);
+            }
+            WindowEvent::KeyboardInput { event, .. } if self.symbol_picker.is_some() => {
+                self.handle_symbol_picker_key(&event);
             }
             WindowEvent::KeyboardInput { event, .. } if self.command_palette.is_some() => {
                 self.handle_command_palette_key(&event);
@@ -8723,6 +8820,8 @@ impl App {
             AppAction::ToggleTheme => self.toggle_theme(),
             AppAction::ToggleReduceMotion => self.toggle_reduce_motion(),
             AppAction::TogglePinOnTop => self.toggle_pin_on_top(),
+            AppAction::InsertSymbol => self.open_symbol_picker(),
+            AppAction::ToggleFloatingOutline => self.toggle_floating_outline(),
             AppAction::Cut => self.cut_source_selection(),
             AppAction::FormatBold => self.apply_markdown_surround("**", "**", "texto"),
             AppAction::FormatItalic => self.apply_markdown_surround("_", "_", "texto"),
@@ -8885,6 +8984,39 @@ impl App {
         } else {
             "la ventana ya no queda encima de las demás"
         });
+    }
+
+    fn toggle_floating_outline(&mut self) {
+        self.settings.floating_outline = !self.settings.floating_outline;
+        let stored = self.settings.store().is_ok();
+        self.set_notice(match (self.settings.floating_outline, stored) {
+            (_, false) => "la preferencia del índice flotante no pudo guardarse",
+            (true, true) => {
+                "índice flotante activado · aparece en lectura si hay espacio al costado"
+            }
+            (false, true) => "índice flotante oculto",
+        });
+    }
+
+    /// Clic en una fila del índice flotante: lleva el encabezado arriba.
+    fn floating_outline_click(&mut self, x: f32, y: f32) -> bool {
+        let Some(block) = self
+            .floating_outline_rows
+            .iter()
+            .find(|(rect, _)| rect.contains(x, y))
+            .map(|(_, block)| *block)
+        else {
+            return false;
+        };
+        if !self.reveal_block(block)
+            && let Some(slot) = self.slots.get(block)
+        {
+            self.set_clamped_focused_pane_scroll(slot.y);
+        }
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+        true
     }
 
     fn toggle_reduce_motion(&mut self) {
@@ -9358,6 +9490,67 @@ impl App {
         }
     }
 
+    fn open_symbol_picker(&mut self) {
+        if !self.document.mode.is_editable() {
+            self.set_notice("activá Editar para insertar símbolos en el Markdown");
+            return;
+        }
+        self.context_menu = None;
+        self.dismiss_navigation_panel();
+        self.symbol_picker = Some(0);
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    /// Inserta el símbolo como texto en el cursor, con un único deshacer.
+    fn insert_symbol(&mut self, index: usize) {
+        self.symbol_picker = None;
+        let Some((symbol, name)) = SYMBOLS.get(index).copied() else {
+            return;
+        };
+        if !self.document.mode.is_editable() {
+            self.set_notice("activá Editar para insertar símbolos en el Markdown");
+            return;
+        }
+        self.edit_source(|editor, source| editor.insert(source, symbol));
+        self.set_notice(&format!("{name} insertado · Ctrl+Z para deshacer"));
+    }
+
+    fn handle_symbol_picker_key(&mut self, event: &KeyEvent) {
+        if event.state != ElementState::Pressed {
+            return;
+        }
+        let count = SYMBOLS.len();
+        let selected = self.symbol_picker.unwrap_or(0) % count;
+        match event.physical_key {
+            PhysicalKey::Code(KeyCode::Escape) => {
+                self.symbol_picker = None;
+                self.set_notice("selector de símbolos cerrado");
+            }
+            PhysicalKey::Code(KeyCode::ArrowDown | KeyCode::Tab) => {
+                self.symbol_picker = Some((selected + 1) % count);
+            }
+            PhysicalKey::Code(KeyCode::ArrowUp) => {
+                self.symbol_picker = Some((selected + count - 1) % count);
+            }
+            PhysicalKey::Code(KeyCode::PageDown) => {
+                self.symbol_picker = Some((selected + PANEL_CAPACITY).min(count - 1));
+            }
+            PhysicalKey::Code(KeyCode::PageUp) => {
+                self.symbol_picker = Some(selected.saturating_sub(PANEL_CAPACITY));
+            }
+            PhysicalKey::Code(KeyCode::Enter) if !event.repeat => {
+                self.insert_symbol(selected);
+                return;
+            }
+            _ => return,
+        }
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
     fn handle_pane_split_picker_key(&mut self, event: &KeyEvent) {
         if event.state != ElementState::Pressed || event.repeat {
             return;
@@ -9387,6 +9580,7 @@ impl App {
 
     fn navigation_panel_is_open(&self) -> bool {
         self.pane_split_picker.is_some()
+            || self.symbol_picker.is_some()
             || self.command_palette.is_some()
             || self.workspace_search_query.is_some()
             || self.workspace_paths.is_some()
@@ -9439,6 +9633,8 @@ impl App {
         }
         let item_count = if self.pane_split_picker.is_some() {
             self.pane_split_candidates.len()
+        } else if self.symbol_picker.is_some() {
+            SYMBOLS.len()
         } else if self.command_palette.is_some() {
             self.command_palette_actions().len()
         } else if self.workspace_search_query.is_some() {
@@ -9463,6 +9659,7 @@ impl App {
     /// una columna acoplada debe permanecer hasta que la persona la cierre.
     fn dismiss_navigation_panel(&mut self) {
         self.clear_pane_split_picker();
+        self.symbol_picker = None;
         self.workspace_search_query = None;
         self.workspace_paths = None;
         self.backlink_paths = None;
@@ -9507,6 +9704,12 @@ impl App {
             let geometry = panel_geometry(count, selected);
             if let Some(index) = panel_item_at(x, y, count, selected, geometry) {
                 self.choose_document_pane_split(index);
+                return true;
+            }
+        } else if let Some(selected) = self.symbol_picker {
+            let geometry = panel_geometry(SYMBOLS.len(), selected);
+            if let Some(index) = panel_item_at(x, y, SYMBOLS.len(), selected, geometry) {
+                self.insert_symbol(index);
                 return true;
             }
         } else if let Some(selected) = self.command_palette {
@@ -13397,7 +13600,21 @@ impl App {
         });
         let workspace_panel_capacity =
             panel_capacity(workspace_column_geometry(w.get() as f32, h.get() as f32));
-        let navigation_panel_rows = if let (Some(axis), Some(candidates)) =
+        let navigation_panel_rows = if let Some(selected) = self.symbol_picker {
+            let selected = selected % SYMBOLS.len();
+            let range = panel_window(SYMBOLS.len(), selected, PANEL_CAPACITY);
+            Some(NavigationPanelRows {
+                title: "Insertar símbolo o emoji".to_string(),
+                items: range
+                    .clone()
+                    .map(|index| {
+                        let (symbol, name) = SYMBOLS[index];
+                        (index == selected, format!("{symbol}   {name}"))
+                    })
+                    .collect(),
+                footer: format!("{} · Enter inserta", panel_footer(SYMBOLS.len(), range)),
+            })
+        } else if let (Some(axis), Some(candidates)) =
             (pane_split_axis, pane_split_candidates.as_ref())
         {
             let selected = self.pane_split_match % candidates.len().max(1);
@@ -13631,6 +13848,85 @@ impl App {
         let toolbar_hint_layout = toolbar_hint_label.map(|label| {
             build_menu_layout(label, &mut self.font_cx, &mut self.layout_cx, self.palette)
         });
+        // Índice flotante: solo en lectura, con títulos H1–H3 y únicamente si
+        // al costado de la columna de texto queda espacio libre. Nunca tapa
+        // el documento.
+        const OUTLINE_WIDTH: f32 = 220.0;
+        const OUTLINE_ROW: f32 = 24.0;
+        const OUTLINE_MAX_ROWS: usize = 14;
+        let outline_free_width =
+            panes.source.width - (MARGIN * 2.0 + MAX_MEASURE) * self.scale_factor;
+        let floating_outline = (self.settings.floating_outline
+            && self.document.mode == DocumentMode::Reading
+            && outline_free_width >= OUTLINE_WIDTH + 24.0)
+            .then(|| {
+                let headings = self
+                    .document
+                    .blocks
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, block)| match block.kind {
+                        Kind::Heading(level) if level <= 3 => Some((index, level, block)),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+                let current = headings
+                    .iter()
+                    .rposition(|(index, _, _)| {
+                        self.slots
+                            .get(*index)
+                            .is_some_and(|slot| slot.height >= 0.0 && slot.y <= self.scroll + 24.0)
+                    })
+                    .unwrap_or(0);
+                let range = panel_window(headings.len(), current, OUTLINE_MAX_ROWS);
+                let x = panes.source.x + panes.source.width - OUTLINE_WIDTH - 16.0;
+                let y = DOCUMENT_VIEWPORT_TOP + panes.source.y + 20.0;
+                let palette = self.palette;
+                let rows = range
+                    .clone()
+                    .enumerate()
+                    .map(|(row, heading)| {
+                        let (index, level, block) = headings[heading];
+                        let active = heading == current;
+                        let label = build_ui_text_layout(
+                            &abbreviated_label(&block.text, 34),
+                            &mut self.font_cx,
+                            &mut self.layout_cx,
+                            if active { palette.text } else { palette.dim },
+                            12.0,
+                            active,
+                            None,
+                        );
+                        let rect = DialogRect {
+                            x,
+                            y: y + 30.0 + row as f32 * OUTLINE_ROW,
+                            width: OUTLINE_WIDTH,
+                            height: OUTLINE_ROW,
+                        };
+                        (rect, index, level, active, label)
+                    })
+                    .collect::<Vec<_>>();
+                let title = build_ui_text_layout(
+                    "En este documento",
+                    &mut self.font_cx,
+                    &mut self.layout_cx,
+                    palette.dim,
+                    11.0,
+                    true,
+                    None,
+                );
+                let height = 30.0 + rows.len() as f32 * OUTLINE_ROW + 8.0;
+                (x, y, height, title, rows)
+            })
+            .filter(|(_, _, _, _, rows)| !rows.is_empty());
+        self.floating_outline_rows = floating_outline
+            .as_ref()
+            .map(|(_, _, _, _, rows)| {
+                rows.iter()
+                    .map(|(rect, index, _, _, _)| (*rect, *index))
+                    .collect()
+            })
+            .unwrap_or_default();
         // Un documento vacío en edición invita a escribir sin parecer un error.
         let empty_hint = (self.document.mode.is_editable()
             && self.document.source.is_empty()
@@ -13915,8 +14211,9 @@ impl App {
             format!(" · Lín {}, Col {}", line + 1, column + 1)
         });
         let words = self.document.metrics.words;
+        let characters = self.document.metrics.characters;
         let status_right = format!(
-            "{words} palabras{} · {document_mode_label} · {document_state_label}{workspace_status}",
+            "{words} palabras · {characters} caracteres{} · {document_mode_label} · {document_state_label}{workspace_status}",
             cursor_position.unwrap_or_default()
         );
         let status_layout = build_ui_text_layout(
@@ -14723,6 +15020,34 @@ impl App {
             }
         }
 
+        if let Some((x, y, height, title, rows)) = &floating_outline {
+            draw_floating_surface(pixmap, *x, *y, OUTLINE_WIDTH, *height, 10.0, *palette);
+            draw_text_layout(pixmap, scale_cx, glyphs, title, x + 14.0, y + 10.0);
+            for (rect, _, level, active, label) in rows {
+                let indent = f32::from(level.saturating_sub(1)) * 12.0;
+                if *active {
+                    let mut marker = Paint::default();
+                    let accent = palette.accent;
+                    marker.set_color(Color::from_rgba8(accent.0, accent.1, accent.2, 255));
+                    if let Some(bar) = Rect::from_xywh(
+                        rect.x + 8.0 + indent,
+                        rect.y + 5.0,
+                        2.0,
+                        rect.height - 10.0,
+                    ) {
+                        pixmap.fill_rect(bar, &marker, Transform::identity(), None);
+                    }
+                }
+                draw_text_layout(
+                    pixmap,
+                    scale_cx,
+                    glyphs,
+                    label,
+                    rect.x + 16.0 + indent,
+                    (rect.y + (rect.height - label.height()) * 0.5).round(),
+                );
+            }
+        }
         if let Some(hint) = &empty_hint {
             draw_text_layout(
                 pixmap,
@@ -16310,6 +16635,8 @@ fn main() {
         command_palette_query: String::new(),
         command_palette_scope: CommandPaletteScope::All,
         pane_split_picker: None,
+        symbol_picker: None,
+        floating_outline_rows: Vec::new(),
         pane_split_candidates: Vec::new(),
         pane_split_match: 0,
         toolbar_focus: None,
@@ -16793,10 +17120,10 @@ mod pruebas {
 
         // Incluye documento, workspace, estudio y accesibilidad sin convertir
         // la paleta en un menú de IDE: las familias densas también tienen
-        // ámbitos propios desde el menú contextual. Superar 66 exige revisar
-        // esa jerarquía antes de añadir otra acción. La 66 es fijar la ventana
-        // encima, accesible por teclado donde no hay chincheta en el chrome.
-        assert!(original_len <= 66, "el catálogo dejó de ser pequeño");
+        // ámbitos propios desde el menú contextual. Superar 68 exige revisar
+        // esa jerarquía antes de añadir otra acción. Las últimas fueron fijar
+        // la ventana encima, símbolos y emojis, y el índice flotante.
+        assert!(original_len <= 68, "el catálogo dejó de ser pequeño");
         assert_eq!(labels.len(), original_len);
     }
 
@@ -17284,6 +17611,21 @@ mod pruebas {
                 kind: block.kind,
             })
             .collect()
+    }
+
+    #[test]
+    fn los_simbolos_son_unicos_y_estan_en_insertar() {
+        let mut vistos = HashSet::new();
+        for (symbol, name) in SYMBOLS {
+            assert!(!symbol.is_empty() && !name.is_empty());
+            assert!(!symbol.chars().any(char::is_control));
+            assert!(vistos.insert(symbol), "{symbol} repetido");
+        }
+        assert!(INSERT_ACTIONS.contains(&AppAction::InsertSymbol));
+        assert!(APP_ACTIONS.contains(&AppAction::ToggleFloatingOutline));
+        assert!(!Settings::default().floating_outline);
+        assert_eq!(filtered_actions("simbolo"), vec![AppAction::InsertSymbol]);
+        assert_eq!(filtered_actions("SÍMBOLO"), vec![AppAction::InsertSymbol]);
     }
 
     #[test]

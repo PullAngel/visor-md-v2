@@ -44,6 +44,8 @@ pub(crate) struct Settings {
     /// Preferencia explícita local. No intenta inferir una configuración de
     /// accesibilidad del sistema que esta capa todavía no puede consultar.
     pub(crate) reduce_motion: bool,
+    /// Índice flotante en lectura, desactivado por defecto.
+    pub(crate) floating_outline: bool,
     document_modes: Vec<(String, DocumentModePreference)>,
 }
 
@@ -52,6 +54,7 @@ impl Default for Settings {
         Self {
             recovery_enabled: true,
             reduce_motion: false,
+            floating_outline: false,
             document_modes: Vec::new(),
         }
     }
@@ -112,6 +115,7 @@ fn load_from(path: &Path) -> Result<Settings, std::io::Error> {
     let mut version = None;
     let mut recovery_enabled = None;
     let mut reduce_motion = None;
+    let mut floating_outline = None;
     let mut document_modes = Vec::new();
     for line in source.lines().map(str::trim) {
         let Some((key, value)) = line.split_once('=') else {
@@ -128,6 +132,13 @@ fn load_from(path: &Path) -> Result<Settings, std::io::Error> {
             }
             "reduce_motion" => {
                 reduce_motion = match value.trim() {
+                    "true" => Some(true),
+                    "false" => Some(false),
+                    _ => None,
+                }
+            }
+            "floating_outline" => {
+                floating_outline = match value.trim() {
                     "true" => Some(true),
                     "false" => Some(false),
                     _ => None,
@@ -157,6 +168,7 @@ fn load_from(path: &Path) -> Result<Settings, std::io::Error> {
     Ok(Settings {
         recovery_enabled: recovery_enabled.unwrap_or(true),
         reduce_motion: reduce_motion.unwrap_or(false),
+        floating_outline: floating_outline.unwrap_or(false),
         document_modes: if matches!(version, Some(2) | Some(SETTINGS_VERSION)) {
             document_modes
         } else {
@@ -167,8 +179,8 @@ fn load_from(path: &Path) -> Result<Settings, std::io::Error> {
 
 fn store_to(path: &Path, settings: &Settings) -> Result<(), std::io::Error> {
     let mut source = format!(
-        "version={SETTINGS_VERSION}\nrecovery_enabled={}\nreduce_motion={}\n",
-        settings.recovery_enabled, settings.reduce_motion
+        "version={SETTINGS_VERSION}\nrecovery_enabled={}\nreduce_motion={}\nfloating_outline={}\n",
+        settings.recovery_enabled, settings.reduce_motion, settings.floating_outline
     );
     for (key, mode) in &settings.document_modes {
         source.push_str(&format!("document_mode={key},{}\n", mode.code()));
@@ -218,6 +230,7 @@ mod tests {
         let settings = Settings {
             recovery_enabled: false,
             reduce_motion: true,
+            floating_outline: true,
             document_modes: Vec::new(),
         };
         store_to(&path, &settings).unwrap();
@@ -227,6 +240,7 @@ mod tests {
             Settings {
                 recovery_enabled: false,
                 reduce_motion: true,
+                floating_outline: true,
                 document_modes: Vec::new(),
             }
         );

@@ -30,10 +30,11 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | CommonMark aplicable | Parcial | Corpus versionado de sintaxis soportada y política HTML; falta suite oficial seleccionada |
 | GFM elegido | Parcial | Tablas, tachado, tareas, autolinks y notas al pie; falta corpus sistemático |
 | Copia de tablas | Parcial | Menú y paleta copian la tabla elegida como TSV desde celdas semánticas; la selección parcial visible y las flechas respetan celdas, omiten separadores y conservan columna al subir o bajar. Falta QA manual. |
+| Índice flotante | Parcial | Acción de paleta que se recuerda entre sesiones, desactivada por defecto; en lectura muestra H1–H3 al costado solo si hay espacio libre, marca la sección actual y navega con un clic |
 | Índice de encabezados | Parcial | `Ctrl+Shift+L` muestra y enfoca encabezados; falta panel filtrable y accesible |
 | Plegado de secciones | Parcial | Triángulo nativo en encabezados, estado por pestaña y fuente intacta; falta QA visual y accesibilidad ampliada |
 | Búsqueda en documento | Parcial | `Ctrl+F` local, Unicode sin distinción de mayúsculas, recorrido por cada coincidencia, término activo resaltado y marcas globales por bloque; falta QA visual |
-| Palabras y tiempo de lectura | Parcial | La barra cuenta texto visible del último render y estima minutos a 200 palabras; falta QA con idiomas sin separación por espacios |
+| Palabras y tiempo de lectura | Parcial | La barra de estado muestra palabras y caracteres visibles del último render; se estiman minutos a 200 palabras; falta QA con idiomas sin separación por espacios |
 | Vista previa de enlaces | Parcial | Mouse y teclado muestran tipo y destino declarado antes de abrir, sin resolverlo ni acceder a recursos; falta QA visual |
 | Vista de texto segura | Parcial | Fallback por límites y HTML inerte; falta QA end to end completo |
 
@@ -63,6 +64,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Paneles plegables | Parcial | Índice, árbol plegable de notas, búsqueda de carpeta y backlinks muestran listas acotadas con selección visible, navegación por teclado o mouse y cierre con Escape; falta accesibilidad completa |
 | Actualizar workspace | Parcial | El catálogo y `Ctrl+Shift+I` reconstruyen de forma explícita el índice cancelable cuando la carpeta cambió; falta invalidación más precisa por archivo |
 | `.txt` y otros textos inertes | Parcial | Extensiones no Markdown se mantienen inertes al abrir, editar, comparar, actualizar y Guardar como; falta QA de reconocimiento UX |
+| Símbolos y emojis | Parcial | Menú Insertar y paleta abren un selector de 40 símbolos, entidades y emojis de estudio; se insertan como Unicode literal con un único deshacer. La paleta ignora tildes al filtrar |
 | Continuación de listas | Parcial | Enter continúa viñetas, números, tareas y citas y sale de la lista en un elemento vacío; el formato de lista separa una parte de párrafo seleccionada o numera varias líneas en un único cambio reversible |
 | Edición en vivo | Futuro | Solo tras editor y modelo estables |
 
