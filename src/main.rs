@@ -1664,7 +1664,14 @@ impl DocumentPaneTree {
         }
     }
 
-    fn replace_pane_document(&mut self, pane_id: u64, document_id: u64) -> bool {
+    /// La hoja recibe la posición que el documento guardó al dejar de verse.
+    /// Reiniciarla a cero hacía que cambiar de pestaña volviera al inicio.
+    fn replace_pane_document(
+        &mut self,
+        pane_id: u64,
+        document_id: u64,
+        document_scroll: f32,
+    ) -> bool {
         if self.pane_for_document(document_id).is_some() {
             return false;
         }
@@ -1675,13 +1682,13 @@ impl DocumentPaneTree {
                 scroll,
             } if *current_pane == pane_id => {
                 *current_document = document_id;
-                *scroll = 0.0;
+                *scroll = document_scroll.max(0.0);
                 true
             }
             Self::Leaf { .. } => false,
             Self::Split { first, second, .. } => {
-                first.replace_pane_document(pane_id, document_id)
-                    || second.replace_pane_document(pane_id, document_id)
+                first.replace_pane_document(pane_id, document_id, document_scroll)
+                    || second.replace_pane_document(pane_id, document_id, document_scroll)
             }
         }
     }
@@ -3409,6 +3416,73 @@ fn fill_rounded_rect(
     }
 }
 
+/// Superficie flotante con la elevación suave aprobada para avisos, menús y
+/// diálogos: una sombra difusa en capas, sin desenfoque costoso, y un borde
+/// de 1 px que la separa del fondo en ambos temas.
+fn draw_floating_surface(
+    pixmap: &mut Pixmap,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    radius: f32,
+    palette: Palette,
+) {
+    let night = palette.bg.0 < 0x80;
+    let base_alpha: f32 = if night { 34.0 } else { 18.0 };
+    for step in (1..=6).rev() {
+        let spread = step as f32 * 2.0;
+        let alpha = (base_alpha / step as f32).round() as u8;
+        let mut shadow = Paint::default();
+        shadow.set_color(Color::from_rgba8(0, 0, 0, alpha));
+        shadow.anti_alias = true;
+        fill_rounded_rect(
+            pixmap,
+            x - spread * 0.5,
+            y - spread * 0.25 + 3.0,
+            width + spread,
+            height + spread,
+            radius + spread * 0.5,
+            &shadow,
+        );
+    }
+    let border = palette.border;
+    let mut border_paint = Paint::default();
+    border_paint.set_color(Color::from_rgba8(border.0, border.1, border.2, 255));
+    border_paint.anti_alias = true;
+    fill_rounded_rect(pixmap, x, y, width, height, radius, &border_paint);
+    let surface = palette.floating;
+    let mut surface_paint = Paint::default();
+    surface_paint.set_color(Color::from_rgba8(surface.0, surface.1, surface.2, 255));
+    surface_paint.anti_alias = true;
+    fill_rounded_rect(
+        pixmap,
+        x + 1.0,
+        y + 1.0,
+        width - 2.0,
+        height - 2.0,
+        (radius - 1.0).max(0.0),
+        &surface_paint,
+    );
+}
+
+/// Un aviso breve se lee de un vistazo; uno largo necesita algo más de tiempo.
+fn toast_duration(notice: &str) -> Duration {
+    let chars = notice.chars().count() as u64;
+    Duration::from_millis((2_200 + chars * 35).min(6_000))
+}
+
+/// El toast muestra la frase con mayúscula inicial y sin superar una línea
+/// razonable; el texto completo sigue en el registro y el título.
+fn toast_text(notice: &str) -> String {
+    let mut text = abbreviated_label(notice, 110);
+    if let Some(first) = text.chars().next() {
+        let upper: String = first.to_uppercase().collect();
+        text.replace_range(..first.len_utf8(), &upper);
+    }
+    text
+}
+
 /// Iconos pequeños, dibujados sin una fuente de pictogramas para conservar el
 /// binario y los estados visuales bajo el control del renderer nativo.
 fn draw_toolbar_icon(
@@ -4562,6 +4636,99 @@ fn folded_block_mask(
     hidden
 }
 
+/// Primer bloque visible cuyo borde inferior supera `scroll`. Los bloques
+/// plegados tienen alto negativo y no cuentan.
+fn top_visible_slot(slots: &[Slot], scroll: f32) -> Option<usize> {
+    let first = slots.partition_point(|slot| slot.y + slot.height.max(0.0) <= scroll);
+    (first..slots.len()).find(|index| slots[*index].height >= 0.0)
+}
+
+/// Traduce el borde superior de una vista a un offset de la fuente. Lectura,
+/// edición y vista previa comparten esos offsets aunque sus alturas difieran.
+fn source_anchor_at(blocks: &[Block], slots: &[Slot], scroll: f32) -> Option<usize> {
+    if blocks.len() != slots.len() || scroll <= 0.0 {
+        return None;
+    }
+    let index = top_visible_slot(slots, scroll)?;
+    let slot = slots[index];
+    let range = blocks[index].source;
+    let fraction = if slot.height > 0.0 {
+        ((scroll - slot.y) / slot.height).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let span = range.end.saturating_sub(range.start) as f32;
+    Some(range.start + (span * fraction) as usize)
+}
+
+/// Posición vertical de un offset de fuente en otra vista. Las líneas de una
+/// misma cerca de código comparten rango y se tratan como un solo tramo.
+fn scroll_for_source_offset(blocks: &[Block], slots: &[Slot], offset: usize) -> Option<f32> {
+    if blocks.is_empty() || blocks.len() != slots.len() {
+        return None;
+    }
+    let after = blocks.partition_point(|block| block.source.start <= offset);
+    let mut index = after.checked_sub(1)?;
+    while index > 0 && slots[index].height < 0.0 {
+        index -= 1;
+    }
+    let range = blocks[index].source;
+    let mut first = index;
+    while first > 0 && blocks[first - 1].source == range {
+        first -= 1;
+    }
+    let mut last = index;
+    while last + 1 < blocks.len() && blocks[last + 1].source == range {
+        last += 1;
+    }
+    let top = slots[first].y;
+    let bottom = slots[last].y + slots[last].height.max(0.0);
+    let span = range.end.saturating_sub(range.start);
+    let fraction = if offset >= range.end {
+        1.0
+    } else if span == 0 {
+        0.0
+    } else {
+        (offset - range.start) as f32 / span as f32
+    };
+    Some(top + (bottom - top) * fraction)
+}
+
+/// Scroll de la vista previa de Comparar derivado de la fuente. Los extremos
+/// coinciden siempre: inicio con inicio y final con final.
+fn synced_preview_scroll(
+    source_blocks: &[Block],
+    source_slots: &[Slot],
+    source_scroll: f32,
+    source_max: f32,
+    preview_blocks: &[Block],
+    preview_slots: &[Slot],
+    preview_max: f32,
+) -> f32 {
+    if source_scroll <= 0.0 || preview_max <= 0.0 {
+        return 0.0;
+    }
+    if source_max > 0.0 && source_scroll >= source_max - 0.5 {
+        return preview_max;
+    }
+    source_anchor_at(source_blocks, source_slots, source_scroll)
+        .and_then(|offset| scroll_for_source_offset(preview_blocks, preview_slots, offset))
+        .unwrap_or(source_scroll)
+        .clamp(0.0, preview_max)
+}
+
+/// Un offset ancla se mueve con el texto editado antes que él. Si cae dentro
+/// del tramo reemplazado, queda al inicio de la edición.
+fn shift_anchor_for_change(anchor: usize, change: editor::SourceChange) -> usize {
+    if anchor <= change.start {
+        anchor
+    } else if anchor < change.start + change.removed_bytes {
+        change.start
+    } else {
+        anchor - change.removed_bytes + change.inserted_bytes
+    }
+}
+
 fn max_scroll(doc_height: f32, viewport_height: f32) -> f32 {
     (doc_height - viewport_height).max(0.0)
 }
@@ -4651,6 +4818,7 @@ struct PreparedDocumentPane {
     panes: SplitGeometry,
     visible: Vec<usize>,
     preview_visible: Vec<usize>,
+    preview_scroll: f32,
     max_scroll: f32,
 }
 
@@ -4742,7 +4910,7 @@ fn prepare_document_pane(
         cache.preview_live.clear();
     }
 
-    let max_scroll = max_scroll(cache.doc_height.max(cache.preview_height), viewport_height);
+    let max_scroll = max_scroll(cache.doc_height, viewport_height);
     let effective_scroll = scroll.clamp(0.0, max_scroll);
     let visible_positions = visible_order_range(
         &cache.slots,
@@ -4787,12 +4955,25 @@ fn prepare_document_pane(
         cache.live.insert(index, (layout, marker));
     }
 
+    let preview_scroll = if document.mode == DocumentMode::Split {
+        synced_preview_scroll(
+            &document.blocks,
+            &cache.slots,
+            effective_scroll,
+            max_scroll,
+            &document.rendered_blocks,
+            &cache.preview_slots,
+            self::max_scroll(cache.preview_height, panes.preview.height),
+        )
+    } else {
+        0.0
+    };
     let preview_visible = if document.mode == DocumentMode::Split {
         let positions = visible_order_range(
             &cache.preview_slots,
             &cache.preview_visible_blocks,
-            effective_scroll,
-            effective_scroll + viewport_height,
+            preview_scroll,
+            preview_scroll + panes.preview.height,
         );
         let visible = cache.preview_visible_blocks[positions].to_vec();
         cache
@@ -4839,6 +5020,7 @@ fn prepare_document_pane(
         panes,
         visible,
         preview_visible,
+        preview_scroll,
         max_scroll,
     }
 }
@@ -5905,7 +6087,7 @@ fn draw_inactive_document_panes(
                 &cache.preview_live,
                 &prepared.preview_visible,
                 prepared.panes.preview,
-                effective_scroll,
+                prepared.preview_scroll,
                 scale,
                 palette,
                 scale_cx,
@@ -6047,6 +6229,10 @@ struct DocumentState {
     /// Posición visual propia de la pestaña. Se sincroniza antes de cambiar
     /// de documento y se restaura al volver.
     scroll: f32,
+    /// Offset de fuente que ocupa el borde superior de la vista. Sobrevive a
+    /// re-mediciones, cambios de ancho, de modo y de pestaña: el scroll en
+    /// píxeles se deriva de él cada vez que cambia la geometría.
+    scroll_anchor: Option<usize>,
     /// Selección propia del lector. El editor ya conserva la suya mediante
     /// `SourceEditor`; separarlas evita atribuir offsets renderizados a fuente.
     reading_selection: Option<DocumentSelection>,
@@ -6086,6 +6272,7 @@ impl DocumentState {
             blocks: Vec::new(),
             safe_mode: None,
             scroll: 0.0,
+            scroll_anchor: None,
             reading_selection: None,
             pending_heading: None,
             pending_block: None,
@@ -6694,6 +6881,14 @@ struct App {
     /// Confirmación discreta en el título de ventana; no contiene texto del
     /// documento ni rutas adicionales.
     notice: Option<String>,
+    /// Momento en que el aviso deja de dibujarse como toast. El título conserva
+    /// el último aviso; el toast solo confirma la acción reciente.
+    notice_visible_until: Option<Instant>,
+    /// Bloque de código cuya copia se confirma en su propio botón mientras el
+    /// aviso sigue visible.
+    code_copied: Option<(u64, usize)>,
+    /// Pide al próximo cuadro llevar el cursor de la fuente a la vista.
+    reveal_cursor_pending: bool,
     /// Conserva el resultado fatal para devolver un codigo de salida distinto
     /// de cero despues de cerrar ordenadamente el event loop.
     fatal_error: bool,
@@ -6777,10 +6972,26 @@ impl ApplicationHandler<AppEvent> for App {
                 Some(transition.next_frame_at(now))
             }
         });
-        let next = [theme_deadline, mode_deadline, self.next_recovery_deadline()]
-            .into_iter()
-            .flatten()
-            .min();
+        let toast_deadline = self.notice_visible_until.and_then(|until| {
+            if until <= now {
+                self.notice_visible_until = None;
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+                None
+            } else {
+                Some(until)
+            }
+        });
+        let next = [
+            theme_deadline,
+            mode_deadline,
+            toast_deadline,
+            self.next_recovery_deadline(),
+        ]
+        .into_iter()
+        .flatten()
+        .min();
         if let Some(next) = next.filter(|next| *next > now) {
             event_loop.set_control_flow(ControlFlow::WaitUntil(next));
         }
@@ -8512,7 +8723,7 @@ impl ApplicationHandler<AppEvent> for App {
                         })
                     })
                     .unwrap_or(0.0);
-                let max = max_scroll(self.doc_height.max(self.preview_height), viewport_height);
+                let max = max_scroll(self.doc_height, viewport_height);
                 self.set_focused_pane_scroll((self.scroll - dy).clamp(0.0, max));
                 if let Some(w) = &self.window {
                     w.request_redraw();
@@ -8543,9 +8754,7 @@ impl ApplicationHandler<AppEvent> for App {
                                 })
                             })
                             .unwrap_or(0.0);
-                        let max =
-                            max_scroll(self.doc_height.max(self.preview_height), viewport_height)
-                                .max(1.0);
+                        let max = max_scroll(self.doc_height, viewport_height).max(1.0);
                         self.set_focused_pane_scroll((self.scroll + max / total as f32) % max);
                         if let Some(w) = &self.window {
                             w.request_redraw();
@@ -9424,6 +9633,10 @@ impl App {
     fn set_focused_pane_scroll(&mut self, scroll: f32) {
         self.scroll = scroll.max(0.0);
         self.document.scroll = self.scroll;
+        if !self.slots.is_empty() && self.slots.len() == self.document.blocks.len() {
+            self.document.scroll_anchor =
+                source_anchor_at(&self.document.blocks, &self.slots, self.scroll);
+        }
         let _ = self
             .document_panes
             .set_pane_scroll(self.focused_document_pane, self.scroll);
@@ -9451,7 +9664,7 @@ impl App {
     /// scroll de una hoja sobreviva al foco, al resize y a volver a la pestaña.
     fn set_clamped_focused_pane_scroll(&mut self, scroll: f32) {
         let viewport = self.focused_document_viewport_height();
-        let maximum = max_scroll(self.doc_height.max(self.preview_height), viewport);
+        let maximum = max_scroll(self.doc_height, viewport);
         self.set_focused_pane_scroll(scroll.clamp(0.0, maximum));
     }
 
@@ -9638,9 +9851,11 @@ impl App {
             recovery: current_recovery,
         });
         self.tab_order.push(new_id);
-        let _ = self
-            .document_panes
-            .replace_pane_document(self.focused_document_pane, new_id);
+        let _ = self.document_panes.replace_pane_document(
+            self.focused_document_pane,
+            new_id,
+            self.document.scroll,
+        );
         self.reset_document_view();
         self.restore_focused_pane_scroll();
     }
@@ -9686,9 +9901,11 @@ impl App {
         if let Some(existing_pane) = reused_visible_pane {
             self.focus_document_pane_cache(existing_pane);
         } else {
-            let _ = self
-                .document_panes
-                .replace_pane_document(self.focused_document_pane, document_id);
+            let _ = self.document_panes.replace_pane_document(
+                self.focused_document_pane,
+                document_id,
+                self.document.scroll,
+            );
         }
         if reused_visible_pane.is_some() {
             self.clear_document_view_overlays();
@@ -9908,6 +10125,13 @@ impl App {
                 .then(|| self.refresh_source_blocks())
             {
                 Some(Ok(())) | None => {
+                    if let (Some(anchor), Some(change)) = (
+                        self.document.scroll_anchor,
+                        self.document.source_editor.last_change(),
+                    ) {
+                        self.document.scroll_anchor = Some(shift_anchor_for_change(anchor, change));
+                    }
+                    self.reveal_cursor_pending = true;
                     self.document.reading_selection = None;
                     self.notice = None;
                     self.refresh_title();
@@ -10484,9 +10708,34 @@ impl App {
         }
         if self.document.mode.is_editable() {
             self.sync_source_selection();
+            self.reveal_cursor_pending = true;
             if let Some(window) = &self.window {
                 window.request_redraw();
             }
+        }
+    }
+
+    /// Mantiene la línea del cursor dentro de la vista con dos líneas de
+    /// margen. Solo actúa tras teclado o edición, nunca al desplazar con la
+    /// rueda, para no pelear con la persona que está leyendo más abajo.
+    fn reveal_source_cursor(&mut self, viewport_height: f32) {
+        let cursor = self.document.source_editor.cursor();
+        let Some(position) = source_block_cursor_at(&self.document.blocks, cursor) else {
+            return;
+        };
+        let Some(slot) = self.slots.get(position.block).copied() else {
+            return;
+        };
+        if slot.height < 0.0 {
+            return;
+        }
+        let margin = (slot.height * 2.0).min(viewport_height * 0.25);
+        let top = self.scroll;
+        let bottom = self.scroll + viewport_height;
+        if slot.y < top + margin {
+            self.set_clamped_focused_pane_scroll(slot.y - margin);
+        } else if slot.y + slot.height > bottom - margin {
+            self.set_clamped_focused_pane_scroll(slot.y + slot.height + margin - viewport_height);
         }
     }
 
@@ -11294,10 +11543,26 @@ impl App {
                 }
             },
         };
-        if let Err(error) = clipboard.set_text(text) {
+        // Windows rechaza abrir el portapapeles mientras otro proceso lo
+        // tiene tomado. Unos reintentos breves evitan un fallo silencioso sin
+        // bloquear la interfaz de forma perceptible.
+        let mut attempt = 0;
+        let result = loop {
+            match clipboard.set_text(text.clone()) {
+                Ok(()) => break Ok(()),
+                Err(error) if attempt < 3 => {
+                    attempt += 1;
+                    self.log
+                        .push(format!("[portapapeles] reintento {attempt}: {error}"));
+                    std::thread::sleep(Duration::from_millis(25));
+                }
+                Err(error) => break Err(error),
+            }
+        };
+        if let Err(error) = result {
             self.log
                 .push(format!("[portapapeles] no se pudo copiar: {error}"));
-            self.set_notice("no se pudo copiar");
+            self.set_notice("no se pudo copiar: el portapapeles está ocupado");
             return false;
         }
         self.log.push(format!("[portapapeles] {kind}"));
@@ -11336,7 +11601,11 @@ impl App {
 
     fn set_notice(&mut self, notice: &str) {
         self.notice = Some(notice.to_owned());
+        self.notice_visible_until = Some(Instant::now() + toast_duration(notice));
         self.refresh_title();
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
     }
 
     fn refresh_title(&self) {
@@ -12417,6 +12686,18 @@ impl App {
             self.set_notice("no se pudo localizar el bloque de código en la fuente");
             return;
         };
+        let indent = self
+            .document
+            .source
+            .line_start_byte(self.document.source.line_at_byte(range.start))
+            .min(range.start);
+        let fence_indent = self
+            .document
+            .source
+            .slice_bytes(indent..range.start)
+            .ok()
+            .filter(|prefix| prefix.chars().all(|c| c == ' '))
+            .map_or(0, |prefix| prefix.len());
         let Some(source) = self
             .document
             .blocks
@@ -12426,7 +12707,10 @@ impl App {
             self.set_notice("no se pudo localizar el bloque de código en la fuente");
             return;
         };
-        self.copy_text_to_clipboard(source, "bloque de código copiado");
+        let content = code_copy_text(&source, fence_indent);
+        if self.write_text_to_clipboard(content, "código copiado al portapapeles") {
+            self.code_copied = Some((self.document.id, block));
+        }
     }
 
     fn toggle_task(&mut self, block: usize) {
@@ -12541,10 +12825,9 @@ impl App {
             .unwrap_or_else(|| document_viewport_height(window.inner_size().height as f32));
         let step = (viewport * 0.88).max(1.0);
         let delta = if down { step } else { -step };
-        self.set_focused_pane_scroll((self.scroll + delta).clamp(
-            0.0,
-            max_scroll(self.doc_height.max(self.preview_height), viewport),
-        ));
+        self.set_focused_pane_scroll(
+            (self.scroll + delta).clamp(0.0, max_scroll(self.doc_height, viewport)),
+        );
         window.request_redraw();
     }
 
@@ -12723,10 +13006,7 @@ impl App {
         if delta == 0.0 {
             return false;
         }
-        let next = (self.scroll + delta).clamp(
-            0.0,
-            max_scroll(self.doc_height.max(self.preview_height), viewport_height),
-        );
+        let next = (self.scroll + delta).clamp(0.0, max_scroll(self.doc_height, viewport_height));
         if (next - self.scroll).abs() < f32::EPSILON {
             return false;
         }
@@ -12797,7 +13077,12 @@ impl App {
             self.doc_height = height;
             self.laid_for_width = layout_width;
             self.exact_after_edit = false;
-            self.set_clamped_focused_pane_scroll(self.scroll);
+            // La geometría cambió: el scroll se recalcula desde el offset de
+            // fuente que estaba arriba, para que nada se desplace solo.
+            let anchored = self.document.scroll_anchor.and_then(|offset| {
+                scroll_for_source_offset(&self.document.blocks, &self.slots, offset)
+            });
+            self.set_clamped_focused_pane_scroll(anchored.unwrap_or(self.scroll));
             self.live.clear();
             self.log.push(format!(
                 "[medicion] posicionar {} bloques ({}): {:.0} ms  (alto {:.0} px)",
@@ -12838,6 +13123,9 @@ impl App {
         {
             self.set_clamped_focused_pane_scroll(slot.y);
         }
+        if std::mem::take(&mut self.reveal_cursor_pending) && self.document.mode.is_editable() {
+            self.reveal_source_cursor(viewport_height);
+        }
 
         // Que bloques caen en pantalla este cuadro.
         let view_top = self.scroll;
@@ -12845,12 +13133,25 @@ impl App {
         let visible_positions =
             visible_order_range(&self.slots, &self.visible_blocks, view_top, view_bottom);
         let visible = self.visible_blocks[visible_positions].to_vec();
+        let preview_scroll = if split {
+            synced_preview_scroll(
+                &self.document.blocks,
+                &self.slots,
+                self.scroll,
+                max_scroll(self.doc_height, viewport_height),
+                &self.document.rendered_blocks,
+                &self.preview_slots,
+                max_scroll(self.preview_height, panes.preview.height),
+            )
+        } else {
+            0.0
+        };
         let preview_visible = if split {
             let positions = visible_order_range(
                 &self.preview_slots,
                 &self.preview_visible_blocks,
-                view_top,
-                view_bottom,
+                preview_scroll,
+                preview_scroll + panes.preview.height,
             );
             self.preview_visible_blocks[positions].to_vec()
         } else {
@@ -13171,6 +13472,20 @@ impl App {
             &mut self.layout_cx,
             self.palette,
         );
+        let code_copied_layout = build_menu_layout(
+            "Copiado",
+            &mut self.font_cx,
+            &mut self.layout_cx,
+            self.palette,
+        );
+        let copied_code_block = self
+            .code_copied
+            .filter(|(document_id, _)| *document_id == self.document.id)
+            .filter(|_| {
+                self.notice_visible_until
+                    .is_some_and(|until| until > Instant::now())
+            })
+            .map(|(_, block)| block);
         let contextual_toolbar_actions = contextual_toolbar_actions(self.document.mode);
         let contextual_toolbar_label_layouts = contextual_toolbar_actions
             .iter()
@@ -13198,6 +13513,18 @@ impl App {
         let toolbar_hint_layout = toolbar_hint_label.map(|label| {
             build_menu_layout(label, &mut self.font_cx, &mut self.layout_cx, self.palette)
         });
+        let toast_layout = self
+            .notice_visible_until
+            .filter(|until| *until > Instant::now())
+            .and(self.notice.as_deref())
+            .map(|notice| {
+                build_menu_layout(
+                    &toast_text(notice),
+                    &mut self.font_cx,
+                    &mut self.layout_cx,
+                    self.palette,
+                )
+            });
         let toolbar_hint_anchor_x = toolbar_focus
             .map(|index| {
                 if index < PRIMARY_TOOLBAR_ACTIONS.len() {
@@ -13604,7 +13931,12 @@ impl App {
                             if let Some(rect) = Rect::from_xywh(x, y, width, height) {
                                 pixmap.fill_rect(rect, &button, Transform::identity(), None);
                             }
-                            for line in code_copy_layout.lines() {
+                            let label = if copied_code_block == Some(i) {
+                                &code_copied_layout
+                            } else {
+                                &code_copy_layout
+                            };
+                            for line in label.lines() {
                                 for entry in line.items() {
                                     if let PositionedLayoutItem::GlyphRun(run) = entry {
                                         draw_run_background(pixmap, &run, x + 8.0, y + 4.0);
@@ -13807,7 +14139,7 @@ impl App {
                     let Some((cached_layout, marker)) = preview_live.get(&index) else {
                         continue;
                     };
-                    let top = pane_screen_y(slot.y, *scroll, preview_pane);
+                    let top = pane_screen_y(slot.y, preview_scroll, preview_pane);
                     if let CachedBlockLayout::Table(cells) = cached_layout {
                         let columns = cells.len().max(1) as f32;
                         let left = preview_pane.x + slot.x - 6.0;
@@ -13868,7 +14200,7 @@ impl App {
                                 )
                                 && let Some(rect) = Rect::from_xywh(
                                     preview_pane.x + first.x - 12.0,
-                                    pane_screen_y(first.y, *scroll, preview_pane) - 2.0,
+                                    pane_screen_y(first.y, preview_scroll, preview_pane) - 2.0,
                                     preview_ancho_texto + 24.0,
                                     last.y + last.height - first.y + 4.0,
                                 )
@@ -14262,6 +14594,50 @@ impl App {
                     if let PositionedLayoutItem::GlyphRun(run) = entry {
                         draw_run_background(pixmap, &run, hint_x + 9.0, hint_y + 5.0);
                         draw_glyph_run(pixmap, scale_cx, glyphs, &run, hint_x + 9.0, hint_y + 5.0);
+                    }
+                }
+            }
+        }
+
+        if let Some(layout) = toast_layout {
+            let window_width = w.get() as f32;
+            let toast_width = (layout.width() + 40.0).min(window_width - MARGIN * 2.0);
+            let toast_height = layout.height() + 18.0;
+            let toast_x = ((window_width - toast_width) * 0.5).round();
+            let toast_y = h.get() as f32 - STATUS_HEIGHT - toast_height - 18.0;
+            draw_floating_surface(
+                pixmap,
+                toast_x,
+                toast_y,
+                toast_width,
+                toast_height,
+                10.0,
+                *palette,
+            );
+            let dot = palette.accent;
+            let mut dot_paint = Paint::default();
+            dot_paint.set_color(Color::from_rgba8(dot.0, dot.1, dot.2, 255));
+            fill_rounded_rect(
+                pixmap,
+                toast_x + 14.0,
+                toast_y + toast_height * 0.5 - 3.0,
+                6.0,
+                6.0,
+                3.0,
+                &dot_paint,
+            );
+            for line in layout.lines() {
+                for entry in line.items() {
+                    if let PositionedLayoutItem::GlyphRun(run) = entry {
+                        draw_run_background(pixmap, &run, toast_x + 28.0, toast_y + 9.0);
+                        draw_glyph_run(
+                            pixmap,
+                            scale_cx,
+                            glyphs,
+                            &run,
+                            toast_x + 28.0,
+                            toast_y + 9.0,
+                        );
                     }
                 }
             }
@@ -14923,6 +15299,42 @@ fn is_visible_code_group_start(
             .is_some_and(|slot| slot.y + slot.height < view_top)
 }
 
+/// Devuelve solo el código de una cerca o de un bloque indentado. Quita las
+/// líneas de apertura y cierre, la sangría que CommonMark atribuye a la cerca
+/// y el salto final; conserva los EOL internos tal como están en la fuente.
+fn code_copy_text(source: &str, fence_indent: usize) -> String {
+    let mut lines: Vec<&str> = source.split_inclusive('\n').collect();
+    let opening = lines.first().map(|line| line.trim_start_matches(' '));
+    let fenced = opening.is_some_and(|line| line.starts_with("```") || line.starts_with("~~~"));
+    let strip = if fenced {
+        let marker = opening.and_then(|line| line.chars().next()).unwrap_or('`');
+        lines.remove(0);
+        if lines.last().is_some_and(|line| {
+            let trimmed = line.trim();
+            trimmed.len() >= 3 && trimmed.chars().all(|c| c == marker)
+        }) {
+            lines.pop();
+        }
+        fence_indent
+    } else {
+        fence_indent + 4
+    };
+    let mut text = String::with_capacity(source.len());
+    for (index, line) in lines.iter().enumerate() {
+        // La primera línea de un bloque indentado empieza en el contenido: el
+        // rango de comrak ya excluye su sangría.
+        let limit = if !fenced && index == 0 { 0 } else { strip };
+        let spaces = line.bytes().take(limit).take_while(|b| *b == b' ').count();
+        text.push_str(&line[spaces..]);
+    }
+    if text.ends_with("\r\n") {
+        text.truncate(text.len() - 2);
+    } else if text.ends_with('\n') {
+        text.pop();
+    }
+    text
+}
+
 fn code_block_source_range(blocks: &[Block], index: usize) -> Option<std::ops::Range<usize>> {
     let range = code_block_range(blocks, index)?;
     Some(blocks[range.start].source.start..blocks[range.end - 1].source.end)
@@ -15102,6 +15514,7 @@ fn main() {
             blocks: Vec::new(),
             safe_mode: None,
             scroll: 0.0,
+            scroll_anchor: None,
             reading_selection: None,
             pending_heading: None,
             pending_block: None,
@@ -15206,6 +15619,9 @@ fn main() {
         } else {
             "documento nuevo · Ctrl+Shift+S para elegir destino".to_string()
         }),
+        notice_visible_until: None,
+        code_copied: None,
+        reveal_cursor_pending: false,
         fatal_error: false,
     };
 
@@ -16090,12 +16506,123 @@ mod pruebas {
             .split_pane(principal, 20, DocumentPaneAxis::Vertical)
             .expect("la vista secundaria existe");
 
-        assert!(panes.replace_pane_document(secundario, 30));
+        assert!(panes.replace_pane_document(secundario, 30, 0.0));
         assert_eq!(panes.pane_for_document(10), Some(principal));
         assert_eq!(panes.pane_for_document(20), None);
         assert_eq!(panes.pane_for_document(30), Some(secundario));
-        assert!(!panes.replace_pane_document(secundario, 10));
-        assert!(!panes.replace_pane_document(999, 40));
+        assert!(!panes.replace_pane_document(secundario, 10, 0.0));
+        assert!(!panes.replace_pane_document(999, 40, 0.0));
+    }
+
+    fn slots_uniformes(blocks: &[Block], alto: f32) -> Vec<Slot> {
+        blocks
+            .iter()
+            .enumerate()
+            .map(|(index, block)| Slot {
+                y: index as f32 * alto,
+                height: alto,
+                x: 0.0,
+                kind: block.kind,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn comparar_alinea_la_vista_previa_por_offset_de_fuente() {
+        let mut source = String::new();
+        for index in 0..40 {
+            source.push_str(&format!("## Título {index}\n\nPárrafo número {index}.\n\n"));
+        }
+        let fuente = safe_buffer_blocks(&TextBuffer::from_text(&source)).expect("fuente válida");
+        let lectura = parse_blocks(&source).expect("markdown válido").blocks;
+        // Alturas deliberadamente distintas: líneas compactas frente a bloques
+        // con mucho más aire, como en la ventana real.
+        let slots_fuente = slots_uniformes(&fuente, 20.0);
+        let slots_lectura = slots_uniformes(&lectura, 55.0);
+        let objetivo = source.find("## Título 25").expect("existe el título");
+        let linea = fuente
+            .iter()
+            .position(|block| block.source.start == objetivo)
+            .expect("la línea está en la fuente");
+        let scroll_fuente = slots_fuente[linea].y;
+        let max_fuente = fuente.len() as f32 * 20.0;
+        let max_lectura = lectura.len() as f32 * 55.0;
+
+        let scroll_lectura = synced_preview_scroll(
+            &fuente,
+            &slots_fuente,
+            scroll_fuente,
+            max_fuente,
+            &lectura,
+            &slots_lectura,
+            max_lectura,
+        );
+        let arriba = top_visible_slot(&slots_lectura, scroll_lectura + 0.5).expect("hay bloque");
+        assert!(lectura[arriba].source.start <= objetivo && objetivo < lectura[arriba].source.end);
+
+        assert_eq!(
+            synced_preview_scroll(
+                &fuente,
+                &slots_fuente,
+                0.0,
+                max_fuente,
+                &lectura,
+                &slots_lectura,
+                max_lectura
+            ),
+            0.0
+        );
+        assert_eq!(
+            synced_preview_scroll(
+                &fuente,
+                &slots_fuente,
+                max_fuente,
+                max_fuente,
+                &lectura,
+                &slots_lectura,
+                max_lectura
+            ),
+            max_lectura
+        );
+    }
+
+    #[test]
+    fn el_ancla_de_scroll_sigue_al_texto_editado_antes_que_ella() {
+        let cambio = |start, removed_bytes, inserted_bytes| editor::SourceChange {
+            start,
+            removed_bytes,
+            inserted_bytes,
+        };
+        assert_eq!(shift_anchor_for_change(100, cambio(10, 0, 5)), 105);
+        assert_eq!(shift_anchor_for_change(100, cambio(10, 20, 0)), 80);
+        assert_eq!(shift_anchor_for_change(100, cambio(90, 20, 1)), 90);
+        assert_eq!(shift_anchor_for_change(100, cambio(150, 3, 9)), 100);
+        assert_eq!(shift_anchor_for_change(100, cambio(100, 0, 4)), 100);
+    }
+
+    #[test]
+    fn el_ancla_recupera_la_misma_linea_tras_volver_a_medir() {
+        let source = "uno\ndos\ntres\ncuatro\ncinco\nseis\n";
+        let fuente = safe_buffer_blocks(&TextBuffer::from_text(source)).expect("fuente válida");
+        let estimado = slots_uniformes(&fuente, 20.0);
+        let exacto = slots_uniformes(&fuente, 31.0);
+        let ancla = source_anchor_at(&fuente, &estimado, 60.0).expect("hay ancla");
+        let nuevo = scroll_for_source_offset(&fuente, &exacto, ancla).expect("hay posición");
+        assert_eq!(
+            top_visible_slot(&exacto, nuevo + 0.5),
+            top_visible_slot(&estimado, 60.5)
+        );
+    }
+
+    #[test]
+    fn volver_a_una_pestana_restaura_su_posicion_de_lectura() {
+        let mut panes = DocumentPaneTree::single(10);
+        let hoja = panes.first_pane_id();
+        assert!(panes.set_pane_scroll(hoja, 480.0));
+        assert!(panes.replace_pane_document(hoja, 20, 0.0));
+        assert_eq!(panes.pane_scroll(hoja), Some(0.0));
+        assert!(panes.replace_pane_document(hoja, 10, 480.0));
+        assert_eq!(panes.pane_scroll(hoja), Some(480.0));
     }
 
     #[test]
@@ -17540,6 +18067,26 @@ con dos lineas
         assert!(y >= visible_top);
         assert!(x + width <= slot.x + 640.0);
         assert!(y + height <= visible_top + slot.height);
+    }
+
+    #[test]
+    fn copiar_codigo_entrega_solo_el_contenido_de_la_cerca() {
+        assert_eq!(
+            code_copy_text("```rust\nuno();\n    dos();\n```", 0),
+            "uno();\n    dos();"
+        );
+        assert_eq!(
+            code_copy_text("```rust\r\nuno();\r\ndos();\r\n```", 0),
+            "uno();\r\ndos();"
+        );
+        assert_eq!(
+            code_copy_text("```\n  code\n    sub\n  ```", 2),
+            "code\n  sub"
+        );
+        assert_eq!(code_copy_text("~~~\nsin cierre\n", 0), "sin cierre");
+        assert_eq!(code_copy_text("````\n```\n````", 0), "```");
+        assert_eq!(code_copy_text("```\n```", 0), "");
+        assert_eq!(code_copy_text("uno\n    dos", 0), "uno\ndos");
     }
 
     #[test]
