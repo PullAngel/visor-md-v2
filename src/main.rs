@@ -13,6 +13,7 @@
 // existe y cuando exista se aisla en su propio modulo y se revisa a mano.
 #![forbid(unsafe_code)]
 
+mod dialog;
 pub mod editor;
 mod files;
 mod fonts;
@@ -55,8 +56,9 @@ use winit::application::ApplicationHandler;
 use winit::event::{ElementState, Ime, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
-use winit::window::{CursorIcon, ResizeDirection, Theme, Window, WindowId};
+use winit::window::{CursorIcon, ResizeDirection, Theme, Window, WindowId, WindowLevel};
 
+use dialog::{ButtonTone, Dialog, DialogChoice, DialogRect, dialog_layout, dialog_width};
 use editor::{SourceChange, SourceEditor, TextBuffer};
 use files::{
     DEFAULT_DOCUMENT_LIMIT_BYTES, FileIdentity, FileOpenError, FileSaveError, LineEndings,
@@ -66,7 +68,7 @@ use files::{
 use fonts::{FONT_CODE, FONT_DOC, FONT_UI, register_embedded_fonts};
 use limits::{Degradation, MAX_BLOCKS, MAX_INDENT_DEPTH, MAX_NEST, MAX_SAFE_LINE_BYTES};
 use recovery::RecoverySession;
-use rfd::{FileDialog, MessageButtons, MessageDialog, MessageDialogResult, MessageLevel};
+use rfd::FileDialog;
 use settings::{DocumentModePreference, Settings};
 use theme::{DAY, NIGHT, Palette, Role};
 use vfs::WorkspaceRoot;
@@ -129,7 +131,11 @@ const RECOVERY_DEBOUNCE: Duration = Duration::from_secs(3);
 /// de QA mostró que privilegiar lectura comprimía demasiado la fuente y hacía
 /// que ambas columnas dejaran de corresponder visualmente.
 const SPLIT_SOURCE_FRACTION: f32 = 0.5;
-const WINDOW_CONTROL_WIDTH: f32 = 46.0;
+// Cuatro controles de 38 px terminan justo donde empieza el selector de modo
+// en la ventana mínima de 640 px; más anchos se solaparían.
+const WINDOW_CONTROL_WIDTH: f32 = 38.0;
+/// Fijar encima, minimizar, maximizar y cerrar.
+const WINDOW_CONTROL_COUNT: f32 = 4.0;
 const WINDOW_RESIZE_BORDER: f32 = 6.0;
 const MIN_WINDOW_WIDTH: f64 = 640.0;
 const MIN_WINDOW_HEIGHT: f64 = 480.0;
@@ -316,6 +322,7 @@ const fn custom_window_chrome_enabled() -> bool {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum WindowControl {
+    PinOnTop,
     Minimize,
     ToggleMaximize,
     Close,
@@ -324,16 +331,17 @@ enum WindowControl {
 fn window_control_at(x: f32, y: f32, window_width: f32) -> Option<WindowControl> {
     if !custom_window_chrome_enabled()
         || !(0.0..WINDOW_CHROME_HEIGHT).contains(&y)
-        || x < (window_width - WINDOW_CONTROL_WIDTH * 3.0).max(0.0)
+        || x < (window_width - WINDOW_CONTROL_WIDTH * WINDOW_CONTROL_COUNT).max(0.0)
     {
         return None;
     }
-    let first_control = (window_width - WINDOW_CONTROL_WIDTH * 3.0).max(0.0);
+    let first_control = (window_width - WINDOW_CONTROL_WIDTH * WINDOW_CONTROL_COUNT).max(0.0);
     let slot = ((x - first_control) / WINDOW_CONTROL_WIDTH) as usize;
     match slot {
-        0 => Some(WindowControl::Minimize),
-        1 => Some(WindowControl::ToggleMaximize),
-        2 => Some(WindowControl::Close),
+        0 => Some(WindowControl::PinOnTop),
+        1 => Some(WindowControl::Minimize),
+        2 => Some(WindowControl::ToggleMaximize),
+        3 => Some(WindowControl::Close),
         _ => None,
     }
 }
@@ -938,6 +946,17 @@ fn adjacent_toolbar_index(current: usize, backwards: bool, action_count: usize) 
     }
 }
 
+/// Nombre corto del documento para títulos de diálogo.
+fn document_display_name(path: &str) -> String {
+    abbreviated_label(
+        PathBuf::from(path)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or(path),
+        48,
+    )
+}
+
 fn tab_label(path: &str, dirty: bool, pinned: bool, max_chars: usize) -> String {
     let path_buf = PathBuf::from(path);
     let name = path_buf
@@ -1028,6 +1047,7 @@ enum AppAction {
     SplitDocumentBelow,
     ToggleTheme,
     ToggleReduceMotion,
+    TogglePinOnTop,
     Cut,
     FormatBold,
     FormatItalic,
@@ -1082,7 +1102,7 @@ enum AppAction {
     CommandPalette,
 }
 
-const APP_ACTIONS: [AppAction; 65] = [
+const APP_ACTIONS: [AppAction; 66] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -1091,6 +1111,7 @@ const APP_ACTIONS: [AppAction; 65] = [
     AppAction::WorkspaceHub,
     AppAction::ToggleTheme,
     AppAction::ToggleReduceMotion,
+    AppAction::TogglePinOnTop,
     AppAction::SaveAs,
     AppAction::CloseDocument,
     AppAction::CloseDocumentPane,
@@ -1167,6 +1188,7 @@ impl AppAction {
             Self::SplitDocumentBelow => "Dividir abajo con otra pestaña",
             Self::ToggleTheme => "Cambiar tema día o noche · T en lectura",
             Self::ToggleReduceMotion => "Activar o desactivar movimiento reducido",
+            Self::TogglePinOnTop => "Fijar la ventana encima de las demás",
             Self::Cut => "Cortar · Ctrl+X",
             Self::FormatBold => "Aplicar negrita · Ctrl+B",
             Self::FormatItalic => "Aplicar cursiva · Ctrl+I",
@@ -3468,6 +3490,65 @@ fn draw_floating_surface(
         (radius - 1.0).max(0.0),
         &surface_paint,
     );
+}
+
+/// Texto de interfaz con tamaño, peso y ancho de ajuste propios. Los diálogos
+/// lo usan para títulos y explicaciones de varias líneas.
+fn build_ui_text_layout(
+    text: &str,
+    font_cx: &mut FontContext,
+    layout_cx: &mut LayoutContext<Brush>,
+    color: (u8, u8, u8),
+    size: f32,
+    bold: bool,
+    max_width: Option<f32>,
+) -> Layout<Brush> {
+    let stack: &[FontFamilyName] = &[
+        FontFamilyName::Named(std::borrow::Cow::Borrowed(FONT_UI)),
+        FontFamilyName::Generic(GenericFamily::SystemUi),
+    ];
+    let mut builder = layout_cx.ranged_builder(font_cx, text, 1.0, true);
+    builder.push_default(StyleProperty::Brush(Brush::text(color)));
+    builder.push_default(StyleProperty::FontFamily(FontFamily::List(
+        std::borrow::Cow::Borrowed(stack),
+    )));
+    builder.push_default(StyleProperty::FontSize(size));
+    builder.push_default(StyleProperty::LineHeight(LineHeight::FontSizeRelative(
+        1.45,
+    )));
+    if bold {
+        builder.push_default(StyleProperty::FontWeight(FontWeight::SEMI_BOLD));
+    }
+    let mut layout: Layout<Brush> = builder.build(text);
+    layout.break_all_lines(max_width);
+    layout
+}
+
+fn draw_text_layout(
+    pixmap: &mut Pixmap,
+    scale_cx: &mut ScaleContext,
+    glyphs: &mut GlyphCache,
+    layout: &Layout<Brush>,
+    x: f32,
+    y: f32,
+) {
+    for line in layout.lines() {
+        for entry in line.items() {
+            if let PositionedLayoutItem::GlyphRun(run) = entry {
+                draw_run_background(pixmap, &run, x, y);
+                draw_glyph_run(pixmap, scale_cx, glyphs, &run, x, y);
+            }
+        }
+    }
+}
+
+/// Rojo apagado para acciones que descartan trabajo: se distingue sin gritar.
+fn destructive_color(palette: Palette) -> (u8, u8, u8) {
+    if palette.bg.0 < 0x80 {
+        (0xE6, 0x9A, 0x8C)
+    } else {
+        (0x9E, 0x3A, 0x2C)
+    }
 }
 
 /// Un aviso breve se lee de un vistazo; uno largo necesita algo más de tiempo.
@@ -6893,6 +6974,21 @@ struct App {
     code_copied: Option<(u64, usize)>,
     /// Pide al próximo cuadro llevar el cursor de la fuente a la vista.
     reveal_cursor_pending: bool,
+    /// Diálogo propio abierto. Mientras existe, captura teclado y mouse.
+    dialog: Option<Dialog>,
+    /// Documento al que se refiere el diálogo; si deja de estar activo, la
+    /// respuesta no se aplica a otro.
+    dialog_document: Option<u64>,
+    /// Rectángulos de los botones del último cuadro dibujado.
+    dialog_buttons: Vec<DialogRect>,
+    /// La pestaña se cierra cuando termine este guardado.
+    close_tab_after_save: Option<u64>,
+    /// Cerrar la ventana tras confirmar en un diálogo propio.
+    exit_requested: bool,
+    /// La ventana permanece encima de las demás, útil al estudiar.
+    pinned_on_top: bool,
+    /// Imagen local que espera el consentimiento del diálogo.
+    pending_image_destination: Option<String>,
     /// Conserva el resultado fatal para devolver un codigo de salida distinto
     /// de cero despues de cerrar ordenadamente el event loop.
     fatal_error: bool,
@@ -6953,6 +7049,11 @@ impl ThemeTransition {
 
 impl ApplicationHandler<AppEvent> for App {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        if std::mem::take(&mut self.exit_requested) {
+            self.report();
+            event_loop.exit();
+            return;
+        }
         let now = Instant::now();
         self.flush_due_recoveries(now);
 
@@ -7297,6 +7398,7 @@ impl ApplicationHandler<AppEvent> for App {
                             let _ = recovery.clear();
                         }
                         self.set_notice("documento guardado de forma atómica");
+                        self.close_tab_if_saved_for_close(document_id);
                     } else {
                         if let Some(tab) = self
                             .inactive_documents
@@ -7328,6 +7430,9 @@ impl ApplicationHandler<AppEvent> for App {
                 failure,
             } => {
                 self.saves_in_flight.remove(&document_id);
+                if self.close_tab_after_save == Some(document_id) {
+                    self.close_tab_after_save = None;
+                }
                 self.log.push(format!("[error] {error}"));
                 if document_id != self.document.id {
                     self.set_notice(
@@ -7380,6 +7485,7 @@ impl ApplicationHandler<AppEvent> for App {
                             let _ = recovery.clear();
                         }
                         self.set_notice("documento creado y guardado de forma atómica");
+                        self.close_tab_if_saved_for_close(document_id);
                     } else {
                         if let Some(tab) = self
                             .inactive_documents
@@ -7676,24 +7782,18 @@ impl ApplicationHandler<AppEvent> for App {
         self.window = Some(window);
         if self.recovery_privacy_notice_pending {
             self.recovery_privacy_notice_pending = false;
-            MessageDialog::new()
-                .set_level(MessageLevel::Info)
-                .set_title("Recuperación local activada")
-                .set_description(
-                    "Visor MD conserva temporalmente cambios sin guardar en tu perfil local para recuperarlos tras un cierre inesperado. Esa copia es texto sin cifrar, no un guardado definitivo y nunca se escribe dentro de la bóveda.",
-                )
-                .set_buttons(MessageButtons::Ok)
-                .show();
-            self.set_notice("recuperación local temporal activada");
+            self.open_dialog(Dialog::recovery_privacy(), None);
         }
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        if self.dialog.is_some() && self.handle_dialog_event(&event) {
+            return;
+        }
         match event {
             WindowEvent::CloseRequested => {
                 if self.request_close_all() {
-                    self.report();
-                    event_loop.exit();
+                    self.exit_requested = true;
                 }
             }
             WindowEvent::ThemeChanged(theme) => {
@@ -7938,6 +8038,7 @@ impl ApplicationHandler<AppEvent> for App {
                     });
                     if let Some(control) = chrome_control {
                         match control {
+                            WindowControl::PinOnTop => self.toggle_pin_on_top(),
                             WindowControl::Minimize => {
                                 if let Some(window) = &self.window {
                                     window.set_minimized(true);
@@ -7950,8 +8051,7 @@ impl ApplicationHandler<AppEvent> for App {
                             }
                             WindowControl::Close => {
                                 if self.request_close_all() {
-                                    self.report();
-                                    event_loop.exit();
+                                    self.exit_requested = true;
                                 }
                             }
                         }
@@ -8837,6 +8937,7 @@ impl App {
             }
             AppAction::ToggleTheme => self.toggle_theme(),
             AppAction::ToggleReduceMotion => self.toggle_reduce_motion(),
+            AppAction::TogglePinOnTop => self.toggle_pin_on_top(),
             AppAction::Cut => self.cut_source_selection(),
             AppAction::FormatBold => self.apply_markdown_surround("**", "**", "texto"),
             AppAction::FormatItalic => self.apply_markdown_surround("_", "_", "texto"),
@@ -8982,6 +9083,25 @@ impl App {
         }
     }
 
+    /// Mantiene la ventana por encima de las demás mientras se estudia con
+    /// otra aplicación al lado. Dura la sesión: al reabrir vuelve a normal.
+    fn toggle_pin_on_top(&mut self) {
+        let Some(window) = &self.window else {
+            return;
+        };
+        self.pinned_on_top = !self.pinned_on_top;
+        window.set_window_level(if self.pinned_on_top {
+            WindowLevel::AlwaysOnTop
+        } else {
+            WindowLevel::Normal
+        });
+        self.set_notice(if self.pinned_on_top {
+            "ventana fijada encima de las demás · clic en la chincheta para soltarla"
+        } else {
+            "la ventana ya no queda encima de las demás"
+        });
+    }
+
     fn toggle_reduce_motion(&mut self) {
         self.reduce_motion = !self.reduce_motion;
         if self.reduce_motion
@@ -9045,23 +9165,13 @@ impl App {
 
     fn toggle_recovery(&mut self) {
         if self.recovery_enabled {
-            let dialog = MessageDialog::new()
-                .set_level(MessageLevel::Warning)
-                .set_title("Visor MD · desactivar recuperación")
-                .set_description(
-                    "La recuperación conserva copias temporales locales sin cifrar de documentos modificados. Si la desactivas, un cierre inesperado puede perder cambios.\n\nSí: mantenerla activa.\nNo: desactivarla y eliminar las copias de esta sesión.",
-                )
-                .set_buttons(MessageButtons::YesNo);
-            let result = if let Some(window) = &self.window {
-                dialog.set_parent(window.as_ref()).show()
-            } else {
-                dialog.show()
-            };
-            if !matches!(result, MessageDialogResult::No) {
-                self.set_notice("la recuperación local sigue activa");
-                return;
-            }
+            self.open_dialog(Dialog::disable_recovery(), None);
+            return;
         }
+        self.apply_recovery_toggle();
+    }
+
+    fn apply_recovery_toggle(&mut self) {
         self.recovery_enabled = !self.recovery_enabled;
         if self.recovery_enabled {
             self.recovery = RecoverySession::start().ok();
@@ -9990,6 +10100,26 @@ impl App {
         if !self.request_close_current() {
             return;
         }
+        self.finish_close_active_document_tab();
+    }
+
+    /// Completa "Guardar" en el diálogo de cierre: solo cierra si la pestaña
+    /// sigue activa y quedó sin cambios nuevos tras el guardado.
+    fn close_tab_if_saved_for_close(&mut self, document_id: u64) {
+        if self.close_tab_after_save != Some(document_id) {
+            return;
+        }
+        self.close_tab_after_save = None;
+        if self.document.id == document_id && !self.document.source_editor.is_dirty() {
+            self.finish_close_active_document_tab();
+        } else {
+            self.set_notice("se guardó, pero hay cambios nuevos: la pestaña sigue abierta");
+        }
+    }
+
+    /// Cierra la pestaña activa después de que el cierre fue confirmado o no
+    /// necesitaba confirmación. No vuelve a preguntar.
+    fn finish_close_active_document_tab(&mut self) {
         let closing_id = self.document.id;
         let active_position = self
             .tab_order
@@ -10819,7 +10949,8 @@ impl App {
             self.set_notice("espera a que termine la recarga antes de guardar una copia");
             return;
         }
-        let Some(path) = FileDialog::new()
+        let Some(path) = self
+            .file_dialog()
             .add_filter("Markdown", &["md", "markdown"])
             .set_file_name("nota.md")
             .save_file()
@@ -10926,123 +11057,184 @@ impl App {
 
     /// Detectar un cambio no modifica nada por sí mismo. Recargar conserva una
     /// recuperación si había cambios locales; guardar una copia nunca toca la
-    /// versión externa; cancelar mantiene la vista actual.
+    /// versión externa; mantener conserva la vista actual.
     fn resolve_external_change(&mut self) {
-        let description = if self.document.source_editor.is_dirty() {
-            "El archivo cambió fuera de Visor MD mientras tenías cambios locales.\n\nSí: recargar la versión externa después de conservar una recuperación local.\nNo: Guardar una copia con otro nombre.\nCancelar: mantener esta edición abierta."
-        } else {
-            "El archivo cambió fuera de Visor MD.\n\nSí: recargar la versión externa.\nNo: Guardar una copia de la vista actual.\nCancelar: mantener la vista actual."
-        };
-        let dialog = MessageDialog::new()
-            .set_level(MessageLevel::Warning)
-            .set_title("Visor MD · archivo modificado externamente")
-            .set_description(description)
-            .set_buttons(MessageButtons::YesNoCancel);
-        let result = if let Some(window) = &self.window {
-            dialog.set_parent(window.as_ref()).show()
-        } else {
-            dialog.show()
-        };
-        match result {
-            MessageDialogResult::Yes => {
-                if self.document.source_editor.is_dirty() {
-                    let Some(recovery) = &self.recovery else {
-                        self.set_notice(
-                            "no se pudo recargar: la recuperación local no está disponible; guarda una copia",
-                        );
-                        return;
-                    };
-                    if let Err(error) = recovery.write(&self.document.source.to_string()) {
-                        self.log.push(format!("[recuperación] {error}"));
-                        self.set_notice(
-                            "no se pudo conservar una recuperación; no se recargó el archivo externo",
-                        );
-                        return;
-                    }
-                    self.document.cancel_pending_recovery();
-                }
-                self.reload_current_document_from_disk();
-            }
-            MessageDialogResult::No => self.save_as_current_document(),
-            MessageDialogResult::Cancel
-            | MessageDialogResult::Ok
-            | MessageDialogResult::Custom(_) => {
-                self.set_notice("cambio externo detectado: se conservó la vista actual")
-            }
-        }
+        let dirty = self.document.source_editor.is_dirty();
+        self.open_dialog(Dialog::external_change(dirty), Some(self.document.id));
     }
 
     /// Un destino perdido no se convierte nunca en un guardado implícito. La
     /// fuente que ya estaba abierta sigue siendo autoridad local hasta que la
     /// persona elige explícitamente una copia nueva.
     fn resolve_unavailable_external_file(&mut self) {
-        let dialog = MessageDialog::new()
-            .set_level(MessageLevel::Warning)
-            .set_title("Visor MD · archivo externo no disponible")
-            .set_description(
-                "El archivo abierto se borró, dejó de ser un archivo normal o ya no se puede leer. Tu documento local permanece intacto.\n\nSí: Guardar una copia con otro nombre.\nNo: mantener esta edición abierta.",
-            )
-            .set_buttons(MessageButtons::YesNo);
-        let result = if let Some(window) = &self.window {
-            dialog.set_parent(window.as_ref()).show()
-        } else {
-            dialog.show()
-        };
-        if matches!(result, MessageDialogResult::Yes) {
-            self.save_as_current_document();
-        } else {
-            self.set_notice(
-                "la edición local se mantiene; elegí Guardar como para conservar una copia",
-            );
-        }
+        self.open_dialog(Dialog::external_unavailable(), Some(self.document.id));
     }
 
     /// Un conflicto externo nunca sobrescribe el destino. La única acción que
     /// descarta la versión local es recargar, y antes se guarda una
     /// recuperación local explícita para que un fallo posterior no la pierda.
     fn resolve_save_conflict(&mut self) {
-        let dialog = MessageDialog::new()
-            .set_level(MessageLevel::Warning)
-            .set_title("Visor MD · conflicto al guardar")
-            .set_description(
-                "El archivo cambió fuera de Visor MD y no se sobrescribió.\n\nSí: recargar la versión externa después de conservar una recuperación local.\nNo: Guardar una copia con otro nombre.\nCancelar: mantener esta edición abierta.",
-            )
-            .set_buttons(MessageButtons::YesNoCancel);
-        let result = if let Some(window) = &self.window {
-            dialog.set_parent(window.as_ref()).show()
-        } else {
-            dialog.show()
-        };
-        match result {
-            MessageDialogResult::Yes => {
-                let Some(recovery) = &self.recovery else {
-                    self.set_notice(
-                        "no se pudo recargar: la recuperación local no está disponible; guarda una copia",
-                    );
-                    return;
-                };
-                if let Err(error) = recovery.write(&self.document.source.to_string()) {
-                    self.log.push(format!("[recuperación] {error}"));
-                    self.set_notice(
-                        "no se pudo conservar una recuperación; no se recargó el archivo externo",
-                    );
-                    return;
-                }
-                self.document.cancel_pending_recovery();
-                self.reload_current_document_from_disk();
+        self.open_dialog(Dialog::save_conflict(), Some(self.document.id));
+    }
+
+    /// Recarga la versión del disco. Si hay cambios locales, primero los deja
+    /// en una recuperación; si eso falla, no recarga.
+    fn reload_external_preserving_local(&mut self) {
+        if self.document.source_editor.is_dirty() {
+            let Some(recovery) = &self.recovery else {
+                self.set_notice(
+                    "no se pudo recargar: la recuperación local no está disponible; guarda una copia",
+                );
+                return;
+            };
+            if let Err(error) = recovery.write(&self.document.source.to_string()) {
+                self.log.push(format!("[recuperación] {error}"));
+                self.set_notice(
+                    "no se pudo conservar una recuperación; no se recargó el archivo externo",
+                );
+                return;
             }
-            MessageDialogResult::No => self.save_as_current_document(),
-            MessageDialogResult::Cancel
-            | MessageDialogResult::Ok
-            | MessageDialogResult::Custom(_) => {
-                self.set_notice("conflicto conservado: el archivo externo no se sobrescribió")
+            self.document.cancel_pending_recovery();
+        }
+        self.reload_current_document_from_disk();
+    }
+
+    fn open_dialog(&mut self, dialog: Dialog, document: Option<u64>) {
+        self.context_menu = None;
+        self.selecting = false;
+        self.dialog = Some(dialog);
+        self.dialog_document = document;
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    /// Captura la entrada mientras hay un diálogo. Devuelve `true` cuando el
+    /// evento ya no debe llegar al documento de fondo.
+    fn handle_dialog_event(&mut self, event: &WindowEvent) -> bool {
+        match event {
+            WindowEvent::CursorMoved { position, .. } => {
+                self.pointer = Some((position.x as f32, position.y as f32));
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+                true
+            }
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button,
+                ..
+            } => {
+                if *button != MouseButton::Left {
+                    return true;
+                }
+                let Some((x, y)) = self.pointer else {
+                    return true;
+                };
+                let hit = self
+                    .dialog_buttons
+                    .iter()
+                    .position(|rect| rect.contains(x, y));
+                if let Some(index) = hit
+                    && let Some(choice) = self
+                        .dialog
+                        .as_ref()
+                        .and_then(|dialog| dialog.buttons.get(index))
+                        .map(|button| button.choice)
+                {
+                    self.finish_dialog(choice);
+                }
+                true
+            }
+            WindowEvent::MouseInput { .. }
+            | WindowEvent::MouseWheel { .. }
+            | WindowEvent::Ime(_)
+            | WindowEvent::CloseRequested => true,
+            WindowEvent::KeyboardInput { event, .. } => {
+                if event.state != ElementState::Pressed {
+                    return true;
+                }
+                let Some(dialog) = self.dialog.as_mut() else {
+                    return true;
+                };
+                match event.physical_key {
+                    PhysicalKey::Code(KeyCode::Escape) => {
+                        let choice = dialog.safe_choice;
+                        self.finish_dialog(choice);
+                    }
+                    PhysicalKey::Code(KeyCode::Enter | KeyCode::NumpadEnter | KeyCode::Space) => {
+                        let choice = dialog.focused_choice();
+                        self.finish_dialog(choice);
+                    }
+                    PhysicalKey::Code(KeyCode::Tab) => {
+                        dialog.move_focus(self.modifiers.shift_key());
+                    }
+                    PhysicalKey::Code(KeyCode::ArrowLeft | KeyCode::ArrowUp) => {
+                        dialog.move_focus(true);
+                    }
+                    PhysicalKey::Code(KeyCode::ArrowRight | KeyCode::ArrowDown) => {
+                        dialog.move_focus(false);
+                    }
+                    _ => {}
+                }
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn finish_dialog(&mut self, choice: DialogChoice) {
+        self.dialog = None;
+        self.dialog_buttons.clear();
+        let target = self.dialog_document.take();
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+        // Una respuesta sobre un documento solo se aplica si sigue activo.
+        if target.is_some_and(|document_id| document_id != self.document.id) {
+            self.set_notice("el documento de la pregunta ya no está activo; no se cambió nada");
+            return;
+        }
+        match choice {
+            DialogChoice::AcknowledgeRecovery => {
+                self.set_notice("recuperación local temporal activada");
+            }
+            DialogChoice::KeepRecovery => self.set_notice("la recuperación local sigue activa"),
+            DialogChoice::DisableRecovery => self.apply_recovery_toggle(),
+            DialogChoice::ReloadExternal => self.reload_external_preserving_local(),
+            DialogChoice::SaveCopy => self.save_as_current_document(),
+            DialogChoice::KeepLocal => {
+                self.set_notice("se mantiene tu versión; el archivo del disco no se tocó");
+            }
+            DialogChoice::SaveAndCloseTab => {
+                let document_id = self.document.id;
+                self.close_tab_after_save = Some(document_id);
+                self.save_current_document();
+                if !self.saves_in_flight.contains(&document_id) {
+                    self.close_tab_after_save = None;
+                }
+            }
+            DialogChoice::DiscardAndCloseTab => self.finish_close_active_document_tab(),
+            DialogChoice::CloseWindow => self.exit_requested = true,
+            DialogChoice::KeepEditing => self.set_notice("seguís editando; no se cerró nada"),
+            DialogChoice::LoadImage => {
+                if let Some(destination) = self.pending_image_destination.take() {
+                    self.preview_local_image(&destination, true);
+                }
+            }
+            DialogChoice::SkipImage => {
+                self.pending_image_destination = None;
+                self.set_notice("imagen local no cargada");
             }
         }
     }
 
     /// El cierre no puede transformar una edición activa en pérdida silenciosa.
-    /// La pestaña muestra el estado sucio y el diálogo nativo conserva una
-    /// recuperación sin cifrar antes de permitir abandonarla.
+    /// Si hay cambios, primero se conserva una recuperación y después se
+    /// pregunta con un diálogo propio. Devuelve `true` solo si puede cerrar ya.
     fn request_close_current(&mut self) -> bool {
         if !self.document.source_editor.is_dirty() {
             self.document.cancel_pending_recovery();
@@ -11066,24 +11258,16 @@ impl App {
         } else {
             false
         };
-        let description = if recovery_preserved {
-            "Hay cambios sin guardar. Se conservó una recuperación local sin cifrar.\n\nSí: seguir editando.\nNo: cerrar y conservar la recuperación para restaurarla después."
-        } else {
-            "Hay cambios sin guardar y la recuperación local está desactivada. Si cierras, estos cambios se perderán.\n\nSí: seguir editando.\nNo: cerrar sin recuperación."
-        };
-        let dialog = MessageDialog::new()
-            .set_level(MessageLevel::Warning)
-            .set_title("Visor MD · cambios sin guardar")
-            .set_description(description)
-            .set_buttons(MessageButtons::YesNo);
-        let result = if let Some(window) = &self.window {
-            dialog.set_parent(window.as_ref()).show()
-        } else {
-            dialog.show()
-        };
-        matches!(result, MessageDialogResult::No)
+        let name = document_display_name(&self.document.path);
+        self.open_dialog(
+            Dialog::close_tab(&name, recovery_preserved),
+            Some(self.document.id),
+        );
+        false
     }
 
+    /// Devuelve `true` si la ventana puede cerrarse ya. Con documentos
+    /// modificados conserva sus recuperaciones y pregunta con un diálogo.
     fn request_close_all(&mut self) -> bool {
         if !self.open_requests.is_empty()
             || !self.view_requests.is_empty()
@@ -11140,27 +11324,11 @@ impl App {
             self.set_notice("no se cerró: no se pudieron conservar todas las recuperaciones");
             return false;
         }
-
-        let description = if self.recovery_enabled {
-            format!(
-                "Hay {dirty_count} documentos con cambios sin guardar. Se conservaron recuperaciones locales sin cifrar.\n\nSí: seguir editando.\nNo: cerrar y conservar las recuperaciones."
-            )
-        } else {
-            format!(
-                "Hay {dirty_count} documentos con cambios sin guardar y la recuperación local está desactivada. Si cierras, esos cambios se perderán.\n\nSí: seguir editando.\nNo: cerrar sin recuperación."
-            )
-        };
-        let dialog = MessageDialog::new()
-            .set_level(MessageLevel::Warning)
-            .set_title("Visor MD · documentos sin guardar")
-            .set_description(description)
-            .set_buttons(MessageButtons::YesNo);
-        let result = if let Some(window) = &self.window {
-            dialog.set_parent(window.as_ref()).show()
-        } else {
-            dialog.show()
-        };
-        matches!(result, MessageDialogResult::No)
+        self.open_dialog(
+            Dialog::close_window(dirty_count, self.recovery_enabled),
+            None,
+        );
+        false
     }
 
     fn create_new_document(&mut self) {
@@ -11172,8 +11340,19 @@ impl App {
         }
     }
 
+    /// Diálogo de archivos vinculado a la ventana: queda encima de ella aunque
+    /// esté fijada sobre las demás, y bloquea solo esta ventana.
+    fn file_dialog(&self) -> FileDialog {
+        let dialog = FileDialog::new();
+        match &self.window {
+            Some(window) => dialog.set_parent(window.as_ref()),
+            None => dialog,
+        }
+    }
+
     fn choose_document_to_open(&mut self) {
-        let Some(path) = FileDialog::new()
+        let Some(path) = self
+            .file_dialog()
             .add_filter(
                 "Texto y Markdown",
                 &[
@@ -11190,7 +11369,8 @@ impl App {
     }
 
     fn choose_workspace(&mut self) {
-        let Some(path) = FileDialog::new()
+        let Some(path) = self
+            .file_dialog()
             .set_title("Elegir carpeta de trabajo")
             .pick_folder()
         else {
@@ -11697,7 +11877,7 @@ impl App {
             return;
         }
         if destination.0 == InlineTargetKind::Image {
-            self.preview_local_image(&destination.1);
+            self.preview_local_image(&destination.1, false);
             return;
         }
         match classify_link_destination(&destination.1) {
@@ -11750,7 +11930,9 @@ impl App {
         }
     }
 
-    fn preview_local_image(&mut self, destination: &str) {
+    /// La primera llamada valida y pide consentimiento; la segunda, ya
+    /// confirmada, repite las mismas validaciones antes de leer el archivo.
+    fn preview_local_image(&mut self, destination: &str, confirmed: bool) {
         let (relative_path, _) = relative_destination_parts(destination);
         if classify_link_destination(relative_path) != LinkDestinationKind::RelativeFile {
             self.set_notice("imagen remota o ruta no permitida bloqueada; no se realizó conexión");
@@ -11773,20 +11955,9 @@ impl App {
             );
             return;
         }
-        let dialog = MessageDialog::new()
-            .set_level(MessageLevel::Info)
-            .set_title("Visor MD · mostrar imagen local")
-            .set_description(
-                "Se leerá una sola imagen PNG dentro de la carpeta elegida. Se aplican límites de 8 MiB y 16 millones de píxeles. El permiso no se recuerda.",
-            )
-            .set_buttons(MessageButtons::YesNo);
-        let result = if let Some(window) = &self.window {
-            dialog.set_parent(window.as_ref()).show()
-        } else {
-            dialog.show()
-        };
-        if !matches!(result, MessageDialogResult::Yes) {
-            self.set_notice("imagen local no cargada");
+        if !confirmed {
+            self.pending_image_destination = Some(destination.to_owned());
+            self.open_dialog(Dialog::local_image(), Some(self.document.id));
             return;
         }
 
@@ -13517,6 +13688,69 @@ impl App {
         let toolbar_hint_layout = toolbar_hint_label.map(|label| {
             build_menu_layout(label, &mut self.font_cx, &mut self.layout_cx, self.palette)
         });
+        let dialog_render = self.dialog.clone().map(|dialog| {
+            let window_width = w.get() as f32;
+            let inner = dialog_width(window_width) - dialog::DIALOG_PADDING * 2.0;
+            let palette = self.palette;
+            let title = build_ui_text_layout(
+                &dialog.title,
+                &mut self.font_cx,
+                &mut self.layout_cx,
+                palette.text,
+                16.0,
+                true,
+                Some(inner),
+            );
+            let body = build_ui_text_layout(
+                &dialog.body,
+                &mut self.font_cx,
+                &mut self.layout_cx,
+                palette.dim,
+                13.0,
+                false,
+                Some(inner),
+            );
+            let labels = dialog
+                .buttons
+                .iter()
+                .map(|button| {
+                    let color = match button.tone {
+                        ButtonTone::Primary => palette.bg,
+                        ButtonTone::Neutral => palette.text,
+                        ButtonTone::Destructive => destructive_color(palette),
+                    };
+                    build_ui_text_layout(
+                        button.label,
+                        &mut self.font_cx,
+                        &mut self.layout_cx,
+                        color,
+                        13.0,
+                        button.tone == ButtonTone::Primary,
+                        None,
+                    )
+                })
+                .collect::<Vec<_>>();
+            let widths = labels.iter().map(Layout::width).collect::<Vec<_>>();
+            let geometry = dialog_layout(
+                window_width,
+                h.get() as f32,
+                title.height(),
+                body.height(),
+                &widths,
+            );
+            let tones = dialog
+                .buttons
+                .iter()
+                .map(|button| button.tone)
+                .collect::<Vec<_>>();
+            (title, body, labels, geometry, tones, dialog.focused)
+        });
+        self.dialog_buttons = dialog_render
+            .as_ref()
+            .map(|render| render.3.buttons.clone())
+            .unwrap_or_default();
+        let dialog_hover = self.pointer;
+        let pinned_on_top = self.pinned_on_top;
         let toast_layout = self
             .notice_visible_until
             .filter(|until| *until > Instant::now())
@@ -14351,7 +14585,7 @@ impl App {
             let x = TOOLBAR_X + index as f32 * TOOLBAR_ITEM_WIDTH;
             let width = TOOLBAR_ITEM_WIDTH - 4.0;
             let right_limit = if custom_window_chrome_enabled() {
-                w.get() as f32 - WINDOW_CONTROL_WIDTH * 3.0
+                w.get() as f32 - WINDOW_CONTROL_WIDTH * WINDOW_CONTROL_COUNT
             } else {
                 w.get() as f32 - MARGIN
             };
@@ -14648,13 +14882,14 @@ impl App {
         }
 
         if custom_window_chrome_enabled() {
-            let chrome_start = w.get() as f32 - WINDOW_CONTROL_WIDTH * 3.0;
+            let chrome_start = w.get() as f32 - WINDOW_CONTROL_WIDTH * WINDOW_CONTROL_COUNT;
             if let Some(rect) =
                 Rect::from_xywh(0.0, WINDOW_CHROME_HEIGHT - 1.0, w.get() as f32, 1.0)
             {
                 pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
             }
             for (index, control) in [
+                WindowControl::PinOnTop,
                 WindowControl::Minimize,
                 WindowControl::ToggleMaximize,
                 WindowControl::Close,
@@ -14666,6 +14901,21 @@ impl App {
                 let hovered = menu_pointer.is_some_and(|(pointer_x, pointer_y)| {
                     window_control_at(pointer_x, pointer_y, w.get() as f32) == Some(control)
                 });
+                if control == WindowControl::PinOnTop && pinned_on_top {
+                    let mut active = Paint::default();
+                    let accent = palette.accent;
+                    active.set_color(Color::from_rgba8(accent.0, accent.1, accent.2, 46));
+                    active.anti_alias = true;
+                    fill_rounded_rect(
+                        pixmap,
+                        x + 7.0,
+                        6.0,
+                        WINDOW_CONTROL_WIDTH - 14.0,
+                        WINDOW_CHROME_HEIGHT - 12.0,
+                        7.0,
+                        &active,
+                    );
+                }
                 if hovered {
                     let mut control_paint = Paint::default();
                     let color = if control == WindowControl::Close {
@@ -14684,6 +14934,22 @@ impl App {
                 let center_y = WINDOW_CHROME_HEIGHT * 0.5;
                 let mut path = tiny_skia::PathBuilder::new();
                 match control {
+                    WindowControl::PinOnTop => {
+                        // Chincheta: cabeza, cuerpo y aguja.
+                        path.move_to(center_x - 3.0, center_y - 6.0);
+                        path.line_to(center_x + 3.0, center_y - 6.0);
+                        path.move_to(center_x - 2.0, center_y - 6.0);
+                        path.line_to(center_x - 2.0, center_y - 1.0);
+                        path.move_to(center_x + 2.0, center_y - 6.0);
+                        path.line_to(center_x + 2.0, center_y - 1.0);
+                        path.move_to(center_x - 5.0, center_y + 1.0);
+                        path.line_to(center_x + 5.0, center_y + 1.0);
+                        path.line_to(center_x + 2.0, center_y - 1.0);
+                        path.line_to(center_x - 2.0, center_y - 1.0);
+                        path.close();
+                        path.move_to(center_x, center_y + 1.0);
+                        path.line_to(center_x, center_y + 7.0);
+                    }
                     WindowControl::Minimize => {
                         path.move_to(center_x - 6.0, center_y + 4.0);
                         path.line_to(center_x + 6.0, center_y + 4.0);
@@ -15091,6 +15357,120 @@ impl App {
                 Transform::from_scale(scale, scale),
                 None,
             );
+        }
+
+        if let Some((title, body, labels, geometry, tones, focused)) = dialog_render {
+            // Velo que separa el diálogo del documento sin ocultarlo del todo.
+            let mut scrim = Paint::default();
+            let scrim_alpha = if palette.bg.0 < 0x80 { 150 } else { 96 };
+            scrim.set_color(Color::from_rgba8(0, 0, 0, scrim_alpha));
+            if let Some(rect) = Rect::from_xywh(0.0, 0.0, w.get() as f32, h.get() as f32) {
+                pixmap.fill_rect(rect, &scrim, Transform::identity(), None);
+            }
+            let panel = geometry.panel;
+            draw_floating_surface(
+                pixmap,
+                panel.x,
+                panel.y,
+                panel.width,
+                panel.height,
+                12.0,
+                *palette,
+            );
+            let text_x = panel.x + dialog::DIALOG_PADDING;
+            draw_text_layout(pixmap, scale_cx, glyphs, &title, text_x, geometry.title_y);
+            draw_text_layout(pixmap, scale_cx, glyphs, &body, text_x, geometry.body_y);
+            for (index, ((rect, label), tone)) in geometry
+                .buttons
+                .iter()
+                .zip(labels.iter())
+                .zip(tones.iter())
+                .enumerate()
+            {
+                let hovered = dialog_hover.is_some_and(|(x, y)| rect.contains(x, y));
+                let mut paint = Paint {
+                    anti_alias: true,
+                    ..Default::default()
+                };
+                if index == focused {
+                    // Anillo de foco separado del botón por un hueco del color
+                    // del panel, visible tanto en día como en noche.
+                    let accent = palette.accent;
+                    paint.set_color(Color::from_rgba8(accent.0, accent.1, accent.2, 140));
+                    fill_rounded_rect(
+                        pixmap,
+                        rect.x - 3.0,
+                        rect.y - 3.0,
+                        rect.width + 6.0,
+                        rect.height + 6.0,
+                        11.0,
+                        &paint,
+                    );
+                    let floating = palette.floating;
+                    paint.set_color(Color::from_rgba8(floating.0, floating.1, floating.2, 255));
+                    fill_rounded_rect(
+                        pixmap,
+                        rect.x - 1.0,
+                        rect.y - 1.0,
+                        rect.width + 2.0,
+                        rect.height + 2.0,
+                        9.0,
+                        &paint,
+                    );
+                }
+                match tone {
+                    ButtonTone::Primary => {
+                        let accent = palette.accent;
+                        let alpha = if hovered { 220 } else { 255 };
+                        paint.set_color(Color::from_rgba8(accent.0, accent.1, accent.2, alpha));
+                        fill_rounded_rect(
+                            pixmap,
+                            rect.x,
+                            rect.y,
+                            rect.width,
+                            rect.height,
+                            8.0,
+                            &paint,
+                        );
+                    }
+                    ButtonTone::Neutral | ButtonTone::Destructive => {
+                        let border = palette.border;
+                        paint.set_color(Color::from_rgba8(border.0, border.1, border.2, 255));
+                        fill_rounded_rect(
+                            pixmap,
+                            rect.x,
+                            rect.y,
+                            rect.width,
+                            rect.height,
+                            8.0,
+                            &paint,
+                        );
+                        let fill = if hovered {
+                            palette.elevated
+                        } else {
+                            palette.floating
+                        };
+                        paint.set_color(Color::from_rgba8(fill.0, fill.1, fill.2, 255));
+                        fill_rounded_rect(
+                            pixmap,
+                            rect.x + 1.0,
+                            rect.y + 1.0,
+                            rect.width - 2.0,
+                            rect.height - 2.0,
+                            7.0,
+                            &paint,
+                        );
+                    }
+                }
+                draw_text_layout(
+                    pixmap,
+                    scale_cx,
+                    glyphs,
+                    label,
+                    (rect.x + (rect.width - label.width()) * 0.5).round(),
+                    (rect.y + (rect.height - label.height()) * 0.5).round(),
+                );
+            }
         }
 
         // Volcado del pixmap a la ventana.
@@ -15626,6 +16006,13 @@ fn main() {
         notice_visible_until: None,
         code_copied: None,
         reveal_cursor_pending: false,
+        dialog: None,
+        dialog_document: None,
+        dialog_buttons: Vec::new(),
+        close_tab_after_save: None,
+        exit_requested: false,
+        pinned_on_top: false,
+        pending_image_destination: None,
         fatal_error: false,
     };
 
@@ -15732,9 +16119,19 @@ mod pruebas {
             Some(WindowControl::ToggleMaximize)
         );
         assert_eq!(
-            window_control_at(520.0, 20.0, 640.0),
+            window_control_at(540.0, 20.0, 640.0),
             Some(WindowControl::Minimize)
         );
+        assert_eq!(
+            window_control_at(500.0, 20.0, 640.0),
+            Some(WindowControl::PinOnTop)
+        );
+        const {
+            assert!(
+                MODE_SWITCH_X + MODE_SWITCH_WIDTH
+                    <= 640.0 - WINDOW_CONTROL_WIDTH * WINDOW_CONTROL_COUNT
+            )
+        };
         assert_eq!(
             resize_direction_at(2.0, 2.0, 640.0, 480.0, WINDOW_RESIZE_BORDER),
             Some(ResizeDirection::NorthWest)
@@ -15744,7 +16141,7 @@ mod pruebas {
             Some(ResizeDirection::SouthEast)
         );
         assert!(titlebar_drag_at(
-            496.0,
+            376.0,
             20.0,
             640.0,
             DocumentMode::SourceEditing
@@ -16039,9 +16436,10 @@ mod pruebas {
 
         // Incluye documento, workspace, estudio y accesibilidad sin convertir
         // la paleta en un menú de IDE: las familias densas también tienen
-        // ámbitos propios desde el menú contextual. Superar 65 exige revisar
-        // esa jerarquía antes de añadir otra acción.
-        assert!(original_len <= 65, "el catálogo dejó de ser pequeño");
+        // ámbitos propios desde el menú contextual. Superar 66 exige revisar
+        // esa jerarquía antes de añadir otra acción. La 66 es fijar la ventana
+        // encima, accesible por teclado donde no hay chincheta en el chrome.
+        assert!(original_len <= 66, "el catálogo dejó de ser pequeño");
         assert_eq!(labels.len(), original_len);
     }
 
