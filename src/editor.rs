@@ -443,6 +443,70 @@ impl EditHistory {
     }
 }
 
+/// Prefijos de bloque que el kit de escritura aplica sobre líneas.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LinePrefix {
+    Bullet,
+    Ordered,
+    Task,
+    Quote,
+}
+
+impl LinePrefix {
+    fn marker(self, number: usize) -> String {
+        match self {
+            Self::Bullet => "- ".to_string(),
+            Self::Ordered => format!("{number}. "),
+            Self::Task => "- [ ] ".to_string(),
+            Self::Quote => "> ".to_string(),
+        }
+    }
+}
+
+struct ListMarker {
+    /// Bytes del inicio de línea que ocupa la sangría más el marcador.
+    len: usize,
+    /// Marcador que abre el elemento siguiente, con la misma sangría.
+    next: String,
+}
+
+/// Reconoce el marcador de lista o cita al inicio de una línea, siempre que el
+/// cursor esté después de él. No interpreta contenido: solo la sintaxis del
+/// marcador, para que Enter no invente estructura en texto común.
+fn list_marker(before_cursor: &str) -> Option<ListMarker> {
+    let indent_len = before_cursor.len() - before_cursor.trim_start_matches([' ', '\t']).len();
+    let indent = &before_cursor[..indent_len];
+    let rest = &before_cursor[indent_len..];
+    let (marker_len, next) = if rest.starts_with("> ") {
+        (2, "> ".to_string())
+    } else if let Some(bullet) = ["- ", "* ", "+ "]
+        .iter()
+        .find(|bullet| rest.starts_with(**bullet))
+    {
+        let after = &rest[2..];
+        if after.starts_with("[ ] ") || after.starts_with("[x] ") || after.starts_with("[X] ") {
+            (6, format!("{bullet}[ ] "))
+        } else {
+            (2, (*bullet).to_string())
+        }
+    } else {
+        let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+        if digits == 0 || digits > 9 {
+            return None;
+        }
+        let delimiter = *rest.as_bytes().get(digits)?;
+        if !matches!(delimiter, b'.' | b')') || rest.as_bytes().get(digits + 1) != Some(&b' ') {
+            return None;
+        }
+        let number: u64 = rest[..digits].parse().ok()?;
+        (digits + 2, format!("{}{} ", number + 1, delimiter as char))
+    };
+    (rest.len() >= marker_len).then(|| ListMarker {
+        len: indent_len + marker_len,
+        next: format!("{indent}{next}"),
+    })
+}
+
 /// Estado de interacción para un editor de fuente. Los offsets siempre caen en
 /// límites de caracteres UTF-8; el renderer puede traducirlos después a líneas
 /// y píxeles sin convertirse en autoridad sobre el texto.
@@ -601,6 +665,152 @@ impl SourceEditor {
             if self.anchor >= start {
                 self.anchor = source.normalize_edit_boundary(self.anchor + prefix.len());
             }
+            self.preferred_column = None;
+        }
+        Ok(changed)
+    }
+
+    /// Enter con continuación de listas y citas. Sobre un elemento con texto
+    /// abre el siguiente (numerado +1, tarea vacía, misma viñeta o cita); sobre
+    /// un elemento vacío termina la lista quitando su marcador. Con selección,
+    /// o fuera de una lista, inserta un salto normal.
+    pub fn insert_newline(
+        &mut self,
+        source: &mut TextBuffer,
+        eol: &str,
+    ) -> Result<bool, EditError> {
+        if !self.selection().is_empty() {
+            return self.insert(source, eol);
+        }
+        let start = source.line_start(self.cursor);
+        let line = source.line_at_byte(self.cursor);
+        let end = source.line_end(line);
+        let before = source.slice_bytes(start..self.cursor)?;
+        let Some(marker) = list_marker(&before) else {
+            return self.insert(source, eol);
+        };
+        let content_after_cursor = source.slice_bytes(self.cursor..end)?;
+        if before.len() == marker.len && content_after_cursor.trim().is_empty() {
+            // Elemento vacío: Enter sale de la lista sin dejar un marcador suelto.
+            let changed = self.history.apply(source, start..end, "")?;
+            if changed {
+                self.cursor = start;
+                self.anchor = start;
+                self.preferred_column = None;
+            }
+            return Ok(changed);
+        }
+        let continuation = format!("{eol}{}", marker.next);
+        self.insert(source, &continuation)
+    }
+
+    /// Aplica un prefijo de lista o cita respetando la selección:
+    ///
+    /// - sin selección, prefija la línea actual (o empieza un elemento en una
+    ///   línea vacía);
+    /// - con una parte de una sola línea, separa esa parte como un elemento
+    ///   propio y deja intacto el resto del párrafo;
+    /// - con varias líneas, prefija cada línea con texto, numerando en orden.
+    pub fn apply_line_prefix(
+        &mut self,
+        source: &mut TextBuffer,
+        kind: LinePrefix,
+        eol: &str,
+    ) -> Result<bool, EditError> {
+        let selection = self.selection();
+        if selection.is_empty() {
+            let start = source.line_start(self.cursor);
+            let prefix = kind.marker(1);
+            let changed = self.history.apply(source, start..start, &prefix)?;
+            if changed {
+                self.cursor = source.normalize_edit_boundary(self.cursor + prefix.len());
+                self.anchor = self.cursor;
+                self.preferred_column = None;
+            }
+            return Ok(changed);
+        }
+        let first_line = source.line_at_byte(selection.start);
+        let mut last_line = source.line_at_byte(selection.end);
+        if last_line > first_line && source.line_start(selection.end) == selection.end {
+            // Una selección que termina al inicio de una línea no la incluye.
+            last_line -= 1;
+        }
+        let first_start = source.line_start(selection.start);
+        let last_end = source.line_end(last_line);
+        if first_line == last_line {
+            let whole_line = source
+                .slice_bytes(first_start..selection.start)?
+                .trim()
+                .is_empty()
+                && source
+                    .slice_bytes(selection.end..last_end)?
+                    .trim()
+                    .is_empty();
+            if !whole_line {
+                let selected = source.slice_bytes(selection.clone())?;
+                let selected = selected.trim();
+                let leading = if source
+                    .slice_bytes(first_start..selection.start)?
+                    .trim()
+                    .is_empty()
+                {
+                    String::new()
+                } else {
+                    eol.to_string()
+                };
+                let trailing = if source
+                    .slice_bytes(selection.end..last_end)?
+                    .trim()
+                    .is_empty()
+                {
+                    String::new()
+                } else {
+                    eol.to_string()
+                };
+                let replacement = format!("{leading}{}{selected}{trailing}", kind.marker(1));
+                let changed = self
+                    .history
+                    .apply(source, selection.clone(), &replacement)?;
+                if changed {
+                    let item_start = selection.start + leading.len();
+                    self.anchor = item_start;
+                    self.cursor = source.normalize_edit_boundary(
+                        item_start + kind.marker(1).len() + selected.len(),
+                    );
+                    self.preferred_column = None;
+                }
+                return Ok(changed);
+            }
+        }
+        let original = source.slice_bytes(first_start..last_end)?;
+        let mut number = 0;
+        let mut replacement =
+            String::with_capacity(original.len() + 8 * (last_line - first_line + 1));
+        for piece in original.split_inclusive('\n') {
+            let (body, ending) = match piece.strip_suffix("\r\n") {
+                Some(body) => (body, "\r\n"),
+                None => match piece.strip_suffix('\n') {
+                    Some(body) => (body, "\n"),
+                    None => (piece, ""),
+                },
+            };
+            if body.trim().is_empty() {
+                replacement.push_str(body);
+            } else {
+                number += 1;
+                let indent = body.len() - body.trim_start().len();
+                replacement.push_str(&body[..indent]);
+                replacement.push_str(&kind.marker(number));
+                replacement.push_str(&body[indent..]);
+            }
+            replacement.push_str(ending);
+        }
+        let changed = self
+            .history
+            .apply(source, first_start..last_end, &replacement)?;
+        if changed {
+            self.anchor = first_start;
+            self.cursor = source.normalize_edit_boundary(first_start + replacement.len());
             self.preferred_column = None;
         }
         Ok(changed)
@@ -836,6 +1046,111 @@ mod tests {
 
     fn buffer(source: &str) -> TextBuffer {
         TextBuffer::from_text(source)
+    }
+
+    fn editor_at(source: &TextBuffer, offset: usize) -> SourceEditor {
+        let mut editor = SourceEditor::new();
+        editor.set_cursor(source, offset, false).unwrap();
+        editor
+    }
+
+    #[test]
+    fn enter_continua_listas_numeradas_tareas_y_citas() {
+        for (text, expected) in [
+            ("1. uno", "1. uno\n2. "),
+            ("  9) nueve", "  9) nueve\n  10) "),
+            ("- viñeta", "- viñeta\n- "),
+            ("* [x] hecha", "* [x] hecha\n* [ ] "),
+            ("> cita", "> cita\n> "),
+            ("texto común", "texto común\n"),
+        ] {
+            let mut source = buffer(text);
+            let mut editor = editor_at(&source, text.len());
+            assert!(editor.insert_newline(&mut source, "\n").unwrap());
+            assert_eq!(source.to_string(), expected, "{text}");
+            assert_eq!(editor.cursor(), expected.len());
+        }
+    }
+
+    #[test]
+    fn enter_en_un_elemento_vacio_termina_la_lista() {
+        let mut source = buffer("- uno\n- ");
+        let mut editor = editor_at(&source, source.len_bytes());
+        assert!(editor.insert_newline(&mut source, "\n").unwrap());
+        assert_eq!(source.to_string(), "- uno\n");
+        assert!(editor.undo(&mut source).unwrap());
+        assert_eq!(source.to_string(), "- uno\n- ");
+    }
+
+    #[test]
+    fn enter_conserva_crlf_y_no_actua_dentro_del_marcador() {
+        let mut source = buffer("1. uno\r\n");
+        let mut editor = editor_at(&source, "1. uno".len());
+        editor.insert_newline(&mut source, "\r\n").unwrap();
+        assert_eq!(source.to_string(), "1. uno\r\n2. \r\n");
+
+        let mut source = buffer("- item");
+        let mut editor = editor_at(&source, 1);
+        editor.insert_newline(&mut source, "\n").unwrap();
+        assert_eq!(source.to_string(), "-\n item");
+    }
+
+    #[test]
+    fn lista_sobre_parte_de_un_parrafo_separa_solo_la_seleccion() {
+        let text = "Antes de la idea clave y después.";
+        let mut source = buffer(text);
+        let start = text.find("idea clave").unwrap();
+        let mut editor = editor_at(&source, start);
+        editor
+            .set_cursor(&source, start + "idea clave".len(), true)
+            .unwrap();
+        assert!(
+            editor
+                .apply_line_prefix(&mut source, LinePrefix::Ordered, "\n")
+                .unwrap()
+        );
+        assert_eq!(
+            source.to_string(),
+            "Antes de la \n1. idea clave\n y después."
+        );
+        assert_eq!(
+            source.slice_bytes(editor.selection()).unwrap(),
+            "1. idea clave"
+        );
+        assert!(editor.undo(&mut source).unwrap());
+        assert_eq!(source.to_string(), text);
+    }
+
+    #[test]
+    fn lista_sobre_varias_lineas_numera_cada_linea_con_texto() {
+        let text = "uno\n\n  dos\r\ntres\nfuera";
+        let mut source = buffer(text);
+        let mut editor = editor_at(&source, 0);
+        editor
+            .set_cursor(&source, text.find("fuera").unwrap(), true)
+            .unwrap();
+        editor
+            .apply_line_prefix(&mut source, LinePrefix::Ordered, "\n")
+            .unwrap();
+        assert_eq!(source.to_string(), "1. uno\n\n  2. dos\r\n3. tres\nfuera");
+    }
+
+    #[test]
+    fn lista_sin_seleccion_prefija_la_linea_o_empieza_un_elemento() {
+        let mut source = buffer("párrafo escrito");
+        let mut editor = editor_at(&source, 3);
+        editor
+            .apply_line_prefix(&mut source, LinePrefix::Ordered, "\n")
+            .unwrap();
+        assert_eq!(source.to_string(), "1. párrafo escrito");
+
+        let mut source = buffer("");
+        let mut editor = editor_at(&source, 0);
+        editor
+            .apply_line_prefix(&mut source, LinePrefix::Task, "\n")
+            .unwrap();
+        assert_eq!(source.to_string(), "- [ ] ");
+        assert_eq!(editor.cursor(), "- [ ] ".len());
     }
 
     #[test]

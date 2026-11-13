@@ -107,6 +107,12 @@ visual en día, noche y ventanas estrechas.
 
 **Salida:** pestaña, hoja activa y modo actual son inequívocos.
 
+**Avance del 13 de noviembre:** las pestañas viven en su propia franja bajo la
+barra de ventana, con botón `+`; Leer, Editar y Comparar se rotulan con texto;
+las acciones globales son iconos compactos con ayuda al pasar el mouse; la barra
+de estado muestra ubicación, palabras, línea y columna, modo y guardado. Sigue
+pendiente mover el selector de modo a una cabecera por hoja.
+
 **Estado:** el kit de escritura ya separa acciones frecuentes y menús rotulados
 de Bloques, Listas, Insertar, Estudio y Más formato; en ancho mínimo conserva
 iconos y ayuda. Bloques ofrece niveles H1–H6 sin acumular marcadores y el menú

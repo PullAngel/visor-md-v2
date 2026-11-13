@@ -59,7 +59,7 @@ use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
 use winit::window::{CursorIcon, ResizeDirection, Theme, Window, WindowId, WindowLevel};
 
 use dialog::{ButtonTone, Dialog, DialogChoice, DialogRect, dialog_layout, dialog_width};
-use editor::{SourceChange, SourceEditor, TextBuffer};
+use editor::{LinePrefix, SourceChange, SourceEditor, TextBuffer};
 use files::{
     DEFAULT_DOCUMENT_LIMIT_BYTES, FileIdentity, FileOpenError, FileSaveError, LineEndings,
     TextMetadata, changed_on_disk, is_markdown_path, open_explicit_primary, save_explicit_primary,
@@ -90,11 +90,16 @@ const MAX_SEARCH_QUERY_CHARS: usize = 256;
 const MAX_OVERLAY_LABEL_CHARS: usize = 180;
 /// Franja reservada para acciones y controles de ventana. El documento nunca
 /// se dibuja ni recibe scroll dentro de esta zona.
-const DOCUMENT_VIEWPORT_TOP: f32 = 76.0;
+const DOCUMENT_VIEWPORT_TOP: f32 = 110.0;
+/// Franja de pestañas bajo la barra de ventana, como en el concepto C.
+const TAB_STRIP_Y: f32 = WINDOW_CHROME_HEIGHT;
+const TAB_STRIP_HEIGHT: f32 = 34.0;
+const TAB_STRIP_X: f32 = 8.0;
+const NEW_TAB_BUTTON_WIDTH: f32 = 32.0;
 const STATUS_HEIGHT: f32 = 28.0;
 const MAX_TAB_WIDTH: f32 = 220.0;
 const PANEL_X: f32 = MARGIN;
-const PANEL_Y: f32 = 116.0;
+const PANEL_Y: f32 = 150.0;
 const PANEL_WIDTH: f32 = 420.0;
 const WORKSPACE_COLUMN_MIN_WIDTH: f32 = 240.0;
 const WORKSPACE_COLUMN_MAX_WIDTH: f32 = 304.0;
@@ -107,8 +112,8 @@ const PANEL_FOOTER_HEIGHT: f32 = 24.0;
 const TOOLBAR_X: f32 = 12.0;
 const TOOLBAR_Y: f32 = 8.0;
 const TOOLBAR_HEIGHT: f32 = 28.0;
-const TOOLBAR_ITEM_WIDTH: f32 = 60.0;
-const CONTEXT_TOOLBAR_Y: f32 = 44.0;
+const TOOLBAR_ITEM_WIDTH: f32 = 40.0;
+const CONTEXT_TOOLBAR_Y: f32 = 78.0;
 const CONTEXT_TOOLBAR_HEIGHT: f32 = 28.0;
 /// Quince herramientas caben aun en el mínimo de 640 px. Los nombres completos
 /// siguen disponibles con hover, foco F6 y la paleta.
@@ -139,8 +144,9 @@ const WINDOW_CONTROL_COUNT: f32 = 4.0;
 const WINDOW_RESIZE_BORDER: f32 = 6.0;
 const MIN_WINDOW_WIDTH: f64 = 640.0;
 const MIN_WINDOW_HEIGHT: f64 = 480.0;
-const MODE_SWITCH_X: f32 = 380.0;
-const MODE_SWITCH_WIDTH: f32 = 108.0;
+// Selector rotulado: Leer, Editar y Comparar se entienden sin hover.
+const MODE_SWITCH_X: f32 = 260.0;
+const MODE_SWITCH_WIDTH: f32 = 228.0;
 const MODE_SWITCH_HEIGHT: f32 = 28.0;
 const PRIMARY_TOOLBAR_ACTIONS: [AppAction; 6] = [
     AppAction::NewDocument,
@@ -385,7 +391,22 @@ fn tab_width(window_width: f32, tab_count: usize) -> f32 {
     if tab_count == 0 {
         return 0.0;
     }
-    (window_width / tab_count as f32).min(MAX_TAB_WIDTH)
+    let available = window_width - TAB_STRIP_X * 2.0 - NEW_TAB_BUTTON_WIDTH;
+    (available.max(0.0) / tab_count as f32).min(MAX_TAB_WIDTH)
+}
+
+fn tab_strip_contains_y(y: f32) -> bool {
+    (TAB_STRIP_Y..TAB_STRIP_Y + TAB_STRIP_HEIGHT).contains(&y)
+}
+
+/// El botón `+` sigue a la última pestaña y crea un documento nuevo.
+fn new_tab_button_x(window_width: f32, tab_count: usize) -> f32 {
+    TAB_STRIP_X + tab_width(window_width, tab_count) * tab_count as f32 + 2.0
+}
+
+fn new_tab_button_at(x: f32, y: f32, window_width: f32, tab_count: usize) -> bool {
+    let start = new_tab_button_x(window_width, tab_count);
+    tab_strip_contains_y(y) && (start..start + NEW_TAB_BUTTON_WIDTH).contains(&x)
 }
 
 fn tab_index_at(
@@ -395,11 +416,12 @@ fn tab_index_at(
     window_height: f32,
     count: usize,
 ) -> Option<usize> {
-    if count == 0 || y < window_height - STATUS_HEIGHT || x < 0.0 {
+    let _ = window_height;
+    if count == 0 || !tab_strip_contains_y(y) || x < TAB_STRIP_X {
         return None;
     }
     let width = tab_width(window_width, count);
-    let index = (x / width) as usize;
+    let index = ((x - TAB_STRIP_X) / width) as usize;
     (index < count).then_some(index)
 }
 
@@ -412,7 +434,7 @@ fn tab_close_index_at(
 ) -> Option<usize> {
     let index = tab_index_at(x, y, window_width, window_height, count)?;
     let width = tab_width(window_width, count);
-    let local_x = x - index as f32 * width;
+    let local_x = x - TAB_STRIP_X - index as f32 * width;
     (local_x >= (width - 26.0).max(0.0)).then_some(index)
 }
 
@@ -8073,6 +8095,11 @@ impl ApplicationHandler<AppEvent> for App {
                             self.selecting = false;
                             return;
                         }
+                        if new_tab_button_at(x, y, size.width as f32, self.tab_order.len()) {
+                            self.perform_action(AppAction::NewDocument);
+                            self.selecting = false;
+                            return;
+                        }
                         if let Some(index) = tab_close_index_at(
                             x,
                             y,
@@ -8950,10 +8977,10 @@ impl App {
             AppAction::InsertHeading4 => self.set_markdown_heading_level(4),
             AppAction::InsertHeading5 => self.set_markdown_heading_level(5),
             AppAction::InsertHeading6 => self.set_markdown_heading_level(6),
-            AppAction::InsertBulletList => self.prefix_markdown_line("- "),
-            AppAction::InsertOrderedList => self.prefix_markdown_line("1. "),
-            AppAction::InsertTask => self.prefix_markdown_line("- [ ] "),
-            AppAction::InsertQuote => self.prefix_markdown_line("> "),
+            AppAction::InsertBulletList => self.prefix_markdown_line(LinePrefix::Bullet),
+            AppAction::InsertOrderedList => self.prefix_markdown_line(LinePrefix::Ordered),
+            AppAction::InsertTask => self.prefix_markdown_line(LinePrefix::Task),
+            AppAction::InsertQuote => self.prefix_markdown_line(LinePrefix::Quote),
             AppAction::InsertCodeBlock => self.insert_code_block(),
             AppAction::InsertTable => self.insert_table(),
             AppAction::InsertHorizontalRule => self.insert_horizontal_rule(),
@@ -10302,12 +10329,13 @@ impl App {
         self.edit_source(|editor, source| editor.insert_link(source));
     }
 
-    fn prefix_markdown_line(&mut self, prefix: &str) {
+    fn prefix_markdown_line(&mut self, kind: LinePrefix) {
         if !self.document.mode.is_editable() {
             self.set_notice("activa edición para cambiar la estructura del Markdown");
             return;
         }
-        self.edit_source(|editor, source| editor.prefix_current_line(source, prefix));
+        let eol = self.document_line_ending();
+        self.edit_source(|editor, source| editor.apply_line_prefix(source, kind, eol));
     }
 
     fn set_markdown_heading_level(&mut self, level: u8) {
@@ -10709,7 +10737,7 @@ impl App {
                     if let Some(marker) = hard_break {
                         editor.insert(source, &format!("{marker}{eol}"))
                     } else {
-                        editor.insert(source, eol)
+                        editor.insert_newline(source, eol)
                     }
                 });
             }
@@ -13688,6 +13716,34 @@ impl App {
         let toolbar_hint_layout = toolbar_hint_label.map(|label| {
             build_menu_layout(label, &mut self.font_cx, &mut self.layout_cx, self.palette)
         });
+        let mode_label_layouts = [
+            (ModeTarget::Reading, "Leer"),
+            (ModeTarget::Editing, "Editar"),
+            (ModeTarget::Compare, "Comparar"),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (target, label))| {
+            let active = mode_target_for_document(self.document.mode) == target;
+            let focused = self.toolbar_focus == Some(PRIMARY_TOOLBAR_ACTIONS.len() + index);
+            let color = if active {
+                self.palette.text
+            } else if focused {
+                self.palette.accent
+            } else {
+                self.palette.dim
+            };
+            build_ui_text_layout(
+                label,
+                &mut self.font_cx,
+                &mut self.layout_cx,
+                color,
+                13.0,
+                active,
+                None,
+            )
+        })
+        .collect::<Vec<_>>();
         let dialog_render = self.dialog.clone().map(|dialog| {
             let window_width = w.get() as f32;
             let inner = dialog_width(window_width) - dialog::DIALOG_PADDING * 2.0;
@@ -13842,16 +13898,72 @@ impl App {
             .collect::<Vec<_>>();
         let tab_layouts = tab_descriptors
             .iter()
-            .map(|(_, label)| {
-                build_menu_layout(label, &mut self.font_cx, &mut self.layout_cx, self.palette)
+            .map(|(active, label)| {
+                build_ui_text_layout(
+                    label,
+                    &mut self.font_cx,
+                    &mut self.layout_cx,
+                    if *active {
+                        self.palette.text
+                    } else {
+                        self.palette.dim
+                    },
+                    13.0,
+                    *active,
+                    None,
+                )
             })
             .collect::<Vec<_>>();
-        let status_layout = build_menu_layout(
-            &format!("{document_mode_label} · {document_state_label}{workspace_status}"),
+        let cursor_position = self.document.mode.is_editable().then(|| {
+            let source = &self.document.source;
+            let cursor = self.document.source_editor.cursor().min(source.len_bytes());
+            let line = source.line_at_byte(cursor);
+            let line_start = source.line_start_byte(line);
+            let column = source
+                .slice_bytes(line_start..cursor)
+                .map(|text| text.chars().count())
+                .unwrap_or(0);
+            format!(" · Lín {}, Col {}", line + 1, column + 1)
+        });
+        let words = self.document.metrics.words;
+        let status_right = format!(
+            "{words} palabras{} · {document_mode_label} · {document_state_label}{workspace_status}",
+            cursor_position.unwrap_or_default()
+        );
+        let status_layout = build_ui_text_layout(
+            &status_right,
             &mut self.font_cx,
             &mut self.layout_cx,
-            self.palette,
+            self.palette.dim,
+            12.0,
+            false,
+            None,
         );
+        let status_location = match self.workspace.as_ref() {
+            Some((root, _)) => {
+                let path = std::path::Path::new(&self.document.path);
+                match path.strip_prefix(root.root()) {
+                    Ok(relative) => format!(
+                        "{} › {}",
+                        workspace_name(Some(root.root())),
+                        relative.to_string_lossy().replace('\\', " › ")
+                    ),
+                    Err(_) => document_display_name(&self.document.path),
+                }
+            }
+            None => document_display_name(&self.document.path),
+        };
+        let status_location_layout = build_ui_text_layout(
+            &abbreviated_label(&status_location, 90),
+            &mut self.font_cx,
+            &mut self.layout_cx,
+            self.palette.dim,
+            12.0,
+            false,
+            None,
+        );
+        let tab_count = self.tab_order.len();
+        let tab_hover = self.pointer;
         let link_peek_layout = self
             .hover_destination
             .as_deref()
@@ -14674,22 +14786,9 @@ impl App {
                 pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
             }
         }
-        for (index, (target, icon)) in [
-            (ModeTarget::Reading, AppAction::ToggleMode),
-            (ModeTarget::Editing, AppAction::FormatItalic),
-            (ModeTarget::Compare, AppAction::ToggleSplit),
-        ]
-        .into_iter()
-        .enumerate()
-        {
+        for (index, label) in mode_label_layouts.iter().enumerate() {
             let width = mode_width;
             let x = MODE_SWITCH_X + index as f32 * width;
-            let active = matches!(
-                (target, context_mode),
-                (ModeTarget::Reading, DocumentMode::Reading)
-                    | (ModeTarget::Editing, DocumentMode::SourceEditing)
-                    | (ModeTarget::Compare, DocumentMode::Split)
-            );
             let focused = toolbar_focus == Some(PRIMARY_TOOLBAR_ACTIONS.len() + index);
             if focused
                 && let Some(rect) =
@@ -14697,19 +14796,13 @@ impl App {
             {
                 pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
             }
-            draw_toolbar_icon(
+            draw_text_layout(
                 pixmap,
-                icon,
-                x + (width - 18.0) * 0.5,
-                TOOLBAR_Y + 5.0,
-                18.0,
-                if active {
-                    palette.text
-                } else if focused {
-                    palette.accent
-                } else {
-                    palette.dim
-                },
+                scale_cx,
+                glyphs,
+                label,
+                (x + (width - label.width()) * 0.5).round(),
+                (TOOLBAR_Y + (MODE_SWITCH_HEIGHT - label.height()) * 0.5).round(),
             );
         }
 
@@ -15034,61 +15127,152 @@ impl App {
                 }
             }
         }
-        if let Some(rect) = Rect::from_xywh(0.0, status_y, w.get() as f32, STATUS_HEIGHT) {
-            pixmap.fill_rect(rect, &elevated_paint, Transform::identity(), None);
-        }
+        // Franja de pestañas: la activa se funde con el documento y las demás
+        // quedan en tinta tenue. La ✕ aparece en la activa y al pasar el mouse.
+        let window_width = w.get() as f32;
+        let surface_color = palette.surface;
+        let mut tab_surface = Paint {
+            anti_alias: true,
+            ..Default::default()
+        };
+        tab_surface.set_color(Color::from_rgba8(
+            surface_color.0,
+            surface_color.1,
+            surface_color.2,
+            255,
+        ));
+        let mut tab_hover_paint = Paint {
+            anti_alias: true,
+            ..Default::default()
+        };
+        let elevated = palette.elevated;
+        tab_hover_paint.set_color(Color::from_rgba8(elevated.0, elevated.1, elevated.2, 255));
+        let hovered_tab = tab_hover
+            .and_then(|(x, y)| tab_index_at(x, y, window_width, h.get() as f32, tab_count));
         for (index, ((active, _), layout)) in
             tab_descriptors.iter().zip(tab_layouts.iter()).enumerate()
         {
-            let x = index as f32 * tab_width;
-            if *active && let Some(rect) = Rect::from_xywh(x, status_y, tab_width, 3.0) {
-                pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
-            }
-            if index > 0
-                && let Some(rect) = Rect::from_xywh(x, status_y + 6.0, 1.0, 16.0)
+            let x = TAB_STRIP_X + index as f32 * tab_width;
+            let top = TAB_STRIP_Y + 5.0;
+            let height = TAB_STRIP_HEIGHT - 5.0;
+            let hovered = hovered_tab == Some(index);
+            if *active || hovered {
+                let paint = if *active {
+                    &tab_surface
+                } else {
+                    &tab_hover_paint
+                };
+                fill_rounded_rect(pixmap, x + 2.0, top, tab_width - 4.0, height, 7.0, paint);
+                if *active {
+                    // Base recta: la pestaña continúa en el documento.
+                    if let Some(rect) =
+                        Rect::from_xywh(x + 2.0, top + height - 8.0, tab_width - 4.0, 8.0)
+                    {
+                        pixmap.fill_rect(rect, &tab_surface, Transform::identity(), None);
+                    }
+                    if let Some(rect) = Rect::from_xywh(x + 12.0, top, tab_width - 24.0, 2.0) {
+                        pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
+                    }
+                }
+            } else if index > 0
+                && hovered_tab != Some(index - 1)
+                && !tab_descriptors[index - 1].0
+                && let Some(rect) = Rect::from_xywh(x, top + 7.0, 1.0, height - 14.0)
             {
                 pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
             }
-            for line in layout.lines() {
-                for entry in line.items() {
-                    if let PositionedLayoutItem::GlyphRun(run) = entry {
-                        draw_run_background(pixmap, &run, x + 10.0, status_y + 7.0);
-                        draw_glyph_run(pixmap, scale_cx, glyphs, &run, x + 10.0, status_y + 7.0);
-                    }
+            draw_text_layout(
+                pixmap,
+                scale_cx,
+                glyphs,
+                layout,
+                x + 14.0,
+                (top + (height - layout.height()) * 0.5).round(),
+            );
+            if *active || hovered {
+                let close_x = x + tab_width - 16.0;
+                let close_y = top + height * 0.5;
+                let mut close_path = tiny_skia::PathBuilder::new();
+                close_path.move_to(close_x - 3.5, close_y - 3.5);
+                close_path.line_to(close_x + 3.5, close_y + 3.5);
+                close_path.move_to(close_x + 3.5, close_y - 3.5);
+                close_path.line_to(close_x - 3.5, close_y + 3.5);
+                if let Some(close_path) = close_path.finish() {
+                    let stroke = tiny_skia::Stroke {
+                        width: 1.3,
+                        ..Default::default()
+                    };
+                    pixmap.stroke_path(
+                        &close_path,
+                        &dim_paint,
+                        &stroke,
+                        Transform::identity(),
+                        None,
+                    );
                 }
-            }
-            let close_x = x + tab_width - 14.0;
-            let close_y = status_y + STATUS_HEIGHT / 2.0;
-            let mut close_path = tiny_skia::PathBuilder::new();
-            close_path.move_to(close_x - 4.0, close_y - 4.0);
-            close_path.line_to(close_x + 4.0, close_y + 4.0);
-            close_path.move_to(close_x + 4.0, close_y - 4.0);
-            close_path.line_to(close_x - 4.0, close_y + 4.0);
-            if let Some(close_path) = close_path.finish() {
-                let stroke = tiny_skia::Stroke {
-                    width: 1.4,
-                    ..Default::default()
-                };
-                pixmap.stroke_path(
-                    &close_path,
-                    &dim_paint,
-                    &stroke,
-                    Transform::identity(),
-                    None,
-                );
             }
         }
-        let status_x = w.get() as f32 - status_layout.width() - 12.0;
-        let tabs_end = tab_width * tab_layouts.len() as f32;
-        if status_x > tabs_end + 12.0 {
-            for line in status_layout.lines() {
-                for entry in line.items() {
-                    if let PositionedLayoutItem::GlyphRun(run) = entry {
-                        draw_run_background(pixmap, &run, status_x, status_y + 7.0);
-                        draw_glyph_run(pixmap, scale_cx, glyphs, &run, status_x, status_y + 7.0);
-                    }
-                }
-            }
+        let plus_x = new_tab_button_x(window_width, tab_count);
+        let plus_hovered =
+            tab_hover.is_some_and(|(x, y)| new_tab_button_at(x, y, window_width, tab_count));
+        if plus_hovered {
+            fill_rounded_rect(
+                pixmap,
+                plus_x + 2.0,
+                TAB_STRIP_Y + 6.0,
+                NEW_TAB_BUTTON_WIDTH - 4.0,
+                TAB_STRIP_HEIGHT - 12.0,
+                6.0,
+                &tab_hover_paint,
+            );
+        }
+        let plus_center_x = plus_x + NEW_TAB_BUTTON_WIDTH * 0.5;
+        let plus_center_y = TAB_STRIP_Y + TAB_STRIP_HEIGHT * 0.5 + 1.0;
+        let mut plus_path = tiny_skia::PathBuilder::new();
+        plus_path.move_to(plus_center_x - 5.0, plus_center_y);
+        plus_path.line_to(plus_center_x + 5.0, plus_center_y);
+        plus_path.move_to(plus_center_x, plus_center_y - 5.0);
+        plus_path.line_to(plus_center_x, plus_center_y + 5.0);
+        if let Some(plus_path) = plus_path.finish() {
+            pixmap.stroke_path(
+                &plus_path,
+                &dim_paint,
+                &tiny_skia::Stroke {
+                    width: 1.4,
+                    ..Default::default()
+                },
+                Transform::identity(),
+                None,
+            );
+        }
+
+        // Barra de estado: ubicación a la izquierda, datos del documento a la
+        // derecha. Si no caben ambas, la ubicación cede su lugar.
+        if let Some(rect) = Rect::from_xywh(0.0, status_y, window_width, STATUS_HEIGHT) {
+            pixmap.fill_rect(rect, &elevated_paint, Transform::identity(), None);
+        }
+        if let Some(rect) = Rect::from_xywh(0.0, status_y, window_width, 1.0) {
+            pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
+        }
+        let status_text_y = (status_y + (STATUS_HEIGHT - status_layout.height()) * 0.5).round();
+        let status_x = window_width - status_layout.width() - 14.0;
+        draw_text_layout(
+            pixmap,
+            scale_cx,
+            glyphs,
+            &status_layout,
+            status_x.max(14.0),
+            status_text_y,
+        );
+        if status_location_layout.width() + 28.0 < status_x - 14.0 {
+            draw_text_layout(
+                pixmap,
+                scale_cx,
+                glyphs,
+                &status_location_layout,
+                14.0,
+                status_text_y,
+            );
         }
 
         if let Some(layout) = search_overlay {
@@ -16074,13 +16258,31 @@ mod pruebas {
 
     #[test]
     fn la_barra_de_pestanas_resuelve_cada_destino_sin_salir_de_su_area() {
-        assert_eq!(tab_index_at(10.0, 580.0, 600.0, 600.0, 3), Some(0));
-        assert_eq!(tab_index_at(210.0, 580.0, 600.0, 600.0, 3), Some(1));
-        assert_eq!(tab_index_at(410.0, 580.0, 600.0, 600.0, 3), Some(2));
-        assert_eq!(tab_index_at(10.0, 500.0, 600.0, 600.0, 3), None);
-        assert_eq!(tab_index_at(590.0, 580.0, 600.0, 600.0, 2), None);
-        assert_eq!(tab_close_index_at(190.0, 580.0, 600.0, 600.0, 3), Some(0));
-        assert_eq!(tab_close_index_at(170.0, 580.0, 600.0, 600.0, 3), None);
+        // Pestañas arriba, bajo la barra de ventana; el botón `+` va detrás.
+        let y = TAB_STRIP_Y + TAB_STRIP_HEIGHT * 0.5;
+        assert_eq!(tab_index_at(20.0, y, 600.0, 600.0, 3), Some(0));
+        assert_eq!(tab_index_at(200.0, y, 600.0, 600.0, 3), Some(1));
+        assert_eq!(tab_index_at(400.0, y, 600.0, 600.0, 3), Some(2));
+        assert_eq!(
+            tab_index_at(20.0, DOCUMENT_VIEWPORT_TOP + 10.0, 600.0, 600.0, 3),
+            None
+        );
+        assert_eq!(tab_index_at(20.0, 580.0, 600.0, 600.0, 3), None);
+        assert_eq!(tab_index_at(590.0, y, 600.0, 600.0, 2), None);
+        assert_eq!(tab_close_index_at(180.0, y, 600.0, 600.0, 3), Some(0));
+        assert_eq!(tab_close_index_at(150.0, y, 600.0, 600.0, 3), None);
+        assert!(new_tab_button_at(460.0, y, 600.0, 2));
+        assert!(!new_tab_button_at(
+            460.0,
+            DOCUMENT_VIEWPORT_TOP + 10.0,
+            600.0,
+            2
+        ));
+        assert_eq!(tab_index_at(460.0, y, 600.0, 600.0, 2), None);
+        const {
+            assert!(CONTEXT_TOOLBAR_Y >= TAB_STRIP_Y + TAB_STRIP_HEIGHT);
+            assert!(DOCUMENT_VIEWPORT_TOP >= CONTEXT_TOOLBAR_Y + CONTEXT_TOOLBAR_HEIGHT);
+        };
     }
 
     #[test]
@@ -16140,10 +16342,17 @@ mod pruebas {
             resize_direction_at(638.0, 478.0, 640.0, 480.0, WINDOW_RESIZE_BORDER),
             Some(ResizeDirection::SouthEast)
         );
+        // Hueco arrastrable entre las acciones globales y el selector de modo.
         assert!(titlebar_drag_at(
-            376.0,
+            255.0,
             20.0,
             640.0,
+            DocumentMode::SourceEditing
+        ));
+        assert!(titlebar_drag_at(
+            600.0,
+            20.0,
+            900.0,
             DocumentMode::SourceEditing
         ));
         assert!(!titlebar_drag_at(
@@ -16153,7 +16362,7 @@ mod pruebas {
             DocumentMode::SourceEditing
         ));
         assert!(!titlebar_drag_at(
-            390.0,
+            300.0,
             20.0,
             640.0,
             DocumentMode::SourceEditing
@@ -16169,32 +16378,32 @@ mod pruebas {
     #[test]
     fn las_barras_separan_documento_de_formato_y_navegacion() {
         assert_eq!(
-            toolbar_action_at(50.0, 12.0, 900.0, DocumentMode::Reading),
+            toolbar_action_at(30.0, 12.0, 900.0, DocumentMode::Reading),
             Some(AppAction::NewDocument)
         );
         assert_eq!(
-            toolbar_action_at(100.0, 12.0, 900.0, DocumentMode::Reading),
+            toolbar_action_at(70.0, 12.0, 900.0, DocumentMode::Reading),
             Some(AppAction::OpenDocument)
         );
         assert_eq!(
-            toolbar_action_at(270.0, 12.0, 900.0, DocumentMode::Reading),
+            toolbar_action_at(190.0, 12.0, 900.0, DocumentMode::Reading),
             Some(AppAction::WorkspaceHub)
         );
         assert_eq!(
-            toolbar_action_at(330.0, 12.0, 900.0, DocumentMode::Reading),
+            toolbar_action_at(230.0, 12.0, 900.0, DocumentMode::Reading),
             Some(AppAction::CommandPalette)
         );
-        assert_eq!(mode_target_at(390.0, 12.0), Some(ModeTarget::Reading));
-        assert_eq!(mode_target_at(425.0, 12.0), Some(ModeTarget::Editing));
-        assert_eq!(mode_target_at(470.0, 12.0), Some(ModeTarget::Compare));
-        assert_eq!(mode_target_at(379.0, 12.0), None);
+        assert_eq!(mode_target_at(290.0, 12.0), Some(ModeTarget::Reading));
+        assert_eq!(mode_target_at(370.0, 12.0), Some(ModeTarget::Editing));
+        assert_eq!(mode_target_at(450.0, 12.0), Some(ModeTarget::Compare));
+        assert_eq!(mode_target_at(259.0, 12.0), None);
         assert_eq!(mode_target_at(488.0, 12.0), None);
         assert_eq!(
             mode_target_label(ModeTarget::Editing),
             "Editar Markdown · F2"
         );
         assert_eq!(
-            toolbar_action_at(30.0, 50.0, 900.0, DocumentMode::Reading),
+            toolbar_action_at(30.0, 84.0, 900.0, DocumentMode::Reading),
             Some(AppAction::DocumentOutline)
         );
         assert_eq!(
@@ -16202,23 +16411,23 @@ mod pruebas {
             None
         );
         assert_eq!(
-            toolbar_action_at(170.0, 12.0, 900.0, DocumentMode::SourceEditing),
+            toolbar_action_at(110.0, 12.0, 900.0, DocumentMode::SourceEditing),
             Some(AppAction::Save)
         );
         assert_eq!(
-            toolbar_action_at(100.0, 50.0, 900.0, DocumentMode::SourceEditing),
+            toolbar_action_at(100.0, 84.0, 900.0, DocumentMode::SourceEditing),
             Some(AppAction::FormatStrikethrough)
         );
         assert_eq!(
-            toolbar_action_at(180.0, 50.0, 900.0, DocumentMode::SourceEditing),
+            toolbar_action_at(180.0, 84.0, 900.0, DocumentMode::SourceEditing),
             Some(AppAction::FormatHighlight)
         );
         assert_eq!(
-            toolbar_action_at(230.0, 50.0, 900.0, DocumentMode::SourceEditing),
+            toolbar_action_at(230.0, 84.0, 900.0, DocumentMode::SourceEditing),
             Some(AppAction::BlockTools)
         );
         assert_eq!(
-            toolbar_action_at(250.0, 50.0, 900.0, DocumentMode::SourceEditing),
+            toolbar_action_at(250.0, 84.0, 900.0, DocumentMode::SourceEditing),
             Some(AppAction::ListTools)
         );
         for (index, action) in READING_CONTEXT_TOOLBAR_ACTIONS.iter().copied().enumerate() {
@@ -16367,15 +16576,30 @@ mod pruebas {
     #[test]
     fn la_ayuda_de_iconos_prefiere_el_foco_y_conserva_el_atajo() {
         assert_eq!(
-            toolbar_hint_action(Some(1), Some((30.0, 50.0)), 900.0, DocumentMode::Reading,),
+            toolbar_hint_action(
+                Some(1),
+                Some((30.0, CONTEXT_TOOLBAR_Y + 6.0)),
+                900.0,
+                DocumentMode::Reading,
+            ),
             Some(AppAction::OpenDocument)
         );
         assert_eq!(
-            toolbar_hint_action(None, Some((30.0, 50.0)), 900.0, DocumentMode::Reading),
+            toolbar_hint_action(
+                None,
+                Some((30.0, CONTEXT_TOOLBAR_Y + 6.0)),
+                900.0,
+                DocumentMode::Reading
+            ),
             Some(AppAction::DocumentOutline)
         );
         assert_eq!(
-            toolbar_hint_action(None, Some((899.0, 50.0)), 900.0, DocumentMode::Reading),
+            toolbar_hint_action(
+                None,
+                Some((899.0, CONTEXT_TOOLBAR_Y + 6.0)),
+                900.0,
+                DocumentMode::Reading
+            ),
             None
         );
         assert_eq!(AppAction::OpenDocument.label(), "Abrir documento · Ctrl+O");
@@ -17649,11 +17873,11 @@ mod pruebas {
     fn el_scroll_respeta_el_alto_real_de_la_ventana() {
         assert_eq!(max_scroll(1_000.0, 760.0), 240.0);
         assert_eq!(max_scroll(500.0, 760.0), 0.0);
-        assert_eq!(document_viewport_height(760.0), 656.0);
-        assert_eq!(max_scroll(1_000.0, document_viewport_height(760.0)), 344.0);
+        assert_eq!(document_viewport_height(760.0), 622.0);
+        assert_eq!(max_scroll(1_000.0, document_viewport_height(760.0)), 378.0);
         assert_eq!(document_viewport_height(20.0), 0.0);
-        assert_eq!(document_screen_y(48.0, 0.0), 124.0);
-        assert_eq!(document_screen_y(100.0, 60.0), 116.0);
+        assert_eq!(document_screen_y(48.0, 0.0), DOCUMENT_VIEWPORT_TOP + 48.0);
+        assert_eq!(document_screen_y(100.0, 60.0), DOCUMENT_VIEWPORT_TOP + 40.0);
     }
 
     #[test]

@@ -59,6 +59,7 @@ Estos documentos deben cambiar cuando cambia el producto o su implementación:
 | [`research/08-export-evaluation.md`](research/08-export-evaluation.md) | Evaluación de dependencias y aislamiento para PDF/DOCX antes de incorporarlas |
 | [`decisions.md`](decisions.md) | ADR y decisiones reemplazadas |
 | [`future.md`](future.md) | Ideas fuera del plan activo |
+| [`android.md`](android.md) | Dirección y preparación de una futura versión móvil |
 
 ## Estado y evidencia
 

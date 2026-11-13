@@ -62,6 +62,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Paneles plegables | Parcial | Índice, árbol plegable de notas, búsqueda de carpeta y backlinks muestran listas acotadas con selección visible, navegación por teclado o mouse y cierre con Escape; falta accesibilidad completa |
 | Actualizar workspace | Parcial | El catálogo y `Ctrl+Shift+I` reconstruyen de forma explícita el índice cancelable cuando la carpeta cambió; falta invalidación más precisa por archivo |
 | `.txt` y otros textos inertes | Parcial | Extensiones no Markdown se mantienen inertes al abrir, editar, comparar, actualizar y Guardar como; falta QA de reconocimiento UX |
+| Continuación de listas | Parcial | Enter continúa viñetas, números, tareas y citas y sale de la lista en un elemento vacío; el formato de lista separa una parte de párrafo seleccionada o numera varias líneas en un único cambio reversible |
 | Edición en vivo | Futuro | Solo tras editor y modelo estables |
 
 ## Seguridad
