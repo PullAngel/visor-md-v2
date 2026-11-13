@@ -1,6 +1,8 @@
 # Dashboard operativo de Visor MD v2
 
-Última actualización: 21 de octubre de 2026.
+Última actualización: 13 de noviembre de 2026. La revisión integral de esa
+fecha está en [`revision-2026-11-13.md`](revision-2026-11-13.md) y fija el
+orden de trabajo vigente.
 
 Este documento resume el avance real sin sustituir las especificaciones. Sirve
 para responder tres preguntas rápidamente:
@@ -20,6 +22,7 @@ capacidad de uso diario más los criterios de cierre de cada fila.
 | --- | --- | --- |
 | Lector seguro de Markdown | **Sólido, pendiente de QA formal** | Lee Markdown y texto inerte, aplica la sintaxis anunciada, se degrada de forma visible ante límites y no ejecuta contenido. |
 | Editor y preservación de archivos | **Funcional, pendiente de cierre** | Permite editar, deshacer, guardar atómicamente, detectar conflictos y preservar UTF-8, BOM y EOL; faltan QA humano y optimizaciones de render incremental. |
+| Defectos de interacción | **Abiertos, con causa raíz** | Cambiar de pestaña vuelve al inicio, el botón Copiar no da feedback y copia las cercas, Comparar se desfasa y la vista se mueve al escribir. Ver [`revision-2026-11-13.md`](revision-2026-11-13.md). |
 | Aplicación de uso diario | **Funcional, parcial** | Tiene pestañas, acciones, cierre protegido, paneles, tema, comparación y chrome propio de Windows. Hasta cuatro documentos distintos pueden verse en divisiones aisladas; faltan QA visual, foco por teclado, ventanas separadas y accesibilidad completa. |
 | Workspace y Obsidian esencial | **Funcional, parcial** | Puede indexar una carpeta autorizada, buscar, navegar vínculos y backlinks dentro de VFS; faltan escala, corpus y QA multiplataforma. |
 | Estudio y preparación para IA | **Base funcional, parcial** | Ofrece Markdown portable, copias preparadas y fragmentos; faltan comparación entre versiones y controles más finos de fragmentos. |
@@ -45,7 +48,7 @@ QA humano asociado ya esté cerrado.
 | Trabajo diario | Crear, abrir, guardar, pestañas reordenables/fijables, cierre protegido, paleta, menú contextual, barra de estado y kit Markdown agrupado. | [`features.md`](features.md), [`manual-qa-v2.md`](manual-qa-v2.md) |
 | Workspace | Carpeta explícita, VFS contenida, índice en memoria/cancelable, árbol, búsqueda, encabezados, wikilinks, aliases y backlinks en columna acoplada. | [`connectivity.md`](connectivity.md), [`editor-workspace-ui-audit.md`](editor-workspace-ui-audit.md) |
 | Recursos locales | Placeholder seguro e imagen PNG local solo tras confirmación y validación dentro de la raíz autorizada. | [`security.md`](security.md), [`dependencies.md`](dependencies.md) |
-| Calidad actual | Última suite registrada: 248 pruebas y Clippy estricto en verde para `90ca7e3`; build Windows del 14 de octubre: 3.572.224 bytes (3,407 MiB). Revisión documental del 21 de octubre sin cambios de código ni nueva auditoría. | [`status.md`](status.md), [`budget.md`](budget.md) |
+| Calidad actual | 248 pruebas en verde en Windows el 13 de noviembre sobre `7e3adff`; build release de 3.572.224 bytes (3,407 MiB), idéntico al ejecutable entregado. **CI de GitHub en rojo:** el job Linux falla 4 pruebas que asumen rutas de Windows. | [`status.md`](status.md), [`budget.md`](budget.md) |
 
 ## Trabajo iniciado pero no cerrado
 
@@ -75,6 +78,8 @@ QA humano asociado ya esté cerrado.
 
 | Tipo | Situación | Impacto | Tratamiento actual |
 | --- | --- | --- | --- |
+| Avisos invisibles | `set_notice` escribe solo en el título del sistema, que el chrome sin borde no dibuja. | Ninguna confirmación ni error se percibe (copiar, tareas, divisiones, conflictos). | Primer paso del orden vigente: toasts visibles. |
+| CI Linux | 4 pruebas asumen semántica de rutas de Windows; el job falla desde septiembre. | Las regresiones de Linux no se ven. | Decidir política de prefijos de unidad en VFS y separar expectativas por plataforma. |
 | QA humano | Hay un checklist amplio pendiente de ejecutar sobre builds recientes. | No permite declarar cierre visual, DPI, accesibilidad o compatibilidad real. | Se registra en manual QA; no bloquea trabajo independiente. |
 | Multitarea | Las divisiones internas ya protegen la propiedad única de cada documento, pero no existe aún una sesión compartida entre ventanas ni foco de panel por teclado. | Impide declarar completa la multitarea y dificulta accesibilidad. | Cerrar QA de las cuatro hojas, añadir foco predecible y diseñar ventanas separadas sobre la misma propiedad. |
 | Linux/Wayland | `ttf-parser 0.25.1` llega de forma transitiva por decoraciones Wayland de `winit` y RustSec lo marca no mantenido. | Deuda de suministro para distribución Linux, no vulnerabilidad conocida ni código usado por el release Windows. | Monitorear upstream y revisar antes de publicar Linux; no cambiar el grafo sin QA. |
@@ -95,12 +100,16 @@ QA humano asociado ya esté cerrado.
 
 ## Próximo orden de trabajo
 
-1. cerrar QA focalizado de lectura/edición y de las divisiones visibles;
-2. completar foco por teclado, estados de movimiento y lifecycle de paneles;
-3. endurecer escala y compatibilidad de workspace/Obsidian;
-4. completar comparación de versiones y herramientas de estudio pendientes;
-5. diseñar ventanas separadas sobre la propiedad única ya verificada;
-6. evaluar exportación aislada y luego distribución profesional.
+El orden detallado vive en
+[`revision-2026-11-13.md`](revision-2026-11-13.md#orden-de-trabajo-para-continuar).
+En resumen:
+
+1. avisos visibles, scroll por pestaña y copia de código correcta;
+2. Comparar estable: scroll sincronizado por rango de fuente y cursor visible;
+3. CI Linux en verde y continuación de listas con Enter;
+4. divisiones descubribles con hoja vacía Crear/Abrir/Cerrar;
+5. extraer paneles y chrome de `main.rs` y aplicar el concepto C completo;
+6. QA humano breve, extras de bajo coste, exportación y distribución.
 
 ## Cómo mantenerlo actualizado
 

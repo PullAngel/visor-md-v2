@@ -43,7 +43,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | --- | --- | --- |
 | Modo fuente | Parcial | Buffer Rope, selección, IME, undo y atajos; navegación vertical por caracteres Unicode y CRLF atómico para cursor, selección y borrado; la fuente actualiza sus líneas localmente, mientras el render Markdown derivado aún se reconstruye de forma asíncrona |
 | Ayudas de formato | Parcial | Negrita, cursiva, tachado, código en línea, enlace, encabezados H1–H6, viñeta, lista ordenada, tarea, cita, código, tabla, regla, resaltado, wikilink y callout editan fuente Unicode como cambios reversibles. En ancho normal la barra rotula Bloques, Listas, Insertar, Estudio y Más; en ancho mínimo conserva iconos y ayuda. El menú contextual abre las mismas familias según el modo y la selección. Faltan QA de descubribilidad y variantes de callout. |
-| Vista dividida | Parcial | `F3` compara fuente editable y render de la misma revisión; falta QA de edición prolongada, DPI y accesibilidad |
+| Vista dividida | Parcial | `F3` compara fuente editable y render de la misma revisión. Defecto abierto: un único scroll en píxeles para ambos lados los desfasa y la vista se mueve al escribir; requiere sincronización por rango de fuente y cursor visible |
 | Modo por documento | Parcial | Recuerda lectura, edición o vista dividida mediante hasta 128 claves hash locales; falta QA de reinicio |
 | Guardado atómico | Parcial | Sin corrupción ante fallo y conflictos probados; un destino borrado, no regular o inaccesible conserva la edición y solo ofrece Guardar como; falta QA multiplataforma |
 | Preservar sintaxis desconocida | Parcial | Fuente no se reserializa; una regresión end-to-end cubre apertura, Rope, undo/redo, guardado atómico y reapertura con BOM, EOL mixtos, Unicode y HTML inerte; falta ampliar el corpus determinista y QA multiplataforma |
@@ -51,7 +51,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Recuperación de sesión | Parcial | Activa por defecto, separada por pestaña, versionada y desactivable con advertencia; registra la última edición tras tres segundos de pausa sin polling; falta QA de cierre inesperado |
 | Crear documento | Parcial | Crea una pestaña nueva sin reemplazar el documento activo; Guardar abre el diálogo de destino incluso para un documento vacío; falta plantilla inicial |
 | Varios documentos y pestañas | Parcial | Barra visible, cambio y cierre por mouse/teclado, `Ctrl+Tab`, `Ctrl+PageUp/PageDown`, pestañas fijables por sesión, estado, historial, scroll, selección, plegado, anclas y recuperación separados; aperturas, renders y guardados se dirigen por pestaña sin congelar las demás; falta accesibilidad completa |
-| Divisiones de documentos | Parcial | Desde Más acciones o la paleta se puede elegir una pestaña elegible y dividir a la derecha o abajo, hasta cuatro archivos distintos. Cada hoja aísla dibujo, scroll y foco; cerrar una hoja conserva la pestaña. Faltan navegación de foco por teclado, transición, QA visual y ventanas separadas. |
+| Divisiones de documentos | Parcial | Poco descubrible y exige otra pestaña abierta; falta la hoja vacía con Crear/Abrir/Cerrar pedida por el propietario. Desde Más acciones o la paleta se puede elegir una pestaña elegible y dividir a la derecha o abajo, hasta cuatro archivos distintos. Cada hoja aísla dibujo, scroll y foco; cerrar una hoja conserva la pestaña. Faltan navegación de foco por teclado, transición, QA visual y ventanas separadas. |
 | Menú contextual | Parcial | Copia y pegado explícito según modo, búsqueda, cambio de vista y guardado; faltan acciones de workspace y estados deshabilitados visibles |
 | Paleta de comandos | Parcial | `Ctrl+Shift+P` muestra el catálogo compartido, filtra por nombre y ejecuta por teclado o mouse; falta accesibilidad semántica completa |
 | Barra de acciones | Parcial | En lectura prioriza archivo, búsqueda y espacio de trabajo; un selector segmentado directo cambia entre Leer, Editar y Comparar sin recorrer estados. Su indicador interior se desplaza durante 180 ms sin mover contenido ni retrasar la acción. En edición muestra guardar y ayudas Markdown esenciales. Mouse y F6 comparten acciones; 640 × 480 lógicos evita controles ocultos; falta semántica de lector de pantalla |
@@ -138,7 +138,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | --- | --- | --- |
 | Imágenes locales | Parcial | Placeholder, confirmación por PNG, VFS relativa a la nota y límites de bytes, dimensiones y memoria; falta presentación inline |
 | Imágenes remotas confirmadas | Planificado | Componente de red aislado |
-| Copiar bloque de código | Parcial | Acción visible y explícita; falta QA visual y de plataformas destino |
+| Copiar bloque de código | Parcial | El botón aparece solo en Lectura. Defecto abierto: copia también las cercas y su confirmación no se ve; falta estado "Copiado" y botón en Comparar |
 | Resaltado de código | Planificado | Sin runtime o dependencia desproporcionada |
 | Matemática | Futuro | Componente opcional seguro |
 | Mermaid nativo | Futuro | Sin servicio remoto ni scripts |

@@ -1,6 +1,23 @@
 # Estado actual
 
-Última revisión documental: 21 de octubre de 2026.
+Última revisión: 13 de noviembre de 2026. La revisión integral de esa fecha,
+con causa raíz de los defectos abiertos y el orden de trabajo vigente, está en
+[`revision-2026-11-13.md`](revision-2026-11-13.md).
+
+## Defectos abiertos
+
+- Cambiar de pestaña vuelve al inicio del documento: el scroll se guarda por
+  hoja y la hoja se reinicia a cero al recibir otro documento. Regresión
+  introducida con las divisiones.
+- El botón Copiar de los bloques de código copia también las cercas y no da
+  feedback; todos los avisos van al título del sistema, invisible con el chrome
+  sin borde.
+- Comparar usa un único scroll en píxeles para fuente y vista previa, y re-mide
+  con alturas estimadas en cada pulsación: ambos lados se desfasan y la vista se
+  desplaza sola al escribir.
+- Las divisiones de documentos solo se alcanzan desde la paleta y exigen otra
+  pestaña abierta.
+- CI de GitHub en rojo: 4 pruebas del job Linux asumen rutas de Windows.
 
 ## Resumen
 
@@ -16,8 +33,9 @@ la edición local y dirige a Guardar como; no recrea rutas originales ni repite
 el mismo diálogo al recuperar foco. También mantiene la recuperación si una
 escritura terminó pero su verificación final no pudo completarse.
 
-La última suite registrada para el checkpoint `90ca7e3` reúne 248 pruebas en
-Windows y Clippy estricto en verde. Ese checkpoint incorpora la columna de
+La suite de Windows se volvió a ejecutar el 13 de noviembre sobre `7e3adff`:
+248 pruebas en verde. La registrada antes para el checkpoint `90ca7e3` tenía
+el mismo conteo y Clippy estricto en verde. Ese checkpoint incorpora la columna de
 workspace acoplada, la paleta sepia/bosque y el kit de escritura con menús de
 Bloques, Listas, Insertar, Estudio y Más; los encabezados H1–H6 se cambian como
 una edición reversible sin acumular marcadores.
@@ -191,7 +209,8 @@ exacto del traspaso.
   documentos modificados y solo continúa después de preservar cada recuperación.
 - la barra inferior presenta las pestañas en un orden estable, marca cambios
   con `*` y permite elegir cada documento con mouse. La posición de lectura se
-  conserva al cambiar. Cada guardado asíncrono lleva la identidad de su pestaña,
+  conservaba al cambiar hasta que las divisiones movieron el scroll a la hoja;
+  hoy vuelve al inicio (defecto abierto). Cada guardado asíncrono lleva la identidad de su pestaña,
   por lo que se puede continuar en otra nota sin atribuirle el resultado, el
   baseline o la limpieza de recuperación. Aperturas y renders también llevan
   identidad y versión propias: pueden completar una pestaña inactiva sin

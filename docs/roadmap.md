@@ -111,6 +111,13 @@ competir con la lectura cuando no se necesitan.
 
 ### Orden inmediato
 
+Desde el 13 de noviembre de 2026 el orden vigente es el de
+[`revision-2026-11-13.md`](revision-2026-11-13.md#orden-de-trabajo-para-continuar):
+primero corregir los defectos de interacción reportados (avisos invisibles,
+scroll por pestaña, copia de código, Comparar desfasado), después CI Linux,
+continuación de listas, divisiones descubribles y el concepto C completo. El
+párrafo siguiente conserva el criterio general.
+
 El orden inmediato es: primero cerrar inconsistencias de interacción en edición
 y lectura; después mejorar descubribilidad, foco y accesibilidad del chrome;
 luego hacer visibles la cancelación, actualización y límites del workspace; y
