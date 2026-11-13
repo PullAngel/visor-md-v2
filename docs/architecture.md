@@ -23,7 +23,11 @@ La separación empezó de forma incremental y con la suite verde:
 - `src/settings.rs`: preferencias locales pequeñas y versionadas;
 - `src/theme.rs`: paletas Papel y tinta y roles de color;
 - `src/vfs.rs` y `src/workspace.rs`: raíz concedida, contención e índice en
-  memoria acotado y cancelable.
+  memoria acotado y cancelable;
+- `src/panes.rs`: árbol de hasta cuatro paneles, su geometría y las cabeceras
+  de hoja, sin dependencias de ventana ni de archivos;
+- `src/dialog.rs`: diálogos propios como modelo puro (texto, botones,
+  respuesta segura y geometría), dibujados por la aplicación.
 
 La aplicación retiene durante la sesión el texto UTF-8 que abrió en un buffer
 Rope, sus rangos de modelo y metadatos de entrada: presencia de BOM UTF-8 y estilo observado de EOL
