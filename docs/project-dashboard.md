@@ -26,7 +26,7 @@ capacidad de uso diario más los criterios de cierre de cada fila.
 | Aplicación de uso diario | **Funcional, parcial** | Tiene pestañas, acciones, cierre protegido, paneles, tema, comparación y chrome propio de Windows. Hasta cuatro documentos distintos pueden verse en divisiones aisladas; faltan QA visual, foco por teclado, ventanas separadas y accesibilidad completa. |
 | Workspace y Obsidian esencial | **Funcional, parcial** | Puede indexar una carpeta autorizada, buscar, navegar vínculos y backlinks dentro de VFS; faltan escala, corpus y QA multiplataforma. |
 | Estudio y preparación para IA | **Base funcional, parcial** | Ofrece Markdown portable, copias preparadas y fragmentos; faltan comparación entre versiones y controles más finos de fragmentos. |
-| Exportación y distribución | **No iniciado como producto** | Hay investigación; PDF, DOCX, paquetes e instaladores todavía no son capacidades de la aplicación. |
+| Exportación y distribución | **PDF disponible, resto pendiente** | Exportar a PDF ya funciona desde la paleta (ADR-38); DOCX, paquetes e instaladores siguen pendientes. |
 
 **Conclusión de producto:** la aplicación ya es una base de lectura y edición
 local utilizable en desarrollo. Aún no corresponde llamarla v2.0 final ni

@@ -154,7 +154,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 
 | Función | Estado | Criterio mínimo |
 | --- | --- | --- |
-| PDF fiel | Planificado | Tipografía, paginado y seguridad |
+| PDF fiel | Parcial | Paleta → Exportar a PDF: A4 con la tipografía de lectura en contornos vectoriales, paginado por líneas, títulos sin quedar huérfanos, tablas, código, citas y tareas; capa de texto para buscar y copiar. Estático y sin dependencias nuevas (ADR-38). Faltan emojis en color, imágenes y QA con impresoras |
 | DOCX | Planificado con investigación | Compatibilidad y coste cerrados |
 | Copia para plataformas | Parcial | Desde lectura, el menú contextual y la paleta copian Markdown de bloques seleccionados y vuelven legibles los wikilinks de Obsidian para Discord o correo; faltan variantes de formato y QA con destinos reales. |
 | HTML autónomo | Futuro | Sin recursos remotos ni scripts |

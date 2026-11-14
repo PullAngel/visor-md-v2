@@ -651,3 +651,32 @@ permiso. Red y otros formatos permanecen bloqueados.
 lectura secundaria automática, sin WebView y sin un motor general de imágenes.
 El mismo decoder del renderer suma 103.424 bytes al release medido; los límites
 y la retención única acotan disponibilidad y memoria.
+
+## ADR-38: Exportación PDF propia, sin dependencias nuevas
+
+**Contexto.** La persona quiere exportar a PDF sin pasar por "Imprimir". La
+evaluación de septiembre (`research/08-export-evaluation.md`) descartó
+`genpdf` por tamaño y dejó `printpdf` sujeto a aprobación, con su conversión
+HTML prohibida. Las fuentes embebidas son variables: incrustarlas en un PDF
+perdería negritas e itálicas en la mayoría de los visores.
+
+**Decisión.** Escribir un generador PDF 1.4 mínimo en `src/pdf.rs`, sin
+dependencias nuevas. Reutiliza el maquetado de lectura (`parley`) en una
+página A4 con tinta sobre papel y convierte cada glifo en un contorno vectorial
+con `swash`, aplicando las mismas variaciones de peso y estilo que la pantalla.
+Cada glifo distinto se escribe una vez como forma reutilizable. Una capa de
+texto invisible en Helvetica WinAnsi permite buscar y copiar texto en español
+y en la mayoría de idiomas europeos. El destino lo elige la persona; la
+escritura es atómica, se fuerza la extensión `.pdf` y nunca se reemplaza el
+documento abierto.
+
+**Por qué.** Fidelidad exacta con la lectura, sin navegador, sin HTML y sin
+cadena de suministro nueva. El PDF resultante es estático: no contiene
+JavaScript, acciones, anotaciones de enlace, formularios ni adjuntos, y lo
+comprueba una prueba automática. El release crece 36 KB (3.644.416 bytes).
+
+**Límites aceptados.** Los emojis en color salen en tinta; los enlaces se ven
+pero no son activos; las imágenes locales quedan como su marcador textual; la
+capa de búsqueda omite caracteres fuera de WinAnsi (el dibujo los conserva);
+el contenido no se comprime, por lo que un documento largo pesa más que con un
+compresor. Cualquiera de estos puntos puede revisarse sin cambiar la decisión.

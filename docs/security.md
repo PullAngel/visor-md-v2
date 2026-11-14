@@ -180,6 +180,15 @@ capacidad. Esta clasificación viaja con el documento durante edición, vista
 dividida, refrescos asíncronos y Guardar como: texto que parece Markdown no
 adquiere formato ni comportamiento por alternar una vista.
 
+### Exportación PDF
+
+Exportar es una acción explícita con destino elegido en el diálogo del sistema.
+El PDF se genera desde el modelo ya validado, no desde HTML, y es estático: sin
+JavaScript, acciones al abrir, anotaciones de enlace, formularios ni adjuntos.
+Los enlaces se dibujan pero no se activan, para que un documento hostil no
+pueda convertir el PDF en un lanzador de URL. La escritura es atómica, fuerza la
+extensión `.pdf` y rechaza reemplazar el documento abierto. Ver ADR-38.
+
 ### Recursos secundarios
 
 El contenido no puede cargar automáticamente:

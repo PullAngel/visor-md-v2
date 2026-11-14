@@ -20,6 +20,7 @@ mod fonts;
 mod images;
 mod limits;
 mod panes;
+mod pdf;
 mod recovery;
 mod settings;
 mod theme;
@@ -1131,6 +1132,7 @@ enum AppAction {
     TogglePinOnTop,
     InsertSymbol,
     ToggleFloatingOutline,
+    ExportPdf,
     Cut,
     FormatBold,
     FormatItalic,
@@ -1185,7 +1187,7 @@ enum AppAction {
     CommandPalette,
 }
 
-const APP_ACTIONS: [AppAction; 68] = [
+const APP_ACTIONS: [AppAction; 69] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -1197,6 +1199,7 @@ const APP_ACTIONS: [AppAction; 68] = [
     AppAction::TogglePinOnTop,
     AppAction::InsertSymbol,
     AppAction::ToggleFloatingOutline,
+    AppAction::ExportPdf,
     AppAction::SaveAs,
     AppAction::CloseDocument,
     AppAction::CloseDocumentPane,
@@ -1276,6 +1279,7 @@ impl AppAction {
             Self::TogglePinOnTop => "Fijar la ventana encima de las demás",
             Self::InsertSymbol => "Insertar símbolo o emoji",
             Self::ToggleFloatingOutline => "Mostrar u ocultar el índice flotante",
+            Self::ExportPdf => "Exportar a PDF",
             Self::Cut => "Cortar · Ctrl+X",
             Self::FormatBold => "Aplicar negrita · Ctrl+B",
             Self::FormatItalic => "Aplicar cursiva · Ctrl+I",
@@ -8822,6 +8826,7 @@ impl App {
             AppAction::TogglePinOnTop => self.toggle_pin_on_top(),
             AppAction::InsertSymbol => self.open_symbol_picker(),
             AppAction::ToggleFloatingOutline => self.toggle_floating_outline(),
+            AppAction::ExportPdf => self.export_current_pdf(),
             AppAction::Cut => self.cut_source_selection(),
             AppAction::FormatBold => self.apply_markdown_surround("**", "**", "texto"),
             AppAction::FormatItalic => self.apply_markdown_surround("_", "_", "texto"),
@@ -8984,6 +8989,78 @@ impl App {
         } else {
             "la ventana ya no queda encima de las demás"
         });
+    }
+
+    /// Exporta la versión actual del documento, aunque esté en edición. El
+    /// destino lo elige la persona; se escribe de forma atómica y nunca se
+    /// toca el archivo Markdown.
+    fn export_current_pdf(&mut self) {
+        let source = self.document.source.to_string();
+        let outcome = match self.document.content_kind.prepare_view(&source) {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                self.set_notice(&format!("no se pudo preparar el PDF: {error}"));
+                return;
+            }
+        };
+        let name = document_display_name(&self.document.path);
+        let stem = std::path::Path::new(&name)
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or("documento")
+            .to_string();
+        let Some(mut path) = self
+            .file_dialog()
+            .add_filter("PDF", &["pdf"])
+            .set_file_name(format!("{stem}.pdf"))
+            .set_title("Exportar a PDF")
+            .save_file()
+        else {
+            self.set_notice("exportación a PDF cancelada");
+            return;
+        };
+        // Nunca escribir un PDF sobre el Markdown ni sobre otro tipo de archivo.
+        if !path
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("pdf"))
+        {
+            path.set_extension("pdf");
+        }
+        if paths_refer_to_same_file(std::path::Path::new(&self.document.path), &path) {
+            self.set_notice("el PDF no puede reemplazar el documento abierto");
+            return;
+        }
+        let started = Instant::now();
+        let (bytes, pages) = export_pdf_bytes(
+            &outcome.blocks,
+            &stem,
+            &mut self.font_cx,
+            &mut self.layout_cx,
+            &mut self.scale_cx,
+        );
+        let written = atomicwrites::AtomicFile::new(&path, atomicwrites::AllowOverwrite)
+            .write(|file| std::io::Write::write_all(file, &bytes));
+        match written {
+            Ok(()) => {
+                self.log.push(format!(
+                    "[pdf] {pages} páginas, {} KB en {:.0} ms",
+                    bytes.len() / 1024,
+                    started.elapsed().as_secs_f64() * 1000.0
+                ));
+                let file = path
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                self.set_notice(&format!(
+                    "PDF exportado: {file} · {pages} {}",
+                    if pages == 1 { "página" } else { "páginas" }
+                ));
+            }
+            Err(error) => {
+                self.log.push(format!("[pdf] {error}"));
+                self.set_notice("no se pudo escribir el PDF; el documento no cambió");
+            }
+        }
     }
 
     fn toggle_floating_outline(&mut self) {
@@ -16449,6 +16526,347 @@ fn document_outline(blocks: &[Block]) -> Vec<(usize, String)> {
         .collect()
 }
 
+// ---------------------------------------------------------------- PDF
+
+/// Margen de página en puntos tipográficos.
+const PDF_MARGIN: f32 = 56.0;
+
+/// Exporta bloques ya validados a un PDF A4 estático. Reutiliza el mismo
+/// maquetado que la lectura, en tinta sobre papel blanco, y no resuelve
+/// enlaces, imágenes ni HTML: el resultado no tiene comportamiento propio.
+fn export_pdf_bytes(
+    blocks: &[Block],
+    title: &str,
+    font_cx: &mut FontContext,
+    layout_cx: &mut LayoutContext<Brush>,
+    scale_cx: &mut ScaleContext,
+) -> (Vec<u8>, usize) {
+    let palette = DAY;
+    // Escala de píxeles de maquetado a puntos: la medida editorial completa
+    // ocupa exactamente el ancho útil de la página.
+    let k = (pdf::A4_WIDTH - PDF_MARGIN * 2.0) / MAX_MEASURE;
+    let pane_width = MAX_MEASURE + MARGIN * 2.0;
+    let text_width = MAX_MEASURE;
+    let page_height_px = (pdf::A4_HEIGHT - PDF_MARGIN * 2.0) / k;
+    let to_x = |px: f32| PDF_MARGIN + (px - MARGIN) * k;
+    let to_y = |px: f32| PDF_MARGIN + px * k;
+    let mut out = pdf::PdfBuilder::new(pdf::A4_WIDTH, pdf::A4_HEIGHT);
+    let mut y = 0.0f32;
+    let mut previous: Option<&Block> = None;
+
+    for block in blocks {
+        let x = MARGIN + block.indent();
+        let mut gap = 0.0;
+        if y > 0.0 {
+            gap = block.kind.space_before();
+            y += gap;
+        }
+        // Las líneas de una misma cerca comparten fondo continuo.
+        let continues_code = previous.is_some_and(|previous| same_code_group(previous, block));
+        previous = Some(block);
+        match block.kind {
+            Kind::Rule => {
+                if y + 12.0 > page_height_px {
+                    out.new_page();
+                    y = 0.0;
+                }
+                out.fill_rect(to_x(x), to_y(y + 6.0), text_width * k, 0.6, palette.border);
+                y += 12.0;
+                continue;
+            }
+            Kind::TableRow { header } => {
+                let cells =
+                    build_table_layouts(block, font_cx, layout_cx, pane_width, 1.0, palette);
+                let row_height = cells
+                    .iter()
+                    .map(Layout::height)
+                    .fold(0.0_f32, f32::max)
+                    .max(1.0);
+                if y + row_height > page_height_px && y > 0.0 {
+                    out.new_page();
+                    y = 0.0;
+                }
+                let left = x - 6.0;
+                let table_width = text_width + 12.0;
+                if header {
+                    out.fill_rect(
+                        to_x(left),
+                        to_y(y),
+                        table_width * k,
+                        row_height * k,
+                        palette.mark,
+                    );
+                }
+                out.stroke_rect(
+                    to_x(left),
+                    to_y(y),
+                    table_width * k,
+                    row_height * k,
+                    0.5,
+                    palette.border,
+                );
+                let columns = cells.len().max(1);
+                for column in 1..columns {
+                    let column_x = left + table_width * column as f32 / columns as f32;
+                    out.fill_rect(to_x(column_x), to_y(y), 0.5, row_height * k, palette.border);
+                }
+                let column_width = text_width / columns as f32;
+                for (column, layout) in cells.iter().enumerate() {
+                    let cell_x = x + column as f32 * column_width + TABLE_CELL_PADDING;
+                    let cell_y = y + (row_height - layout.height()).max(0.0) * 0.5;
+                    for line in layout.lines() {
+                        for item in line.items() {
+                            if let PositionedLayoutItem::GlyphRun(run) = item {
+                                pdf_glyph_run(
+                                    &mut out,
+                                    scale_cx,
+                                    &run,
+                                    &block.text,
+                                    cell_x,
+                                    cell_y,
+                                    &to_x,
+                                    &to_y,
+                                    k,
+                                );
+                            }
+                        }
+                    }
+                }
+                y += row_height;
+                continue;
+            }
+            _ => {}
+        }
+
+        let layout = build_layout(block, font_cx, layout_cx, pane_width, 1.0, palette);
+        // Un título nunca queda solo al pie: si no caben él y unas líneas de
+        // lo que sigue, empieza en la página siguiente.
+        if matches!(block.kind, Kind::Heading(_))
+            && y > 0.0
+            && y + layout.height() + 60.0 > page_height_px
+        {
+            out.new_page();
+            y = 0.0;
+        }
+        let marker_layout = match &block.marker {
+            Some(Marker::Text(text)) => Some(build_marker_layout(
+                text, block.kind, font_cx, layout_cx, 1.0, palette,
+            )),
+            _ => None,
+        };
+        for (line_index, line) in layout.lines().enumerate() {
+            let metrics = *line.metrics();
+            let line_height = metrics.line_height;
+            if y + line_height > page_height_px && y > 0.0 {
+                out.new_page();
+                y = 0.0;
+            }
+            let origin_y = y - metrics.block_min_coord;
+            match block.kind {
+                // El fondo se superpone medio punto con la línea siguiente para
+                // que los visores no muestren costuras entre líneas.
+                Kind::Code => {
+                    let extend = if line_index == 0 && continues_code && y > 0.0 {
+                        gap
+                    } else {
+                        0.0
+                    };
+                    out.fill_rect(
+                        to_x(x - 12.0),
+                        to_y(y - extend),
+                        (text_width + 24.0) * k,
+                        (line_height + extend) * k + 0.5,
+                        palette.elevated,
+                    );
+                }
+                Kind::Quote => out.fill_rect(
+                    to_x(x - 20.0),
+                    to_y(y),
+                    3.0 * k,
+                    line_height * k,
+                    palette.accent,
+                ),
+                Kind::Callout => {
+                    out.fill_rect(
+                        to_x(x - 20.0),
+                        to_y(y),
+                        (text_width + 20.0) * k,
+                        line_height * k,
+                        palette.elevated,
+                    );
+                    out.fill_rect(
+                        to_x(x - 20.0),
+                        to_y(y),
+                        3.0 * k,
+                        line_height * k,
+                        palette.accent,
+                    );
+                }
+                _ => {}
+            }
+            if line_index == 0 {
+                if let Some(marker) = &marker_layout {
+                    let marker_x = x - marker.width() - 8.0;
+                    let marker_text = match &block.marker {
+                        Some(Marker::Text(text)) => text.as_str(),
+                        _ => "",
+                    };
+                    for marker_line in marker.lines() {
+                        for item in marker_line.items() {
+                            if let PositionedLayoutItem::GlyphRun(run) = item {
+                                pdf_glyph_run(
+                                    &mut out,
+                                    scale_cx,
+                                    &run,
+                                    marker_text,
+                                    marker_x,
+                                    y,
+                                    &to_x,
+                                    &to_y,
+                                    k,
+                                );
+                            }
+                        }
+                    }
+                }
+                if let Some(Marker::Task { done }) = block.marker {
+                    let size = 12.0;
+                    let box_x = x - size - 10.0;
+                    let box_y = y + (line_height - size) * 0.5;
+                    if done {
+                        out.fill_rect(to_x(box_x), to_y(box_y), size * k, size * k, palette.accent);
+                        out.check_mark(to_x(box_x), to_y(box_y), size * k, (255, 255, 255));
+                    } else {
+                        out.stroke_rect(
+                            to_x(box_x),
+                            to_y(box_y),
+                            size * k,
+                            size * k,
+                            0.8,
+                            palette.dim,
+                        );
+                    }
+                }
+            }
+            for item in line.items() {
+                if let PositionedLayoutItem::GlyphRun(run) = item {
+                    pdf_glyph_run(
+                        &mut out,
+                        scale_cx,
+                        &run,
+                        &block.text,
+                        x,
+                        origin_y,
+                        &to_x,
+                        &to_y,
+                        k,
+                    );
+                }
+            }
+            y += line_height;
+        }
+    }
+    let pages = out.page_count();
+    (out.finish(title), pages)
+}
+
+/// Dibuja un run como formas de glifo vectoriales y agrega su texto en la
+/// capa invisible. Fondo, subrayado y tachado salen del mismo estilo que usa
+/// la lectura en pantalla.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "la conversión recibe el mismo origen y escala que el dibujo en pantalla"
+)]
+fn pdf_glyph_run(
+    out: &mut pdf::PdfBuilder,
+    scale_cx: &mut ScaleContext,
+    run: &GlyphRun<'_, Brush>,
+    text: &str,
+    origin_x: f32,
+    origin_y: f32,
+    to_x: &dyn Fn(f32) -> f32,
+    to_y: &dyn Fn(f32) -> f32,
+    k: f32,
+) {
+    let style = run.style();
+    let brush = style.brush;
+    let r = run.run();
+    let font = r.font();
+    let font_size = r.font_size();
+    let metrics = r.metrics();
+    let coords = r.normalized_coords().to_vec();
+    let shift = brush.baseline_shift as f32 * font_size * 0.25;
+    let baseline = origin_y + run.baseline() + shift;
+
+    if let Some(background) = brush.background {
+        out.fill_rect(
+            to_x(origin_x + run.offset() - 2.0),
+            to_y(baseline - metrics.ascent - 1.0),
+            (run.advance() + 4.0) * k,
+            (metrics.ascent + metrics.descent + 2.0) * k,
+            background,
+        );
+    }
+
+    let mut run_x = run.offset();
+    for glyph in run.glyphs() {
+        let gx = origin_x + run_x + glyph.x;
+        let gy = baseline + glyph.y;
+        run_x += glyph.advance;
+        let key = pdf::GlyphFormKey {
+            font: font.data.id(),
+            index: font.index,
+            coords: coords.clone(),
+            glyph: glyph.id,
+        };
+        let form = out.glyph_form(key, || {
+            let font_ref = FontRef::from_index(font.data.as_ref(), font.index as usize)?;
+            let mut scaler = scale_cx
+                .builder(font_ref)
+                .size(pdf::GLYPH_UNITS)
+                .hint(false)
+                .normalized_coords(&coords)
+                .build();
+            scaler.scale_outline(u16::try_from(glyph.id).ok()?)
+        });
+        if let Some(form) = form {
+            out.draw_glyph(form, to_x(gx), to_y(gy), font_size * k, brush.foreground);
+        }
+    }
+
+    for (decoration, underline) in [(&style.underline, true), (&style.strikethrough, false)] {
+        let Some(decoration) = decoration else {
+            continue;
+        };
+        let (offset, size) = if underline {
+            (metrics.underline_offset, metrics.underline_size)
+        } else {
+            (metrics.strikethrough_offset, metrics.strikethrough_size)
+        };
+        let offset = decoration.offset.unwrap_or(offset);
+        let size = decoration.size.unwrap_or(size).max(0.8);
+        out.fill_rect(
+            to_x(origin_x + run.offset()),
+            to_y(baseline - offset),
+            run.advance() * k,
+            size * k,
+            decoration.brush.foreground,
+        );
+    }
+
+    // Capa de texto: un fragmento por cluster, en su posición exacta.
+    let mut cluster_x = origin_x + run.offset();
+    for cluster in r.clusters() {
+        let advance = cluster.advance();
+        if !cluster.is_ligature_continuation()
+            && let Some(fragment) = text.get(cluster.text_range())
+        {
+            out.hidden_text(to_x(cluster_x), to_y(baseline), font_size * k, fragment);
+        }
+        cluster_x += advance;
+    }
+}
+
 fn main() {
     let started = Instant::now();
 
@@ -17120,10 +17538,10 @@ mod pruebas {
 
         // Incluye documento, workspace, estudio y accesibilidad sin convertir
         // la paleta en un menú de IDE: las familias densas también tienen
-        // ámbitos propios desde el menú contextual. Superar 68 exige revisar
+        // ámbitos propios desde el menú contextual. Superar 69 exige revisar
         // esa jerarquía antes de añadir otra acción. Las últimas fueron fijar
-        // la ventana encima, símbolos y emojis, y el índice flotante.
-        assert!(original_len <= 68, "el catálogo dejó de ser pequeño");
+        // la ventana encima, símbolos y emojis, índice flotante y PDF.
+        assert!(original_len <= 69, "el catálogo dejó de ser pequeño");
         assert_eq!(labels.len(), original_len);
     }
 
@@ -17611,6 +18029,56 @@ mod pruebas {
                 kind: block.kind,
             })
             .collect()
+    }
+
+    #[test]
+    fn exportar_el_corpus_produce_un_pdf_estatico_y_paginado() {
+        let mut font_cx = FontContext::new();
+        register_embedded_fonts(&mut font_cx);
+        let mut layout_cx = LayoutContext::new();
+        let mut scale_cx = ScaleContext::new();
+        let source = include_str!("../tests/fixtures/commonmark-gfm-reader.md");
+        let blocks = parse_blocks(source).expect("el corpus es válido").blocks;
+        let (bytes, pages) = export_pdf_bytes(
+            &blocks,
+            "Corpus (prueba)",
+            &mut font_cx,
+            &mut layout_cx,
+            &mut scale_cx,
+        );
+        assert!(pages >= 1);
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(text.starts_with("%PDF-1.4"));
+        assert!(
+            text.contains("/Subtype /Form"),
+            "los glifos son formas vectoriales"
+        );
+        assert!(text.contains(" Tr /F1 "), "hay capa de texto para buscar");
+        for forbidden in [
+            "/JavaScript",
+            "/OpenAction",
+            "/URI",
+            "/Launch",
+            "/EmbeddedFile",
+            "/AcroForm",
+        ] {
+            assert!(!text.contains(forbidden), "{forbidden}");
+        }
+        if let Some(path) = std::env::var_os("VISOR_PDF_OUT") {
+            std::fs::write(path, &bytes).expect("se escribe la muestra");
+        }
+
+        // Un documento largo se reparte en varias páginas.
+        let largo = "Párrafo de prueba con texto suficiente para ocupar una línea.\n\n".repeat(200);
+        let blocks = parse_blocks(&largo).expect("válido").blocks;
+        let (_, pages) = export_pdf_bytes(
+            &blocks,
+            "largo",
+            &mut font_cx,
+            &mut layout_cx,
+            &mut scale_cx,
+        );
+        assert!(pages > 3, "{pages} páginas");
     }
 
     #[test]
