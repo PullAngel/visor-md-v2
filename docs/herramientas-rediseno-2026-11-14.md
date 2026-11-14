@@ -23,7 +23,7 @@ Cada candidata se juzgó por cinco preguntas:
 
 | # | Herramienta | Tipo | Qué aporta | Encaje | Veredicto |
 | --- | --- | --- | --- | --- | --- |
-| 1 | **Design** (plugin de Anthropic): skills `ux-writing`, `design-critique`, `accessibility-review`, `user-research` | Skill de Claude | Microcopy coherente, crítica de diseño desde capturas, auditoría WCAG y síntesis de pruebas con usuarios. Funciona sin Figma. | Alto: trabaja con capturas y texto, no necesita DOM | **Elegida** |
+| 1 | **Design** (plugin de Anthropic): skills `ux-copy`, `design-critique`, `accessibility-review`, `user-research` | Skill de Claude | Microcopy coherente, crítica de diseño desde capturas, auditoría WCAG y síntesis de pruebas con usuarios. Funciona sin Figma. | Alto: trabaja con capturas y texto, no necesita DOM | **Elegida** |
 | 2 | **Pruebas de imagen de referencia** (render tiny-skia a PNG comparado contra una referencia; [kompari](https://github.com/linebender/kompari) como visor de diferencias) | Técnica más herramienta de desarrollo | Cada estado de la interfaz (menú abierto, hover, pestañas, temas y tamaños) queda fijado como imagen. Un cambio visual involuntario rompe una prueba. | Alto: la app ya dibuja en un `Pixmap` | **Elegida** |
 | 3 | [AccessKit](https://github.com/AccessKit/accesskit) con `accesskit_winit` | Biblioteca | Árbol de accesibilidad real: UI Automation en Windows y AT-SPI en Linux. Habilita lectores de pantalla y pruebas por nombre de control en vez de coordenadas. | Alto, pero es una dependencia nueva con un ADR, y su cobertura de texto enriquecido todavía es parcial | Recomendada **después** del plan |
 | 4 | [kittest](https://docs.rs/crate/kittest/0.2.0) | Biblioteca de pruebas de GUI sobre AccessKit | Pruebas que buscan y pulsan controles por rol y nombre | Depende de la #3 | Junto con AccessKit |
@@ -52,7 +52,7 @@ Cada candidata se juzgó por cinco preguntas:
 
 **Cómo se usa en el plan.**
 - **Fase 7.**
-  - `ux-writing` produce el glosario definitivo y reescribe todos los rótulos,
+  - `ux-copy` produce el glosario definitivo y reescribe todos los rótulos,
     avisos y tooltips en voseo con una voz única.
   - Esos textos se fijan con una prueba Rust que prohíbe los términos
     retirados.

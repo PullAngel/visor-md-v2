@@ -22,7 +22,7 @@ activa** en la tabla «Estado» del final. Cada tarea indica:
 | --- | --- | --- |
 | kompari (`kompari.exe` en `~/.cargo/bin`) | Instalada | `kompari review tests/visual/referencia target/visual/actual` para ver y aprobar imágenes de referencia |
 | Accessibility Insights for Windows 1.1 | Instalada | Analizador de contraste (Ctrl+R) en la tarea 8.8 |
-| Plugin Design de Anthropic | Lo instala el propietario desde claude.ai | `design-critique` al cerrar las fases 3, 5 y 8; `ux-writing` en la 7; `accessibility-review` en la 8; `user-research` en la 9. **Si no está disponible, se salta ese paso y se anota en «Estado»; nunca bloquea.** |
+| Plugin Design de Anthropic (`design@knowledge-work-plugins` v1.2.0) | Instalado con `claude plugin install`; se carga al iniciar una sesión nueva | `design-critique` al cerrar las fases 3, 5 y 8; `ux-copy` en la 7; `accessibility-review` en la 8; `user-research` en la 9. **Si no está disponible, se salta ese paso y se anota en «Estado»; nunca bloquea.** |
 | Herramienta de evaluación ([`scripts/evaluacion/`](../scripts/evaluacion/README.md)) | Lista | Capturas en vivo al cerrar cada fase; re-evaluación en la fase 9 |
 
 ## Decisiones
@@ -460,7 +460,7 @@ Es independiente de las fases 2 y 3. Toca solo `editor.rs` y las funciones
   rg -n '"[^"]*[a-záéíóúñ][^"]*"' src/main.rs src/dialog.rs | rg -v 'log.push|\[medicion\]|assert'
   ```
 
-- [ ] **7.2** Aplicar D-25 a todos los textos. Si `ux-writing` está disponible,
+- [ ] **7.2** Aplicar D-25 a todos los textos. Si `ux-copy` está disponible,
   pasarle el inventario y el glosario.
 - [ ] **7.3** D-26: avisos.
 - [ ] **7.4** Prueba de lenguaje. Recorre `APP_ACTIONS` (`label`) y las
