@@ -1,8 +1,8 @@
 diff --git a/src/main.rs b/src/main.rs
-index 47b75fd..4061e1c 100644
+index a69c818..e6879ad 100644
 --- a/src/main.rs
 +++ b/src/main.rs
-@@ -7728,7 +7728,13 @@ impl ApplicationHandler<AppEvent> for App {
+@@ -7809,7 +7809,13 @@ impl ApplicationHandler<AppEvent> for App {
                  }
              }
              WindowEvent::CursorLeft { .. } => {
@@ -17,16 +17,7 @@ index 47b75fd..4061e1c 100644
                  self.tab_drag_id = None;
                  self.selecting = false;
                  self.text_cursor_hover = false;
-@@ -7837,7 +7843,7 @@ impl ApplicationHandler<AppEvent> for App {
-                             return;
-                         }
-                     }
--                    let resize_direction = self.window.as_ref().and_then(|window| {
-+                    let resize_direction = self.window.as_ref().filter(|_| self.pointer.is_some()).and_then(|window| {
-                         let size = window.inner_size();
-                         resize_direction_at(
-                             self.pointer.map_or(0.0, |(x, _)| x),
-@@ -9014,7 +9020,7 @@ impl App {
+@@ -9094,7 +9100,7 @@ impl App {
              .add_filter("PDF", &["pdf"])
              .set_file_name(format!("{stem}.pdf"))
              .set_title("Exportar a PDF")
@@ -35,7 +26,7 @@ index 47b75fd..4061e1c 100644
          else {
              self.set_notice("exportación a PDF cancelada");
              return;
-@@ -9544,7 +9550,7 @@ impl App {
+@@ -9626,7 +9632,7 @@ impl App {
                  ],
              )
              .set_title("Abrir en un panel nuevo")
@@ -44,7 +35,7 @@ index 47b75fd..4061e1c 100644
          else {
              self.set_notice("abrir en panel cancelado");
              return;
-@@ -11125,7 +11131,7 @@ impl App {
+@@ -11207,7 +11213,7 @@ impl App {
              .file_dialog()
              .add_filter("Markdown", &["md", "markdown"])
              .set_file_name("nota.md")
@@ -53,7 +44,7 @@ index 47b75fd..4061e1c 100644
          else {
              self.set_notice("guardar como cancelado");
              return;
-@@ -11532,7 +11538,7 @@ impl App {
+@@ -11614,7 +11620,7 @@ impl App {
                  ],
              )
              .set_title("Abrir documento")
@@ -62,7 +53,7 @@ index 47b75fd..4061e1c 100644
          else {
              self.set_notice("abrir documento cancelado");
              return;
-@@ -11544,7 +11550,7 @@ impl App {
+@@ -11626,7 +11632,7 @@ impl App {
          let Some(path) = self
              .file_dialog()
              .set_title("Elegir carpeta de trabajo")
@@ -71,7 +62,7 @@ index 47b75fd..4061e1c 100644
          else {
              self.set_notice("abrir carpeta cancelado");
              return;
-@@ -16867,6 +16873,20 @@ fn pdf_glyph_run(
+@@ -16976,6 +16982,20 @@ fn pdf_glyph_run(
      }
  }
  

@@ -296,31 +296,31 @@ aparcada (con el motivo).
 
 ### Fase 1 · Correcciones funcionales
 
-- [ ] **1.1** Agregar `typed_text` (D-04) y usarlo en `handle_search_key` para
+- [x] (a76ddca) **1.1** Agregar `typed_text` (D-04) y usarlo en `handle_search_key` para
   llamar a `append_search_text`.
   - Prueba: `typed_text(Some("a"), false, false) == Some("a")`; con `control` o
     `alt` da `None`; `"\r"` da `None`.
   - Hecho: con la herramienta de evaluación, `type` escribe en Buscar en
     documento.
-- [ ] **1.2** Lo mismo en `handle_workspace_search_key` con
+- [x] (a76ddca) **1.2** Lo mismo en `handle_workspace_search_key` con
   `append_workspace_search_text`, y la paleta pasa a usar `typed_text`.
   - Prueba: las de 1.1.
   - Hecho: «napoleon» encuentra `historia.md` en `scripts/evaluacion/apuntes`.
-- [ ] **1.3** Aplicar D-06 en los manejadores de clic izquierdo y derecho.
+- [x] (a76ddca) **1.3** Aplicar D-06 en los manejadores de clic izquierdo y derecho.
   - Prueba: extraer `fn click_point(pointer: Option<(f32, f32)>) -> Option<(f32, f32)>`
     si hace falta para probarlo.
   - Hecho: no quedan `pointer.map_or(0.0` en el manejador de clic.
-- [ ] **1.4** Implementar D-05.
+- [x] (5f9c2ae) **1.4** Implementar D-05.
   - Prueba: `from_source` con `"# Hola mundo\n\n- uno"` da 3 palabras;
     tildes y emojis cuentan bien; el código en cerca cuenta como texto.
   - Hecho: al escribir en Editar, el contador cambia.
-- [ ] **1.5** Implementar D-07.
+- [x] (5f9c2ae) **1.5** Implementar D-07.
   - Prueba: la tabla de 4 combinaciones.
   - Hecho: un documento nuevo dice «nuevo».
-- [ ] **1.6** Concordancia: «1 resultado» y «n resultados»; el pie y la cabecera
+- [x] (1a74b6f) **1.6** Concordancia: «1 resultado» y «n resultados»; el pie y la cabecera
   del árbol cuentan lo mismo.
   - Prueba: una función `plural(n, "resultado", "resultados")` con pruebas.
-- [ ] **1.7** Cierre de fase: release, captura de la búsqueda funcionando y
+- [x] **1.7** Cierre de fase: release, captura de la búsqueda funcionando y
   ejecutable nuevo para el propietario.
 
 ### Fase 2 · Dibujo sin ventana, objetivos y animación
@@ -372,6 +372,13 @@ aparcada (con el motivo).
 - [ ] **3.9** Caja de búsqueda con borde, cursor y estado vacío «Escribí para
   buscar…» en la paleta y en la búsqueda de carpeta. Buscar en documento pasa a
   ser una barra anclada arriba a la derecha.
+- [ ] **3.9b** La búsqueda en el documento y en la carpeta ignora tildes y
+  mayúsculas, con el mismo plegado que usa la paleta (`search_fold`).
+  Decisión: «ñ» se pliega a «n», igual que en la paleta, para no complicar la
+  regla.
+  - Prueba: «napoleon» coincide con «Napoleón»; «ano» coincide con «año».
+  - Origen: la verificación en vivo de la fase 1 mostró que «napoleon» daba 0
+    resultados contra «Napoleón».
 - [ ] **3.10** Símbolos: emojis primero, filtro con `typed_text` y columna de
   24 px.
 - [ ] **3.11** Índice: abre con la sección visible elegida. En el flotante, la
@@ -539,8 +546,8 @@ Orden por defecto para un solo ejecutor: 1 → 4 → 2 → 3 → 5 → 6 → 7 �
 | Fase | Estado | Nota |
 | --- | --- | --- |
 | Preparación | Hecho | Herramientas instaladas; decisiones D-01 a D-28 |
-| 1 | **Activa** | — |
-| 4 | Pendiente | — |
+| 1 | Hecho | a76ddca, 5f9c2ae, 1a74b6f; ejecutable entregado |
+| 4 | **Activa** | — |
 | 2 | Pendiente | — |
 | 3 | Pendiente | — |
 | 5 | Pendiente | — |
