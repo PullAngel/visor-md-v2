@@ -3,9 +3,10 @@
 Última actualización: 13 de noviembre de 2026. La revisión integral de esa
 fecha está en [`revision-2026-11-13.md`](revision-2026-11-13.md) y fija el
 orden de trabajo vigente. Desde el 14 de noviembre, el frente activo es la
-revisión de interfaz de
-[`revision-interfaz-2026-11-14.md`](revision-interfaz-2026-11-14.md), con su
-plan por fases.
+evaluación de usabilidad de
+[`evaluacion-usabilidad-2026-11-14.md`](evaluacion-usabilidad-2026-11-14.md):
+UX 6/10 según la QA, SUS 35 con una usuaria novata y un defecto bloqueante (no
+se puede escribir en los buscadores), con su plan definitivo en 9 fases.
 
 Este documento resume el avance real sin sustituir las especificaciones. Sirve
 para responder tres preguntas rápidamente:
@@ -104,17 +105,18 @@ QA humano asociado ya esté cerrado.
 ## Próximo orden de trabajo
 
 Los puntos de la revisión del 13 de noviembre están hechos. El trabajo actual
-sigue las fases de
-[`revision-interfaz-2026-11-14.md`](revision-interfaz-2026-11-14.md#plan-de-cambios):
+sigue el plan definitivo de
+[`evaluacion-usabilidad-2026-11-14.md`](evaluacion-usabilidad-2026-11-14.md#plan-definitivo-de-cambios):
 
-1. base común de objetivos interactivos y animación;
-2. un clic abre y el mismo clic cierra;
-3. listas desplazables con la rueda;
-4. menús y paleta;
-5. pestañas;
-6. hover y pulsación;
-7. pulido;
-8. verificación.
+1. correcciones funcionales (buscadores, contador, estado de guardado);
+2. base común de objetivos interactivos y animación;
+3. listas, menús y botones que abren y cierran;
+4. integridad del documento al insertar formato;
+5. pestañas y paneles;
+6. enlaces, carpeta de apuntes y recuperación;
+7. lenguaje, avisos y primer arranque;
+8. hover, pulsación y lectura;
+9. re-evaluación con los mismos dos perfiles (objetivo SUS ≥ 68, sin S1/S2).
 
 Después vienen el instalador de Windows, el paquete de Linux y el Pomodoro.
 Referencia histórica:

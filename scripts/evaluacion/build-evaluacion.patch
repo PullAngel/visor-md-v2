@@ -1,0 +1,94 @@
+diff --git a/src/main.rs b/src/main.rs
+index 47b75fd..4061e1c 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -7728,7 +7728,13 @@ impl ApplicationHandler<AppEvent> for App {
+                 }
+             }
+             WindowEvent::CursorLeft { .. } => {
+-                self.pointer = None;
++                // Build de evaluación: el puntero simulado persiste aunque el
++                // cursor real esté fuera de la ventana.
++                if std::env::var_os("VISOR_EVAL").is_none() {
++                    self.pointer = None;
++                } else {
++                    return;
++                }
+                 self.tab_drag_id = None;
+                 self.selecting = false;
+                 self.text_cursor_hover = false;
+@@ -7837,7 +7843,7 @@ impl ApplicationHandler<AppEvent> for App {
+                             return;
+                         }
+                     }
+-                    let resize_direction = self.window.as_ref().and_then(|window| {
++                    let resize_direction = self.window.as_ref().filter(|_| self.pointer.is_some()).and_then(|window| {
+                         let size = window.inner_size();
+                         resize_direction_at(
+                             self.pointer.map_or(0.0, |(x, _)| x),
+@@ -9014,7 +9020,7 @@ impl App {
+             .add_filter("PDF", &["pdf"])
+             .set_file_name(format!("{stem}.pdf"))
+             .set_title("Exportar a PDF")
+-            .save_file()
++            .eval_pick()
+         else {
+             self.set_notice("exportación a PDF cancelada");
+             return;
+@@ -9544,7 +9550,7 @@ impl App {
+                 ],
+             )
+             .set_title("Abrir en un panel nuevo")
+-            .pick_file()
++            .eval_pick()
+         else {
+             self.set_notice("abrir en panel cancelado");
+             return;
+@@ -11125,7 +11131,7 @@ impl App {
+             .file_dialog()
+             .add_filter("Markdown", &["md", "markdown"])
+             .set_file_name("nota.md")
+-            .save_file()
++            .eval_pick()
+         else {
+             self.set_notice("guardar como cancelado");
+             return;
+@@ -11532,7 +11538,7 @@ impl App {
+                 ],
+             )
+             .set_title("Abrir documento")
+-            .pick_file()
++            .eval_pick()
+         else {
+             self.set_notice("abrir documento cancelado");
+             return;
+@@ -11544,7 +11550,7 @@ impl App {
+         let Some(path) = self
+             .file_dialog()
+             .set_title("Elegir carpeta de trabajo")
+-            .pick_folder()
++            .eval_pick()
+         else {
+             self.set_notice("abrir carpeta cancelado");
+             return;
+@@ -16867,6 +16873,20 @@ fn pdf_glyph_run(
+     }
+ }
+ 
++/// Build de evaluación: los diálogos nativos no se muestran. La respuesta se
++/// lee de `%LOCALAPPDATA%\eval-dialogo.txt` (ruta, o vacío para cancelar).
++trait EvalPick { fn eval_pick(self) -> Option<std::path::PathBuf>; }
++impl EvalPick for FileDialog {
++    fn eval_pick(self) -> Option<std::path::PathBuf> {
++        let base = std::env::var_os("LOCALAPPDATA").map(std::path::PathBuf::from)?;
++        let answer = base.join("eval-dialogo.txt");
++        let text = std::fs::read_to_string(&answer).ok();
++        let _ = std::fs::remove_file(&answer);
++        let line = text?.trim().to_string();
++        (!line.is_empty()).then(|| std::path::PathBuf::from(line))
++    }
++}
++
+ fn main() {
+     let started = Instant::now();
+ 

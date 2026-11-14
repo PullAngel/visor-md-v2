@@ -1,5 +1,10 @@
 # Revisión de interfaz · 14 de noviembre de 2026
 
+> **Reemplazado.** El plan de este documento quedó absorbido por el plan
+> definitivo de [`evaluacion-usabilidad-2026-11-14.md`](evaluacion-usabilidad-2026-11-14.md#plan-definitivo-de-cambios),
+> que suma una evaluación de QA de UI/UX y una prueba con una usuaria novata.
+> El paneo de abajo sigue siendo válido como diagnóstico.
+
 Revisión de la interfaz pedida por el propietario después de probar el build
 `58f904d`. El objetivo es que la app sea más agradable de usar **sin cambiar
 su estilo**: Papel + Tinta, verde de acento, chrome propio, plano dentro del

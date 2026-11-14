@@ -11,7 +11,8 @@ Para comprender el proyecto en poco tiempo:
    próximo orden de trabajo en una sola vista.
    Para retomar el trabajo, leer después
    [`revision-2026-11-13.md`](revision-2026-11-13.md) y, para la interfaz,
-   [`revision-interfaz-2026-11-14.md`](revision-interfaz-2026-11-14.md).
+   [`evaluacion-usabilidad-2026-11-14.md`](evaluacion-usabilidad-2026-11-14.md),
+   con el plan definitivo vigente.
 2. [`product.md`](product.md): usuarios, experiencias y alcance.
 3. [`architecture.md`](architecture.md): dirección técnica y distancia respecto
    de la implementación actual.
@@ -51,6 +52,7 @@ Estos documentos deben cambiar cuando cambia el producto o su implementación:
 | [`roadmap.md`](roadmap.md) | Secuencia, dependencias y criterios de salida |
 | [`project-dashboard.md`](project-dashboard.md) | Fotografía compacta de avance, deuda, riesgos y siguiente orden |
 | [`revision-2026-11-13.md`](revision-2026-11-13.md) | Revisión integral: causa raíz de defectos abiertos, brecha con el concepto C y orden de trabajo vigente |
+| [`evaluacion-usabilidad-2026-11-14.md`](evaluacion-usabilidad-2026-11-14.md) | Evaluación con QA de UI/UX y usuaria novata (SUS, heurísticas, 44 hallazgos verificados) y plan definitivo de cambios vigente |
 | [`revision-interfaz-2026-11-14.md`](revision-interfaz-2026-11-14.md) | Paneo de interfaz (listas, alternancia de botones, pestañas, hover y pulsación) y plan de cambios por fases vigente |
 | [`design.md`](design.md) | Sistema visual e interacción |
 | [`design-audit.md`](design-audit.md) | Evidencia y plan vigente de corrección visual |
