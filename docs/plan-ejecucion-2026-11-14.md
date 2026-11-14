@@ -1,258 +1,550 @@
 # Plan de ejecución · rediseño y correcciones
 
-Preparación completa del plan definitivo de
-[`evaluacion-usabilidad-2026-11-14.md`](evaluacion-usabilidad-2026-11-14.md#plan-definitivo-de-cambios),
-con las herramientas elegidas en
-[`herramientas-rediseno-2026-11-14.md`](herramientas-rediseno-2026-11-14.md).
+Plan para ejecutar sin acompañamiento el plan definitivo de
+[`evaluacion-usabilidad-2026-11-14.md`](evaluacion-usabilidad-2026-11-14.md#plan-definitivo-de-cambios).
+Las decisiones técnicas ya están tomadas (sección **Decisiones**). El agente
+que ejecuta no las rediscute: las aplica. Si una resulta imposible, sigue la
+regla de escalado de [`agente-ejecutor.md`](agente-ejecutor.md).
 
-Cada tarea dice **qué** se cambia, **dónde** (función o constante actual),
-**cómo se prueba** y **cuándo está terminada**. Sirve para avanzar sin
-acompañamiento: se toma la primera tarea pendiente de la fase en curso.
+**Cómo se usa.** Abrir [`agente-ejecutor.md`](agente-ejecutor.md) (flujo,
+comandos y reglas de parada) y tomar la **primera tarea `[ ]` de la fase
+activa** en la tabla «Estado» del final. Cada tarea indica:
 
-Los números de línea son de `2cc4a2f` y van a moverse. Las anclas que
-valen son los nombres de función.
+- Qué hacer.
+- Dónde: nombre de la función actual. Los números de línea cambian; los nombres
+  no.
+- Prueba: qué se agrega y debe pasar.
+- Hecho: la condición observable.
 
-## Herramientas y entorno
+## Herramientas
 
 | Herramienta | Estado | Uso |
 | --- | --- | --- |
-| Plugin **Design** de Anthropic (`ux-writing`, `design-critique`, `accessibility-review`, `user-research`) | Lo instala el propietario desde la tarjeta de claude.ai | Fase 7 (textos). Fases 3, 5 y 8 (crítica de capturas). Fase 8 (accesibilidad). Fase 9 (síntesis). |
-| **kompari** (`kompari.exe`, CLI) | Instalado desde `linebender/kompari`, fuera de `Cargo.toml` | Revisar y aprobar las imágenes de referencia: `kompari review tests/visual/referencia target/visual/actual` |
-| **Accessibility Insights for Windows** | Pendiente. El instalador oficial (firmado por Microsoft) se descargó, pero Windows canceló la elevación (código 1602). | Medir contraste con cuentagotas en la fase 8. Si no se instala, el contraste se valida con la prueba de `theme.rs` y la medición por píxel de las capturas. |
-| Herramienta de evaluación ([`scripts/evaluacion/`](../scripts/evaluacion/README.md)) | Lista | Capturas en vivo de cada fase y re-evaluación en la fase 9 |
-| `/code-review` y `/simplify` | Incluidas | Sobre el diff de cada fase, antes del último commit |
+| kompari (`kompari.exe` en `~/.cargo/bin`) | Instalada | `kompari review tests/visual/referencia target/visual/actual` para ver y aprobar imágenes de referencia |
+| Accessibility Insights for Windows 1.1 | Instalada | Analizador de contraste (Ctrl+R) en la tarea 8.8 |
+| Plugin Design de Anthropic | Lo instala el propietario desde claude.ai | `design-critique` al cerrar las fases 3, 5 y 8; `ux-writing` en la 7; `accessibility-review` en la 8; `user-research` en la 9. **Si no está disponible, se salta ese paso y se anota en «Estado»; nunca bloquea.** |
+| Herramienta de evaluación ([`scripts/evaluacion/`](../scripts/evaluacion/README.md)) | Lista | Capturas en vivo al cerrar cada fase; re-evaluación en la fase 9 |
 
-## Reglas para todas las fases
+## Decisiones
 
-1. Commits pequeños en `main`, publicados, con
-   `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
-2. Cada commit pasa:
-   - `cargo fmt --check`
-   - `cargo clippy --all-targets -- -D warnings`
-   - `cargo test`
-   - `scripts/check-docs.ps1`
-3. Cada defecto corregido recibe una prueba. La prueba debe fallar antes del
-   cambio cuando sea posible.
-4. Ningún cambio toca bytes del documento salvo los de la tarea, y las pruebas
-   de `editor.rs` lo verifican.
-5. Desde la fase 2, todo cambio visual actualiza las imágenes de referencia que
-   corresponden. El commit dice cuáles y por qué.
-6. Al cerrar cada fase:
-   - capturas en vivo con la herramienta de evaluación, en noche y día, a
-     640×480 y 1100×720;
-   - `design-critique` sobre esas capturas, si el plugin está instalado;
-   - se corrige lo que salga con severidad S2 o más;
-   - `/code-review` sobre el diff de la fase;
-   - se actualiza la tabla «Estado» al final de este documento y la de la
-     evaluación.
-7. Al terminar una fase, ejecutable nuevo en
-   `C:\Dev\archivo\visor-md-v2-ejecutable\` con el anterior como respaldo.
-   Solo si la fase cambió algo que el propietario puede probar.
+Tomadas el 14 de noviembre de 2026. Cada una cierra una pregunta que de otro
+modo quedaría a criterio del ejecutor.
 
----
+### Producto (las tres pendientes de la evaluación)
 
-## Fase 1 · Correcciones funcionales
+- **D-01. Edición.** Se queda con Markdown y más ayudas. No hay editor visual.
+  Las ayudas son:
+  - botón «Título»;
+  - inserciones que respetan el contexto;
+  - acciones de tabla;
+  - Comparar como forma de aprender.
+- **D-02. Enlaces externos.** Siguen en azul por seguridad y llevan el ícono ↗
+  después del texto.
+- **D-03. Tecla T.** Se conserva en Leer. Se suma un botón sol/luna, y al cambiar
+  el tema aparece el aviso «Tema de día · T para volver» (o «de noche»).
 
-Objetivo: cerrar el único S1 y los defectos de estado. No hay cambios visuales.
+### Funcionamiento
 
-| # | Tarea | Dónde | Prueba | Terminada cuando |
-| --- | --- | --- | --- | --- |
-| 1.1 | Buscar en documento acepta `KeyEvent::text`, sin Ctrl ni Alt, como la paleta | `handle_search_key`. Reutilizar el criterio de `direct_source_text` y `handle_command_palette_key`. | Prueba unitaria: un evento con `text = "napo"` deja `search_query == "napo"`, y Ctrl+F no agrega texto | Se puede escribir en vivo con la herramienta de evaluación |
-| 1.2 | Ídem para Buscar en carpeta | `handle_workspace_search_key` → `append_workspace_search_text` | Igual que 1.1 | Lucía puede completar la tarea 7 |
-| 1.3 | Un clic sin puntero conocido no redimensiona ni actúa | Clic izquierdo en `window_event`: el cálculo de `resize_direction` exige `self.pointer.is_some()`. Es el cambio 3 de `build-evaluacion.patch`. | Prueba de `resize_direction_at` con puntero ausente más una revisión de los demás `map_or(0.0, …)` del manejador | No queda ningún `pointer.map_or(0.0` que active acciones |
-| 1.4 | Contador de palabras y caracteres en vivo en Editar | Crear `DocumentMetrics::from_source(&str)`. La barra de estado lo usa cuando `mode.is_editable()`, recalculado con un retraso de unos 250 ms (fecha límite en `about_to_wait`, sin hilos). | Pruebas de `from_source` con Markdown, Unicode y bloques de código | Escribir actualiza el contador |
-| 1.5 | Estado «nuevo · sin guardar» en documentos nunca guardados | Rótulos `"guardado"` y `"sin guardar"` en `redraw` (barra de estado); usar `source_identity.is_none()` | Prueba de la función de rótulo extraída | Un documento nuevo no dice «guardado» |
-| 1.6 | Concordancia y conteos | `panel_footer` (se elimina en la fase 3, pero ahora se corrige el «1 resultados»), título de la paleta, cabecera del árbol | Pruebas de texto para 0, 1 y n | Ningún «1 resultados» ni conteo distinto de las filas |
+- **D-04. Texto tecleado.** Una sola función pura decide si un evento aporta
+  texto a un campo de la interfaz:
 
-Commits sugeridos:
-1. 1.1 y 1.2 juntos.
-2. 1.3.
-3. 1.4 y 1.5.
-4. 1.6.
+  ```rust
+  /// Texto que un evento de teclado aporta a un campo de la interfaz.
+  /// Ctrl o Alt nunca producen texto; se descartan los caracteres de control.
+  fn typed_text(text: Option<&str>, control: bool, alt: bool) -> Option<&str> {
+      if control || alt { return None; }
+      text.filter(|t| !t.is_empty() && !t.chars().any(char::is_control))
+  }
+  ```
 
-Al cerrar la fase, ejecutable nuevo para el propietario: el buscador es lo que
-más le importa.
+  La usan la búsqueda en el documento, la búsqueda en la carpeta, el filtro del
+  selector de símbolos y la paleta, que se refactoriza para usarla.
+  `direct_source_text` (editor) no cambia: admite Tab y saltos de línea con sus
+  propias reglas.
+- **D-05. Contador en vivo.** No hay temporizador. `DocumentMetrics::from_source(&str)`
+  se calcula en el cuadro solo cuando cambia `source_editor.revision()`, con una
+  caché `metrics_cache: Option<(u64, DocumentMetrics)>` en `DocumentState`. En
+  Leer se sigue usando `from_blocks`.
+- **D-06. Clic sin puntero.** Al principio del manejador de clic izquierdo y del
+  derecho, `let Some((x, y)) = self.pointer else { return; };`. Se eliminan los
+  `self.pointer.map_or(0.0, …)` de ese manejador.
+- **D-07. Rótulo de guardado.** `fn save_state_label(identity: bool, dirty: bool) -> &'static str`:
+  - `"nuevo"` si no tiene identidad y no está sucio;
+  - `"sin guardar"` si está sucio;
+  - `"guardado"` en otro caso.
 
----
+### Infraestructura de dibujo y pruebas
 
-## Fase 2 · Base: dibujo sin ventana, objetivos interactivos y animación
+- **D-08. Dibujo sin ventana.** `redraw` se divide en tres partes:
+  1. obtener el tamaño de `self.window` (sin ventana, terminar);
+  2. `self.render_frame(w, h)?`, todo lo que hoy va desde el cálculo de
+     `frame_start` hasta antes de presentar en `surface`, y que deja el cuadro
+     en `self.pixmap`;
+  3. presentar en softbuffer.
 
-Objetivo: la infraestructura que usan las fases 3, 5 y 8. Habilita las pruebas
-de imagen de referencia.
+  Dentro de `render_frame`, las llamadas a la ventana usan
+  `if let Some(window) = &self.window`, que ya es el patrón actual. Con
+  `window == None` no hacen nada.
+- **D-09. Proxy en pruebas.** El campo `proxy` pasa a ser `AppNotifier`:
 
-| # | Tarea | Dónde | Prueba | Terminada cuando |
-| --- | --- | --- | --- | --- |
-| 2.1 | Separar el dibujo del cuadro de la ventana | `redraw` (unas 3000 líneas). Extraer `fn render_frame(&mut self, pixmap: &mut Pixmap, width: u32, height: u32, now: Instant)`. `redraw` queda como envoltura que obtiene el tamaño, llama a `render_frame` y copia a softbuffer. Las llamadas a `window.request_redraw()` dentro del dibujo pasan a un indicador `redraw_requested`. | Las pruebas actuales siguen verdes y el benchmark `--bench` no empeora más de 5 % | El cuadro se dibuja en una prueba sin ventana |
-| 2.2 | `App` de prueba sin ventana | Crear `App::for_tests(size, palette)` con fuentes embebidas solamente; reutilizar la inicialización de `main` | — | Se construye en `cargo test` |
-| 2.3 | Pruebas de imagen de referencia | Módulo nuevo `src/visual_tests.rs` (solo `#[cfg(test)]`). Escenas iniciales: lectura, edición, comparación, paleta, menú Bloques, índice, dos pestañas, diálogo de cierre y aviso; cada una en noche y día, y a 640×480 y 1100×720 (36 imágenes). Las referencias van en `tests/visual/referencia/` y las fallas escriben en `target/visual/actual/` más un diff. | Diferencia de píxel con tolerancia de canal ≤ 2 y ≤ 0,1 % de píxeles distintos | `cargo test` compara las 36 escenas y `kompari review` muestra las diferencias |
-| 2.4 | Regenerar referencias a propósito | Variable `VISOR_BLESS=1` que reescribe las referencias | — | Está documentado en [`testing.md`](testing.md) |
-| 2.5 | `UiTarget` y `ui_target_at` | Enum nuevo en `src/ui_target.rs`. Lo usan el dibujo, el clic y `CursorMoved`. Reemplaza las comprobaciones sueltas de hover de `redraw` y la lista de casos del cursor de mano. | Para cada `UiTarget`, `ui_target_at` del centro de su rectángulo devuelve ese objetivo a 640, 1100 y 1366 px. Coincidencia con `toolbar_action_at`, `tab_index_at` y `code_copy_bounds_in_pane`. | El cursor de mano y el hover salen de una sola función |
-| 2.6 | Estado de hover y pulsación con transición | `hover: Option<(UiTarget, Instant)>` y `press: Option<(UiTarget, Instant)>`; progreso con smoothstep como `ModeTransition`; fecha límite en `about_to_wait`; instantáneo con `reduce_motion` | Pruebas de progreso 0→1 y de Reducir movimiento | Sin cuadros extra cuando no hay transición (contador de cuadros en el log) |
-| 2.7 | Capa única de tooltip | Un solo tooltip vivo, dibujado al final del cuadro, encima de paneles y diálogos. Se oculta al pulsar, al abrir un menú, con la rueda y con un diálogo modal. | Escena de referencia «tooltip sobre columna» y prueba de estado | El tooltip no queda detrás de la columna ni encima de un diálogo (hallazgo de la herramienta) |
+  ```rust
+  #[derive(Clone)]
+  struct AppNotifier(Option<EventLoopProxy<AppEvent>>);
+  impl AppNotifier {
+      fn send_event(&self, event: AppEvent) -> Result<(), ()> {
+          match &self.0 { Some(p) => p.send_event(event).map_err(|_| ()), None => Err(()) }
+      }
+  }
+  ```
 
-Riesgo principal (2.1): `redraw` mezcla dibujo con efectos (autoscroll, cachés
-y `request_redraw`). Se extrae en dos commits:
+  Hay que ajustar los 22 usos de `proxy`. Un `Err` en pruebas equivale a que el
+  trabajo en segundo plano no ocurre. Las pruebas cargan documentos de forma
+  sincrónica (D-11).
+- **D-10. Construcción de `App`.** El literal `App { … }` de `main` se mueve a
+  `App::new(settings, font_cx, notifier, opening_path, …)`. `main` y las
+  pruebas lo llaman. En pruebas: `App::for_tests(width, height, palette)`,
+  con `AppNotifier(None)`, recuperación desactivada, `reduce_motion = true` y
+  fuentes solo embebidas:
 
-1. Mover sin cambiar comportamiento.
-2. Aislar los efectos detrás de indicadores.
+  ```rust
+  let mut font_cx = FontContext {
+      collection: Collection::new(CollectionOptions { shared: false, system_fonts: false }),
+      source_cache: SourceCache::default(),
+  };
+  register_embedded_fonts(&mut font_cx);
+  ```
 
----
+- **D-11. Cargar Markdown en pruebas.** Se escribe
+  `fn load_for_test(&mut self, markdown: &str, mode: DocumentMode)`. Fija la
+  fuente, llama a `self.document.content_kind.prepare_view(markdown)` y aplica
+  el resultado con `apply_view_outcome`, igual que la exportación PDF.
+- **D-12. Imágenes de referencia.**
+  - Módulo `src/visual_tests.rs`, declarado con `#[cfg(test)] mod visual_tests;`.
+  - PNG por `Pixmap::encode_png` y `Pixmap::load_png` (tiny-skia ya tiene
+    `png-format`).
+  - Ruta: `tests/visual/referencia/{escena}-{noche|dia}-{w}x{h}.png`.
+  - Si falla, escribe `target/visual/actual/…` y `target/visual/diff/…`, con los
+    píxeles distintos en magenta.
+  - Tolerancia: diferencia de canal ≤ 2, y como máximo el 0,1 % de los píxeles
+    puede superarla.
+  - `VISOR_BLESS=1 cargo test visual` reescribe las referencias.
+  - Escenas: unas 18, en noche y día y a 640×480 y 1100×720; hasta 72 imágenes.
+    Se empieza con 9 escenas en la tarea 2.4 y crecen con cada fase.
+  - Si la CI de Linux da diferencias por rasterizado, se marca
+    `#[cfg_attr(not(windows), ignore)]` y se anota en [`testing.md`](testing.md).
+- **D-13. Objetivos interactivos.** `src/ui_target.rs` define `enum UiTarget`, con
+  datos `Copy` y sin referencias:
 
-## Fase 3 · Listas, menús y botones que abren y cierran
+  ```rust
+  pub(crate) enum UiTarget {
+      Toolbar(usize), ContextToolbar(usize), ModeSegment(u8),
+      Tab(usize), TabClose(usize), NewTab, WindowControl(u8),
+      ListRow { list: ListId, index: usize }, MenuRow(usize),
+      CodeCopy { block: usize, preview: bool }, PaneHeader { pane: u64, part: u8 },
+      WorkspaceDestination(u8), DialogButton(usize), TaskCheckbox(usize),
+      SectionDisclosure(usize), ScrollThumb,
+  }
+  ```
 
-| # | Tarea | Dónde | Prueba | Terminada cuando |
-| --- | --- | --- | --- | --- |
-| 3.1 | `open_surface() -> Option<AppAction>` y alternancia | Clic de la barra en `window_event`; `toolbar_action_is_active` recibe `&App` | Tabla pura «acción pulsada × superficie abierta → resultado» | Índice, Archivos, Buscar, Notas que enlazan aquí, búsqueda en el documento, paleta, los cinco menús y símbolos alternan |
-| 3.2 | Cambiar de menú en un solo clic | Rama `navigation_panel_is_open()` del clic: si el clic cae en un botón, el selector de modo o una pestaña, se cierra el panel y se procesa el clic | Pruebas de la tabla 3.1 | Un clic sobre otro botón abre su menú |
-| 3.3 | `ListView { selected, scroll_top }` | Reemplaza `panel_window` y `panel_item_at`; un `ListView` por lista (`outline_match`, `workspace_path_match`, `backlink_match`, `link_diagnostic_match`, `workspace_search_match`, `command_palette`, `symbol_picker`, `pane_split_match`) | La rueda no cambia la selección; las flechas mantienen la selección a la vista; PgUp, PgDn, Inicio y Fin; listas de 0, 1 y n elementos; clic sobre una lista desplazada | Navegación uniforme en las ocho listas |
-| 3.4 | La rueda va a la lista bajo el puntero | `WindowEvent::MouseWheel`: primero la lista flotante o la columna bajo el puntero, después el documento | Prueba con un puntero sobre el panel | El documento no se mueve con un menú abierto |
-| 3.5 | Alto según espacio y barra fina | `navigation_panel_geometry` usa `panel_capacity` con tope de 14 filas; barra de 4 px | Escenas de referencia de la paleta a 480 y 720 de alto | La paleta muestra más de 9 filas si cabe |
-| 3.6 | Menús anclados y flotantes | Geometría desde el `UiTarget` del botón, con volteo en los bordes; `draw_floating_surface` en paleta y menús | Escenas de referencia de cada menú | Coincide con la crítica de diseño |
-| 3.7 | Filas con ícono, nombre y atajo | Separar `AppAction::shortcut()` de `label()`; grupos en la paleta sin filtro | Prueba de que ningún `label()` contiene «·» | — |
-| 3.8 | Caja de búsqueda real y estado vacío | Paleta y Buscar en carpeta: borde, cursor y «Escribí para buscar…» | Escenas de referencia | No aparece «Sin resultados» antes de escribir |
-| 3.9 | Buscar en documento como barra anclada | `search_overlay` en `redraw`, arriba a la derecha del panel | Escena de referencia | No tapa el texto |
-| 3.10 | Símbolos: filtro y emojis primero | `SYMBOLS` reordenado en secciones; `handle_symbol_picker_key` acepta texto; columna de ancho fijo | Prueba de filtrado («plan», «idea») | Los emojis se ven sin desplazarse |
-| 3.11 | Índice: abre en la sección visible; flotante preciso | `show_document_outline` y la sección activa del flotante (`floating_outline_rows`): título más cercano al tercio superior, última sección al final; truncar con «…» | Pruebas de la sección activa | Se corrigen QA-12 y QA-13 |
-| 3.12 | Alternancias con estado | `AppAction::label()` dinámico para Reducir movimiento, Recuperación, Índice flotante y Fijar | Prueba de rótulos según el estado | Con el ✓ visible |
-| 3.13 | Menú contextual completo | `ContextMenu` y `ContextAction`: Cortar, Copiar, Pegar y Deshacer en Editar; tarea; enlace (Abrir, Copiar dirección); tabla (fila y columna); volteo vertical | Pruebas de las acciones por contexto | Se corrige QA-32 |
+  `App::ui_target_at(x, y) -> Option<UiTarget>` vive en `main.rs` y reutiliza
+  las funciones de geometría existentes, sin duplicarlas.
+- **D-14. Animación.**
+  - Constantes: `HOVER_FADE = 120 ms` y `PRESS_FLASH = 160 ms`.
+  - `fn transition_progress(started, now, duration, reduce_motion) -> f32` con
+    smoothstep.
+  - `about_to_wait` agenda el siguiente cuadro solo mientras alguna transición
+    no terminó.
+  - Con `reduce_motion`, el progreso es siempre 1.
+- **D-15. Tooltip.**
+  - Aparece tras 400 ms de puntero quieto sobre el mismo `UiTarget`.
+  - Es una sola capa, dibujada al final de `render_frame`, encima de todo
+    menos los diálogos.
+  - Nunca se dibuja con un diálogo abierto.
+  - Se oculta al pulsar, con la rueda o al abrir un menú.
 
-Cierre de la fase: `design-critique` sobre paleta, menús e índice.
+### Listas y menús
 
----
+- **D-16. `ListView`.** Módulo puro `src/list_view.rs`:
 
-## Fase 4 · Integridad al editar
+  ```rust
+  pub(crate) struct ListView { pub selected: usize, pub top: usize }
+  impl ListView {
+      pub fn move_by(&mut self, delta: isize, len: usize, capacity: usize);   // sin vuelta en los extremos
+      pub fn page(&mut self, down: bool, len: usize, capacity: usize);        // capacity - 1 filas
+      pub fn home(&mut self); pub fn end(&mut self, len: usize, capacity: usize);
+      pub fn scroll_rows(&mut self, rows: isize, len: usize, capacity: usize); // rueda: no cambia `selected`
+      pub fn ensure_visible(&mut self, capacity: usize);
+      pub fn visible(&self, len: usize, capacity: usize) -> std::ops::Range<usize>;
+      pub fn row_to_index(&self, row: usize, len: usize) -> Option<usize>;
+  }
+  ```
 
-Puede hacerse en paralelo con las fases 2 y 3. Toca `editor.rs` y las
-funciones `insert_*` de `main.rs`, no el dibujo.
+  La rueda (`LineDelta(_, y)`) desplaza `-(y * 3.0).round()` filas, y
+  `PixelDelta` desplaza `-y / PANEL_ROW_HEIGHT`. Reemplaza a `panel_window` y
+  `panel_item_at`. Cada lista guarda su `ListView` en lugar del índice suelto.
+- **D-17. Alternancia.** `fn open_surface(&self) -> Option<AppAction>` devuelve la
+  acción que abrió lo que está visible. Al pulsar un botón con la acción `a`:
+  - si `open_surface() == Some(a)`, se cierra;
+  - si está abierta otra superficie, se cierra y se ejecuta `a` en el mismo clic;
+  - si no hay nada abierto, se ejecuta `a`.
 
-| # | Tarea | Dónde | Prueba |
-| --- | --- | --- | --- |
-| 4.1 | Salir de una lista deja una línea en blanco | `SourceEditor::insert_newline` (`editor.rs`) | «- a⏎⏎texto» produce `- a\n\ntexto`, y la vista no lo incluye en la lista |
-| 4.2 | Bloques en línea propia con separación | `insert_code_block`, `insert_table`, `insert_callout` y las de cita y regla: función común `insert_block(template)` en `editor.rs` | Insertar después de texto, en medio de un párrafo, al inicio y al final del documento |
-| 4.3 | Formato sin selección aplicado a la palabra | Envolturas inline (negrita, cursiva, resaltado, código): si el cursor está dentro de una palabra, se envuelve la palabra | `resu|men` + Resaltar → `==resumen==` |
-| 4.4 | Símbolo dentro de una tabla | `insert_symbol`: si la línea es una fila de tabla y el cursor está después del último `|`, se coloca dentro de la última celda | La fila sigue siendo tabla en la vista |
+  Clic fuera de un panel flotante:
+  - si cae sobre un `UiTarget` de barra, pestaña o selector de modo, se cierra
+    el panel **y** se procesa el clic;
+  - en el lienzo, solo se cierra (como hoy).
+- **D-18. Geometría de menús.**
+  - Ancho de 320 px en los menús y de 460 px en la paleta.
+  - Los menús se anclan al borde izquierdo del botón que los abrió, en
+    `y = CONTEXT_TOOLBAR_Y + CONTEXT_TOOLBAR_HEIGHT + 4`. Si no entran a la
+    derecha, se alinean al borde derecho de la ventana menos `MARGIN`.
+  - La paleta va en `x = MARGIN`, `y = DOCUMENT_VIEWPORT_TOP + 8`.
+  - Hasta 14 filas visibles.
+  - La barra de desplazamiento mide 4 px y va a 2 px del borde.
+- **D-19. Filas.**
+  - Ícono de 16 px a 12 px del borde.
+  - Nombre a 36 px.
+  - Atajo alineado a la derecha, a 12 px, en `dim`.
+  - Hover: acento con alfa 20.
+  - Fila elegida: acento con alfa 44 y radio de 6 px.
 
-Criterio de la fase: se repite la tarea 8 de Lucía y la vista de lectura queda
-como ella espera.
+  `AppAction::label()` pierde el «· atajo» y se agrega
+  `AppAction::shortcut() -> Option<&'static str>`.
 
----
+### Edición
 
-## Fase 5 · Pestañas y paneles
+- **D-20. Salir de una lista.** Enter en un ítem vacío borra el marcador y deja
+  la línea vacía; el cursor queda en una línea nueva debajo. `"- a\n- |"` pasa a
+  `"- a\n\n|"`. La línea en blanco es la que separa la lista del párrafo.
+- **D-21. Bloques.** `fn insert_block(source, cursor, template, eol)` en
+  `editor.rs`:
+  - Si el cursor no está al inicio de una línea vacía, primero abre una línea
+    nueva.
+  - Garantiza una línea en blanco antes, salvo al inicio del documento, y una
+    después, salvo al final.
 
-| # | Tarea | Dónde | Prueba |
-| --- | --- | --- | --- |
-| 5.1 | Roles `tab` y `tab_idle` en `Palette` | `theme.rs` (valores medidos en [`revision-interfaz-2026-11-14.md`](revision-interfaz-2026-11-14.md#fase-5--pestañas-con-su-propio-verde-p1p3)); extender la prueba de contraste | Contraste de `text`/`dim` sobre ambos roles |
-| 5.2 | Hover, ✕ al pasar el puntero y tooltip con el nombre completo | Dibujo de la barra de pestañas en `render_frame`, `UiTarget::Tab` | Escenas de referencia de pestañas con hover |
-| 5.3 | Pestaña fijada anclada y compacta | Orden de `tab_order` al fijar; dibujo con un ícono de chincheta y sin ✕ | Prueba del orden |
-| 5.4 | Reemplazar la pestaña «sin título» vacía al abrir un archivo | Apertura de documento: si la activa es nueva, sin cambios y vacía, se reutiliza | Prueba de estado |
-| 5.5 | Cerrar una pestaña conserva la división | `close_active_document_tab` y `DocumentPaneTree` (`panes.rs`): solo se quita la hoja de ese documento | Prueba en `panes.rs` |
-| 5.6 | Un panel nuevo abre en Leer | `choose_document_pane_split` | Prueba de modo |
-| 5.7 | Un solo estilo de selector de modo | Las cabeceras de panel usan el mismo componente, más chico | Escena de referencia de la división |
+  La usan tabla, código, cita, regla, recuadro y pregunta de estudio.
+- **D-22. Formato sin selección.** Si el cursor está dentro de una palabra
+  (alfanuméricos Unicode), se envuelve la palabra. Si está entre espacios, se
+  inserta el marcador vacío con el cursor en medio. Esto último ya funciona así.
 
-Cierre de la fase: `design-critique` sobre las pestañas en los dos temas.
+### Visual y lenguaje
 
----
+- **D-23. Pestañas.** Roles nuevos en `Palette`:
 
-## Fase 6 · Enlaces, carpeta de apuntes y recuperación
+  | Tema | `tab` | `tab_idle` |
+  | --- | --- | --- |
+  | Noche | `#17301F` | `#112218` |
+  | Día | `#DCE6CF` | `#EDE4CF` |
 
-| # | Tarea | Dónde |
-| --- | --- | --- |
-| 6.1 | Aviso «Abriendo en el navegador: dominio» e ícono ↗ en los enlaces web | `open_focused_link` (rama Web/Mail) y dibujo inline de enlaces |
-| 6.2 | Enlace roto: estilo punteado, hover «Esta nota no existe» y clic «Crear nota» | Resolución de wikilinks contra el índice (`open_workspace_wikilink`), estilo en el dibujo inline y acción nueva `CreateNoteFromLink` |
-| 6.3 | `[[nota]]` sin carpeta ofrece «Usar la carpeta de este archivo» | `open_workspace_wikilink`, `choose_workspace` con una ruta precargada |
-| 6.4 | Una nota abierta desde un enlace abre en Leer | `open_document_path` con un modo explícito |
-| 6.5 | Abrir la carpeta muestra el árbol; el árbol se actualiza al guardar y marca la nota abierta | `choose_workspace` → `show_workspace_files`; reindexado incremental tras guardar; chevrons; rutas con «›» |
-| 6.6 | Notas que enlazan aquí, con la línea de la mención | `backlink_paths` pasa a guardar ruta y extracto |
-| 6.7 | Lista de recuperaciones | `RestoreRecovery` abre una lista (`ListView`) con origen, fecha, vista previa, Restaurar y Descartar (`recovery.rs`) |
-| 6.8 | Diálogo de cierre de la app unificado | `Dialog::close_window` (`dialog.rs`): lista de documentos, «Guardar todo», «Cerrar sin guardar» y «Cancelar»; Esc → Cancelar |
+  La prueba de contraste se extiende: `text`/`tab` ≥ 7, `dim`/`tab` ≥ 4,5 y
+  `dim`/`tab_idle` ≥ 4,5.
+- **D-24. Contraste del tema de día.** Medido el 14 de noviembre:
+  - `dim` pasa de `#6C6151` a `#5A5043`:
 
-Cada tarea lleva pruebas en `dialog.rs`, `recovery.rs` o `workspace.rs`. La
-política de seguridad del VFS no cambia: «Crear nota» usa la misma validación
-que Guardar como dentro de la carpeta autorizada.
+    | Fondo | Antes | Después |
+    | --- | --- | --- |
+    | `surface` | 5,2:1 | 6,8:1 |
+    | `bg` | 4,5:1 | 5,9:1 |
+    | `elevated` | 4,7:1 | 6,1:1 |
+    | `tab` | — | 6,1:1 |
 
----
+  - `external_link` de día pasa de `#1E68C4` (4,7:1) a `#1A5AAE` (5,8:1).
+  - Los íconos de las barras usan `dim` y nunca un color más claro.
+  - La prueba de `theme.rs` sube los mínimos de día: `dim` ≥ 5,5 sobre
+    `surface` y `external_link` ≥ 5,5.
+- **D-25. Glosario.**
 
-## Fase 7 · Lenguaje, avisos y primer arranque
+  | Se dice | En lugar de |
+  | --- | --- |
+  | Carpeta de apuntes | workspace, espacio de trabajo, bóveda, carpeta de trabajo |
+  | Notas que enlazan aquí | Backlinks |
+  | Recuadro | callout |
+  | Enlace a otra nota | enlace de bóveda, wikilink |
+  | Guardado | guardado de forma atómica |
+  | Copiar para hoja de cálculo | TSV |
+  | Título / Subtítulo | encabezado H1 / H2–H6 |
+  | Recuperación | recuperación local temporal |
 
-| # | Tarea | Herramienta |
-| --- | --- | --- |
-| 7.1 | Inventario de todos los textos visibles: `label()`, avisos (`set_notice`), diálogos, tooltips y pies | Script `rg` sobre `main.rs` y `dialog.rs`, con salida en una tabla de trabajo |
-| 7.2 | Glosario y voz: propuesta de la evaluación, revisada con `ux-writing` | Plugin Design |
-| 7.3 | Reescribir los textos en voseo y con la voz única | Plugin Design más revisión manual |
-| 7.4 | Prueba que prohíbe términos retirados (Workspace, bóveda, callout, Backlinks, atómica, TSV, «escribe», «elige») en los textos de la interfaz | Prueba Rust nueva |
-| 7.5 | Quitar avisos redundantes y llevar las pistas al pie de los paneles | `set_notice` en las aperturas de paneles y menús |
-| 7.6 | Avisos en el área del documento, encima de paneles | Dibujo de avisos en `render_frame` |
-| 7.7 | Bienvenida: Abrir carpeta de apuntes, Abrir archivo y Nuevo apunte; recuperación como línea amable | Estado vacío inicial y `Dialog::recovery_privacy` pasa a un aviso no bloqueante con «Más detalles» |
-| 7.8 | Botón sol/luna y menú de Guardar (Guardar, Guardar como, Exportar a PDF) | `PRIMARY_TOOLBAR_ACTIONS` y `draw_toolbar_icon` |
-| 7.9 | Íconos nuevos: marcador, `</>`, carpeta abierta, carpeta con lupa, triángulo, botón «Título» | `draw_toolbar_icon`, `EDITING_CONTEXT_TOOLBAR_ACTIONS` y `READING_CONTEXT_TOOLBAR_ACTIONS` |
-| 7.10 | Chevrons a 4 px del rótulo | Barra rotulada (`CONTEXT_TOOLBAR_GROUP_WIDTH`) |
+  Se usa voseo en todo: «Escribí», «Elegí», «Abrí». Los términos retirados y las
+  formas de tuteo («escribe», «elige», «abre», «pulsa») quedan prohibidos en los
+  textos de la interfaz por la prueba de la tarea 7.4. La prueba no se aplica a
+  los registros (`self.log`).
+- **D-26. Avisos.**
+  - Duran 2,4 s.
+  - Se centran en el área del documento (`document_area_geometry`) a 24 px del
+    borde inferior y se dibujan sobre paneles y columna.
+  - No se emiten al abrir paneles o menús: esas pistas pasan al pie del panel.
+  - Se conservan los de confirmación (guardado, copiado sin botón propio,
+    exportado) y los de error.
+- **D-27. Primer arranque.**
+  - Si no hay archivo de argumento, la pestaña inicial es «Bienvenida»: una
+    vista de lectura con tres botones grandes (Abrir carpeta de apuntes, Abrir
+    archivo y Nuevo apunte) y dos líneas sobre Leer, Editar y Comparar.
+  - Se cierra al abrir cualquier documento.
+  - El diálogo de privacidad de la recuperación pasa a un aviso de 6 s, «Tus
+    cambios sin guardar se protegen en este equipo · Más detalles», que abre el
+    diálogo actual.
+- **D-28. PDF.** Los operadores de texto invisible se emiten en orden de bloque
+  y de línea. Los enlaces y las celdas no duplican texto. Una prueba extrae las
+  cadenas `Tj` de la salida de `export_pdf_bytes` y compara su orden con el
+  texto de los bloques.
 
-El glosario final se copia a [`glossary.md`](glossary.md).
+## Fases y tareas
 
----
+Leyenda: `[ ]` pendiente, `[x]` hecha (con el hash corto del commit), `[~]`
+aparcada (con el motivo).
 
-## Fase 8 · Hover, pulsación y lectura
+### Fase 1 · Correcciones funcionales
 
-| # | Tarea | Dónde |
-| --- | --- | --- |
-| 8.1 | Fundido de hover y destello al pulsar en todos los `UiTarget` | Dibujo con el estado de la fase 2 |
-| 8.2 | Copiar: botón redondeado, ícono, ✓ trazado, sin aviso adicional | Dibujo del botón (`code_copy_bounds_in_pane`) y `copy_code_block` |
-| 8.3 | Chincheta activa en acento con tooltip; ícono de restaurar al maximizar | Dibujo de `WindowControl` |
-| 8.4 | Barra fina de desplazamiento del documento | Panel de documento, visible al desplazar o al pasar el puntero |
-| 8.5 | Etiqueta del recuadro dentro del bloque | Dibujo de `Kind::Callout` |
-| 8.6 | Separación entre bloques de código y etiqueta de lenguaje | Dibujo de `Kind::Code` |
-| 8.7 | Escala H2/H3 y columna centrada en ventanas anchas | Estilos de `Kind::Heading` y cálculo del ancho de texto |
-| 8.8 | Contraste del tema de día ≥ 4,5:1 con margen en `dim` e íconos | `theme.rs` y su prueba; `accessibility-review`; cuentagotas de Accessibility Insights si se instaló |
-| 8.9 | Capa de texto del PDF en orden de lectura y sin duplicados | `pdf.rs` y `export_pdf_bytes`; verificar con el visor de Windows y copiar y pegar |
+- [ ] **1.1** Agregar `typed_text` (D-04) y usarlo en `handle_search_key` para
+  llamar a `append_search_text`.
+  - Prueba: `typed_text(Some("a"), false, false) == Some("a")`; con `control` o
+    `alt` da `None`; `"\r"` da `None`.
+  - Hecho: con la herramienta de evaluación, `type` escribe en Buscar en
+    documento.
+- [ ] **1.2** Lo mismo en `handle_workspace_search_key` con
+  `append_workspace_search_text`, y la paleta pasa a usar `typed_text`.
+  - Prueba: las de 1.1.
+  - Hecho: «napoleon» encuentra `historia.md` en `scripts/evaluacion/apuntes`.
+- [ ] **1.3** Aplicar D-06 en los manejadores de clic izquierdo y derecho.
+  - Prueba: extraer `fn click_point(pointer: Option<(f32, f32)>) -> Option<(f32, f32)>`
+    si hace falta para probarlo.
+  - Hecho: no quedan `pointer.map_or(0.0` en el manejador de clic.
+- [ ] **1.4** Implementar D-05.
+  - Prueba: `from_source` con `"# Hola mundo\n\n- uno"` da 3 palabras;
+    tildes y emojis cuentan bien; el código en cerca cuenta como texto.
+  - Hecho: al escribir en Editar, el contador cambia.
+- [ ] **1.5** Implementar D-07.
+  - Prueba: la tabla de 4 combinaciones.
+  - Hecho: un documento nuevo dice «nuevo».
+- [ ] **1.6** Concordancia: «1 resultado» y «n resultados»; el pie y la cabecera
+  del árbol cuentan lo mismo.
+  - Prueba: una función `plural(n, "resultado", "resultados")` con pruebas.
+- [ ] **1.7** Cierre de fase: release, captura de la búsqueda funcionando y
+  ejecutable nuevo para el propietario.
 
-Cierre de la fase: `design-critique` y `accessibility-review` con capturas
-completas en los dos temas.
+### Fase 2 · Dibujo sin ventana, objetivos y animación
 
----
+- [ ] **2.1** D-09 `AppNotifier`.
+  - Hecho: compila, todas las pruebas verdes y la app funciona igual (captura).
+- [ ] **2.2** D-10 `App::new` y `App::for_tests`.
+  - Prueba: `App::for_tests(1100, 720, NIGHT)` se construye.
+- [ ] **2.3** D-08 `render_frame`, en dos commits:
+  1. mover el código sin cambios;
+  2. sustituir el acceso a la ventana.
 
-## Fase 9 · Re-evaluación
+  - Prueba: una prueba dibuja un documento cargado con D-11 y comprueba que el
+    píxel (5,5) no sea transparente.
+  - Hecho: `cargo run --release -- --bench` no empeora más de 5 %.
+- [ ] **2.4** D-12 imágenes de referencia. Escenas iniciales: `lectura`,
+  `edicion`, `comparar`, `paleta`, `menu-bloques`, `indice`, `dos-pestanas`,
+  `dialogo-cierre` y `aviso`.
+  - Hecho: `VISOR_BLESS=1` genera las referencias, `cargo test visual` pasa y
+    la documentación está en [`testing.md`](testing.md).
+- [ ] **2.5** D-13 `UiTarget` y `ui_target_at`. Reemplazar el cálculo del cursor
+  de mano en `CursorMoved` por `ui_target_at(...).is_some()`.
+  - Prueba: el centro de cada botón de barra, pestaña, control de ventana y
+    Copiar a 640, 1100 y 1366 px devuelve su objetivo.
+- [ ] **2.6** D-14 estado de hover y pulsación, todavía sin dibujarlo.
+  - Prueba: `transition_progress` en 0, la mitad, el final y con Reducir
+    movimiento.
+- [ ] **2.7** D-15 capa de tooltip.
+  - Prueba: escena `tooltip-columna` y escena «diálogo sin tooltip».
+  - Hecho: se corrige el hallazgo del tooltip encima del diálogo.
 
-1. Build de evaluación con `scripts/evaluacion/build-evaluacion.patch`. El
-   cambio 3 ya estará en `main`, así que se quita del parche.
-2. Mismos dos perfiles, misma hoja, mismas 16 tareas y perfil vacío.
-3. `user-research` compara la ronda 1 con la ronda 2.
-4. Criterios de salida (de la evaluación):
+### Fase 3 · Listas, menús y alternancia
 
-   | Indicador | Objetivo |
-   | --- | --- |
-   | Hallazgos S1 y S2 abiertos | 0 |
-   | SUS | ≥ 68 |
-   | Tareas sin dificultad | ≥ 80 % |
-   | Heurísticas de Nielsen | ≥ 3,5 de promedio, ninguna < 3 |
-   | Requerimientos «No cumple» | 0 |
+- [ ] **3.1** D-17 `open_surface` y la tabla de alternancia.
+  - Prueba: tabla pura con 4 casos por botón de panel.
+- [ ] **3.2** D-17, clic fuera que también actúa.
+  - Prueba: con la paleta abierta, un clic en Leer cambia el modo en un solo
+    clic.
+- [ ] **3.3** D-16 `ListView`, como módulo y sus pruebas, sin integrarlo.
+- [ ] **3.4** Integrar `ListView` en la paleta y los cinco menús.
+- [ ] **3.5** Integrarlo en el índice, el árbol, la búsqueda en la carpeta, las
+  notas que enlazan aquí, el diagnóstico, los símbolos y la división.
+- [ ] **3.6** La rueda va a la lista bajo el puntero (`MouseWheel`).
+  - Prueba: con un puntero sobre la columna, la rueda no cambia `scroll`.
+- [ ] **3.7** D-18 geometría, `draw_floating_surface` y barra de desplazamiento.
+  - Referencias: `paleta`, `menu-bloques` y `menu-mas` a 480 y 720 de alto.
+- [ ] **3.8** D-19 filas y `shortcut()`.
+  - Prueba: ningún `label()` contiene «·».
+- [ ] **3.9** Caja de búsqueda con borde, cursor y estado vacío «Escribí para
+  buscar…» en la paleta y en la búsqueda de carpeta. Buscar en documento pasa a
+  ser una barra anclada arriba a la derecha.
+- [ ] **3.10** Símbolos: emojis primero, filtro con `typed_text` y columna de
+  24 px.
+- [ ] **3.11** Índice: abre con la sección visible elegida. En el flotante, la
+  sección activa es el último título cuya `y` ≤ `scroll + viewport / 3` y, al
+  final del documento, la última. Los títulos se truncan con «…».
+- [ ] **3.12** Alternancias con estado: rótulos dinámicos con ✓.
+- [ ] **3.13** Menú contextual:
+  - en Editar: Cortar, Copiar, Pegar y Deshacer;
+  - en una tarea: Marcar o Desmarcar;
+  - en un enlace: Abrir y Copiar dirección;
+  - en una tabla: Agregar fila y Agregar columna;
+  - volteo vertical si no entra.
+- [ ] **3.14** Cierre de fase:
+  - capturas;
+  - `design-critique`;
+  - corregir lo S2+;
+  - `/code-review`;
+  - ejecutable nuevo.
 
-5. Prueba manual del propietario con
-   [`manual-qa-v2.md`](manual-qa-v2.md) actualizado.
-6. Actualizar [`design.md`](design.md) y [`features.md`](features.md).
+### Fase 4 · Integridad al editar
 
-## Secuencia de trabajo
+Es independiente de las fases 2 y 3. Toca solo `editor.rs` y las funciones
+`insert_*` de `main.rs`.
+
+- [ ] **4.1** D-20 en `SourceEditor::insert_newline`.
+  - Prueba: viñetas, numeradas, tareas y citas, con LF y CRLF.
+- [ ] **4.2** D-21 `insert_block`, y migrar `insert_code_block`,
+  `insert_table`, `insert_callout` y las de cita, regla y pregunta.
+  - Prueba: al inicio, en medio de un párrafo, después de una lista, al final y
+    en un documento vacío.
+- [ ] **4.3** D-22 formato sobre la palabra.
+  - Prueba: `resu|men` → `**resumen**`; con un emoji adyacente; con un cursor
+    al borde de la palabra.
+- [ ] **4.4** Símbolo dentro de una tabla, en la última celda.
+  - Prueba: después de insertarlo, la fila sigue siendo una fila de tabla en
+    `prepare_view`.
+
+### Fase 5 · Pestañas y paneles
+
+- [ ] **5.1** D-23 roles y prueba de contraste.
+- [ ] **5.2** Hover en las pestañas, ✕ al pasar el puntero y tooltip con el
+  nombre completo (usa D-15).
+- [ ] **5.3** La pestaña fijada va al inicio de `tab_order`, compacta (solo
+  nombre y chincheta) y sin ✕.
+- [ ] **5.4** Abrir un archivo reemplaza la pestaña inicial si no tiene
+  identidad, está vacía y no está sucia.
+- [ ] **5.5** Cerrar una pestaña conserva la división: solo se quitan las hojas
+  de ese documento (`DocumentPaneTree` en `panes.rs`, con prueba allí).
+- [ ] **5.6** Un panel nuevo abre en Leer (`choose_document_pane_split`).
+- [ ] **5.7** Las cabeceras de panel usan el mismo componente de selector de
+  modo, a escala 0,85.
+- [ ] **5.8** Cierre de fase: referencias `dos-pestanas`, `pestana-fijada` y
+  `division`; `design-critique`.
+
+### Fase 6 · Enlaces, carpeta de apuntes y recuperación
+
+- [ ] **6.1** D-02: aviso «Abriendo en el navegador: dominio» e ícono ↗.
+- [ ] **6.2** Enlace roto:
+  - un `[[nota]]` que no resuelve en el índice se dibuja con subrayado punteado;
+  - al pasar el puntero, el destino dice «Esta nota no existe»;
+  - al hacer clic, se ofrece un diálogo «Crear nota» que crea un `.md` vacío
+    dentro de la carpeta autorizada, con la validación de Guardar como.
+- [ ] **6.3** `[[nota]]` sin carpeta: diálogo «Usar la carpeta de este archivo
+  como carpeta de apuntes» (ejecuta `choose_workspace` con la carpeta del
+  documento) o «Cancelar».
+- [ ] **6.4** Una nota abierta desde un enlace abre en Leer.
+- [ ] **6.5** Al elegir la carpeta se muestra el árbol. Además:
+  - se reindexa después de cada Guardar o Guardar como dentro de la carpeta;
+  - la nota abierta se resalta;
+  - las carpetas llevan chevron;
+  - las rutas se muestran con « › ».
+- [ ] **6.6** Notas que enlazan aquí, con un extracto de la línea (hasta 80
+  caracteres).
+- [ ] **6.7** Lista de recuperaciones (`ListView`) con origen, fecha y primera
+  línea; Enter restaura y Supr descarta, con confirmación.
+- [ ] **6.8** `Dialog::close_window` lista los documentos y ofrece «Guardar
+  todo», «Cerrar sin guardar» y «Cancelar»; Esc elige Cancelar. Pruebas en
+  `dialog.rs`.
+
+### Fase 7 · Lenguaje, avisos y primer arranque
+
+- [ ] **7.1** Inventario de textos. El resultado va a
+  `docs/evaluaciones/2026-11-14/inventario-textos.md`.
+
+  ```bash
+  rg -n '"[^"]*[a-záéíóúñ][^"]*"' src/main.rs src/dialog.rs | rg -v 'log.push|\[medicion\]|assert'
+  ```
+
+- [ ] **7.2** Aplicar D-25 a todos los textos. Si `ux-writing` está disponible,
+  pasarle el inventario y el glosario.
+- [ ] **7.3** D-26: avisos.
+- [ ] **7.4** Prueba de lenguaje. Recorre `APP_ACTIONS` (`label`) y las
+  constantes de texto de los diálogos, y falla si encuentra un término
+  prohibido.
+- [ ] **7.5** D-27: bienvenida y aviso de recuperación.
+- [ ] **7.6** D-03: botón sol/luna en `PRIMARY_TOOLBAR_ACTIONS`. «Exportar a
+  PDF» va en un menú del botón Guardar (Guardar, Guardar como, Exportar a PDF).
+- [ ] **7.7** Íconos en `draw_toolbar_icon`:
+  - marcador (resaltar);
+  - `</>` (código en línea);
+  - carpeta abierta (Abrir carpeta);
+  - carpeta con lupa (Buscar en carpeta);
+  - triángulo (plegar);
+  - botón «Título» (H1) en la barra de Editar.
+- [ ] **7.8** Chevrons de los menús rotulados a 4 px del texto. Corrige el
+  chevron encimado a 1100 px.
+
+### Fase 8 · Hover, pulsación y lectura
+
+- [ ] **8.1** Dibujo del hover y la pulsación (D-14) en todos los `UiTarget`.
+  Los fondos de barra tienen radio de 6 px.
+- [ ] **8.2** Copiar:
+  - botón redondeado con un ícono de dos hojas;
+  - al pulsar, fondo de acento con alfa 76 y un ✓ que se traza en 160 ms;
+  - a los 1,6 s vuelve en 200 ms;
+  - se quita el aviso adicional.
+- [ ] **8.3** Chincheta rellena en acento cuando está activa, con tooltip
+  «Fijada · clic para soltar»; ícono de restaurar si `is_maximized()`.
+- [ ] **8.4** Barra de desplazamiento del documento: 6 px, visible 1 s después
+  de desplazar y al pasar el puntero por los 12 px del borde derecho.
+  Arrastrable (`UiTarget::ScrollThumb`).
+- [ ] **8.5** Recuadro: la etiqueta va dentro del bloque, en la primera línea,
+  con un ícono, a 12 px del filete.
+- [ ] **8.6** Código: 12 px entre bloques de código contiguos y el lenguaje en
+  `dim` junto a Copiar.
+- [ ] **8.7** Escala H2 y H3 más separada (H3 = 0,85 × H2, tenue). Columna de
+  lectura centrada cuando sobran más de 200 px.
+- [ ] **8.8** D-24: contraste de día. Medir con el analizador de Accessibility
+  Insights y anotar las cifras en [`design.md`](design.md).
+- [ ] **8.9** D-28: capa de texto del PDF.
+- [ ] **8.10** Cierre de fase:
+  - las referencias de todas las escenas, actualizadas;
+  - `design-critique` y `accessibility-review`;
+  - ejecutable nuevo.
+
+### Fase 9 · Re-evaluación
+
+- [ ] **9.1** Construir la build de evaluación: aplicar
+  `scripts/evaluacion/build-evaluacion.patch` y quitar del parche el cambio
+  que ya entró por D-06.
+- [ ] **9.2** Repetir la evaluación de QA y la de usuaria con los mismos
+  prompts: [`prompt-qa.md`](../scripts/evaluacion/prompt-qa.md) y
+  [`prompt-usuario.md`](../scripts/evaluacion/prompt-usuario.md). El
+  procedimiento está en [`agente-ejecutor.md`](agente-ejecutor.md#re-evaluación).
+- [ ] **9.3** Comparar la ronda 1 con la ronda 2 (`user-research` si está
+  disponible) y escribir `docs/evaluacion-usabilidad-ronda-2.md`.
+- [ ] **9.4** Criterios: 0 hallazgos S1 o S2, SUS ≥ 68, ≥ 80 % de tareas sin
+  dificultad, Nielsen ≥ 3,5 de promedio. Si no se cumplen, se agregan tareas a
+  una fase 10 con los hallazgos nuevos y se vuelve a la 9.
+- [ ] **9.5** Actualizar [`design.md`](design.md), [`features.md`](features.md)
+  y [`manual-qa-v2.md`](manual-qa-v2.md); entregar el ejecutable al
+  propietario.
+
+## Secuencia
 
 ```text
-Fase 1 ──────────────┐
-Fase 4 (en paralelo) ┤
-Fase 2 ── Fase 3 ── Fase 5 ── Fase 8 ──┐
-           Fase 6 ── Fase 7 ───────────┴── Fase 9
+Fase 1 ─┬─ Fase 2 ── Fase 3 ── Fase 5 ── Fase 8 ─┬─ Fase 9
+Fase 4 ─┘            Fase 6 ── Fase 7 ───────────┘
 ```
 
-La fase 4 es independiente del dibujo y puede ir en una sesión aparte que solo
-toque `editor.rs` y las funciones `insert_*`.
+Orden por defecto para un solo ejecutor: 1 → 4 → 2 → 3 → 5 → 6 → 7 → 8 → 9.
 
 ## Estado
 
-| Fase | Estado | Último commit |
+| Fase | Estado | Nota |
 | --- | --- | --- |
-| Preparación (herramientas y este plan) | Hecho | — |
-| 1 · Correcciones funcionales | Pendiente | — |
-| 2 · Dibujo sin ventana, objetivos y animación | Pendiente | — |
-| 3 · Listas, menús y alternancia | Pendiente | — |
-| 4 · Integridad al editar | Pendiente | — |
-| 5 · Pestañas y paneles | Pendiente | — |
-| 6 · Enlaces, carpeta y recuperación | Pendiente | — |
-| 7 · Lenguaje, avisos y primer arranque | Pendiente | — |
-| 8 · Hover, pulsación y lectura | Pendiente | — |
-| 9 · Re-evaluación | Pendiente | — |
+| Preparación | Hecho | Herramientas instaladas; decisiones D-01 a D-28 |
+| 1 | **Activa** | — |
+| 4 | Pendiente | — |
+| 2 | Pendiente | — |
+| 3 | Pendiente | — |
+| 5 | Pendiente | — |
+| 6 | Pendiente | — |
+| 7 | Pendiente | — |
+| 8 | Pendiente | — |
+| 9 | Pendiente | — |
