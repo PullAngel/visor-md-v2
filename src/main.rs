@@ -1089,6 +1089,16 @@ fn typed_text(text: Option<&str>, control: bool, alt: bool) -> Option<&str> {
     text.filter(|text| !text.is_empty() && !text.chars().any(char::is_control))
 }
 
+/// Estado de guardado para la barra: un documento que nunca se guardó y no
+/// tiene cambios es «nuevo», no «guardado».
+fn save_state_label(has_identity: bool, dirty: bool) -> &'static str {
+    match (has_identity, dirty) {
+        (_, true) => "sin guardar",
+        (false, false) => "nuevo",
+        (true, false) => "guardado",
+    }
+}
+
 fn abbreviated_label(text: &str, limit: usize) -> String {
     let mut chars = text.chars();
     let abbreviated: String = chars.by_ref().take(limit).collect();
@@ -6139,6 +6149,9 @@ struct DocumentState {
     /// para que la vista dividida nunca se convierta en autoridad de guardado.
     rendered_blocks: Vec<Block>,
     metrics: DocumentMetrics,
+    /// Métricas de la fuente para la revisión y el tamaño indicados. Se
+    /// recalculan solo cuando el editor cambia, no en cada cuadro.
+    metrics_cache: Option<((u64, usize), DocumentMetrics)>,
     blocks: Vec<Block>,
     safe_mode: Option<Degradation>,
     /// Posición visual propia de la pestaña. Se sincroniza antes de cambiar
@@ -6184,6 +6197,7 @@ impl DocumentState {
             split_orientation: SplitOrientation::SideBySide,
             rendered_blocks: Vec::new(),
             metrics: DocumentMetrics::default(),
+            metrics_cache: None,
             blocks: Vec::new(),
             safe_mode: None,
             scroll: 0.0,
@@ -6199,6 +6213,23 @@ impl DocumentState {
 
     fn is_dirty(&self) -> bool {
         self.source_editor.is_dirty()
+    }
+
+    /// Palabras y caracteres para la barra de estado. En Leer salen del
+    /// render; en Editar y Comparar, de la fuente actual.
+    fn live_metrics(&mut self) -> DocumentMetrics {
+        if !self.mode.is_editable() {
+            return self.metrics;
+        }
+        let key = (self.source_editor.revision(), self.source.len_bytes());
+        if let Some((cached, metrics)) = self.metrics_cache
+            && cached == key
+        {
+            return metrics;
+        }
+        let metrics = DocumentMetrics::from_source(&self.source.to_string());
+        self.metrics_cache = Some((key, metrics));
+        metrics
     }
 
     fn queue_recovery(&mut self, request: u64, now: Instant) {
@@ -6488,6 +6519,23 @@ struct DocumentMetrics {
 }
 
 impl DocumentMetrics {
+    /// Cuenta sobre la fuente tal como se escribe, para el contador en vivo de
+    /// Editar. Los marcadores sin letras ni números (`#`, `-`, cercas) no son
+    /// palabras; los caracteres incluyen la sintaxis Markdown.
+    fn from_source(source: &str) -> Self {
+        let words = source
+            .split_whitespace()
+            .filter(|word| word.chars().any(char::is_alphanumeric))
+            .count();
+        let characters = source.chars().filter(|c| !c.is_control()).count();
+        Self {
+            words,
+            characters,
+            reading_minutes: words.div_ceil(200),
+            estimated_tokens: characters.div_ceil(4),
+        }
+    }
+
     fn from_blocks(blocks: &[Block]) -> Self {
         let words = blocks
             .iter()
@@ -14266,10 +14314,11 @@ impl App {
             "actualizando vista"
         } else if self.saves_in_flight.contains(&self.document.id) {
             "guardando"
-        } else if self.document.is_dirty() {
-            "sin guardar"
         } else {
-            "guardado"
+            save_state_label(
+                self.document.source_identity.is_some(),
+                self.document.is_dirty(),
+            )
         };
         let workspace_state_label = if self.workspace_cancel.is_some() {
             "indexando carpeta"
@@ -14333,8 +14382,9 @@ impl App {
                 .unwrap_or(0);
             format!(" · Lín {}, Col {}", line + 1, column + 1)
         });
-        let words = self.document.metrics.words;
-        let characters = self.document.metrics.characters;
+        let live_metrics = self.document.live_metrics();
+        let words = live_metrics.words;
+        let characters = live_metrics.characters;
         let status_right = format!(
             "{words} palabras · {characters} caracteres{} · {document_mode_label} · {document_state_label}{workspace_status}",
             cursor_position.unwrap_or_default()
@@ -17000,6 +17050,7 @@ fn main() {
             split_orientation: SplitOrientation::SideBySide,
             rendered_blocks: Vec::new(),
             metrics: DocumentMetrics::default(),
+            metrics_cache: None,
             blocks: Vec::new(),
             safe_mode: None,
             scroll: 0.0,
@@ -17179,6 +17230,34 @@ fn main() {
 #[cfg(test)]
 mod pruebas {
     use super::*;
+
+    #[test]
+    fn el_contador_en_vivo_cuenta_la_fuente_sin_marcadores_sueltos() {
+        let metrics = DocumentMetrics::from_source(
+            "# Hola mundo
+
+- uno",
+        );
+        assert_eq!(metrics.words, 3);
+        let tildes = DocumentMetrics::from_source("canción ñandú 😀 ok");
+        assert_eq!(tildes.words, 3, "un emoji suelto no es una palabra");
+        assert_eq!(tildes.characters, 18);
+        let cerca = DocumentMetrics::from_source(
+            "```
+let x = 1;
+```",
+        );
+        assert_eq!(cerca.words, 3);
+        assert_eq!(DocumentMetrics::from_source(""), DocumentMetrics::default());
+    }
+
+    #[test]
+    fn el_estado_de_guardado_distingue_un_documento_nuevo() {
+        assert_eq!(save_state_label(false, false), "nuevo");
+        assert_eq!(save_state_label(false, true), "sin guardar");
+        assert_eq!(save_state_label(true, true), "sin guardar");
+        assert_eq!(save_state_label(true, false), "guardado");
+    }
 
     #[test]
     fn sin_puntero_conocido_no_se_inicia_un_redimensionado() {
