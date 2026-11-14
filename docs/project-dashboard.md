@@ -118,6 +118,9 @@ sigue el plan definitivo de
 8. hover, pulsación y lectura;
 9. re-evaluación con los mismos dos perfiles (objetivo SUS ≥ 68, sin S1/S2).
 
+Las tareas concretas y su estado están en
+[`plan-ejecucion-2026-11-14.md`](plan-ejecucion-2026-11-14.md).
+
 Después vienen el instalador de Windows, el paquete de Linux y el Pomodoro.
 Referencia histórica:
 

@@ -274,6 +274,9 @@ caminos, pero deciden el propietario:
 
 ## Plan definitivo de cambios
 
+El desglose ejecutable (tareas, funciones, pruebas y estado) vive en
+[`plan-ejecucion-2026-11-14.md`](plan-ejecucion-2026-11-14.md).
+
 El plan ordena primero lo que **rompe tareas** (A1, B1, B2, C1–C3, G2, G5),
 después la **base común** que reutilizan las fases visuales, y al final el
 pulido. Cada fase termina con:

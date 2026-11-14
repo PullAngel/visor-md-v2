@@ -53,6 +53,7 @@ Estos documentos deben cambiar cuando cambia el producto o su implementación:
 | [`project-dashboard.md`](project-dashboard.md) | Fotografía compacta de avance, deuda, riesgos y siguiente orden |
 | [`revision-2026-11-13.md`](revision-2026-11-13.md) | Revisión integral: causa raíz de defectos abiertos, brecha con el concepto C y orden de trabajo vigente |
 | [`evaluacion-usabilidad-2026-11-14.md`](evaluacion-usabilidad-2026-11-14.md) | Evaluación con QA de UI/UX y usuaria novata (SUS, heurísticas, 44 hallazgos verificados) y plan definitivo de cambios vigente |
+| [`plan-ejecucion-2026-11-14.md`](plan-ejecucion-2026-11-14.md) | Plan de ejecución del rediseño: tareas por fase con función, prueba y criterio de terminado; estado vigente |
 | [`herramientas-rediseno-2026-11-14.md`](herramientas-rediseno-2026-11-14.md) | 13 herramientas evaluadas para el rediseño; elegidas: plugin Design de Anthropic y pruebas de imagen de referencia |
 | [`revision-interfaz-2026-11-14.md`](revision-interfaz-2026-11-14.md) | Paneo de interfaz (listas, alternancia de botones, pestañas, hover y pulsación) y plan de cambios por fases vigente |
 | [`design.md`](design.md) | Sistema visual e interacción |
