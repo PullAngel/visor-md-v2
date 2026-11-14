@@ -691,11 +691,19 @@ impl SourceEditor {
         };
         let content_after_cursor = source.slice_bytes(self.cursor..end)?;
         if before.len() == marker.len && content_after_cursor.trim().is_empty() {
-            // Elemento vacío: Enter sale de la lista sin dejar un marcador suelto.
-            let changed = self.history.apply(source, start..end, "")?;
+            // Elemento vacío: Enter sale de la lista. Si sigue a otro elemento,
+            // el marcador se reemplaza por una línea en blanco: sin ella, lo
+            // que se escriba después sería continuación del último elemento.
+            let follows_item = start > 0 && {
+                let previous_start = source.line_start(start - 1);
+                let previous = source.slice_bytes(previous_start..start)?;
+                list_marker(previous.trim_end_matches(['\r', '\n'])).is_some()
+            };
+            let replacement = if follows_item { eol } else { "" };
+            let changed = self.history.apply(source, start..end, replacement)?;
             if changed {
-                self.cursor = start;
-                self.anchor = start;
+                self.cursor = start + replacement.len();
+                self.anchor = self.cursor;
                 self.preferred_column = None;
             }
             return Ok(changed);
@@ -1073,13 +1081,43 @@ mod tests {
     }
 
     #[test]
-    fn enter_en_un_elemento_vacio_termina_la_lista() {
-        let mut source = buffer("- uno\n- ");
+    fn enter_en_un_elemento_vacio_termina_la_lista_con_una_linea_en_blanco() {
+        for (text, expected) in [
+            ("- uno\n- ", "- uno\n\n"),
+            ("1. uno\n2. ", "1. uno\n\n"),
+            ("- [ ] uno\n- [ ] ", "- [ ] uno\n\n"),
+            ("> cita\n> ", "> cita\n\n"),
+        ] {
+            let mut source = buffer(text);
+            let mut editor = editor_at(&source, source.len_bytes());
+            assert!(editor.insert_newline(&mut source, "\n").unwrap(), "{text}");
+            assert_eq!(source.to_string(), expected, "{text}");
+            assert_eq!(editor.cursor(), expected.len(), "{text}");
+            assert!(editor.undo(&mut source).unwrap());
+            assert_eq!(source.to_string(), text);
+        }
+    }
+
+    #[test]
+    fn enter_en_un_marcador_vacio_aislado_solo_lo_quita() {
+        let mut source = buffer("- ");
         let mut editor = editor_at(&source, source.len_bytes());
         assert!(editor.insert_newline(&mut source, "\n").unwrap());
-        assert_eq!(source.to_string(), "- uno\n");
-        assert!(editor.undo(&mut source).unwrap());
-        assert_eq!(source.to_string(), "- uno\n- ");
+        assert_eq!(source.to_string(), "");
+
+        let mut source = buffer("texto\n- ");
+        let mut editor = editor_at(&source, source.len_bytes());
+        assert!(editor.insert_newline(&mut source, "\n").unwrap());
+        assert_eq!(source.to_string(), "texto\n");
+    }
+
+    #[test]
+    fn salir_de_una_lista_conserva_crlf() {
+        let mut source = buffer("- uno\r\n- ");
+        let mut editor = editor_at(&source, source.len_bytes());
+        assert!(editor.insert_newline(&mut source, "\r\n").unwrap());
+        assert_eq!(source.to_string(), "- uno\r\n\r\n");
+        assert_eq!(editor.cursor(), source.len_bytes());
     }
 
     #[test]
