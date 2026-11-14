@@ -872,11 +872,19 @@ fn workspace_panel_title(root: Option<&Path>, note_count: usize) -> String {
     format!("{name} · {note_count} {notes}")
 }
 
+/// Cantidad con su sustantivo concordado: «1 resultado», «2 resultados».
+fn count_noun(count: usize, singular: &str, plural: &str) -> String {
+    format!("{count} {}", if count == 1 { singular } else { plural })
+}
+
 fn backlinks_panel_title(count: usize) -> String {
     if count == 0 {
         "Backlinks · ninguna nota apunta aquí".to_string()
     } else {
-        format!("Backlinks · {count} resultados")
+        format!(
+            "Backlinks · {}",
+            count_noun(count, "resultado", "resultados")
+        )
     }
 }
 
@@ -7428,8 +7436,10 @@ impl ApplicationHandler<AppEvent> for App {
                     (false, false, false) => "",
                 };
                 self.set_notice(&format!(
-                    "workspace {}: {note_count} notas, {skipped} omitidas{suffix}",
-                    if refreshed { "actualizado" } else { "indexado" }
+                    "workspace {}: {}, {}{suffix}",
+                    if refreshed { "actualizado" } else { "indexado" },
+                    count_noun(note_count, "nota", "notas"),
+                    count_noun(skipped, "omitida", "omitidas")
                 ));
             }
             AppEvent::WorkspaceFailed { request, error } => {
@@ -13744,7 +13754,10 @@ impl App {
             let label = if query.is_empty() {
                 "Buscar en documento…".to_string()
             } else {
-                format!("Buscar: {query} · {matches} resultados")
+                format!(
+                    "Buscar: {query} · {}",
+                    count_noun(matches, "resultado", "resultados")
+                )
             };
             let label = abbreviated_label(&label, MAX_OVERLAY_LABEL_CHARS);
             build_menu_layout(&label, &mut self.font_cx, &mut self.layout_cx, self.palette)
@@ -13824,9 +13837,9 @@ impl App {
                 }
             } else {
                 format!(
-                    "Acciones: {} · {} resultados",
+                    "Acciones: {} · {}",
                     self.command_palette_query,
-                    actions.len()
+                    count_noun(actions.len(), "resultado", "resultados")
                 )
             };
             Some(NavigationPanelRows {
@@ -13854,8 +13867,8 @@ impl App {
                 format!("Buscar en {workspace_name}…")
             } else {
                 format!(
-                    "Buscar en {workspace_name}: {query} · {} resultados",
-                    paths.len()
+                    "Buscar en {workspace_name}: {query} · {}",
+                    count_noun(paths.len(), "resultado", "resultados")
                 )
             };
             Some(NavigationPanelRows {
@@ -17249,6 +17262,15 @@ let x = 1;
         );
         assert_eq!(cerca.words, 3);
         assert_eq!(DocumentMetrics::from_source(""), DocumentMetrics::default());
+    }
+
+    #[test]
+    fn los_conteos_concuerdan_en_singular_y_plural() {
+        assert_eq!(count_noun(0, "resultado", "resultados"), "0 resultados");
+        assert_eq!(count_noun(1, "resultado", "resultados"), "1 resultado");
+        assert_eq!(count_noun(2, "resultado", "resultados"), "2 resultados");
+        assert_eq!(backlinks_panel_title(1), "Backlinks · 1 resultado");
+        assert_eq!(backlinks_panel_title(2), "Backlinks · 2 resultados");
     }
 
     #[test]
