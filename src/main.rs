@@ -408,6 +408,19 @@ fn window_control_at(x: f32, y: f32, window_width: f32) -> Option<WindowControl>
     }
 }
 
+/// Sin posición conocida del puntero no hay borde que arrastrar. Tratar la
+/// ausencia como (0, 0) caería en la esquina y redimensionaría la ventana
+/// siguiendo al cursor real.
+fn resize_direction_for_pointer(
+    pointer: Option<(f32, f32)>,
+    window_width: f32,
+    window_height: f32,
+    border: f32,
+) -> Option<ResizeDirection> {
+    let (x, y) = pointer?;
+    resize_direction_at(x, y, window_width, window_height, border)
+}
+
 fn resize_direction_at(
     x: f32,
     y: f32,
@@ -1064,6 +1077,16 @@ fn tab_label(path: &str, dirty: bool, pinned: bool, max_chars: usize) -> String 
 fn append_limited_text(destination: &mut String, text: &str, limit: usize) {
     let remaining = limit.saturating_sub(destination.chars().count());
     destination.extend(text.chars().take(remaining));
+}
+
+/// Texto que un evento de teclado aporta a un campo de la interfaz. En
+/// Windows la escritura ordinaria llega en `KeyEvent::text`, no por IME.
+/// Ctrl o Alt nunca producen texto y se descartan los caracteres de control.
+fn typed_text(text: Option<&str>, control: bool, alt: bool) -> Option<&str> {
+    if control || alt {
+        return None;
+    }
+    text.filter(|text| !text.is_empty() && !text.chars().any(char::is_control))
 }
 
 fn abbreviated_label(text: &str, limit: usize) -> String {
@@ -7839,9 +7862,8 @@ impl ApplicationHandler<AppEvent> for App {
                     }
                     let resize_direction = self.window.as_ref().and_then(|window| {
                         let size = window.inner_size();
-                        resize_direction_at(
-                            self.pointer.map_or(0.0, |(x, _)| x),
-                            self.pointer.map_or(0.0, |(_, y)| y),
+                        resize_direction_for_pointer(
+                            self.pointer,
                             size.width as f32,
                             size.height as f32,
                             WINDOW_RESIZE_BORDER,
@@ -9273,10 +9295,12 @@ impl App {
                 self.perform_action(actions[selected % actions.len()]);
             }
             _ => {
-                if !self.modifiers.control_key()
-                    && !self.modifiers.alt_key()
-                    && let Some(text) = event.text.as_deref()
-                {
+                let text = typed_text(
+                    event.text.as_deref(),
+                    self.modifiers.control_key(),
+                    self.modifiers.alt_key(),
+                );
+                if let Some(text) = text {
                     self.append_command_palette_text(text);
                 } else {
                     return;
@@ -12680,7 +12704,18 @@ impl App {
                 }
             }
             PhysicalKey::Code(KeyCode::Enter) => self.open_workspace_search_match(),
-            _ => {}
+            _ => {
+                let text = typed_text(
+                    event.text.as_deref(),
+                    self.modifiers.control_key(),
+                    self.modifiers.alt_key(),
+                );
+                if let Some(text) = text {
+                    self.append_workspace_search_text(text);
+                } else {
+                    return;
+                }
+            }
         }
         if let Some(window) = &self.window {
             window.request_redraw();
@@ -12768,7 +12803,18 @@ impl App {
             PhysicalKey::Code(KeyCode::Enter) => {
                 self.focus_search_match(if self.modifiers.shift_key() { -1 } else { 1 })
             }
-            _ => {}
+            _ => {
+                let text = typed_text(
+                    event.text.as_deref(),
+                    self.modifiers.control_key(),
+                    self.modifiers.alt_key(),
+                );
+                if let Some(text) = text {
+                    self.append_search_text(text);
+                } else {
+                    return;
+                }
+            }
         }
         if let Some(window) = &self.window {
             window.request_redraw();
@@ -17133,6 +17179,33 @@ fn main() {
 #[cfg(test)]
 mod pruebas {
     use super::*;
+
+    #[test]
+    fn sin_puntero_conocido_no_se_inicia_un_redimensionado() {
+        assert_eq!(
+            resize_direction_for_pointer(None, 900.0, 560.0, WINDOW_RESIZE_BORDER),
+            None
+        );
+        if custom_window_chrome_enabled() {
+            assert!(
+                resize_direction_for_pointer(Some((0.0, 0.0)), 900.0, 560.0, WINDOW_RESIZE_BORDER)
+                    .is_some()
+            );
+        }
+    }
+
+    #[test]
+    fn el_texto_tecleado_llega_a_los_campos_salvo_con_ctrl_o_alt() {
+        assert_eq!(typed_text(Some("a"), false, false), Some("a"));
+        assert_eq!(typed_text(Some("ñ"), false, false), Some("ñ"));
+        assert_eq!(typed_text(Some(" "), false, false), Some(" "));
+        assert_eq!(typed_text(Some("a"), true, false), None);
+        assert_eq!(typed_text(Some("a"), false, true), None);
+        assert_eq!(typed_text(Some("\r"), false, false), None);
+        assert_eq!(typed_text(Some("\t"), false, false), None);
+        assert_eq!(typed_text(Some(""), false, false), None);
+        assert_eq!(typed_text(None, false, false), None);
+    }
 
     #[test]
     fn la_barra_de_pestanas_resuelve_cada_destino_sin_salir_de_su_area() {
