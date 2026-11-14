@@ -111,6 +111,11 @@ competir con la lectura cuando no se necesitan.
 
 ### Orden inmediato
 
+Desde el 14 de noviembre de 2026, el frente activo es la revisión de interfaz
+de [`revision-interfaz-2026-11-14.md`](revision-interfaz-2026-11-14.md#plan-de-cambios),
+en ocho fases. Después vienen el instalador de Windows, el paquete de Linux y
+el Pomodoro.
+
 Desde el 13 de noviembre de 2026 el orden vigente es el de
 [`revision-2026-11-13.md`](revision-2026-11-13.md#orden-de-trabajo-para-continuar):
 primero corregir los defectos de interacción reportados (avisos invisibles,

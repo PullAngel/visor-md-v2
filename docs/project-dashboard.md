@@ -2,7 +2,10 @@
 
 Última actualización: 13 de noviembre de 2026. La revisión integral de esa
 fecha está en [`revision-2026-11-13.md`](revision-2026-11-13.md) y fija el
-orden de trabajo vigente.
+orden de trabajo vigente. Desde el 14 de noviembre, el frente activo es la
+revisión de interfaz de
+[`revision-interfaz-2026-11-14.md`](revision-interfaz-2026-11-14.md), con su
+plan por fases.
 
 Este documento resume el avance real sin sustituir las especificaciones. Sirve
 para responder tres preguntas rápidamente:
@@ -99,6 +102,22 @@ QA humano asociado ya esté cerrado.
 | Intentar resolver una función grande con un atajo visual. | Puede duplicar buffers, debilitar guardado o confundir foco. | Para paneles, ventanas, exportación y seguridad, primero fijar propiedad, límites y pruebas. |
 
 ## Próximo orden de trabajo
+
+Los puntos de la revisión del 13 de noviembre están hechos. El trabajo actual
+sigue las fases de
+[`revision-interfaz-2026-11-14.md`](revision-interfaz-2026-11-14.md#plan-de-cambios):
+
+1. base común de objetivos interactivos y animación;
+2. un clic abre y el mismo clic cierra;
+3. listas desplazables con la rueda;
+4. menús y paleta;
+5. pestañas;
+6. hover y pulsación;
+7. pulido;
+8. verificación.
+
+Después vienen el instalador de Windows, el paquete de Linux y el Pomodoro.
+Referencia histórica:
 
 El orden detallado vive en
 [`revision-2026-11-13.md`](revision-2026-11-13.md#orden-de-trabajo-para-continuar).
