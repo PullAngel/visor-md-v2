@@ -222,10 +222,17 @@ modo quedaría a criterio del ejecutor.
   - Garantiza una línea en blanco antes, salvo al inicio del documento, y una
     después, salvo al final.
 
-  La usan tabla, código, cita, regla, recuadro y pregunta de estudio.
-- **D-22. Formato sin selección.** Si el cursor está dentro de una palabra
-  (alfanuméricos Unicode), se envuelve la palabra. Si está entre espacios, se
-  inserta el marcador vacío con el cursor en medio. Esto último ya funciona así.
+  La usan tabla, código, regla, recuadro y las plantillas de estudio. Ajuste
+  hecho al verificar en vivo: un bloque nunca reemplaza texto seleccionado ni
+  parte una línea. Va debajo de la línea del cursor o, si el cursor está al
+  inicio de una línea con texto, encima de ella. Solo el bloque de código con
+  selección la envuelve.
+- **D-22. Formato sin selección.** Si el cursor está dentro de una palabra o al
+  final de ella (alfanuméricos Unicode y guion bajo), se envuelve la palabra.
+  Con el cursor justo antes de una palabra, entre espacios o en una línea
+  vacía, se inserta el texto guía seleccionado, como antes. (Ajuste hecho al
+  implementarla: una prueba existente fijaba que, antes de una palabra, se
+  inserta el texto guía.)
 
 ### Visual y lenguaje
 
@@ -403,16 +410,16 @@ aparcada (con el motivo).
 Es independiente de las fases 2 y 3. Toca solo `editor.rs` y las funciones
 `insert_*` de `main.rs`.
 
-- [ ] **4.1** D-20 en `SourceEditor::insert_newline`.
+- [x] (c441983) **4.1** D-20 en `SourceEditor::insert_newline`.
   - Prueba: viñetas, numeradas, tareas y citas, con LF y CRLF.
-- [ ] **4.2** D-21 `insert_block`, y migrar `insert_code_block`,
+- [x] (c3b3a76) **4.2** D-21 `insert_block`, y migrar `insert_code_block`,
   `insert_table`, `insert_callout` y las de cita, regla y pregunta.
   - Prueba: al inicio, en medio de un párrafo, después de una lista, al final y
     en un documento vacío.
-- [ ] **4.3** D-22 formato sobre la palabra.
+- [x] (1c6f87a) **4.3** D-22 formato sobre la palabra.
   - Prueba: `resu|men` → `**resumen**`; con un emoji adyacente; con un cursor
     al borde de la palabra.
-- [ ] **4.4** Símbolo dentro de una tabla, en la última celda.
+- [x] (98f6793) **4.4** Símbolo dentro de una tabla, en la última celda.
   - Prueba: después de insertarlo, la fila sigue siendo una fila de tabla en
     `prepare_view`.
 
@@ -547,8 +554,8 @@ Orden por defecto para un solo ejecutor: 1 → 4 → 2 → 3 → 5 → 6 → 7 �
 | --- | --- | --- |
 | Preparación | Hecho | Herramientas instaladas; decisiones D-01 a D-28 |
 | 1 | Hecho | a76ddca, 5f9c2ae, 1a74b6f; ejecutable entregado |
-| 4 | **Activa** | — |
-| 2 | Pendiente | — |
+| 4 | Hecho | c441983, c3b3a76, 1c6f87a, 98f6793 y el ajuste de bloques |
+| 2 | **Activa** | — |
 | 3 | Pendiente | — |
 | 5 | Pendiente | — |
 | 6 | Pendiente | — |

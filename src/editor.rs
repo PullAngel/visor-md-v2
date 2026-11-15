@@ -616,12 +616,13 @@ impl SourceEditor {
         self.insert(source, symbol)
     }
 
-    /// Inserta un bloque Markdown (tabla, regla, recuadro, código) en su propia
-    /// línea, con una línea en blanco antes y después cuando hace falta. Sin
-    /// esa separación el bloque se pega al párrafo vecino y deja de
-    /// reconocerse. Una selección se reemplaza, como en `insert`. `select` es
-    /// el rango de la plantilla que queda seleccionado; sin él, el cursor
-    /// queda al final del bloque.
+    /// Inserta un bloque Markdown (tabla, regla, recuadro) en su propia línea,
+    /// con una línea en blanco antes y después cuando hace falta. Sin esa
+    /// separación el bloque se pega al párrafo vecino y deja de reconocerse.
+    /// Nunca reemplaza texto seleccionado ni parte una línea: va debajo de la
+    /// línea del cursor o, si el cursor está al inicio de una línea con texto,
+    /// encima de ella. `select` es el rango de la plantilla que queda
+    /// seleccionado; sin él, el cursor queda al final del bloque.
     pub fn insert_block(
         &mut self,
         source: &mut TextBuffer,
@@ -629,7 +630,18 @@ impl SourceEditor {
         eol: &str,
         select: Option<Range<usize>>,
     ) -> Result<bool, EditError> {
-        let range = self.selection();
+        let at = block_anchor(source, self.selection().end)?;
+        self.place_block(source, at..at, template, eol, select)
+    }
+
+    fn place_block(
+        &mut self,
+        source: &mut TextBuffer,
+        range: Range<usize>,
+        template: &str,
+        eol: &str,
+        select: Option<Range<usize>>,
+    ) -> Result<bool, EditError> {
         let (lead, trail) = block_padding(source, &range, eol)?;
         let text = format!("{lead}{template}{trail}");
         let changed = self.history.apply(source, range.clone(), &text)?;
@@ -653,7 +665,8 @@ impl SourceEditor {
         source: &mut TextBuffer,
         eol: &str,
     ) -> Result<bool, EditError> {
-        let selected = source.slice_bytes(self.selection())?;
+        let selection = self.selection();
+        let selected = source.slice_bytes(selection.clone())?;
         let content = if selected.is_empty() {
             "código"
         } else {
@@ -661,7 +674,12 @@ impl SourceEditor {
         };
         let template = format!("```{eol}{content}{eol}```");
         let start = 3 + eol.len();
-        self.insert_block(source, &template, eol, Some(start..start + content.len()))
+        let inner = Some(start..start + content.len());
+        if selected.is_empty() {
+            self.insert_block(source, &template, eol, inner)
+        } else {
+            self.place_block(source, selection, &template, eol, inner)
+        }
     }
 
     /// Rodea la selección con sintaxis Markdown mediante un único cambio
@@ -1162,6 +1180,26 @@ fn word_range_at(source: &TextBuffer, offset: usize) -> Result<Option<Range<usiz
     Ok(Some(line_start + at - before..line_start + at + after))
 }
 
+/// Dónde colocar un bloque nuevo respecto del cursor: en una línea en blanco,
+/// el propio cursor; al inicio de una línea con texto, el inicio de esa línea
+/// (el bloque queda encima); en cualquier otro caso, el final de la línea
+/// (el bloque queda debajo). Así un bloque nunca parte una línea.
+fn block_anchor(source: &TextBuffer, caret: usize) -> Result<usize, EditError> {
+    let line = source.line_at_byte(caret);
+    let line_start = source.line_start_byte(line);
+    let line_end = source.line_end(line);
+    let full = source.slice_bytes(line_start..line_end)?;
+    if full.trim().is_empty() {
+        return Ok(caret);
+    }
+    let before = source.slice_bytes(line_start..caret.min(line_end))?;
+    Ok(if before.trim().is_empty() {
+        line_start
+    } else {
+        line_end
+    })
+}
+
 /// Saltos que necesita un bloque insertado en `range` para quedar aislado:
 /// una línea en blanco antes y otra después, salvo al inicio o al final del
 /// documento o si ya hay una.
@@ -1386,7 +1424,9 @@ mod tests {
             ("texto\n", 6, "texto\n\n---"),
             ("texto\n\n", 7, "texto\n\n---"),
             ("ab\ncd", 2, "ab\n\n---\n\ncd"),
-            ("ab|cd", 3, "ab|\n\n---\n\ncd"),
+            ("ab|cd", 3, "ab|cd\n\n---"),
+            ("texto", 0, "---\n\ntexto"),
+            ("uno\ndos", 5, "uno\ndos\n\n---"),
             ("a\n\nb", 2, "a\n\n---\n\nb"),
             ("- uno\n- dos", 11, "- uno\n- dos\n\n---"),
             ("\ntexto", 0, "---\n\ntexto"),
@@ -1394,6 +1434,22 @@ mod tests {
             let (result, _) = insertar_bloque(text, offset, "\n");
             assert_eq!(result, expected, "{text:?} en {offset}");
         }
+    }
+
+    #[test]
+    fn un_bloque_no_reemplaza_la_seleccion_ni_parte_la_linea() {
+        let mut source = buffer("lo **nucleo** de la celula");
+        let mut editor = editor_at(&source, 6);
+        editor.set_cursor(&source, 12, true).unwrap();
+        assert!(editor.insert_block(&mut source, "---", "\n", None).unwrap());
+        assert_eq!(source.to_string(), "lo **nucleo** de la celula\n\n---");
+    }
+
+    #[test]
+    fn un_bloque_con_el_cursor_al_inicio_de_una_linea_con_texto_va_encima() {
+        let (result, cursor) = insertar_bloque("a\nuno\nb", 2, "\n");
+        assert_eq!(result, "a\n\n---\n\nuno\nb");
+        assert_eq!(cursor, "a\n\n---".len());
     }
 
     #[test]
