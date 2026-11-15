@@ -18,6 +18,11 @@ pub(crate) struct Palette {
     pub(crate) external_link: (u8, u8, u8),
     pub(crate) mark: (u8, u8, u8),
     pub(crate) kbd: (u8, u8, u8),
+    /// Pestaña activa: un verde propio, algo más saturado que el documento,
+    /// para reconocerla de un vistazo sin competir con el acento.
+    pub(crate) tab: (u8, u8, u8),
+    /// Fondo de una pestaña inactiva al pasar el puntero.
+    pub(crate) tab_idle: (u8, u8, u8),
 }
 
 pub(crate) const NIGHT: Palette = Palette {
@@ -32,6 +37,8 @@ pub(crate) const NIGHT: Palette = Palette {
     external_link: (0x7D, 0xB3, 0xFF),
     mark: (0x2C, 0x4B, 0x35),
     kbd: (0x18, 0x27, 0x1E),
+    tab: (0x17, 0x30, 0x1F),
+    tab_idle: (0x11, 0x22, 0x18),
 };
 
 pub(crate) const DAY: Palette = Palette {
@@ -46,6 +53,8 @@ pub(crate) const DAY: Palette = Palette {
     external_link: (0x1E, 0x68, 0xC4),
     mark: (0xD9, 0xE4, 0xC9),
     kbd: (0xE5, 0xDA, 0xC3),
+    tab: (0xDC, 0xE6, 0xCF),
+    tab_idle: (0xED, 0xE4, 0xCF),
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -86,6 +95,8 @@ impl Palette {
             external_link: mix(self.external_link, target.external_link),
             mark: mix(self.mark, target.mark),
             kbd: mix(self.kbd, target.kbd),
+            tab: mix(self.tab, target.tab),
+            tab_idle: mix(self.tab_idle, target.tab_idle),
         }
     }
 }
@@ -136,6 +147,26 @@ mod tests {
             assert!(contrast(palette.text, palette.surface) >= 7.0);
             assert!(contrast(palette.dim, palette.surface) >= 4.5);
             assert!(contrast(palette.accent, palette.surface) >= 4.5);
+            // Las pestañas: texto legible sobre la activa y sobre el hover.
+            assert!(contrast(palette.text, palette.tab) >= 7.0);
+            assert!(contrast(palette.dim, palette.tab) >= 4.5);
+            assert!(contrast(palette.dim, palette.tab_idle) >= 4.5);
+            assert!(contrast(palette.accent, palette.tab) >= 4.5);
         }
+    }
+
+    #[test]
+    fn la_pestana_activa_se_distingue_del_documento_y_del_fondo() {
+        for palette in [DAY, NIGHT] {
+            assert_ne!(palette.tab, palette.surface);
+            assert_ne!(palette.tab, palette.bg);
+            assert_ne!(palette.tab, palette.tab_idle);
+        }
+        // En noche el verde de la pestaña es más claro que el fondo de la
+        // barra, no solo distinto.
+        assert!(
+            relative_luminance(NIGHT.tab) > relative_luminance(NIGHT.bg),
+            "la pestaña activa debe leerse sobre el fondo de la barra"
+        );
     }
 }

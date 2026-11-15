@@ -427,7 +427,7 @@ Es independiente de las fases 2 y 3. Toca solo `editor.rs` y las funciones
 
 ### Fase 5 · Pestañas y paneles
 
-- [ ] **5.1** D-23 roles y prueba de contraste.
+- [x] **5.1** D-23 roles y prueba de contraste.
 - [ ] **5.2** Hover en las pestañas, ✕ al pasar el puntero y tooltip con el
   nombre completo (usa D-15).
 - [ ] **5.3** La pestaña fijada va al inicio de `tab_order`, compacta (solo

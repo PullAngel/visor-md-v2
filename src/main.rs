@@ -16308,23 +16308,23 @@ impl App {
         // Franja de pestañas: la activa se funde con el documento y las demás
         // quedan en tinta tenue. La ✕ aparece en la activa y al pasar el mouse.
         let window_width = w.get() as f32;
-        let surface_color = palette.surface;
+        let tab_color = palette.tab;
         let mut tab_surface = Paint {
             anti_alias: true,
             ..Default::default()
         };
         tab_surface.set_color(Color::from_rgba8(
-            surface_color.0,
-            surface_color.1,
-            surface_color.2,
+            tab_color.0,
+            tab_color.1,
+            tab_color.2,
             255,
         ));
         let mut tab_hover_paint = Paint {
             anti_alias: true,
             ..Default::default()
         };
-        let elevated = palette.elevated;
-        tab_hover_paint.set_color(Color::from_rgba8(elevated.0, elevated.1, elevated.2, 255));
+        let idle = palette.tab_idle;
+        tab_hover_paint.set_color(Color::from_rgba8(idle.0, idle.1, idle.2, 255));
         let hovered_tab = tab_hover
             .and_then(|(x, y)| tab_index_at(x, y, window_width, h.get() as f32, tab_count));
         for (index, ((active, _), layout)) in
