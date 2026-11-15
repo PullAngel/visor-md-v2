@@ -126,6 +126,10 @@ mod pruebas {
 
     #[test]
     fn el_centro_de_cada_control_de_ventana_devuelve_su_objetivo() {
+        // Los controles propios solo existen con el cromo propio (Windows).
+        if !custom_window_chrome_enabled() {
+            return;
+        }
         let y = WINDOW_CHROME_HEIGHT * 0.5;
         let controles = [
             WindowControl::PinOnTop,
