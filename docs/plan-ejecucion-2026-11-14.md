@@ -352,7 +352,7 @@ aparcada (con el motivo).
   de mano en `CursorMoved` por `ui_target_at(...).is_some()`.
   - Prueba: el centro de cada botón de barra, pestaña, control de ventana y
     Copiar a 640, 1100 y 1366 px devuelve su objetivo.
-- [ ] **2.6** D-14 estado de hover y pulsación, todavía sin dibujarlo.
+- [x] **2.6** D-14 estado de hover y pulsación, todavía sin dibujarlo.
   - Prueba: `transition_progress` en 0, la mitad, el final y con Reducir
     movimiento.
 - [ ] **2.7** D-15 capa de tooltip.

@@ -24,6 +24,7 @@ mod pdf;
 mod recovery;
 mod settings;
 mod theme;
+mod ui_motion;
 mod ui_target;
 use ui_target::UiTarget;
 mod vfs;
@@ -6817,6 +6818,8 @@ struct App {
     mode_transition: Option<ModeTransition>,
     /// Punto actual del cursor dentro de la ventana, en pixeles físicos.
     pointer: Option<(f32, f32)>,
+    /// Hover y pulsación con transición. El dibujo lo consume desde la fase 8.
+    ui_motion: ui_motion::UiMotion,
     /// Texto que un IME todavía está componiendo. No forma parte de la fuente
     /// ni puede llegar al guardado hasta que Windows emite un `Commit`.
     ime_preedit: Option<String>,
@@ -7105,6 +7108,7 @@ impl App {
             reduce_motion,
             mode_transition: None,
             pointer: None,
+            ui_motion: ui_motion::UiMotion::default(),
             ime_preedit: None,
             tab_drag_id: None,
             selecting: false,
@@ -8011,6 +8015,8 @@ impl ApplicationHandler<AppEvent> for App {
                     }
                 }
                 let ui_target = self.ui_target_at(position.x as f32, position.y as f32);
+                self.ui_motion
+                    .set_hover(ui_target, Instant::now(), self.reduce_motion);
                 let toolbar_hover = matches!(
                     ui_target,
                     Some(UiTarget::Toolbar(_) | UiTarget::ModeSegment(_))
@@ -8095,6 +8101,9 @@ impl ApplicationHandler<AppEvent> for App {
                 ..
             } => match state {
                 ElementState::Pressed => {
+                    if let Some(target) = self.pointer.and_then(|(x, y)| self.ui_target_at(x, y)) {
+                        self.ui_motion.press(target, Instant::now());
+                    }
                     if self.image_preview.take().is_some() {
                         self.set_notice("vista previa de imagen cerrada");
                         if let Some(window) = &self.window {
