@@ -90,6 +90,38 @@ fn apuntar_a_copiar(app: &mut App) {
     );
 }
 
+/// Índice con títulos que no caben en la columna y el puntero sobre el
+/// primero: el texto se recorta dentro de su caja y una ayuda lo muestra entero.
+fn indice_con_titulos_largos(app: &mut App) {
+    app.load_for_test(
+        "# Investigación: qué hace cada proyecto y qué lecciones dejó para el resto
+
+texto
+
+## Corto
+
+más
+
+## Otro título bastante largo que tampoco entra en la columna
+
+fin",
+        DocumentMode::Reading,
+    );
+    app.show_document_outline();
+    let fila = DOCUMENT_VIEWPORT_TOP
+        + WORKSPACE_DESTINATION_HEIGHT
+        + PANEL_PADDING
+        + PANEL_ROW_HEIGHT * 1.5;
+    app.pointer = Some((100.0, fila));
+    let ahora = Instant::now();
+    let desde = ahora
+        .checked_sub(std::time::Duration::from_secs(2))
+        .expect("el reloj permite restar dos segundos");
+    app.ui_motion
+        .set_hover(Some(UiTarget::ListRow(0)), desde, app.reduce_motion);
+    app.tooltip.poll(Some(desde), ahora);
+}
+
 fn mostrar_tooltip(app: &mut App) {
     apuntar_a_guardar(app);
 }
@@ -99,7 +131,7 @@ fn dialogo_con_el_puntero_sobre_un_boton(app: &mut App) {
     abrir_dialogo_de_cierre(app);
 }
 
-const ESCENAS: [Escena; 12] = [
+const ESCENAS: [Escena; 13] = [
     Escena {
         nombre: "lectura",
         modo: DocumentMode::Reading,
@@ -149,6 +181,11 @@ const ESCENAS: [Escena; 12] = [
         nombre: "copiar-hover",
         modo: DocumentMode::Reading,
         preparar: apuntar_a_copiar,
+    },
+    Escena {
+        nombre: "indice-recortado",
+        modo: DocumentMode::Reading,
+        preparar: indice_con_titulos_largos,
     },
     Escena {
         nombre: "tooltip",

@@ -5527,10 +5527,10 @@ fn fit_menu_layout(
     layout_cx: &mut LayoutContext<Brush>,
     palette: Palette,
     max_width: f32,
-) -> Layout<Brush> {
+) -> (Layout<Brush>, bool) {
     let full = build_menu_layout(label, font_cx, layout_cx, palette);
     if full.width() <= max_width {
-        return full;
+        return (full, false);
     }
     let chars = label.chars().collect::<Vec<_>>();
     let (mut low, mut high) = (0, chars.len());
@@ -5546,7 +5546,10 @@ fn fit_menu_layout(
             high = middle - 1;
         }
     }
-    best.unwrap_or_else(|| build_menu_layout("…", font_cx, layout_cx, palette))
+    (
+        best.unwrap_or_else(|| build_menu_layout("…", font_cx, layout_cx, palette)),
+        true,
+    )
 }
 
 /// Representacion cacheada de un marcador visible. Los marcadores de texto
@@ -7442,7 +7445,15 @@ impl ApplicationHandler<AppEvent> for App {
         let tooltip_since = self
             .ui_motion
             .hover_since()
-            .filter(|(target, _)| matches!(target, UiTarget::Toolbar(_) | UiTarget::ModeSegment(_)))
+            .filter(|(target, _)| {
+                matches!(
+                    target,
+                    UiTarget::Toolbar(_)
+                        | UiTarget::ModeSegment(_)
+                        | UiTarget::WindowControl(_)
+                        | UiTarget::ListRow(_)
+                )
+            })
             .map(|(_, since)| since);
         let tooltip_deadline = match self.tooltip.poll(tooltip_since, now) {
             ui_motion::TooltipPoll::Idle => None,
@@ -14480,7 +14491,10 @@ impl App {
                     .map(|index| {
                         (
                             index == selected,
-                            abbreviated_label(&self.action_display_name(actions[index]), 48),
+                            abbreviated_label(
+                                &self.action_display_name(actions[index]),
+                                MAX_OVERLAY_LABEL_CHARS,
+                            ),
                         )
                     })
                     .collect(),
@@ -14516,7 +14530,7 @@ impl App {
                     .map(|index| {
                         (
                             index == selected,
-                            abbreviated_label(&paths[index].label(), 48),
+                            abbreviated_label(&paths[index].label(), MAX_OVERLAY_LABEL_CHARS),
                         )
                     })
                     .collect(),
@@ -14540,7 +14554,7 @@ impl App {
                     .map(|index| {
                         (
                             index == selected,
-                            abbreviated_label(&paths[index].label(), 48),
+                            abbreviated_label(&paths[index].label(), MAX_OVERLAY_LABEL_CHARS),
                         )
                     })
                     .collect(),
@@ -14559,7 +14573,10 @@ impl App {
                     .map(|index| {
                         (
                             index == selected,
-                            abbreviated_label(&paths[index].display().to_string(), 48),
+                            abbreviated_label(
+                                &paths[index].display().to_string(),
+                                MAX_OVERLAY_LABEL_CHARS,
+                            ),
                         )
                     })
                     .collect(),
@@ -14575,7 +14592,12 @@ impl App {
                 title: format!("Enlaces de bóveda · {}", rows.len()),
                 items: range
                     .clone()
-                    .map(|index| (index == selected, abbreviated_label(&rows[index], 48)))
+                    .map(|index| {
+                        (
+                            index == selected,
+                            abbreviated_label(&rows[index], MAX_OVERLAY_LABEL_CHARS),
+                        )
+                    })
                     .collect(),
                 footer: panel_footer(rows.len(), range),
             })
@@ -14592,7 +14614,12 @@ impl App {
                 title: format!("Índice · {} encabezados", headings.len()),
                 items: range
                     .clone()
-                    .map(|index| (index == selected, abbreviated_label(&headings[index].1, 48)))
+                    .map(|index| {
+                        (
+                            index == selected,
+                            abbreviated_label(&headings[index].1, MAX_OVERLAY_LABEL_CHARS),
+                        )
+                    })
                     .collect(),
                 footer: panel_footer(headings.len(), range),
             })
@@ -14625,7 +14652,7 @@ impl App {
             PANEL_WIDTH.min((w.get() as f32 - MARGIN * 2.0).max(120.0))
         } - NAVIGATION_TEXT_INSET
             - NAVIGATION_TEXT_RIGHT_INSET;
-        let navigation_panel_layouts = navigation_panel_rows.as_ref().map(|rows| {
+        let navigation_fit = navigation_panel_rows.as_ref().map(|rows| {
             let item_count = rows.items.len();
             rows.labels()
                 .enumerate()
@@ -14643,6 +14670,21 @@ impl App {
                         navigation_text_width - shortcut_width,
                     )
                 })
+                .collect::<Vec<_>>()
+        });
+        // Qué filas quedaron recortadas: al pasar el puntero muestran su texto
+        // completo en una ayuda.
+        let navigation_truncated = navigation_fit
+            .as_ref()
+            .map(|fit| {
+                fit.iter()
+                    .map(|(_, truncated)| *truncated)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let navigation_panel_layouts = navigation_fit.map(|fit| {
+            fit.into_iter()
+                .map(|(layout, _)| layout)
                 .collect::<Vec<_>>()
         });
         let active_workspace_destination = self.active_workspace_destination();
@@ -14725,6 +14767,51 @@ impl App {
             w.get() as f32,
             self.document.mode,
         );
+        // Una fila recortada de una lista abierta enseña su texto completo.
+        let row_tooltip = navigation_panel_rows.as_ref().and_then(|rows| {
+            if self.dialog.is_some() || self.context_menu.is_some() || !self.tooltip.is_shown() {
+                return None;
+            }
+            let (pointer_x, pointer_y) = menu_pointer?;
+            let geometry = if workspace_column_open {
+                workspace_column_geometry(w.get() as f32, h.get() as f32)
+            } else {
+                navigation_panel_geometry(
+                    w.get() as f32,
+                    h.get() as f32,
+                    rows.items.len(),
+                    panel_anchor,
+                )
+            };
+            if pointer_x < geometry.x + PANEL_PADDING
+                || pointer_x >= geometry.x + geometry.width - PANEL_PADDING
+                || pointer_y < geometry.items_y
+            {
+                return None;
+            }
+            let item = ((pointer_y - geometry.items_y) / PANEL_ROW_HEIGHT) as usize;
+            if item >= rows.items.len() || !navigation_truncated.get(item + 1).copied()? {
+                return None;
+            }
+            Some((
+                rows.items[item].1.clone(),
+                geometry.x,
+                geometry.items_y + item as f32 * PANEL_ROW_HEIGHT,
+            ))
+        });
+        let row_tooltip_layout = row_tooltip.as_ref().map(|(label, x, y)| {
+            let max_width = (w.get() as f32 - MARGIN * 2.0 - 20.0).min(420.0);
+            let layout = build_ui_text_layout(
+                label,
+                &mut self.font_cx,
+                &mut self.layout_cx,
+                self.palette.text,
+                13.0,
+                false,
+                Some(max_width),
+            );
+            (layout, *x, *y)
+        });
         // Los controles de ventana también tienen ayuda con el puntero.
         let toolbar_hint_label = toolbar_hint_label.or_else(|| {
             menu_pointer
@@ -16974,6 +17061,22 @@ impl App {
             }
         }
 
+        if let Some((layout, anchor_x, row_y)) = row_tooltip_layout {
+            let tip_width = (layout.width() + 20.0).min(w.get() as f32 - MARGIN * 2.0);
+            let tip_height = layout.height() + 12.0;
+            let tip_x = (anchor_x + 12.0)
+                .min((w.get() as f32 - tip_width - MARGIN).max(MARGIN))
+                .max(MARGIN);
+            let below = row_y + PANEL_ROW_HEIGHT + 2.0;
+            let tip_y = if below + tip_height <= h.get() as f32 - STATUS_HEIGHT {
+                below
+            } else {
+                (row_y - tip_height - 2.0).max(DOCUMENT_VIEWPORT_TOP)
+            };
+            draw_floating_surface(pixmap, tip_x, tip_y, tip_width, tip_height, 6.0, *palette);
+            draw_text_layout(pixmap, scale_cx, glyphs, &layout, tip_x + 10.0, tip_y + 6.0);
+        }
+
         if let Some(preview) = image_preview.as_ref()
             && preview.document_id == document.id
             && preview.workspace_generation == workspace_generation
@@ -17973,25 +18076,65 @@ mod pruebas {
     }
 
     #[test]
+    fn el_puntero_sobre_una_fila_de_la_lista_abierta_la_señala_como_objetivo() {
+        let mut app = App::for_tests(NIGHT);
+        let titulo = "Un título larguísimo que no cabe en la columna de la carpeta de apuntes";
+        app.load_for_test(
+            &format!(
+                "# {titulo}
+
+texto
+
+## Corto
+
+más"
+            ),
+            DocumentMode::Reading,
+        );
+        app.draw_for_test(900, 560);
+        app.show_document_outline();
+        app.draw_for_test(900, 560);
+        let lista = app.open_list().expect("el índice es una lista abierta");
+        let geometria = app
+            .navigation_panel_geometry(lista.total)
+            .expect("la lista tiene geometría");
+        let x = geometria.x + geometria.width * 0.5;
+        let y0 = geometria.items_y + PANEL_ROW_HEIGHT * 0.5;
+        assert_eq!(app.ui_target_at(x, y0), Some(UiTarget::ListRow(0)));
+        assert_eq!(
+            app.ui_target_at(x, y0 + PANEL_ROW_HEIGHT),
+            Some(UiTarget::ListRow(1))
+        );
+        // La barra de modo sigue ganando sobre la lista.
+        assert!(matches!(
+            app.ui_target_at(MODE_SWITCH_X + 10.0, TOOLBAR_Y + 10.0),
+            Some(UiTarget::ModeSegment(_))
+        ));
+    }
+
+    #[test]
     fn los_textos_largos_se_recortan_por_ancho_y_nunca_se_salen_de_la_caja() {
         let mut app = App::for_tests(NIGHT);
         let largo = "Investigación: qué hace cada proyecto y qué lecciones dejó para mWmWmW iiiiii";
         for ancho in [60.0_f32, 120.0, 180.0, 288.0] {
-            let layout = fit_menu_layout(largo, &mut app.font_cx, &mut app.layout_cx, NIGHT, ancho);
+            let (layout, recortado) =
+                fit_menu_layout(largo, &mut app.font_cx, &mut app.layout_cx, NIGHT, ancho);
             assert!(layout.width() <= ancho, "{} > {ancho}", layout.width());
+            assert!(recortado, "{ancho} px debía recortar");
         }
         // Lo que cabe se deja intacto, sin puntos suspensivos.
-        let corto = fit_menu_layout(
+        let (corto, recortado) = fit_menu_layout(
             "Resumen",
             &mut app.font_cx,
             &mut app.layout_cx,
             NIGHT,
             288.0,
         );
+        assert!(!recortado);
         let completo = build_menu_layout("Resumen", &mut app.font_cx, &mut app.layout_cx, NIGHT);
         assert_eq!(corto.width(), completo.width());
         // Sin lugar alguno queda al menos el recorte, sin entrar en pánico.
-        let nada = fit_menu_layout(largo, &mut app.font_cx, &mut app.layout_cx, NIGHT, 1.0);
+        let (nada, _) = fit_menu_layout(largo, &mut app.font_cx, &mut app.layout_cx, NIGHT, 1.0);
         assert!(nada.width() > 0.0);
     }
 

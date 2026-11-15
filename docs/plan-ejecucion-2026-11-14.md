@@ -624,8 +624,8 @@ iba a ampliar, y el texto de la fase 7 se escribe ya sobre ellos.
   - actualizar `AppAction::ToggleTheme::label`, `ui_target.rs` y las pruebas
     de controles (`window_control_at(...)`);
   - prueba: con el Índice abierto, Ctrl+Shift+D cambia el tema; la T sola no.
-- [ ] **10.3** D-35 tooltip de texto completo en filas recortadas (Índice,
-  Notas, Búsqueda, Notas que enlazan aquí, paleta y menús).
+- [x] **10.3** D-35 tooltip de texto completo en filas recortadas de las listas
+  abiertas (`UiTarget::ListRow`, escena `indice-recortado`).
 - [ ] **10.4** D-36 `MenuEntry` y su navegación (`list_view.rs`, `panel_list.rs`):
   encabezados y separadores no seleccionables, «✓» a la izquierda. Pruebas
   de navegación con saltos.
@@ -723,7 +723,7 @@ asociación.
 | 4 | Hecho | c441983, c3b3a76, 1c6f87a, 98f6793 y el ajuste de bloques |
 | 2 | Hecho | 01bacf8, 898665a, e127b66, 9d1a167, 5888201 y la capa de tooltip |
 | 3 | Casi hecha | Hechas 3.1 a 3.8, 3.9b, 3.10 a 3.12. Pendientes: 3.9 (caja de búsqueda con borde y barra anclada); la 3.13 pasa a la 10.7 |
-| 10 | En curso | Hechas 10.1 (texto recortado por ancho) y 10.2 (botón y Ctrl+Shift+D). Siguiente: 10.3 |
+| 10 | En curso | Hechas 10.1 a 10.3 (texto recortado, botón y Ctrl+Shift+D, tooltip de filas). Siguiente: 10.4 |
 | 5 | En curso | Hecha 5.1 (verde propio de la pestaña). Pendientes 5.2 a 5.4 y 5.8; la 5.5 a 5.7 pasan a la fase 11 |
 | 11 | Pendiente | Mosaico: cabecera como pestaña, divisor, intercambio, soltado |
 | 6 | Pendiente | — |

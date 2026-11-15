@@ -27,6 +27,9 @@ pub(crate) enum UiTarget {
     SectionDisclosure(usize),
     DialogButton(usize),
     MenuRow(usize),
+    /// Fila de la lista abierta (paleta, índice, notas…), por posición
+    /// absoluta en la lista.
+    ListRow(usize),
 }
 
 /// Objetivo del cromo de la ventana (controles, barras y pestañas) bajo el
@@ -95,6 +98,11 @@ impl App {
             self.tab_order.len(),
         ) {
             return Some(target);
+        }
+        if let Some(list) = self.open_list()
+            && let Some(index) = self.list_item_at(x, y, list.total, list.selected)
+        {
+            return Some(UiTarget::ListRow(index));
         }
         if let Some((block, preview)) = self.code_copy_at(x, y) {
             return Some(UiTarget::CodeCopy { block, preview });
