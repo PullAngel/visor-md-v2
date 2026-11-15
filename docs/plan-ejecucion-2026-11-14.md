@@ -684,11 +684,12 @@ iba a ampliar, y el texto de la fase 7 se escribe ya sobre ellos.
   conserva sus seis botones. El menú contextual completo (3.13) sigue aparte.
 - [x] **10.8** Acciones nuevas: `Undo`, `Redo`, `Copy`, `Paste`, `MenuEdit`.
   (`MoveToNewWindow` llega con la 12.3.)
-- [~] **10.9** Buscador de acciones. Hecho: ícono `>_`, `WorkspaceHub` fuera de
-  la paleta y la prueba de inventario de D-29
+- [x] **10.9** Buscador de acciones: ícono `>_`, `WorkspaceHub` fuera de la
+  paleta, prueba de inventario de D-29
   (`toda_accion_de_la_paleta_esta_en_un_menu_o_se_declara_solo_paleta`, con
-  `PALETTE_ONLY` vacío). Pendiente: la categoría como texto atenuado a la
-  derecha de cada fila sin atajo.
+  `PALETTE_ONLY` vacío) y categoría (Archivo, Editar, Vista, Carpeta, Párrafo,
+  Insertar, Estudio, Formato) como texto atenuado a la derecha de cada fila sin
+  atajo, solo al buscar (`action_category`; escena `paleta-filtrada`).
 - [x] **10.11** Pulido que salió de la `design-critique` del 15 de noviembre:
   - los menús (no las búsquedas) no muestran la fila de título repetida ni el
     pie «1–13 de 13 · Esc para cerrar»; el pie solo aparece si hay desplazamiento;
@@ -835,7 +836,7 @@ asociación.
 | 4 | Hecho | c441983, c3b3a76, 1c6f87a, 98f6793 y el ajuste de bloques |
 | 2 | Hecho | 01bacf8, 898665a, e127b66, 9d1a167, 5888201 y la capa de tooltip |
 | 3 | Casi hecha | Hechas 3.1 a 3.8, 3.9b, 3.10 a 3.12. Pendientes: 3.9 (caja de búsqueda con borde y barra anclada); la 3.13 pasa a la 10.7 |
-| 10 | En curso | Hechas 10.1 a 10.8 y 10.11; 10.9 a medias. Siguiente: la prueba en vivo (10.10) y la categoría del buscador (10.9) |
+| 10 | En curso | Hechas 10.1 a 10.9 y 10.11. Siguiente: la prueba en vivo (10.10) |
 | 5 | En curso | Hecha 5.1 (verde propio de la pestaña). Pendientes 5.2 a 5.4 y 5.8; la 5.5 a 5.7 pasan a la fase 11 |
 | 11 | Pendiente | Mosaico: cabecera como pestaña, divisor, intercambio, soltado |
 | 6 | Pendiente | — |

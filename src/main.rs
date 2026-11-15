@@ -1561,6 +1561,45 @@ fn action_shortcut(action: AppAction) -> Option<&'static str> {
         .map(|(_, shortcut)| shortcut)
 }
 
+/// Categoría de una acción: el menú de la barra donde vive. El buscador la
+/// muestra, atenuada, en las filas que no tienen atajo. Lo que solo está en el
+/// menú «≡» usa el título de su grupo.
+fn action_category(action: AppAction) -> Option<&'static str> {
+    let menus: [(&str, &[MenuGroup]); 6] = [
+        ("Archivo", &FILE_GROUPS),
+        ("Editar", &EDIT_GROUPS),
+        ("Vista", &VIEW_GROUPS),
+        ("Carpeta", &FOLDER_GROUPS),
+        ("Párrafo", &BLOCK_GROUPS),
+        ("Estudio", &STUDY_GROUPS),
+    ];
+    let in_menu =
+        |groups: &[MenuGroup]| groups.iter().any(|(_, actions)| actions.contains(&action));
+    menus
+        .iter()
+        .find(|(_, groups)| in_menu(groups))
+        .map(|(name, _)| *name)
+        .or_else(|| INSERT_ACTIONS.contains(&action).then_some("Insertar"))
+        .or(match action {
+            AppAction::FormatBold
+            | AppAction::FormatItalic
+            | AppAction::FormatStrikethrough
+            | AppAction::FormatInlineCode
+            | AppAction::FormatHighlight => Some("Formato"),
+            AppAction::BlockTools => Some("Párrafo"),
+            AppAction::InsertTools => Some("Insertar"),
+            AppAction::StudyTools => Some("Estudio"),
+            AppAction::ToggleSection => Some("Vista"),
+            _ => None,
+        })
+        .or_else(|| {
+            MENU_GROUPS
+                .iter()
+                .find(|(_, actions)| actions.contains(&action))
+                .map(|(title, _)| *title)
+        })
+}
+
 /// Texto que un evento de teclado aporta a un campo de la interfaz. En
 /// Windows la escritura ordinaria llega en `KeyEvent::text`, no por IME.
 /// Ctrl o Alt nunca producen texto y se descartan los caracteres de control.
@@ -15019,9 +15058,17 @@ impl App {
                         ),
                     })
                     .collect(),
+                // El atajo manda; sin él, y solo en una búsqueda, la categoría.
                 shortcuts: range
                     .clone()
-                    .map(|index| entries[index].action().and_then(action_shortcut))
+                    .map(|index| {
+                        let action = entries[index].action()?;
+                        action_shortcut(action).or_else(|| {
+                            (!self.command_palette_query.is_empty())
+                                .then(|| action_category(action))
+                                .flatten()
+                        })
+                    })
                     .collect(),
                 headings: range
                     .clone()
@@ -18759,6 +18806,19 @@ mod pruebas {
             action_shortcut(AppAction::ToggleTheme),
             Some("Ctrl+Shift+D")
         );
+    }
+
+    #[test]
+    fn la_categoria_de_una_accion_es_su_grupo_del_menu() {
+        assert_eq!(action_category(AppAction::Save), Some("Archivo"));
+        assert_eq!(action_category(AppAction::Undo), Some("Editar"));
+        assert_eq!(action_category(AppAction::CommandPalette), Some("Buscar"));
+        // Toda acción de la paleta tiene categoría.
+        let sin_categoria: Vec<_> = APP_ACTIONS
+            .iter()
+            .filter(|action| action_category(**action).is_none())
+            .collect();
+        assert!(sin_categoria.is_empty(), "{sin_categoria:?}");
     }
 
     #[test]

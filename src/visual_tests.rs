@@ -30,6 +30,12 @@ fn abrir_paleta(app: &mut App) {
     app.open_command_palette();
 }
 
+/// Búsqueda de acciones filtrada: las filas sin atajo muestran su categoría.
+fn buscar_en_la_paleta(app: &mut App) {
+    app.open_command_palette();
+    app.command_palette_query = "ti".to_string();
+}
+
 fn abrir_menu_bloques(app: &mut App) {
     app.open_block_actions();
 }
@@ -131,7 +137,7 @@ fn dialogo_con_el_puntero_sobre_un_boton(app: &mut App) {
     abrir_dialogo_de_cierre(app);
 }
 
-const ESCENAS: [Escena; 13] = [
+const ESCENAS: [Escena; 14] = [
     Escena {
         nombre: "lectura",
         modo: DocumentMode::Reading,
@@ -151,6 +157,11 @@ const ESCENAS: [Escena; 13] = [
         nombre: "paleta",
         modo: DocumentMode::Reading,
         preparar: abrir_paleta,
+    },
+    Escena {
+        nombre: "paleta-filtrada",
+        modo: DocumentMode::Reading,
+        preparar: buscar_en_la_paleta,
     },
     Escena {
         nombre: "menu-bloques",
