@@ -40,8 +40,9 @@ modo quedaría a criterio del ejecutor.
   - Comparar como forma de aprender.
 - **D-02. Enlaces externos.** Siguen en azul por seguridad y llevan el ícono ↗
   después del texto.
-- **D-03. Tecla T.** Se conserva en Leer. Se suma un botón sol/luna, y al cambiar
-  el tema aparece el aviso «Tema de día · T para volver» (o «de noche»).
+- **D-03. Tecla T.** *Reemplazada por D-30*: la tecla T sola se retira y el
+  atajo pasa a Ctrl+Shift+D. Se suma un botón sol/luna, y al cambiar el tema
+  aparece el aviso «Tema de día · Ctrl+Shift+D para volver» (o «de noche»).
 
 ### Funcionamiento
 
@@ -615,7 +616,7 @@ iba a ampliar, y el texto de la fase 7 se escribe ya sobre ellos.
 - [x] **10.1** D-35 (parte hecha): el texto de las listas se recorta por ancho
   medido, no por caracteres (`fit_menu_layout`, prueba
   `los_textos_largos_se_recortan_por_ancho_y_nunca_se_salen_de_la_caja`).
-- [ ] **10.2** D-30 botón día/noche y Ctrl+Shift+D:
+- [x] **10.2** D-30 botón día/noche y Ctrl+Shift+D (hecho; el botón se quita por debajo de 668 px hasta la 10.5, que reubica el selector de modo):
   - `WindowControl::ToggleTheme` primero en `window_control_at`; contador y
     ancho a 5 × 36; ícono luna/sol con trazos; tooltip con atajo;
   - quitar el manejo de la tecla T sola (dos sitios: `window_event` y
@@ -722,7 +723,7 @@ asociación.
 | 4 | Hecho | c441983, c3b3a76, 1c6f87a, 98f6793 y el ajuste de bloques |
 | 2 | Hecho | 01bacf8, 898665a, e127b66, 9d1a167, 5888201 y la capa de tooltip |
 | 3 | Casi hecha | Hechas 3.1 a 3.8, 3.9b, 3.10 a 3.12. Pendientes: 3.9 (caja de búsqueda con borde y barra anclada); la 3.13 pasa a la 10.7 |
-| 10 | En curso | Hecha 10.1 (texto recortado por ancho). Siguiente: 10.2 (botón y atajo de tema) |
+| 10 | En curso | Hechas 10.1 (texto recortado por ancho) y 10.2 (botón y Ctrl+Shift+D). Siguiente: 10.3 |
 | 5 | En curso | Hecha 5.1 (verde propio de la pestaña). Pendientes 5.2 a 5.4 y 5.8; la 5.5 a 5.7 pasan a la fase 11 |
 | 11 | Pendiente | Mosaico: cabecera como pestaña, divisor, intercambio, soltado |
 | 6 | Pendiente | — |

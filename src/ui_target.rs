@@ -131,15 +131,10 @@ mod pruebas {
             return;
         }
         let y = WINDOW_CHROME_HEIGHT * 0.5;
-        let controles = [
-            WindowControl::PinOnTop,
-            WindowControl::Minimize,
-            WindowControl::ToggleMaximize,
-            WindowControl::Close,
-        ];
         for ancho in ANCHOS {
+            let controles = window_control_slots(ancho);
             for (indice, control) in controles.iter().enumerate() {
-                let x = ancho - WINDOW_CONTROL_WIDTH * (WINDOW_CONTROL_COUNT - indice as f32 - 0.5);
+                let x = window_controls_start(ancho) + WINDOW_CONTROL_WIDTH * (indice as f32 + 0.5);
                 assert_eq!(
                     objetivo(x, y, ancho, DocumentMode::Reading, 1),
                     Some(UiTarget::WindowControl(*control)),

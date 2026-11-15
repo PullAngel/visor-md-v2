@@ -154,11 +154,10 @@ const RECOVERY_DEBOUNCE: Duration = Duration::from_secs(3);
 /// de QA mostró que privilegiar lectura comprimía demasiado la fuente y hacía
 /// que ambas columnas dejaran de corresponder visualmente.
 const SPLIT_SOURCE_FRACTION: f32 = 0.5;
-// Cuatro controles de 38 px terminan justo donde empieza el selector de modo
-// en la ventana mínima de 640 px; más anchos se solaparían.
-const WINDOW_CONTROL_WIDTH: f32 = 38.0;
-/// Fijar encima, minimizar, maximizar y cerrar.
-const WINDOW_CONTROL_COUNT: f32 = 4.0;
+// Cuatro controles de 36 px terminan antes de donde empieza el selector de
+// modo en la ventana mínima de 640 px; el quinto (tema) solo cabe si queda
+// lugar, ver `window_control_slots`.
+const WINDOW_CONTROL_WIDTH: f32 = 36.0;
 const WINDOW_RESIZE_BORDER: f32 = 6.0;
 const MIN_WINDOW_WIDTH: f64 = 640.0;
 const MIN_WINDOW_HEIGHT: f64 = 480.0;
@@ -399,27 +398,64 @@ const fn custom_window_chrome_enabled() -> bool {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum WindowControl {
+    ToggleTheme,
     PinOnTop,
     Minimize,
     ToggleMaximize,
     Close,
 }
 
+/// Controles de ventana de izquierda a derecha para este ancho. El botón de
+/// tema va primero, junto a la chincheta; se quita cuando taparía el selector
+/// de modo y sigue disponible con Ctrl+Shift+D y en la paleta.
+fn window_control_slots(window_width: f32) -> &'static [WindowControl] {
+    const WITH_THEME: [WindowControl; 5] = [
+        WindowControl::ToggleTheme,
+        WindowControl::PinOnTop,
+        WindowControl::Minimize,
+        WindowControl::ToggleMaximize,
+        WindowControl::Close,
+    ];
+    const WITHOUT_THEME: [WindowControl; 4] = [
+        WindowControl::PinOnTop,
+        WindowControl::Minimize,
+        WindowControl::ToggleMaximize,
+        WindowControl::Close,
+    ];
+    let with_theme_start = window_width - WINDOW_CONTROL_WIDTH * WITH_THEME.len() as f32;
+    if with_theme_start >= MODE_SWITCH_X + MODE_SWITCH_WIDTH {
+        &WITH_THEME
+    } else {
+        &WITHOUT_THEME
+    }
+}
+
+/// Borde izquierdo del primer control de ventana.
+fn window_controls_start(window_width: f32) -> f32 {
+    (window_width - WINDOW_CONTROL_WIDTH * window_control_slots(window_width).len() as f32).max(0.0)
+}
+
 fn window_control_at(x: f32, y: f32, window_width: f32) -> Option<WindowControl> {
-    if !custom_window_chrome_enabled()
-        || !(0.0..WINDOW_CHROME_HEIGHT).contains(&y)
-        || x < (window_width - WINDOW_CONTROL_WIDTH * WINDOW_CONTROL_COUNT).max(0.0)
-    {
+    if !custom_window_chrome_enabled() || !(0.0..WINDOW_CHROME_HEIGHT).contains(&y) {
         return None;
     }
-    let first_control = (window_width - WINDOW_CONTROL_WIDTH * WINDOW_CONTROL_COUNT).max(0.0);
+    let first_control = window_controls_start(window_width);
+    if x < first_control {
+        return None;
+    }
     let slot = ((x - first_control) / WINDOW_CONTROL_WIDTH) as usize;
-    match slot {
-        0 => Some(WindowControl::PinOnTop),
-        1 => Some(WindowControl::Minimize),
-        2 => Some(WindowControl::ToggleMaximize),
-        3 => Some(WindowControl::Close),
-        _ => None,
+    window_control_slots(window_width).get(slot).copied()
+}
+
+/// Texto de ayuda de un control de ventana. `night` indica el tema actual.
+fn window_control_label(control: WindowControl, night: bool) -> &'static str {
+    match control {
+        WindowControl::ToggleTheme if night => "Cambiar a tema de día · Ctrl+Shift+D",
+        WindowControl::ToggleTheme => "Cambiar a tema de noche · Ctrl+Shift+D",
+        WindowControl::PinOnTop => "Fijar la ventana encima de las demás",
+        WindowControl::Minimize => "Minimizar",
+        WindowControl::ToggleMaximize => "Maximizar o restaurar",
+        WindowControl::Close => "Cerrar",
     }
 }
 
@@ -1423,7 +1459,7 @@ impl AppAction {
             Self::ToggleSplitOrientation => "Alternar disposición de comparación",
             Self::SplitDocumentRight => "Dividir a la derecha con otra pestaña",
             Self::SplitDocumentBelow => "Dividir abajo con otra pestaña",
-            Self::ToggleTheme => "Cambiar tema día o noche · T en lectura",
+            Self::ToggleTheme => "Cambiar tema día o noche · Ctrl+Shift+D",
             Self::ToggleReduceMotion => "Activar o desactivar movimiento reducido",
             Self::TogglePinOnTop => "Fijar la ventana encima de las demás",
             Self::InsertSymbol => "Insertar símbolo o emoji",
@@ -8416,6 +8452,7 @@ impl ApplicationHandler<AppEvent> for App {
                     });
                     if let Some(control) = chrome_control {
                         match control {
+                            WindowControl::ToggleTheme => self.toggle_theme(),
                             WindowControl::PinOnTop => self.toggle_pin_on_top(),
                             WindowControl::Minimize => {
                                 if let Some(window) = &self.window {
@@ -8702,6 +8739,23 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::Ime(Ime::Commit(text)) if self.document.mode.is_editable() => {
                 self.ime_preedit = None;
                 self.edit_source(|editor, source| editor.insert(source, text.as_str()));
+            }
+            // Cambiar el tema no depende de lo que haya abierto: paneles,
+            // buscadores y modo de escritura no se interponen.
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::KeyD),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } if self.dialog.is_none()
+                && self.modifiers.control_key()
+                && self.modifiers.shift_key() =>
+            {
+                self.perform_action(AppAction::ToggleTheme);
             }
             WindowEvent::KeyboardInput { event, .. } if self.context_menu.is_some() => {
                 if matches!(event.physical_key, PhysicalKey::Code(key) if transient_menu_dismisses_for(key, event.state))
@@ -9253,18 +9307,6 @@ impl ApplicationHandler<AppEvent> for App {
             } => {
                 self.move_link_focus(self.modifiers.shift_key());
             }
-            WindowEvent::KeyboardInput {
-                event:
-                    KeyEvent {
-                        physical_key: PhysicalKey::Code(KeyCode::KeyT),
-                        state: ElementState::Pressed,
-                        repeat: false,
-                        ..
-                    },
-                ..
-            } => {
-                self.perform_action(AppAction::ToggleTheme);
-            }
             WindowEvent::MouseWheel { delta, .. } => {
                 self.tooltip.suppress();
                 // Sobre una lista abierta, la rueda la desplaza a ella y no al
@@ -9471,7 +9513,7 @@ impl App {
     }
 
     fn toggle_theme(&mut self) {
-        // Si se pulsa T a mitad de transición, alternar desde el destino que
+        // Si se cambia a mitad de transición, alternar desde el destino que
         // la persona pidió, no desde un color intermedio que no es un tema.
         let current_target = self
             .theme_transition
@@ -9479,7 +9521,11 @@ impl App {
             .unwrap_or(self.palette);
         let target = if current_target == NIGHT { DAY } else { NIGHT };
         self.begin_theme_transition(target);
-        self.set_notice("tema actualizado");
+        self.set_notice(if target == NIGHT {
+            "Tema de noche · Ctrl+Shift+D para volver"
+        } else {
+            "Tema de día · Ctrl+Shift+D para volver"
+        });
         if let Some(window) = &self.window {
             window.request_redraw();
         }
@@ -14679,6 +14725,13 @@ impl App {
             w.get() as f32,
             self.document.mode,
         );
+        // Los controles de ventana también tienen ayuda con el puntero.
+        let toolbar_hint_label = toolbar_hint_label.or_else(|| {
+            menu_pointer
+                .filter(|_| !overlay_open && self.tooltip.is_shown())
+                .and_then(|(x, y)| window_control_at(x, y, w.get() as f32))
+                .map(|control| window_control_label(control, self.palette.bg.0 < 0x80))
+        });
         let toolbar_hint_layout = toolbar_hint_label.map(|label| {
             build_menu_layout(label, &mut self.font_cx, &mut self.layout_cx, self.palette)
         });
@@ -16005,7 +16058,7 @@ impl App {
             let x = TOOLBAR_X + index as f32 * TOOLBAR_ITEM_WIDTH;
             let width = TOOLBAR_ITEM_WIDTH - 4.0;
             let right_limit = if custom_window_chrome_enabled() {
-                w.get() as f32 - WINDOW_CONTROL_WIDTH * WINDOW_CONTROL_COUNT
+                window_controls_start(w.get() as f32)
             } else {
                 w.get() as f32 - MARGIN
             };
@@ -16261,20 +16314,16 @@ impl App {
         }
 
         if custom_window_chrome_enabled() {
-            let chrome_start = w.get() as f32 - WINDOW_CONTROL_WIDTH * WINDOW_CONTROL_COUNT;
+            let chrome_start = window_controls_start(w.get() as f32);
             if let Some(rect) =
                 Rect::from_xywh(0.0, WINDOW_CHROME_HEIGHT - 1.0, w.get() as f32, 1.0)
             {
                 pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
             }
-            for (index, control) in [
-                WindowControl::PinOnTop,
-                WindowControl::Minimize,
-                WindowControl::ToggleMaximize,
-                WindowControl::Close,
-            ]
-            .into_iter()
-            .enumerate()
+            for (index, control) in window_control_slots(w.get() as f32)
+                .iter()
+                .copied()
+                .enumerate()
             {
                 let x = chrome_start + index as f32 * WINDOW_CONTROL_WIDTH;
                 let hovered = menu_pointer.is_some_and(|(pointer_x, pointer_y)| {
@@ -16313,6 +16362,39 @@ impl App {
                 let center_y = WINDOW_CHROME_HEIGHT * 0.5;
                 let mut path = tiny_skia::PathBuilder::new();
                 match control {
+                    WindowControl::ToggleTheme => {
+                        if palette.bg.0 < 0x80 {
+                            // Tema de noche: el botón ofrece el sol, un disco con
+                            // ocho rayos.
+                            for step in 0..8 {
+                                let angle = step as f32 * std::f32::consts::FRAC_PI_4;
+                                let (sin, cos) = angle.sin_cos();
+                                path.move_to(center_x + cos * 5.6, center_y + sin * 5.6);
+                                path.line_to(center_x + cos * 7.4, center_y + sin * 7.4);
+                            }
+                            path.push_circle(center_x, center_y, 3.4);
+                        } else {
+                            // Tema de día: el botón ofrece la luna, un creciente.
+                            path.move_to(center_x + 1.0, center_y - 6.5);
+                            path.cubic_to(
+                                center_x - 9.0,
+                                center_y - 6.5,
+                                center_x - 9.0,
+                                center_y + 6.5,
+                                center_x + 1.0,
+                                center_y + 6.5,
+                            );
+                            path.cubic_to(
+                                center_x - 3.5,
+                                center_y + 4.0,
+                                center_x - 3.5,
+                                center_y - 4.0,
+                                center_x + 1.0,
+                                center_y - 6.5,
+                            );
+                            path.close();
+                        }
+                    }
                     WindowControl::PinOnTop => {
                         // Chincheta: cabeza, cuerpo y aguja.
                         path.move_to(center_x - 3.0, center_y - 6.0);
@@ -17838,6 +17920,59 @@ mod pruebas {
     const PRIMERAS_FILAS: usize = 9;
 
     #[test]
+    fn el_boton_de_tema_va_junto_a_la_chincheta_y_se_quita_si_no_cabe() {
+        if !custom_window_chrome_enabled() {
+            return;
+        }
+        for ancho in [640.0_f32, 700.0, 900.0, 1100.0, 1920.0] {
+            let controles = window_control_slots(ancho);
+            // Siempre quedan los cuatro de siempre, en su orden.
+            assert_eq!(
+                &controles[controles.len() - 4..],
+                &[
+                    WindowControl::PinOnTop,
+                    WindowControl::Minimize,
+                    WindowControl::ToggleMaximize,
+                    WindowControl::Close,
+                ]
+            );
+            // Nunca tapan el selector de modo.
+            assert!(
+                window_controls_start(ancho) >= MODE_SWITCH_X + MODE_SWITCH_WIDTH,
+                "{ancho} px"
+            );
+            if controles.len() == 5 {
+                assert_eq!(controles[0], WindowControl::ToggleTheme);
+            }
+            // Cada centro de control devuelve su control.
+            for (indice, control) in controles.iter().enumerate() {
+                let x = window_controls_start(ancho) + WINDOW_CONTROL_WIDTH * (indice as f32 + 0.5);
+                assert_eq!(window_control_at(x, 20.0, ancho), Some(*control));
+            }
+        }
+        // En una ventana ancha hay botón de tema; en el mínimo actual, no.
+        assert_eq!(window_control_slots(1100.0)[0], WindowControl::ToggleTheme);
+        assert_eq!(window_control_slots(640.0)[0], WindowControl::PinOnTop);
+    }
+
+    #[test]
+    fn ctrl_shift_d_cambia_el_tema_aunque_haya_un_panel_abierto() {
+        let mut app = App::for_tests(NIGHT);
+        app.load_for_test("# Título\n\ntexto", DocumentMode::Reading);
+        app.draw_for_test(900, 560);
+        app.show_document_outline();
+        assert!(app.outline_headings.is_some());
+        let antes = app.palette;
+        app.perform_action(AppAction::ToggleTheme);
+        app.theme_transition = None;
+        assert_ne!(app.palette, antes);
+        assert_eq!(
+            action_shortcut(AppAction::ToggleTheme),
+            Some("Ctrl+Shift+D")
+        );
+    }
+
+    #[test]
     fn los_textos_largos_se_recortan_por_ancho_y_nunca_se_salen_de_la_caja() {
         let mut app = App::for_tests(NIGHT);
         let largo = "Investigación: qué hace cada proyecto y qué lecciones dejó para mWmWmW iiiiii";
@@ -18155,12 +18290,11 @@ let x = 1;
             window_control_at(500.0, 20.0, 640.0),
             Some(WindowControl::PinOnTop)
         );
-        const {
-            assert!(
-                MODE_SWITCH_X + MODE_SWITCH_WIDTH
-                    <= 640.0 - WINDOW_CONTROL_WIDTH * WINDOW_CONTROL_COUNT
-            )
-        };
+        // En el mínimo, los controles nunca tapan el selector de modo.
+        assert!(
+            MODE_SWITCH_X + MODE_SWITCH_WIDTH <= window_controls_start(640.0),
+            "los controles de ventana tapan el selector de modo a 640 px"
+        );
         assert_eq!(
             resize_direction_at(2.0, 2.0, 640.0, 480.0, WINDOW_RESIZE_BORDER),
             Some(ResizeDirection::NorthWest)
