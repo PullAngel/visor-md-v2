@@ -52,6 +52,7 @@ Estos documentos deben cambiar cuando cambia el producto o su implementación:
 | [`roadmap.md`](roadmap.md) | Secuencia, dependencias y criterios de salida |
 | [`project-dashboard.md`](project-dashboard.md) | Fotografía compacta de avance, deuda, riesgos y siguiente orden |
 | [`revision-2026-11-13.md`](revision-2026-11-13.md) | Revisión integral: causa raíz de defectos abiertos, brecha con el concepto C y orden de trabajo vigente |
+| [`rediseno-barra-mosaico-ventanas-2026-11-15.md`](rediseno-barra-mosaico-ventanas-2026-11-15.md) | Diseño de la barra y los menús (inventario de las 69 acciones), el mosaico, las ventanas y la asociación de archivos; origen de D-29 a D-37 y las fases 10 a 12 |
 | [`evaluacion-usabilidad-2026-11-14.md`](evaluacion-usabilidad-2026-11-14.md) | Evaluación con QA de UI/UX y usuaria novata (SUS, heurísticas, 44 hallazgos verificados) y plan definitivo de cambios vigente |
 | [`agente-ejecutor.md`](agente-ejecutor.md) | Guía operativa para ejecutar el plan sin acompañamiento: ciclo por tarea, verificación, pruebas visuales, reglas de parada y trampas del código |
 | [`plan-ejecucion-2026-11-14.md`](plan-ejecucion-2026-11-14.md) | Plan de ejecución del rediseño: tareas por fase con función, prueba y criterio de terminado; estado vigente |

@@ -121,6 +121,10 @@ const WORKSPACE_COLUMN_MAX_WIDTH: f32 = 304.0;
 const WORKSPACE_DOCUMENT_MIN_WIDTH: f32 = 360.0;
 const WORKSPACE_DESTINATION_HEIGHT: f32 = 38.0;
 const PANEL_ROW_HEIGHT: f32 = 28.0;
+/// Margen izquierdo del texto de una fila y reserva a la derecha para la barra
+/// de posición y el borde redondeado.
+const NAVIGATION_TEXT_INSET: f32 = 12.0;
+const NAVIGATION_TEXT_RIGHT_INSET: f32 = 16.0;
 const PANEL_PADDING: f32 = 4.0;
 const PANEL_FOOTER_HEIGHT: f32 = 24.0;
 const TOOLBAR_X: f32 = 12.0;
@@ -5476,6 +5480,37 @@ fn build_menu_layout(
     let mut layout: Layout<Brush> = builder.build(label);
     layout.break_all_lines(None);
     layout
+}
+
+/// Como `build_menu_layout`, pero el texto que no cabe en `max_width` se
+/// recorta con «…». Mide el resultado en vez de contar caracteres: las letras
+/// anchas («m», «W») y las angostas («i», «l») ocupan lo que ocupan.
+fn fit_menu_layout(
+    label: &str,
+    font_cx: &mut FontContext,
+    layout_cx: &mut LayoutContext<Brush>,
+    palette: Palette,
+    max_width: f32,
+) -> Layout<Brush> {
+    let full = build_menu_layout(label, font_cx, layout_cx, palette);
+    if full.width() <= max_width {
+        return full;
+    }
+    let chars = label.chars().collect::<Vec<_>>();
+    let (mut low, mut high) = (0, chars.len());
+    let mut best = None;
+    while low < high {
+        let middle = (low + high).div_ceil(2);
+        let candidate = format!("{}…", chars[..middle].iter().collect::<String>().trim_end());
+        let layout = build_menu_layout(&candidate, font_cx, layout_cx, palette);
+        if layout.width() <= max_width {
+            best = Some(layout);
+            low = middle;
+        } else {
+            high = middle - 1;
+        }
+    }
+    best.unwrap_or_else(|| build_menu_layout("…", font_cx, layout_cx, palette))
 }
 
 /// Representacion cacheada de un marcador visible. Los marcadores de texto
@@ -14518,13 +14553,6 @@ impl App {
         } else {
             None
         };
-        let navigation_panel_layouts = navigation_panel_rows.as_ref().map(|rows| {
-            rows.labels()
-                .map(|label| {
-                    build_menu_layout(label, &mut self.font_cx, &mut self.layout_cx, self.palette)
-                })
-                .collect::<Vec<_>>()
-        });
         let navigation_shortcut_layouts = navigation_panel_rows.as_ref().map(|rows| {
             rows.shortcuts
                 .iter()
@@ -14540,6 +14568,34 @@ impl App {
                             None,
                         )
                     })
+                })
+                .collect::<Vec<_>>()
+        });
+        // Cada fila se recorta por su ancho real: el texto nunca se sale de la
+        // caja, sea cual sea la columna o el tamaño de la ventana.
+        let navigation_text_width = if workspace_column_open {
+            workspace_column_geometry(w.get() as f32, h.get() as f32).width
+        } else {
+            PANEL_WIDTH.min((w.get() as f32 - MARGIN * 2.0).max(120.0))
+        } - NAVIGATION_TEXT_INSET
+            - NAVIGATION_TEXT_RIGHT_INSET;
+        let navigation_panel_layouts = navigation_panel_rows.as_ref().map(|rows| {
+            let item_count = rows.items.len();
+            rows.labels()
+                .enumerate()
+                .map(|(row, label)| {
+                    let shortcut_width = row
+                        .checked_sub(1)
+                        .filter(|item| *item < item_count)
+                        .and_then(|item| navigation_shortcut_layouts.as_ref()?.get(item)?.as_ref())
+                        .map_or(0.0, |shortcut| shortcut.width() + 16.0);
+                    fit_menu_layout(
+                        label,
+                        &mut self.font_cx,
+                        &mut self.layout_cx,
+                        self.palette,
+                        navigation_text_width - shortcut_width,
+                    )
                 })
                 .collect::<Vec<_>>()
         });
@@ -17780,6 +17836,29 @@ mod pruebas {
     /// Filas de la primera página de la paleta en una ventana chica: lo más
     /// usado tiene que estar ahí sin desplazarse.
     const PRIMERAS_FILAS: usize = 9;
+
+    #[test]
+    fn los_textos_largos_se_recortan_por_ancho_y_nunca_se_salen_de_la_caja() {
+        let mut app = App::for_tests(NIGHT);
+        let largo = "Investigación: qué hace cada proyecto y qué lecciones dejó para mWmWmW iiiiii";
+        for ancho in [60.0_f32, 120.0, 180.0, 288.0] {
+            let layout = fit_menu_layout(largo, &mut app.font_cx, &mut app.layout_cx, NIGHT, ancho);
+            assert!(layout.width() <= ancho, "{} > {ancho}", layout.width());
+        }
+        // Lo que cabe se deja intacto, sin puntos suspensivos.
+        let corto = fit_menu_layout(
+            "Resumen",
+            &mut app.font_cx,
+            &mut app.layout_cx,
+            NIGHT,
+            288.0,
+        );
+        let completo = build_menu_layout("Resumen", &mut app.font_cx, &mut app.layout_cx, NIGHT);
+        assert_eq!(corto.width(), completo.width());
+        // Sin lugar alguno queda al menos el recorte, sin entrar en pánico.
+        let nada = fit_menu_layout(largo, &mut app.font_cx, &mut app.layout_cx, NIGHT, 1.0);
+        assert!(nada.width() > 0.0);
+    }
 
     #[test]
     fn la_seccion_actual_es_la_del_tercio_superior_y_la_ultima_al_final() {

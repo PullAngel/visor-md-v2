@@ -296,6 +296,73 @@ modo quedaría a criterio del ejecutor.
   cadenas `Tj` de la salida de `export_pdf_bytes` y compara su orden con el
   texto de los bloques.
 
+### Barra, menús, mosaico y ventanas
+
+Diseño completo, inventario de las 69 acciones y riesgos en
+[`rediseno-barra-mosaico-ventanas-2026-11-15.md`](rediseno-barra-mosaico-ventanas-2026-11-15.md).
+
+- **D-29. Menús.** La paleta «···» deja de ser el menú de todo y pasa a ser
+  solo un buscador de acciones. Los menús son **Archivo, Vista y Carpeta**
+  (fila 1) y **Editar, Formato, Párrafo, Insertar, Estudio y Copiar** (fila 2,
+  según el modo). «Más formato Markdown» (`WRITING_ACTIONS`) se elimina; sus
+  acciones ya están en otro menú. Cada `AppAction` está en al menos un menú o
+  en la lista `PALETTE_ONLY`; una prueba lo exige y también que ningún menú
+  repita una acción. La tabla de destinos está en la sección 2 del diseño.
+- **D-30. Tema.** Botón día/noche como **primer** control de ventana (antes de
+  la chincheta). Luna en día, sol en noche. Atajo **Ctrl+Shift+D**. La tecla T
+  sola deja de cambiar el tema. El atajo se resuelve antes que los campos de
+  texto y los atajos de lista. `WINDOW_CONTROL_COUNT` pasa a 5 y el ancho de
+  cada control a 36 px; el botón se quita por debajo de 640 px.
+- **D-31. Cada archivo una sola vez.** Con 2 a 4 paneles, la tira superior lista
+  solo las pestañas que no están en un panel; la cabecera de cada panel es la
+  pestaña de su archivo (nombre, cambios, selector de modo y «Quitar del
+  mosaico» con ícono propio, no ✕). Con un solo panel no hay cabecera y la
+  tira lista todo, como hoy.
+- **D-32. Operaciones del mosaico.**
+  - Divisor arrastrable de 6 px, límites 15–85 %, doble clic vuelve a 50 %,
+    mínimo útil de 240 px por panel y Alt+Shift+flechas en pasos de 5 %.
+  - Intercambio arrastrando una cabecera sobre otra.
+  - Soltar una pestaña de la tira sobre un panel: centro reemplaza, borde
+    (25 % exterior) divide.
+  - Soltar una cabecera sobre la tira: «Quitar del mosaico».
+  - Zonas de soltado con acento al 18 % y borde de acento; Esc cancela; con
+    movimiento reducido no hay fantasma animado.
+  - `normalized_pane_fraction` pasa a 0,15–0,85; nuevos `swap_panes` y
+    `set_fraction_at` en `panes.rs`, con pruebas.
+- **D-33. Ventanas.** Un proceso por ventana.
+  - Registro `%LOCALAPPDATA%\VisorMD\ventanas\<pid>.json` con latido cada 2 s;
+    se ignora y borra pasados 6 s.
+  - Buzón `%LOCALAPPDATA%\VisorMD\buzon\<pid>\<n>.json`, leído al recibir el
+    foco y cada 500 ms.
+  - Lo sin guardar viaja como copia de recuperación; el origen cierra la
+    pestaña solo tras la confirmación del destino.
+  - Módulo nuevo `src/ventanas.rs`, sin hilos por mensaje.
+- **D-34. Asociación de archivos.**
+  - Registro por usuario (solo `HKCU`) con `%SystemRoot%\System32\reg.exe`, sin
+    shell ni dependencias nuevas, y lectura de vuelta para verificar.
+  - Después se abre `ms-settings:defaultapps`: Windows exige que la persona
+    confirme.
+  - Diálogo propio con Markdown (`.md .markdown .mdown .mkdn`), texto (`.txt`)
+    y otros (`.json .yaml .yml .toml .csv`).
+  - Ajuste «Abrir archivos externos»: en la ventana abierta (por defecto) o en
+    una ventana nueva.
+  - La línea de comandos acepta varias rutas.
+  - Módulo nuevo `src/asociacion.rs`; la prueba usa la raíz
+    `HKCU\Software\VisorMDPrueba`, nunca el registro real.
+- **D-35. Texto recortado.** Todo texto de lista se recorta por ancho medido
+  (`fit_menu_layout`, hecho). Una fila recortada muestra su texto completo en el
+  tooltip de D-15. *Supuesto*: la frase del propietario sobre «pasar el cursor
+  por encima» quedó cortada; se tomó como este tooltip y se confirma al
+  probar.
+- **D-36. Menú con secciones.** `enum MenuEntry { Item(AppAction), Heading(&str),
+  Separator }`. Encabezados y separadores no se seleccionan; la navegación los
+  salta. Las alternancias muestran «✓» a la izquierda cuando están activas.
+- **D-37. Barra adaptable.** `top_bar_layout(window_width, mode)` reparte el
+  espacio por prioridad y devuelve rectángulos para dibujo, puntero, foco y
+  tooltip. Lo que no cabe pasa al menú «≡». A 640 px caben los cuatro botones
+  directos, el selector de modo, «≡» y los cinco controles. Prueba de solapes de
+  640 a 2000 px.
+
 ## Fases y tareas
 
 Leyenda: `[ ]` pendiente, `[x]` hecha (con el hash corto del commit), `[~]`
@@ -394,7 +461,7 @@ aparcada (con el motivo).
   sección activa es el último título cuya `y` ≤ `scroll + viewport / 3` y, al
   final del documento, la última. Los títulos se truncan con «…».
 - [x] **3.12** Alternancias con estado: rótulos dinámicos con ✓.
-- [ ] **3.13** Menú contextual:
+- [~] **3.13** Pasa a la 10.7 (menú contextual, junto con los menús nuevos). Alcance original:
   - en Editar: Cortar, Copiar, Pegar y Deshacer;
   - en una tarea: Marcar o Desmarcar;
   - en un enlace: Abrir y Copiar dirección;
@@ -434,11 +501,9 @@ Es independiente de las fases 2 y 3. Toca solo `editor.rs` y las funciones
   nombre y chincheta) y sin ✕.
 - [ ] **5.4** Abrir un archivo reemplaza la pestaña inicial si no tiene
   identidad, está vacía y no está sucia.
-- [ ] **5.5** Cerrar una pestaña conserva la división: solo se quitan las hojas
-  de ese documento (`DocumentPaneTree` en `panes.rs`, con prueba allí).
-- [ ] **5.6** Un panel nuevo abre en Leer (`choose_document_pane_split`).
-- [ ] **5.7** Las cabeceras de panel usan el mismo componente de selector de
-  modo, a escala 0,85.
+- [~] **5.5** Pasa a la 11.7 (mosaico).
+- [~] **5.6** Pasa a la 11.7 (mosaico).
+- [~] **5.7** Pasa a la 11.1 (mosaico).
 - [ ] **5.8** Cierre de fase: referencias `dos-pestanas`, `pestana-fijada` y
   `division`; `design-critique`.
 
@@ -542,6 +607,97 @@ Es independiente de las fases 2 y 3. Toca solo `editor.rs` y las funciones
   y [`manual-qa-v2.md`](manual-qa-v2.md); entregar el ejecutable al
   propietario.
 
+### Fase 10 · Barra, menús y tema
+
+Va después de la 3 y antes de la 5: los menús nuevos reemplazan lo que la 3.13
+iba a ampliar, y el texto de la fase 7 se escribe ya sobre ellos.
+
+- [x] **10.1** D-35 (parte hecha): el texto de las listas se recorta por ancho
+  medido, no por caracteres (`fit_menu_layout`, prueba
+  `los_textos_largos_se_recortan_por_ancho_y_nunca_se_salen_de_la_caja`).
+- [ ] **10.2** D-30 botón día/noche y Ctrl+Shift+D:
+  - `WindowControl::ToggleTheme` primero en `window_control_at`; contador y
+    ancho a 5 × 36; ícono luna/sol con trazos; tooltip con atajo;
+  - quitar el manejo de la tecla T sola (dos sitios: `window_event` y
+    `handle_key`) y resolver Ctrl+Shift+D junto a Ctrl+Shift+T;
+  - actualizar `AppAction::ToggleTheme::label`, `ui_target.rs` y las pruebas
+    de controles (`window_control_at(...)`);
+  - prueba: con el Índice abierto, Ctrl+Shift+D cambia el tema; la T sola no.
+- [ ] **10.3** D-35 tooltip de texto completo en filas recortadas (Índice,
+  Notas, Búsqueda, Notas que enlazan aquí, paleta y menús).
+- [ ] **10.4** D-36 `MenuEntry` y su navegación (`list_view.rs`, `panel_list.rs`):
+  encabezados y separadores no seleccionables, «✓» a la izquierda. Pruebas
+  de navegación con saltos.
+- [ ] **10.5** D-37 `top_bar_layout` y la prueba de solapes de 640 a 2000 px.
+  Reemplaza `PRIMARY_TOOLBAR_ACTIONS`, `MODE_SWITCH_X` y los cálculos
+  repetidos (`toolbar_button_x`, `toolbar_action_at`, foco F6, tooltip, dibujo).
+  Referencias de imagen regeneradas a propósito.
+- [ ] **10.6** Menús Archivo, Vista y Carpeta (fila 1) con las entradas de la
+  sección 3.4 del diseño; apertura bajo su botón, conmutación al pasar el
+  puntero con uno abierto, F10 y flechas.
+- [ ] **10.7** Fila 2: menús Editar, Formato, Párrafo, Insertar, Estudio y Copiar;
+  eliminar «Más» y `WRITING_ACTIONS`; en lectura, Índice, Plegar sección y
+  Copiar. Absorbe la 3.13 (menú contextual: Cortar, Copiar, Pegar, Deshacer,
+  Formato, Párrafo, enlace, tarea y tabla).
+- [ ] **10.8** Acciones nuevas: `Undo`, `Redo`, `Copy`, `Paste`, `MoveToNewWindow`
+  (queda deshabilitada hasta la 12.3) y las que pidan los menús.
+- [ ] **10.9** La paleta «···» pasa a ser buscador: ícono propio, la categoría
+  como texto atenuado a la derecha («Archivo», «Párrafo»…). Prueba de
+  inventario de D-29 (toda acción en un menú o en `PALETTE_ONLY`, sin
+  repetidas en un menú).
+- [ ] **10.10** Cierre de fase: referencias `barra-640`, `barra-1100`,
+  `menu-archivo`, `menu-vista`, `menu-parrafo`; `design-critique`;
+  `/code-review`; ejecutable nuevo.
+
+### Fase 11 · Mosaico
+
+Absorbe las tareas 5.5, 5.6 y 5.7. Va después de la 5.
+
+- [ ] **11.1** D-31: la cabecera de panel es la pestaña del archivo (nombre,
+  cambios, selector de modo a escala 0,85 y «Quitar del mosaico» con ícono
+  propio); la tira filtra los documentos que están en un panel. Con un solo
+  panel, todo como hoy. Absorbe la 5.7.
+- [ ] **11.2** D-32 divisor: `normalized_pane_fraction` 0,15–0,85,
+  `set_fraction_at`, objetivo `UiTarget::PaneDivider`, cursor de redimensionar,
+  arrastre, doble clic a 50 % y mínimo de 240 px. Pruebas en `panes.rs`.
+- [ ] **11.3** Teclado Alt+Shift+flechas (pasos de 5 %).
+- [ ] **11.4** `swap_panes` y arrastre de cabecera sobre cabecera, con fantasma y
+  resalte del destino (sin fantasma con movimiento reducido).
+- [ ] **11.5** Soltar una pestaña de la tira sobre un panel (centro reemplaza,
+  borde divide) y soltar una cabecera sobre la tira (quitar). Zonas con
+  acento al 18 %; Esc cancela.
+- [ ] **11.6** Foco visible: filete de acento de 2 px y cabecera con `palette.tab`
+  en el panel enfocado.
+- [ ] **11.7** Cerrar una pestaña conserva la división (era la 5.5) y un panel
+  nuevo abre en Leer (era la 5.6).
+- [ ] **11.8** Cierre de fase: referencias `mosaico-2`, `mosaico-4`,
+  `mosaico-soltar`; `design-critique`; ejecutable nuevo.
+
+### Fase 12 · Ventanas y sistema
+
+Va después de la 8 y antes de la 9.
+
+- [ ] **12.1** D-33 `src/ventanas.rs`: registro con latido, buzón, lectura al
+  recibir el foco y cada 500 ms. Pruebas con una raíz temporal.
+- [ ] **12.2** Abrir desde fuera en la ventana existente: el proceso nuevo deja el
+  mensaje, activa la ventana y sale. Varias rutas por línea de comandos.
+- [ ] **12.3** Sacar una pestaña a una ventana nueva: arrastrar fuera, menú
+  «Mover a ventana nueva» y doble clic en una cabecera de panel. Lo sin
+  guardar viaja como copia de recuperación y el origen cierra tras la
+  confirmación.
+- [ ] **12.4** Traer una pestaña a otra ventana: soltar sobre la tira o un panel de
+  otra ventana y «Mover a otra ventana ▸». La ventana que queda vacía se
+  cierra sola.
+- [ ] **12.5** D-34 `src/asociacion.rs`: registrar, leer de vuelta, quitar, abrir
+  `ms-settings:defaultapps`; diálogo con extensiones y el ajuste de apertura
+  externa; entrada en Archivo. Prueba con la raíz `VisorMDPrueba`.
+- [ ] **12.6** Línea de la pantalla de bienvenida (D-27) que ofrece configurar la
+  asociación, una sola vez.
+- [ ] **12.7** Documentar el paquete: `.desktop` con tipos MIME y `xdg-mime default`
+  para Linux; el instalador de Windows reutiliza 12.5 (`docs/roadmap.md`).
+- [ ] **12.8** Cierre de fase: prueba manual con dos ventanas, arrastre entre ellas,
+  apertura desde el Explorador y desde Claude; ejecutable nuevo.
+
 ## Secuencia
 
 ```text
@@ -549,7 +705,13 @@ Fase 1 ─┬─ Fase 2 ── Fase 3 ── Fase 5 ── Fase 8 ─┬─ Fase
 Fase 4 ─┘            Fase 6 ── Fase 7 ───────────┘
 ```
 
-Orden por defecto para un solo ejecutor: 1 → 4 → 2 → 3 → 5 → 6 → 7 → 8 → 9.
+Orden por defecto para un solo ejecutor:
+1 → 4 → 2 → 3 → 10 → 5 → 11 → 6 → 7 → 8 → 12 → 9.
+
+La fase 10 va antes de la 5 y la 7 porque los menús nuevos cambian los textos y
+las barras sobre las que ellas trabajan; la 11 absorbe tres tareas de la 5; la 12
+va antes de la re-evaluación para que esta pruebe también ventanas y
+asociación.
 
 ## Estado
 
@@ -559,9 +721,12 @@ Orden por defecto para un solo ejecutor: 1 → 4 → 2 → 3 → 5 → 6 → 7 �
 | 1 | Hecho | a76ddca, 5f9c2ae, 1a74b6f; ejecutable entregado |
 | 4 | Hecho | c441983, c3b3a76, 1c6f87a, 98f6793 y el ajuste de bloques |
 | 2 | Hecho | 01bacf8, 898665a, e127b66, 9d1a167, 5888201 y la capa de tooltip |
-| 3 | Casi hecha | Hechas 3.1 a 3.8, 3.9b, 3.10 a 3.12. Pendientes: 3.9 (caja de búsqueda con borde y barra anclada) y 3.13 (menú contextual completo) |
-| 5 | En curso | Hecha 5.1 (verde propio de la pestaña). Pendientes 5.2 a 5.8 |
+| 3 | Casi hecha | Hechas 3.1 a 3.8, 3.9b, 3.10 a 3.12. Pendientes: 3.9 (caja de búsqueda con borde y barra anclada); la 3.13 pasa a la 10.7 |
+| 10 | En curso | Hecha 10.1 (texto recortado por ancho). Siguiente: 10.2 (botón y atajo de tema) |
+| 5 | En curso | Hecha 5.1 (verde propio de la pestaña). Pendientes 5.2 a 5.4 y 5.8; la 5.5 a 5.7 pasan a la fase 11 |
+| 11 | Pendiente | Mosaico: cabecera como pestaña, divisor, intercambio, soltado |
 | 6 | Pendiente | — |
 | 7 | Pendiente | — |
 | 8 | En curso | Hecho el hover y destello de Copiar (8.2 parcial). Pendientes el resto de 8 |
+| 12 | Pendiente | Ventanas (un proceso por ventana) y asociación de archivos |
 | 9 | Pendiente | — |
