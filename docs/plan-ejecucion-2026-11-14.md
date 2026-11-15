@@ -372,9 +372,11 @@ aparcada (con el motivo).
   notas que enlazan aquí, el diagnóstico, los símbolos y la división.
 - [x] **3.6** La rueda va a la lista bajo el puntero (`MouseWheel`).
   - Prueba: con un puntero sobre la columna, la rueda no cambia `scroll`.
-- [ ] **3.7** D-18 geometría, `draw_floating_surface` y barra de desplazamiento.
+- [x] **3.7** D-18 geometría, `draw_floating_surface` y barra de desplazamiento.
   - Referencias: `paleta`, `menu-bloques` y `menu-mas` a 480 y 720 de alto.
-- [ ] **3.8** D-19 filas y `shortcut()`.
+- [x] **3.8** D-19 filas y `shortcut()` (hecho: atajo a la derecha y filas
+  redondeadas; los íconos de fila y los grupos de la paleta quedan para la
+  fase 7, junto con los íconos nuevos).
   - Prueba: ningún `label()` contiene «·».
 - [ ] **3.9** Caja de búsqueda con borde, cursor y estado vacío «Escribí para
   buscar…» en la paleta y en la búsqueda de carpeta. Buscar en documento pasa a

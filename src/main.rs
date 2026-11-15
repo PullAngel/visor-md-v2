@@ -113,6 +113,8 @@ const STATUS_HEIGHT: f32 = 28.0;
 const MAX_TAB_WIDTH: f32 = 220.0;
 const PANEL_X: f32 = MARGIN;
 const PANEL_Y: f32 = 150.0;
+/// Los paneles flotantes se abren justo bajo la barra contextual.
+const FLOATING_PANEL_Y: f32 = DOCUMENT_VIEWPORT_TOP + 4.0;
 const PANEL_WIDTH: f32 = 420.0;
 const WORKSPACE_COLUMN_MIN_WIDTH: f32 = 240.0;
 const WORKSPACE_COLUMN_MAX_WIDTH: f32 = 304.0;
@@ -568,21 +570,28 @@ fn navigation_panel_geometry(
     window_width: f32,
     window_height: f32,
     item_count: usize,
+    anchor_x: Option<f32>,
 ) -> PanelGeometry {
     let width = PANEL_WIDTH.min((window_width - MARGIN * 2.0).max(120.0));
-    let x = PANEL_X.min((window_width - width).max(0.0));
+    let max_x = (window_width - width).max(0.0);
+    let x = match anchor_x {
+        // Anclado a un botón: queda un respiro con el borde derecho.
+        Some(anchor) => anchor.min((max_x - 12.0).max(0.0)).max(0.0),
+        None => PANEL_X.min(max_x),
+    };
     let requested_height = PANEL_PADDING * 2.0
         + PANEL_ROW_HEIGHT
         + PANEL_ROW_HEIGHT * item_count as f32
         + PANEL_FOOTER_HEIGHT;
-    let available_height = (window_height - PANEL_Y - STATUS_HEIGHT - 12.0).max(PANEL_ROW_HEIGHT);
+    let available_height =
+        (window_height - FLOATING_PANEL_Y - STATUS_HEIGHT - 12.0).max(PANEL_ROW_HEIGHT);
     let height = requested_height.min(available_height);
     PanelGeometry {
         x,
-        y: PANEL_Y,
+        y: FLOATING_PANEL_Y,
         width,
         height,
-        items_y: PANEL_Y + PANEL_PADDING + PANEL_ROW_HEIGHT,
+        items_y: FLOATING_PANEL_Y + PANEL_PADDING + PANEL_ROW_HEIGHT,
     }
 }
 
@@ -717,6 +726,8 @@ fn panel_contains_point(x: f32, y: f32, geometry: PanelGeometry) -> bool {
 struct NavigationPanelRows {
     title: String,
     items: Vec<(bool, String)>,
+    /// Atajo de cada fila, alineado a la derecha. Vacío si el panel no tiene.
+    shortcuts: Vec<Option<&'static str>>,
     footer: String,
 }
 
@@ -1091,6 +1102,34 @@ fn tab_label(path: &str, dirty: bool, pinned: bool, max_chars: usize) -> String 
 fn append_limited_text(destination: &mut String, text: &str, limit: usize) {
     let remaining = limit.saturating_sub(destination.chars().count());
     destination.extend(text.chars().take(remaining));
+}
+
+/// Borde izquierdo del botón de la barra que dispara `action`.
+fn toolbar_button_x(action: AppAction, window_width: f32, mode: DocumentMode) -> Option<f32> {
+    if let Some(index) = PRIMARY_TOOLBAR_ACTIONS
+        .iter()
+        .position(|item| *item == action)
+    {
+        return Some(TOOLBAR_X + index as f32 * TOOLBAR_ITEM_WIDTH);
+    }
+    let index = contextual_toolbar_actions(mode)
+        .iter()
+        .position(|item| *item == action)?;
+    contextual_toolbar_item_geometry(index, window_width, mode).map(|geometry| geometry.x)
+}
+
+/// Nombre de una acción sin su atajo: «Guardar · Ctrl+S» es «Guardar».
+fn action_name(action: AppAction) -> &'static str {
+    let label = action.label();
+    label.rsplit_once(" · ").map_or(label, |(name, _)| name)
+}
+
+/// Atajo de una acción, si lo tiene.
+fn action_shortcut(action: AppAction) -> Option<&'static str> {
+    action
+        .label()
+        .rsplit_once(" · ")
+        .map(|(_, shortcut)| shortcut)
 }
 
 /// Texto que un evento de teclado aporta a un campo de la interfaz. En
@@ -6825,6 +6864,8 @@ struct App {
     tooltip: ui_motion::TooltipTimer,
     /// Desplazamiento de la lista abierta en un panel o menú.
     panel_scroll: list_view::ListScroll,
+    /// Borde izquierdo del botón que abrió el menú, para anclarlo debajo.
+    panel_anchor: Option<f32>,
     /// Texto que un IME todavía está componiendo. No forma parte de la fuente
     /// ni puede llegar al guardado hasta que Windows emite un `Commit`.
     ime_preedit: Option<String>,
@@ -7116,6 +7157,7 @@ impl App {
             ui_motion: ui_motion::UiMotion::default(),
             tooltip: ui_motion::TooltipTimer::default(),
             panel_scroll: list_view::ListScroll::default(),
+            panel_anchor: None,
             ime_preedit: None,
             tab_drag_id: None,
             selecting: false,
@@ -10125,7 +10167,12 @@ impl App {
         Some(if self.workspace_column_is_open() {
             workspace_column_geometry(width, height)
         } else {
-            navigation_panel_geometry(width, height, floating_rows(item_count, height))
+            navigation_panel_geometry(
+                width,
+                height,
+                floating_rows(item_count, height),
+                self.panel_anchor,
+            )
         })
     }
 
@@ -10151,6 +10198,7 @@ impl App {
         self.command_palette = None;
         self.command_palette_query.clear();
         self.command_palette_scope = CommandPaletteScope::All;
+        self.panel_anchor = None;
     }
 
     fn activate_panel_at(&mut self, x: f32, y: f32) -> bool {
@@ -14114,6 +14162,7 @@ impl App {
         let workspace_panel_capacity =
             panel_capacity(workspace_column_geometry(w.get() as f32, h.get() as f32));
         let panel_key = self.list_key();
+        let panel_anchor = self.panel_anchor;
         let floating_cap = floating_capacity(h.get() as f32);
         // Filas visibles de la lista abierta, para su indicador de posición.
         let docked_panel = self.workspace_column_is_open();
@@ -14134,6 +14183,7 @@ impl App {
                 .panel_scroll
                 .sync(panel_key, SYMBOLS.len(), selected, floating_cap);
             Some(NavigationPanelRows {
+                shortcuts: Vec::new(),
                 title: "Insertar símbolo o emoji".to_string(),
                 items: range
                     .clone()
@@ -14152,6 +14202,7 @@ impl App {
                 .panel_scroll
                 .sync(panel_key, candidates.len(), selected, floating_cap);
             Some(NavigationPanelRows {
+                shortcuts: Vec::new(),
                 title: format!("Dividir {} · ¿qué mostrar en el panel nuevo?", axis.label()),
                 items: range
                     .clone()
@@ -14199,9 +14250,13 @@ impl App {
                     .map(|index| {
                         (
                             index == selected,
-                            abbreviated_label(actions[index].label(), 48),
+                            abbreviated_label(action_name(actions[index]), 48),
                         )
                     })
+                    .collect(),
+                shortcuts: range
+                    .clone()
+                    .map(|index| action_shortcut(actions[index]))
                     .collect(),
                 footer: panel_footer(actions.len(), range),
             })
@@ -14224,6 +14279,7 @@ impl App {
                 )
             };
             Some(NavigationPanelRows {
+                shortcuts: Vec::new(),
                 title: abbreviated_label(&title, 48),
                 items: range
                     .clone()
@@ -14247,6 +14303,7 @@ impl App {
                 .map(|(root, index)| (Some(root.root()), index.notes.len()))
                 .unwrap_or((None, 0));
             Some(NavigationPanelRows {
+                shortcuts: Vec::new(),
                 title: workspace_panel_title(workspace_root, note_count),
                 items: range
                     .clone()
@@ -14265,6 +14322,7 @@ impl App {
                 self.panel_scroll
                     .sync(panel_key, paths.len(), selected, workspace_panel_capacity);
             Some(NavigationPanelRows {
+                shortcuts: Vec::new(),
                 title: backlinks_panel_title(paths.len()),
                 items: range
                     .clone()
@@ -14283,6 +14341,7 @@ impl App {
                 self.panel_scroll
                     .sync(panel_key, rows.len(), selected, workspace_panel_capacity);
             Some(NavigationPanelRows {
+                shortcuts: Vec::new(),
                 title: format!("Enlaces de bóveda · {}", rows.len()),
                 items: range
                     .clone()
@@ -14299,6 +14358,7 @@ impl App {
                 workspace_panel_capacity,
             );
             Some(NavigationPanelRows {
+                shortcuts: Vec::new(),
                 title: format!("Índice · {} encabezados", headings.len()),
                 items: range
                     .clone()
@@ -14313,6 +14373,24 @@ impl App {
             rows.labels()
                 .map(|label| {
                     build_menu_layout(label, &mut self.font_cx, &mut self.layout_cx, self.palette)
+                })
+                .collect::<Vec<_>>()
+        });
+        let navigation_shortcut_layouts = navigation_panel_rows.as_ref().map(|rows| {
+            rows.shortcuts
+                .iter()
+                .map(|shortcut| {
+                    shortcut.map(|text| {
+                        build_ui_text_layout(
+                            text,
+                            &mut self.font_cx,
+                            &mut self.layout_cx,
+                            self.palette.dim,
+                            12.0,
+                            false,
+                            None,
+                        )
+                    })
                 })
                 .collect::<Vec<_>>()
         });
@@ -16288,20 +16366,30 @@ impl App {
             let geometry = if workspace_column_open {
                 workspace_column_geometry(w.get() as f32, h.get() as f32)
             } else {
-                navigation_panel_geometry(w.get() as f32, h.get() as f32, rows.items.len())
+                navigation_panel_geometry(
+                    w.get() as f32,
+                    h.get() as f32,
+                    rows.items.len(),
+                    panel_anchor,
+                )
             };
-            if let Some(rect) =
-                Rect::from_xywh(geometry.x, geometry.y, geometry.width, geometry.height)
-            {
-                pixmap.fill_rect(
-                    rect,
-                    if workspace_column_open {
-                        &elevated_paint
-                    } else {
-                        &floating_paint
-                    },
-                    Transform::identity(),
-                    None,
+            if workspace_column_open {
+                if let Some(rect) =
+                    Rect::from_xywh(geometry.x, geometry.y, geometry.width, geometry.height)
+                {
+                    pixmap.fill_rect(rect, &elevated_paint, Transform::identity(), None);
+                }
+            } else {
+                // Los menús y la paleta flotan con la misma elevación que los
+                // avisos y los diálogos.
+                draw_floating_surface(
+                    pixmap,
+                    geometry.x,
+                    geometry.y,
+                    geometry.width,
+                    geometry.height,
+                    8.0,
+                    *palette,
                 );
             }
             if workspace_column_open
@@ -16458,6 +16546,22 @@ impl App {
                                 geometry.x + 12.0,
                                 y + 7.0,
                             );
+                        }
+                    }
+                }
+                if is_item
+                    && let Some(Some(shortcut)) = navigation_shortcut_layouts
+                        .as_ref()
+                        .and_then(|layouts| layouts.get(row - 1))
+                {
+                    let shortcut_x =
+                        geometry.x + geometry.width - PANEL_PADDING - 16.0 - shortcut.width();
+                    for line in shortcut.lines() {
+                        for entry in line.items() {
+                            if let PositionedLayoutItem::GlyphRun(run) = entry {
+                                draw_run_background(pixmap, &run, shortcut_x, y + 7.5);
+                                draw_glyph_run(pixmap, scale_cx, glyphs, &run, shortcut_x, y + 7.5);
+                            }
                         }
                     }
                 }
@@ -18142,7 +18246,7 @@ let x = 1;
 
     #[test]
     fn un_panel_largo_mantiene_visible_la_fila_elegida() {
-        let geometry = navigation_panel_geometry(900.0, 560.0, 9);
+        let geometry = navigation_panel_geometry(900.0, 560.0, 9, None);
         assert_eq!(panel_window(30, 0, 9), 0..9);
         assert_eq!(panel_window(30, 15, 9), 11..20);
         assert_eq!(panel_window(30, 29, 9), 21..30);
@@ -18183,10 +18287,10 @@ let x = 1;
 
     #[test]
     fn la_geometria_del_panel_comparte_ancho_para_dibujo_y_click() {
-        let geometry = navigation_panel_geometry(200.0, 480.0, 9);
+        let geometry = navigation_panel_geometry(200.0, 480.0, 9, None);
         assert_eq!(geometry.width, 120.0);
         assert_eq!(geometry.x, 48.0);
-        assert!(geometry.height <= 480.0 - PANEL_Y - STATUS_HEIGHT - 12.0);
+        assert!(geometry.height <= 480.0 - FLOATING_PANEL_Y - STATUS_HEIGHT - 12.0);
         assert_eq!(
             panel_item_at(
                 geometry.x + geometry.width + 0.5,
@@ -19406,7 +19510,7 @@ let x = 1;
 
     #[test]
     fn el_clic_fuera_del_panel_se_distingue_del_marco_y_las_filas() {
-        let panel = navigation_panel_geometry(1_200.0, 800.0, 4);
+        let panel = navigation_panel_geometry(1_200.0, 800.0, 4, None);
 
         assert!(panel_contains_point(panel.x + 1.0, panel.y + 1.0, panel));
         assert!(panel_contains_point(

@@ -12,7 +12,7 @@ const MAX_FLOATING_ROWS: usize = 14;
 
 /// Filas que caben en un panel flotante según el alto de la ventana.
 pub(crate) fn floating_capacity(window_height: f32) -> usize {
-    let overhead = PANEL_Y
+    let overhead = FLOATING_PANEL_Y
         + STATUS_HEIGHT
         + 12.0
         + PANEL_PADDING * 2.0

@@ -109,6 +109,10 @@ impl App {
             SurfacePress::Close => self.close_open_surface(),
             SurfacePress::Open => {
                 self.close_open_surface();
+                // El menú se abre justo debajo del botón que lo pidió.
+                if let Some((width, _)) = self.view_size() {
+                    self.panel_anchor = toolbar_button_x(action, width, self.document.mode);
+                }
                 self.perform_action(action);
             }
         }
