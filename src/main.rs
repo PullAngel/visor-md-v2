@@ -14034,10 +14034,10 @@ impl App {
             }
         }
 
-        if self.autoscroll_selection(panes.source.y, viewport_height) {
-            if let Some(window) = &window {
-                window.request_redraw();
-            }
+        if self.autoscroll_selection(panes.source.y, viewport_height)
+            && let Some(window) = &window
+        {
+            window.request_redraw();
         }
 
         let menu = self.context_menu.clone();
