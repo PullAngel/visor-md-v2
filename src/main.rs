@@ -6666,6 +6666,30 @@ fn fitted_image_rect(
     ))
 }
 
+/// Canal por el que el trabajo en segundo plano avisa al bucle de eventos. En
+/// pruebas no hay bucle: `AppNotifier::disconnected()` descarta los avisos, y
+/// quien lo prueba carga documentos de forma sincrónica.
+#[derive(Clone)]
+struct AppNotifier(Option<EventLoopProxy<AppEvent>>);
+
+impl AppNotifier {
+    fn new(proxy: EventLoopProxy<AppEvent>) -> Self {
+        Self(Some(proxy))
+    }
+
+    #[cfg(test)]
+    fn disconnected() -> Self {
+        Self(None)
+    }
+
+    fn send_event(&self, event: AppEvent) -> Result<(), ()> {
+        match &self.0 {
+            Some(proxy) => proxy.send_event(event).map_err(|_| ()),
+            None => Err(()),
+        }
+    }
+}
+
 struct App {
     started: Instant,
     document: DocumentState,
@@ -6724,7 +6748,7 @@ struct App {
     /// Solo existe después de una confirmación puntual. No persiste permisos,
     /// bytes comprimidos ni más de una imagen decodificada a la vez.
     image_preview: Option<ImagePreview>,
-    proxy: EventLoopProxy<AppEvent>,
+    proxy: AppNotifier,
     window: Option<Rc<Window>>,
     surface: Option<softbuffer::Surface<Rc<Window>, Rc<Window>>>,
     font_cx: FontContext,
@@ -6938,6 +6962,226 @@ impl ThemeTransition {
         let elapsed = now.saturating_duration_since(self.started);
         let elapsed_frames = elapsed.as_nanos() / THEME_TRANSITION_FRAME.as_nanos();
         self.started + THEME_TRANSITION_FRAME.mul_f64((elapsed_frames + 1) as f64)
+    }
+}
+
+/// Todo lo que `App::new` necesita de `main`: la configuración ya leída, la
+/// sesión de recuperación ya iniciada y el canal hacia el bucle de eventos.
+struct AppInit {
+    started: Instant,
+    settings: Settings,
+    recovery: Option<RecoverySession>,
+    recovery_privacy_notice_pending: bool,
+    font_cx: FontContext,
+    proxy: AppNotifier,
+    opening_path: Option<String>,
+    initial_document_request: u64,
+    bench: Option<u32>,
+    exact_measure: bool,
+    log: Vec<String>,
+}
+
+impl App {
+    fn new(init: AppInit) -> Self {
+        let AppInit {
+            started,
+            settings,
+            recovery,
+            recovery_privacy_notice_pending,
+            font_cx,
+            proxy,
+            opening_path,
+            initial_document_request,
+            bench,
+            exact_measure,
+            log,
+        } = init;
+        let recovery_enabled = settings.recovery_enabled;
+        let reduce_motion = settings.reduce_motion;
+        let initial_document_id = NEXT_DOCUMENT_ID.fetch_add(1, Ordering::Relaxed);
+        let document_panes = DocumentPaneTree::single(initial_document_id);
+        let focused_document_pane = document_panes.first_pane_id();
+        Self {
+            started,
+            document: DocumentState {
+                id: initial_document_id,
+                path: opening_path
+                    .clone()
+                    .unwrap_or_else(|| "sin título.md".to_string()),
+                content_kind: opening_path
+                    .as_deref()
+                    .map(|path| DocumentContentKind::for_path(std::path::Path::new(path)))
+                    .unwrap_or(DocumentContentKind::Markdown),
+                pinned: false,
+                source: TextBuffer::new(),
+                source_metadata: TextMetadata::default(),
+                source_identity: None,
+                source_baseline_bytes: None,
+                baseline_generation: 0,
+                external_unavailable_generation: None,
+                source_editor: SourceEditor::new(),
+                mode: if opening_path.is_some() {
+                    DocumentMode::Reading
+                } else {
+                    DocumentMode::SourceEditing
+                },
+                split_orientation: SplitOrientation::SideBySide,
+                rendered_blocks: Vec::new(),
+                metrics: DocumentMetrics::default(),
+                metrics_cache: None,
+                blocks: Vec::new(),
+                safe_mode: None,
+                scroll: 0.0,
+                scroll_anchor: None,
+                reading_selection: None,
+                pending_heading: None,
+                pending_block: None,
+                folded_headings: HashSet::new(),
+                folded_callouts: HashSet::new(),
+                pending_recovery: None,
+            },
+            inactive_documents: Vec::new(),
+            tab_order: vec![initial_document_id],
+            document_panes,
+            focused_document_pane,
+            external_checks_in_flight: HashMap::new(),
+            saves_in_flight: HashSet::new(),
+            settings,
+            recovery_enabled,
+            recovery,
+            recovery_privacy_notice_pending,
+            workspace: None,
+            workspace_request: 0,
+            workspace_generation: 0,
+            workspace_generation_guard: Arc::new(AtomicU64::new(0)),
+            workspace_cancel: None,
+            workspace_check_in_flight: None,
+            workspace_stale: false,
+            document_request: initial_document_request,
+            open_requests: if opening_path.is_some() {
+                HashMap::from([(initial_document_id, initial_document_request)])
+            } else {
+                HashMap::new()
+            },
+            view_requests: HashMap::new(),
+            view_request: 0,
+            image_request: 0,
+            image_preview: None,
+            proxy,
+            window: None,
+            surface: None,
+            font_cx,
+            layout_cx: LayoutContext::new(),
+            scale_cx: ScaleContext::new(),
+            glyphs: GlyphCache::new(),
+            pixmap: None,
+            slots: Vec::new(),
+            visible_blocks: Vec::new(),
+            live: HashMap::new(),
+            doc_height: 0.0,
+            laid_for_width: -1.0,
+            preview_slots: Vec::new(),
+            preview_visible_blocks: Vec::new(),
+            preview_live: HashMap::new(),
+            preview_height: 0.0,
+            preview_laid_for_width: -1.0,
+            scale_factor: 1.0,
+            scroll: 0.0,
+            first_paint_done: false,
+            frames: 0,
+            frame_time_total: 0.0,
+            bench,
+            exact_measure,
+            exact_after_edit: false,
+            inactive_pane_caches: HashMap::new(),
+            focused_pane_raster: None,
+            log,
+            palette: NIGHT,
+            theme_transition: None,
+            reduce_motion,
+            mode_transition: None,
+            pointer: None,
+            ime_preedit: None,
+            tab_drag_id: None,
+            selecting: false,
+            selection: None,
+            modifiers: ModifiersState::empty(),
+            text_cursor_hover: false,
+            hover_destination: None,
+            focused_link: None,
+            focus_destination: None,
+            context_menu: None,
+            search_query: None,
+            search_match: 0,
+            workspace_search_query: None,
+            workspace_search_match: 0,
+            workspace_paths: None,
+            workspace_path_match: 0,
+            collapsed_workspace_dirs: HashSet::new(),
+            backlink_paths: None,
+            backlink_match: 0,
+            link_diagnostics: None,
+            link_diagnostic_match: 0,
+            outline_headings: None,
+            outline_match: 0,
+            command_palette: None,
+            command_palette_query: String::new(),
+            command_palette_scope: CommandPaletteScope::All,
+            pane_split_picker: None,
+            symbol_picker: None,
+            floating_outline_rows: Vec::new(),
+            pane_split_candidates: Vec::new(),
+            pane_split_match: 0,
+            toolbar_focus: None,
+            clipboard: None,
+            notice: Some(if opening_path.is_some() {
+                "cargando documento".to_string()
+            } else {
+                "documento nuevo · Ctrl+Shift+S para elegir destino".to_string()
+            }),
+            notice_visible_until: None,
+            code_copied: None,
+            preview_scroll: 0.0,
+            reveal_cursor_pending: false,
+            dialog: None,
+            dialog_document: None,
+            dialog_buttons: Vec::new(),
+            close_tab_after_save: None,
+            exit_requested: false,
+            pinned_on_top: false,
+            pending_image_destination: None,
+            fatal_error: false,
+        }
+    }
+
+    /// App sin ventana ni bucle de eventos, con solo las fuentes embebidas,
+    /// para dibujar cuadros en pruebas. No lee ni escribe configuración, ni
+    /// recuperación, y no anima nada.
+    #[cfg(test)]
+    fn for_tests(palette: Palette) -> Self {
+        let mut font_cx = FontContext {
+            collection: parley::fontique::Collection::new(parley::fontique::CollectionOptions {
+                shared: false,
+                system_fonts: false,
+            }),
+            source_cache: parley::fontique::SourceCache::default(),
+        };
+        register_embedded_fonts(&mut font_cx);
+        let mut app = Self::new(AppInit {
+            started: Instant::now(),
+            settings: Settings::for_tests(),
+            recovery: None,
+            recovery_privacy_notice_pending: false,
+            font_cx,
+            proxy: AppNotifier::disconnected(),
+            opening_path: None,
+            initial_document_request: 0,
+            bench: None,
+            exact_measure: false,
+            log: Vec::new(),
+        });
+        app.palette = palette;
+        app
     }
 }
 
@@ -17030,168 +17274,26 @@ fn main() {
     ));
 
     let settings = Settings::load();
-    let recovery_enabled = settings.recovery_enabled;
-    let reduce_motion = settings.reduce_motion;
     let recovery = settings
         .recovery_enabled
         .then(RecoverySession::start)
         .and_then(Result::ok);
     let recovery_privacy_notice_pending =
         recovery.is_some() && RecoverySession::privacy_notice_needed().unwrap_or(false);
-    let initial_document_id = NEXT_DOCUMENT_ID.fetch_add(1, Ordering::Relaxed);
-    let document_panes = DocumentPaneTree::single(initial_document_id);
-    let focused_document_pane = document_panes.first_pane_id();
-    let mut app = App {
+    let mut app = App::new(AppInit {
         started,
-        document: DocumentState {
-            id: initial_document_id,
-            path: opening_path
-                .clone()
-                .unwrap_or_else(|| "sin título.md".to_string()),
-            content_kind: opening_path
-                .as_deref()
-                .map(|path| DocumentContentKind::for_path(std::path::Path::new(path)))
-                .unwrap_or(DocumentContentKind::Markdown),
-            pinned: false,
-            source: TextBuffer::new(),
-            source_metadata: TextMetadata::default(),
-            source_identity: None,
-            source_baseline_bytes: None,
-            baseline_generation: 0,
-            external_unavailable_generation: None,
-            source_editor: SourceEditor::new(),
-            mode: if opening_path.is_some() {
-                DocumentMode::Reading
-            } else {
-                DocumentMode::SourceEditing
-            },
-            split_orientation: SplitOrientation::SideBySide,
-            rendered_blocks: Vec::new(),
-            metrics: DocumentMetrics::default(),
-            metrics_cache: None,
-            blocks: Vec::new(),
-            safe_mode: None,
-            scroll: 0.0,
-            scroll_anchor: None,
-            reading_selection: None,
-            pending_heading: None,
-            pending_block: None,
-            folded_headings: HashSet::new(),
-            folded_callouts: HashSet::new(),
-            pending_recovery: None,
-        },
-        inactive_documents: Vec::new(),
-        tab_order: vec![initial_document_id],
-        document_panes,
-        focused_document_pane,
-        external_checks_in_flight: HashMap::new(),
-        saves_in_flight: HashSet::new(),
         settings,
-        recovery_enabled,
         recovery,
         recovery_privacy_notice_pending,
-        workspace: None,
-        workspace_request: 0,
-        workspace_generation: 0,
-        workspace_generation_guard: Arc::new(AtomicU64::new(0)),
-        workspace_cancel: None,
-        workspace_check_in_flight: None,
-        workspace_stale: false,
-        document_request: initial_document_request,
-        open_requests: if opening_path.is_some() {
-            HashMap::from([(initial_document_id, initial_document_request)])
-        } else {
-            HashMap::new()
-        },
-        view_requests: HashMap::new(),
-        view_request: 0,
-        image_request: 0,
-        image_preview: None,
-        proxy: proxy.clone(),
-        window: None,
-        surface: None,
         font_cx,
-        layout_cx: LayoutContext::new(),
-        scale_cx: ScaleContext::new(),
-        glyphs: GlyphCache::new(),
-        pixmap: None,
-        slots: Vec::new(),
-        visible_blocks: Vec::new(),
-        live: HashMap::new(),
-        doc_height: 0.0,
-        laid_for_width: -1.0,
-        preview_slots: Vec::new(),
-        preview_visible_blocks: Vec::new(),
-        preview_live: HashMap::new(),
-        preview_height: 0.0,
-        preview_laid_for_width: -1.0,
-        scale_factor: 1.0,
-        scroll: 0.0,
-        first_paint_done: false,
-        frames: 0,
-        frame_time_total: 0.0,
+        proxy: AppNotifier::new(proxy.clone()),
+        opening_path: opening_path.clone(),
+        initial_document_request,
         bench,
         exact_measure,
-        exact_after_edit: false,
-        inactive_pane_caches: HashMap::new(),
-        focused_pane_raster: None,
         log,
-        palette: NIGHT,
-        theme_transition: None,
-        reduce_motion,
-        mode_transition: None,
-        pointer: None,
-        ime_preedit: None,
-        tab_drag_id: None,
-        selecting: false,
-        selection: None,
-        modifiers: ModifiersState::empty(),
-        text_cursor_hover: false,
-        hover_destination: None,
-        focused_link: None,
-        focus_destination: None,
-        context_menu: None,
-        search_query: None,
-        search_match: 0,
-        workspace_search_query: None,
-        workspace_search_match: 0,
-        workspace_paths: None,
-        workspace_path_match: 0,
-        collapsed_workspace_dirs: HashSet::new(),
-        backlink_paths: None,
-        backlink_match: 0,
-        link_diagnostics: None,
-        link_diagnostic_match: 0,
-        outline_headings: None,
-        outline_match: 0,
-        command_palette: None,
-        command_palette_query: String::new(),
-        command_palette_scope: CommandPaletteScope::All,
-        pane_split_picker: None,
-        symbol_picker: None,
-        floating_outline_rows: Vec::new(),
-        pane_split_candidates: Vec::new(),
-        pane_split_match: 0,
-        toolbar_focus: None,
-        clipboard: None,
-        notice: Some(if opening_path.is_some() {
-            "cargando documento".to_string()
-        } else {
-            "documento nuevo · Ctrl+Shift+S para elegir destino".to_string()
-        }),
-        notice_visible_until: None,
-        code_copied: None,
-        preview_scroll: 0.0,
-        reveal_cursor_pending: false,
-        dialog: None,
-        dialog_document: None,
-        dialog_buttons: Vec::new(),
-        close_tab_after_save: None,
-        exit_requested: false,
-        pinned_on_top: false,
-        pending_image_destination: None,
-        fatal_error: false,
-    };
+    });
+    let initial_document_id = app.document.id;
 
     if let Some(worker_path) = opening_path {
         thread::spawn(move || {
@@ -17298,6 +17400,25 @@ let x = 1;
                     .is_some()
             );
         }
+    }
+
+    #[test]
+    fn la_app_se_construye_sin_ventana_ni_bucle_de_eventos() {
+        let app = App::for_tests(NIGHT);
+        assert!(app.window.is_none());
+        assert_eq!(app.palette, NIGHT);
+        assert!(app.reduce_motion);
+        assert!(app.recovery.is_none());
+        assert_eq!(app.tab_order.len(), 1);
+        assert!(
+            app.proxy
+                .send_event(AppEvent::WorkspaceChangeChecked {
+                    request: 0,
+                    changed: false,
+                    truncated: false,
+                })
+                .is_err()
+        );
     }
 
     #[test]

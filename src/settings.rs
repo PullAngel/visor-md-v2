@@ -61,6 +61,17 @@ impl Default for Settings {
 }
 
 impl Settings {
+    /// Configuración fija para pruebas de dibujo: sin recuperación y sin
+    /// animaciones, para que el resultado no dependa del disco ni del reloj.
+    #[cfg(test)]
+    pub(crate) fn for_tests() -> Self {
+        Self {
+            recovery_enabled: false,
+            reduce_motion: true,
+            ..Self::default()
+        }
+    }
+
     pub(crate) fn load() -> Self {
         load_from(&settings_path()).unwrap_or_default()
     }
