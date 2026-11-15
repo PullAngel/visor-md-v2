@@ -140,7 +140,7 @@ const CONTEXT_TOOLBAR_HEIGHT: f32 = 28.0;
 const CONTEXT_TOOLBAR_ITEM_WIDTH: f32 = 38.0;
 const CONTEXT_TOOLBAR_ITEM_GAP: f32 = 4.0;
 const CONTEXT_TOOLBAR_LABELED_MIN_WIDTH: f32 = 1_100.0;
-const CONTEXT_TOOLBAR_GROUP_WIDTH: f32 = 88.0;
+const CONTEXT_TOOLBAR_GROUP_WIDTH: f32 = 98.0;
 const WINDOW_CHROME_HEIGHT: f32 = 40.0;
 /// La transición no desplaza contenido ni mantiene un render continuo: el
 /// event loop despierta solo los cuadros necesarios durante este intervalo.
@@ -284,14 +284,13 @@ const READING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 6] = [
     AppAction::SearchWorkspace,
     AppAction::Backlinks,
 ];
-const EDITING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 15] = [
+const EDITING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 13] = [
     AppAction::FormatBold,
     AppAction::FormatItalic,
     AppAction::FormatStrikethrough,
     AppAction::FormatInlineCode,
     AppAction::FormatHighlight,
     AppAction::BlockTools,
-    AppAction::ListTools,
     AppAction::InsertTask,
     AppAction::InsertQuote,
     AppAction::InsertLink,
@@ -299,19 +298,17 @@ const EDITING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 15] = [
     AppAction::InsertTable,
     AppAction::InsertTools,
     AppAction::StudyTools,
-    AppAction::WritingTools,
 ];
 /// La comparación conserva el mismo kit de escritura, pero el último control
 /// cambia a orientación porque la vista ya está abierta y se puede cerrar con
 /// F3 o el selector segmentado.
-const SPLIT_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 15] = [
+const SPLIT_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 13] = [
     AppAction::FormatBold,
     AppAction::FormatItalic,
     AppAction::FormatStrikethrough,
     AppAction::FormatInlineCode,
     AppAction::FormatHighlight,
     AppAction::BlockTools,
-    AppAction::ListTools,
     AppAction::InsertTask,
     AppAction::InsertQuote,
     AppAction::InsertLink,
@@ -319,7 +316,6 @@ const SPLIT_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 15] = [
     AppAction::InsertTable,
     AppAction::InsertTools,
     AppAction::StudyTools,
-    AppAction::WritingTools,
 ];
 const WORKSPACE_HUB_ACTIONS: [AppAction; 8] = [
     AppAction::ChooseWorkspace,
@@ -504,7 +500,7 @@ const MENU_GROUPS: [MenuGroup; 7] = [
         &[AppAction::RestoreRecovery, AppAction::ToggleRecovery],
     ),
 ];
-const BLOCK_GROUPS: [MenuGroup; 2] = [
+const BLOCK_GROUPS: [MenuGroup; 3] = [
     (
         "Títulos",
         &[
@@ -517,14 +513,14 @@ const BLOCK_GROUPS: [MenuGroup; 2] = [
         ],
     ),
     (
-        "Bloques",
+        "Listas",
         &[
-            AppAction::InsertQuote,
-            AppAction::InsertCodeBlock,
-            AppAction::InsertHorizontalRule,
-            AppAction::InsertCallout,
+            AppAction::InsertBulletList,
+            AppAction::InsertOrderedList,
+            AppAction::InsertTask,
         ],
     ),
+    ("Cita", &[AppAction::InsertQuote]),
 ];
 const STUDY_GROUPS: [MenuGroup; 2] = [
     (
@@ -554,15 +550,10 @@ const BLOCK_ACTIONS: [AppAction; 10] = [
     AppAction::InsertHeading4,
     AppAction::InsertHeading5,
     AppAction::InsertHeading6,
-    AppAction::InsertQuote,
-    AppAction::InsertCodeBlock,
-    AppAction::InsertHorizontalRule,
-    AppAction::InsertCallout,
-];
-const LIST_ACTIONS: [AppAction; 3] = [
     AppAction::InsertBulletList,
     AppAction::InsertOrderedList,
     AppAction::InsertTask,
+    AppAction::InsertQuote,
 ];
 /// Símbolos, entidades frecuentes y emojis de estudio. Se insertan como texto
 /// Unicode literal: el archivo sigue siendo Markdown portable.
@@ -617,26 +608,6 @@ const INSERT_ACTIONS: [AppAction; 7] = [
     AppAction::InsertCodeBlock,
     AppAction::InsertHorizontalRule,
     AppAction::InsertSymbol,
-];
-/// Variantes de escritura reunidas en un segundo nivel. No desplazan las
-/// acciones frecuentes ni convierten la barra en una lista de iconos opacos.
-const WRITING_ACTIONS: [AppAction; 16] = [
-    AppAction::FormatBold,
-    AppAction::FormatItalic,
-    AppAction::FormatStrikethrough,
-    AppAction::FormatInlineCode,
-    AppAction::FormatHighlight,
-    AppAction::InsertHeading,
-    AppAction::InsertBulletList,
-    AppAction::InsertOrderedList,
-    AppAction::InsertTask,
-    AppAction::InsertQuote,
-    AppAction::InsertCodeBlock,
-    AppAction::InsertTable,
-    AppAction::InsertHorizontalRule,
-    AppAction::InsertWikiLink,
-    AppAction::InsertCallout,
-    AppAction::ToggleSplitOrientation,
 ];
 static NEXT_DOCUMENT_ID: AtomicU64 = AtomicU64::new(1);
 const MAX_DOCUMENT_PANES: usize = 4;
@@ -1304,11 +1275,9 @@ fn contextual_toolbar_item_stride(action: AppAction, labeled: bool) -> f32 {
 
 const fn toolbar_group_label(action: AppAction) -> Option<&'static str> {
     match action {
-        AppAction::BlockTools => Some("Bloques"),
-        AppAction::ListTools => Some("Listas"),
+        AppAction::BlockTools => Some("Párrafo"),
         AppAction::InsertTools => Some("Insertar"),
         AppAction::StudyTools => Some("Estudio"),
-        AppAction::WritingTools => Some("Más"),
         _ => None,
     }
 }
@@ -1565,9 +1534,7 @@ enum ContextAction {
     Link,
     Task,
     BlockTools,
-    ListTools,
     InsertTools,
-    WritingTools,
     StudyTools,
     CopyText,
     CopyMarkdown,
@@ -1635,10 +1602,8 @@ enum AppAction {
     InsertWikiLink,
     InsertCallout,
     BlockTools,
-    ListTools,
     InsertTools,
     StudyTools,
-    WritingTools,
     InsertStudyQuestion,
     InsertStudySummary,
     InsertStudyConceptList,
@@ -1671,7 +1636,7 @@ enum AppAction {
     MenuAll,
 }
 
-const APP_ACTIONS: [AppAction; 69] = [
+const APP_ACTIONS: [AppAction; 67] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -1715,10 +1680,8 @@ const APP_ACTIONS: [AppAction; 69] = [
     AppAction::InsertWikiLink,
     AppAction::InsertCallout,
     AppAction::BlockTools,
-    AppAction::ListTools,
     AppAction::InsertTools,
     AppAction::StudyTools,
-    AppAction::WritingTools,
     AppAction::InsertStudyQuestion,
     AppAction::InsertStudySummary,
     AppAction::InsertStudyConceptList,
@@ -1786,11 +1749,9 @@ impl AppAction {
             Self::FormatHighlight => "Resaltar texto",
             Self::InsertWikiLink => "Insertar enlace de bóveda",
             Self::InsertCallout => "Insertar callout de nota",
-            Self::BlockTools => "Bloques y estructura",
-            Self::ListTools => "Listas y tareas",
+            Self::BlockTools => "Párrafo: títulos, listas y citas",
             Self::InsertTools => "Insertar enlaces y bloques",
             Self::StudyTools => "Estudio y notas",
-            Self::WritingTools => "Más formato Markdown",
             Self::InsertStudyQuestion => "Insertar pregunta de estudio",
             Self::InsertStudySummary => "Insertar resumen de estudio",
             Self::InsertStudyConceptList => "Insertar lista de conceptos",
@@ -1862,9 +1823,7 @@ enum CommandPaletteScope {
     View,
     Folder,
     Menu,
-    Writing,
     Blocks,
-    Lists,
     Insert,
     Workspace,
     Study,
@@ -1880,10 +1839,8 @@ impl ContextAction {
             Self::Italic => "Cursiva",
             Self::Link => "Insertar enlace",
             Self::Task => "Tarea",
-            Self::BlockTools => "Bloques y encabezados",
-            Self::ListTools => "Listas y tareas",
+            Self::BlockTools => "Párrafo",
             Self::InsertTools => "Insertar enlaces y bloques",
-            Self::WritingTools => "Más formato Markdown",
             Self::StudyTools => "Herramientas de estudio",
             Self::CopyText => "Copiar texto",
             Self::CopyMarkdown => "Copiar Markdown original",
@@ -1920,9 +1877,7 @@ fn context_actions(
             ContextAction::Link,
             ContextAction::Task,
             ContextAction::BlockTools,
-            ContextAction::ListTools,
             ContextAction::InsertTools,
-            ContextAction::WritingTools,
             ContextAction::StudyTools,
         ],
     };
@@ -2153,10 +2108,8 @@ fn toolbar_action_has_menu(action: AppAction) -> bool {
     matches!(
         action,
         AppAction::BlockTools
-            | AppAction::ListTools
             | AppAction::InsertTools
             | AppAction::StudyTools
-            | AppAction::WritingTools
             | AppAction::WorkspaceHub
             | AppAction::CommandPalette
             | AppAction::MenuFile
@@ -3908,7 +3861,7 @@ fn draw_toolbar_icon(
             path.move_to(right - 7.0, bottom - 7.0);
             path.line_to(right - 2.0, bottom - 2.0);
         }
-        AppAction::CommandPalette | AppAction::WritingTools => {
+        AppAction::CommandPalette => {
             for dot in [left + 5.0, center_x, right - 5.0] {
                 if let Some(rect) = Rect::from_xywh(dot - 1.5, center_y - 1.5, 3.0, 3.0) {
                     pixmap.fill_rect(rect, &paint, Transform::identity(), None);
@@ -4006,7 +3959,7 @@ fn draw_toolbar_icon(
             path.move_to(left + 4.0, center_y);
             path.line_to(right - 4.0, center_y);
         }
-        AppAction::InsertBulletList | AppAction::ListTools => {
+        AppAction::InsertBulletList => {
             for row in [top + 5.0, center_y, bottom - 5.0] {
                 if let Some(rect) = Rect::from_xywh(left + 3.0, row - 1.5, 3.0, 3.0) {
                     pixmap.fill_rect(rect, &paint, Transform::identity(), None);
@@ -8690,9 +8643,7 @@ impl ApplicationHandler<AppEvent> for App {
                                 ContextAction::Link => self.perform_action(AppAction::InsertLink),
                                 ContextAction::Task => self.perform_action(AppAction::InsertTask),
                                 ContextAction::BlockTools => self.open_block_actions(),
-                                ContextAction::ListTools => self.open_list_actions(),
                                 ContextAction::InsertTools => self.open_insert_actions(),
-                                ContextAction::WritingTools => self.open_writing_actions(),
                                 ContextAction::StudyTools => self.open_study_actions(),
                                 ContextAction::CopyText | ContextAction::CopyMarkdown => {
                                     if self.document.mode.is_editable() {
@@ -9836,10 +9787,8 @@ impl App {
             AppAction::InsertWikiLink => self.apply_markdown_surround("[[", "]]", "nota"),
             AppAction::InsertCallout => self.insert_callout(),
             AppAction::BlockTools => self.open_block_actions(),
-            AppAction::ListTools => self.open_list_actions(),
             AppAction::InsertTools => self.open_insert_actions(),
             AppAction::StudyTools => self.open_study_actions(),
-            AppAction::WritingTools => self.open_writing_actions(),
             AppAction::InsertStudyQuestion => self.insert_study_question(),
             AppAction::InsertStudySummary => self.insert_study_summary(),
             AppAction::InsertStudyConceptList => self.insert_study_concept_list(),
@@ -10365,9 +10314,7 @@ impl App {
             CommandPaletteScope::View => grouped_entries(&VIEW_GROUPS),
             CommandPaletteScope::Folder => grouped_entries(&FOLDER_GROUPS),
             CommandPaletteScope::Menu => grouped_entries(&MENU_GROUPS),
-            CommandPaletteScope::Writing => menu::items(&WRITING_ACTIONS),
             CommandPaletteScope::Blocks => grouped_entries(&BLOCK_GROUPS),
-            CommandPaletteScope::Lists => menu::items(&LIST_ACTIONS),
             CommandPaletteScope::Insert => menu::items(&INSERT_ACTIONS),
             CommandPaletteScope::Workspace => menu::items(&WORKSPACE_HUB_ACTIONS),
             CommandPaletteScope::Study => grouped_entries(&STUDY_GROUPS),
@@ -10380,9 +10327,7 @@ impl App {
             CommandPaletteScope::File => &FILE_ACTIONS[..],
             CommandPaletteScope::View => &VIEW_ACTIONS[..],
             CommandPaletteScope::Folder => &FOLDER_ACTIONS[..],
-            CommandPaletteScope::Writing => &WRITING_ACTIONS[..],
             CommandPaletteScope::Blocks => &BLOCK_ACTIONS[..],
-            CommandPaletteScope::Lists => &LIST_ACTIONS[..],
             CommandPaletteScope::Insert => &INSERT_ACTIONS[..],
             CommandPaletteScope::Workspace => &WORKSPACE_HUB_ACTIONS[..],
             CommandPaletteScope::Study => &STUDY_ACTIONS[..],
@@ -10431,30 +10376,13 @@ impl App {
     }
 
     fn open_block_actions(&mut self) {
-        self.open_writing_scope(
-            CommandPaletteScope::Blocks,
-            "bloques y estructura · elegí una variante",
-        );
-    }
-
-    fn open_list_actions(&mut self) {
-        self.open_writing_scope(
-            CommandPaletteScope::Lists,
-            "listas y tareas · elegí una variante",
-        );
+        self.open_menu_scope(CommandPaletteScope::Blocks);
     }
 
     fn open_insert_actions(&mut self) {
         self.open_writing_scope(
             CommandPaletteScope::Insert,
             "insertar · elegí enlace, tabla o bloque",
-        );
-    }
-
-    fn open_writing_actions(&mut self) {
-        self.open_writing_scope(
-            CommandPaletteScope::Writing,
-            "más formato Markdown · elegí una variante",
         );
     }
 
@@ -14908,9 +14836,7 @@ impl App {
                     CommandPaletteScope::View => "Vista".to_string(),
                     CommandPaletteScope::Folder => "Carpeta de apuntes".to_string(),
                     CommandPaletteScope::Menu => "Menú".to_string(),
-                    CommandPaletteScope::Writing => "Más formato Markdown".to_string(),
-                    CommandPaletteScope::Blocks => "Bloques y estructura".to_string(),
-                    CommandPaletteScope::Lists => "Listas y tareas".to_string(),
+                    CommandPaletteScope::Blocks => "Párrafo".to_string(),
                     CommandPaletteScope::Insert => "Insertar".to_string(),
                     CommandPaletteScope::Workspace => "Espacio de trabajo".to_string(),
                     CommandPaletteScope::Study => "Herramientas de estudio".to_string(),
@@ -16833,7 +16759,7 @@ impl App {
             let x = geometry.x;
             let width = geometry.width;
             let begins_group = (context_mode == DocumentMode::Reading && index == 2)
-                || (context_mode.is_editable() && index == 7);
+                || (context_mode.is_editable() && index == 6);
             if begins_group
                 && let Some(rect) = Rect::from_xywh(
                     x - 8.0,
@@ -18714,10 +18640,10 @@ mod pruebas {
         app.open_block_actions();
         let entradas = app.command_palette_entries();
         assert!(entradas[0].is_heading());
-        assert_eq!(entradas.len(), 12, "2 encabezados y 10 acciones");
+        assert_eq!(entradas.len(), 13, "3 encabezados y 10 acciones");
         // La lista expone todas las filas y la elegida nunca es un encabezado.
         let lista = app.open_list().expect("el menú es una lista abierta");
-        assert_eq!(lista.total, 12);
+        assert_eq!(lista.total, 13);
         assert_eq!(lista.selected, 1);
         // Home y End caen en elementos, no en encabezados.
         app.navigate_open_list(list_view::ListNav::Home);
@@ -19224,7 +19150,7 @@ let x = 1;
         );
         assert_eq!(
             toolbar_action_at(250.0, 84.0, 900.0, DocumentMode::SourceEditing),
-            Some(AppAction::ListTools)
+            Some(AppAction::InsertTask)
         );
         for (index, action) in READING_CONTEXT_TOOLBAR_ACTIONS.iter().copied().enumerate() {
             let geometry = contextual_toolbar_item_geometry(index, 640.0, DocumentMode::Reading)
@@ -19290,27 +19216,24 @@ let x = 1;
         assert!(EDITING_CONTEXT_TOOLBAR_ACTIONS.contains(&AppAction::FormatStrikethrough));
         assert!(EDITING_CONTEXT_TOOLBAR_ACTIONS.contains(&AppAction::FormatInlineCode));
         assert!(EDITING_CONTEXT_TOOLBAR_ACTIONS.contains(&AppAction::BlockTools));
-        assert!(EDITING_CONTEXT_TOOLBAR_ACTIONS.contains(&AppAction::ListTools));
         assert!(EDITING_CONTEXT_TOOLBAR_ACTIONS.contains(&AppAction::InsertTools));
         assert!(EDITING_CONTEXT_TOOLBAR_ACTIONS.contains(&AppAction::StudyTools));
-        assert!(EDITING_CONTEXT_TOOLBAR_ACTIONS.contains(&AppAction::WritingTools));
-        assert_eq!(LIST_ACTIONS[1], AppAction::InsertOrderedList);
-        assert!(WRITING_ACTIONS.contains(&AppAction::InsertHorizontalRule));
-        assert!(WRITING_ACTIONS.contains(&AppAction::InsertWikiLink));
-        assert!(WRITING_ACTIONS.contains(&AppAction::InsertCallout));
-        assert!(WRITING_ACTIONS.contains(&AppAction::ToggleSplitOrientation));
+        // «Más formato Markdown» ya no existe: sus acciones están en otros menús.
+        assert_eq!(EDITING_CONTEXT_TOOLBAR_ACTIONS.len(), 13);
+        assert!(INSERT_ACTIONS.contains(&AppAction::InsertHorizontalRule));
+        assert!(INSERT_ACTIONS.contains(&AppAction::InsertWikiLink));
+        assert!(INSERT_ACTIONS.contains(&AppAction::InsertCallout));
+        assert!(VIEW_ACTIONS.contains(&AppAction::ToggleSplitOrientation));
         assert_eq!(BLOCK_ACTIONS[0], AppAction::InsertHeading1);
         assert_eq!(BLOCK_ACTIONS[1], AppAction::InsertHeading);
         assert_eq!(BLOCK_ACTIONS[5], AppAction::InsertHeading6);
-        assert_eq!(LIST_ACTIONS[2], AppAction::InsertTask);
+        assert_eq!(BLOCK_ACTIONS[8], AppAction::InsertTask);
         assert!(INSERT_ACTIONS.contains(&AppAction::InsertTable));
         assert!(toolbar_action_has_menu(AppAction::BlockTools));
-        assert!(toolbar_action_has_menu(AppAction::ListTools));
         assert!(toolbar_action_has_menu(AppAction::InsertTools));
         assert!(toolbar_action_has_menu(AppAction::StudyTools));
-        assert!(toolbar_action_has_menu(AppAction::WritingTools));
         assert!(!toolbar_action_has_menu(AppAction::FormatBold));
-        assert_eq!(toolbar_group_label(AppAction::BlockTools), Some("Bloques"));
+        assert_eq!(toolbar_group_label(AppAction::BlockTools), Some("Párrafo"));
         assert_eq!(toolbar_group_label(AppAction::FormatBold), None);
         let compact_blocks =
             contextual_toolbar_item_geometry(5, 640.0, DocumentMode::SourceEditing)
@@ -19342,7 +19265,7 @@ let x = 1;
                 DocumentMode::SourceEditing,
                 900.0,
             ),
-            Some(AppAction::WritingTools)
+            Some(AppAction::StudyTools)
         );
         let reading_focus_count = toolbar_focus_count(DocumentMode::Reading, 900.0);
         assert_eq!(
@@ -19456,7 +19379,7 @@ let x = 1;
                 640.0,
                 DocumentMode::SourceEditing,
             ),
-            Some(AppAction::WritingTools.label())
+            Some(AppAction::StudyTools.label())
         );
     }
 
@@ -19775,8 +19698,8 @@ let x = 1;
         assert!(APP_ACTIONS.contains(&AppAction::InsertStudyDoubt));
         assert!(APP_ACTIONS.contains(&AppAction::InsertStudyPending));
         assert!(APP_ACTIONS.contains(&AppAction::CopyPlatform));
-        assert!(contextual_toolbar_actions(DocumentMode::Split).contains(&AppAction::WritingTools));
-        assert!(WRITING_ACTIONS.contains(&AppAction::ToggleSplitOrientation));
+        assert!(contextual_toolbar_actions(DocumentMode::Split).contains(&AppAction::BlockTools));
+        assert!(VIEW_ACTIONS.contains(&AppAction::ToggleSplitOrientation));
         assert!(
             !context_actions(DocumentMode::Reading, false, false, false)
                 .contains(&ContextAction::Paste)
@@ -20911,8 +20834,8 @@ let x = 1;
         assert_eq!(reading_menu.actions.len(), 3);
         assert_eq!(table_menu.actions.len(), 4);
         assert_eq!(task_menu.actions.len(), 4);
-        assert_eq!(editing_menu.actions.len(), 10);
-        assert_eq!(selected_editing_menu.actions.len(), 13);
+        assert_eq!(editing_menu.actions.len(), 8);
+        assert_eq!(selected_editing_menu.actions.len(), 11);
         assert!(!reading_menu.actions.contains(&ContextAction::Paste));
         assert!(!reading_menu.actions.contains(&ContextAction::Cut));
         assert!(!reading_menu.actions.contains(&ContextAction::CopyTableTsv));
@@ -20935,9 +20858,7 @@ let x = 1;
         );
         assert!(editing_menu.actions.contains(&ContextAction::Task));
         assert!(editing_menu.actions.contains(&ContextAction::BlockTools));
-        assert!(editing_menu.actions.contains(&ContextAction::ListTools));
         assert!(editing_menu.actions.contains(&ContextAction::InsertTools));
-        assert!(editing_menu.actions.contains(&ContextAction::WritingTools));
         assert!(editing_menu.actions.contains(&ContextAction::StudyTools));
         let editing_height = context_menu_row_height(480.0, editing_menu.actions.len());
         assert!(editing_height * editing_menu.actions.len() as f32 <= 480.0);

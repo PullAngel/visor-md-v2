@@ -643,10 +643,14 @@ iba a ampliar, y el texto de la fase 7 se escribe ya sobre ellos.
   menú «≡», cambio de menú al pasar el puntero con uno abierto, F10 y flechas
   ← →. Las alternancias conservan el rótulo «…: activado ✓» (más claro para un
   lector de pantalla que un ✓ suelto); «Tema de noche» también lo tiene.
-- [ ] **10.7** Fila 2: menús Editar, Formato, Párrafo, Insertar, Estudio y Copiar;
-  eliminar «Más» y `WRITING_ACTIONS`; en lectura, Índice, Plegar sección y
-  Copiar. Absorbe la 3.13 (menú contextual: Cortar, Copiar, Pegar, Deshacer,
-  Formato, Párrafo, enlace, tarea y tabla).
+- [~] **10.7** Fila 2. Hecho: «Bloques» y «Listas» pasan a un solo menú
+  **Párrafo** (títulos, listas y cita); se eliminan «Más formato Markdown»
+  (`WRITING_ACTIONS`, `AppAction::WritingTools`), `AppAction::ListTools` y sus
+  alcances; en el menú contextual también. La orientación de la comparación
+  está en Vista y las acciones repetidas, solo en Insertar. La fila de lectura
+  conserva sus seis botones (acceso directo a la carpeta). Pendiente, con la
+  3.13: Editar (Deshacer, Rehacer, Cortar, Copiar, Pegar), Copiar ▾ en lectura
+  y el menú contextual completo.
 - [ ] **10.8** Acciones nuevas: `Undo`, `Redo`, `Copy`, `Paste`, `MoveToNewWindow`
   (queda deshabilitada hasta la 12.3) y las que pidan los menús.
 - [ ] **10.9** La paleta «···» pasa a ser buscador: ícono propio, la categoría
@@ -730,7 +734,7 @@ asociación.
 | 4 | Hecho | c441983, c3b3a76, 1c6f87a, 98f6793 y el ajuste de bloques |
 | 2 | Hecho | 01bacf8, 898665a, e127b66, 9d1a167, 5888201 y la capa de tooltip |
 | 3 | Casi hecha | Hechas 3.1 a 3.8, 3.9b, 3.10 a 3.12. Pendientes: 3.9 (caja de búsqueda con borde y barra anclada); la 3.13 pasa a la 10.7 |
-| 10 | En curso | Hechas 10.1 a 10.6 (barra adaptable con menús Archivo, Vista y Carpeta). Siguiente: 10.7 |
+| 10 | En curso | Hechas 10.1 a 10.6 y parte de la 10.7 (menú Párrafo, sin «Más»). Siguiente: 10.8 |
 | 5 | En curso | Hecha 5.1 (verde propio de la pestaña). Pendientes 5.2 a 5.4 y 5.8; la 5.5 a 5.7 pasan a la fase 11 |
 | 11 | Pendiente | Mosaico: cabecera como pestaña, divisor, intercambio, soltado |
 | 6 | Pendiente | — |

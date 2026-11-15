@@ -27,10 +27,8 @@ pub(crate) fn surface_for_action(action: AppAction, workspace_open: bool) -> Opt
         | AppAction::SearchDocument
         | AppAction::CommandPalette
         | AppAction::BlockTools
-        | AppAction::ListTools
         | AppAction::InsertTools
         | AppAction::StudyTools
-        | AppAction::WritingTools
         | AppAction::MenuFile
         | AppAction::MenuView
         | AppAction::MenuFolder
@@ -77,9 +75,7 @@ impl App {
                 CommandPaletteScope::View => AppAction::MenuView,
                 CommandPaletteScope::Folder => AppAction::MenuFolder,
                 CommandPaletteScope::Menu => AppAction::MenuAll,
-                CommandPaletteScope::Writing => AppAction::WritingTools,
                 CommandPaletteScope::Blocks => AppAction::BlockTools,
-                CommandPaletteScope::Lists => AppAction::ListTools,
                 CommandPaletteScope::Insert => AppAction::InsertTools,
                 CommandPaletteScope::Workspace => AppAction::WorkspaceHub,
                 CommandPaletteScope::Study => AppAction::StudyTools,
@@ -131,7 +127,7 @@ impl App {
 mod pruebas {
     use super::*;
 
-    const SUPERFICIES: [AppAction; 11] = [
+    const SUPERFICIES: [AppAction; 9] = [
         AppAction::DocumentOutline,
         AppAction::WorkspaceFiles,
         AppAction::SearchWorkspace,
@@ -139,10 +135,8 @@ mod pruebas {
         AppAction::SearchDocument,
         AppAction::CommandPalette,
         AppAction::BlockTools,
-        AppAction::ListTools,
         AppAction::InsertTools,
         AppAction::StudyTools,
-        AppAction::WritingTools,
     ];
 
     #[test]
