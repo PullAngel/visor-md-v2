@@ -348,7 +348,7 @@ aparcada (con el motivo).
   `dialogo-cierre` y `aviso`.
   - Hecho: `VISOR_BLESS=1` genera las referencias, `cargo test visual` pasa y
     la documentación está en [`testing.md`](testing.md).
-- [ ] **2.5** D-13 `UiTarget` y `ui_target_at`. Reemplazar el cálculo del cursor
+- [x] **2.5** D-13 `UiTarget` y `ui_target_at`. Reemplazar el cálculo del cursor
   de mano en `CursorMoved` por `ui_target_at(...).is_some()`.
   - Prueba: el centro de cada botón de barra, pestaña, control de ventana y
     Copiar a 640, 1100 y 1366 px devuelve su objetivo.

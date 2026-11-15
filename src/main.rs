@@ -24,6 +24,8 @@ mod pdf;
 mod recovery;
 mod settings;
 mod theme;
+mod ui_target;
+use ui_target::UiTarget;
 mod vfs;
 #[cfg(test)]
 mod visual_tests;
@@ -8008,16 +8010,11 @@ impl ApplicationHandler<AppEvent> for App {
                         window.request_redraw();
                     }
                 }
-                let toolbar_hover = self.window.as_ref().is_some_and(|window| {
-                    toolbar_action_at(
-                        position.x as f32,
-                        position.y as f32,
-                        window.inner_size().width as f32,
-                        self.document.mode,
-                    )
-                    .is_some()
-                        || mode_target_at(position.x as f32, position.y as f32).is_some()
-                });
+                let ui_target = self.ui_target_at(position.x as f32, position.y as f32);
+                let toolbar_hover = matches!(
+                    ui_target,
+                    Some(UiTarget::Toolbar(_) | UiTarget::ModeSegment(_))
+                );
                 if (self.context_menu.is_some() || toolbar_hover)
                     && let Some(w) = &self.window
                 {
@@ -8033,10 +8030,6 @@ impl ApplicationHandler<AppEvent> for App {
                     && self
                         .cursor_at(position.x as f32, position.y as f32)
                         .is_some();
-                let task_hover = self.task_at(position.x as f32, position.y as f32).is_some();
-                let disclosure_hover = self
-                    .heading_disclosure_at(position.x as f32, position.y as f32)
-                    .is_some();
                 let resize_direction = self.window.as_ref().and_then(|window| {
                     let size = window.inner_size();
                     resize_direction_at(
@@ -8045,13 +8038,6 @@ impl ApplicationHandler<AppEvent> for App {
                         size.width as f32,
                         size.height as f32,
                         WINDOW_RESIZE_BORDER,
-                    )
-                });
-                let chrome_control = self.window.as_ref().and_then(|window| {
-                    window_control_at(
-                        position.x as f32,
-                        position.y as f32,
-                        window.inner_size().width as f32,
                     )
                 });
                 let target_changed = target != self.hover_destination;
@@ -8066,12 +8052,7 @@ impl ApplicationHandler<AppEvent> for App {
                 if let Some(w) = &self.window {
                     w.set_cursor(if let Some(direction) = resize_direction {
                         direction.into()
-                    } else if chrome_control.is_some()
-                        || self.hover_destination.is_some()
-                        || disclosure_hover
-                        || task_hover
-                        || toolbar_hover
-                    {
+                    } else if ui_target.is_some() || self.hover_destination.is_some() {
                         CursorIcon::Pointer
                     } else if text_cursor_hover {
                         CursorIcon::Text
