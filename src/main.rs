@@ -19,6 +19,8 @@ mod files;
 mod fonts;
 mod images;
 mod limits;
+mod list_view;
+mod panel_list;
 mod panes;
 mod pdf;
 mod recovery;
@@ -27,6 +29,7 @@ mod surface;
 mod theme;
 mod ui_motion;
 mod ui_target;
+use panel_list::{floating_capacity, floating_rows, list_nav_for_key};
 use surface::toolbar_button_active;
 use ui_target::UiTarget;
 mod vfs;
@@ -116,7 +119,6 @@ const WORKSPACE_COLUMN_MAX_WIDTH: f32 = 304.0;
 const WORKSPACE_DOCUMENT_MIN_WIDTH: f32 = 360.0;
 const WORKSPACE_DESTINATION_HEIGHT: f32 = 38.0;
 const PANEL_ROW_HEIGHT: f32 = 28.0;
-const PANEL_CAPACITY: usize = 9;
 const PANEL_PADDING: f32 = 4.0;
 const PANEL_FOOTER_HEIGHT: f32 = 24.0;
 const TOOLBAR_X: f32 = 12.0;
@@ -622,23 +624,20 @@ fn document_area_geometry(
     }
 }
 
+/// Elemento bajo el punto, dadas las filas que se ven en el panel.
 fn panel_item_at(
     x: f32,
     y: f32,
-    total: usize,
-    selected: usize,
+    range: std::ops::Range<usize>,
     geometry: PanelGeometry,
 ) -> Option<usize> {
-    let capacity = panel_capacity(geometry);
     if x < geometry.x
         || x >= geometry.x + geometry.width
         || y < geometry.items_y
-        || y >= geometry.items_y
-            + PANEL_ROW_HEIGHT * panel_window(total, selected, capacity).len() as f32
+        || y >= geometry.items_y + PANEL_ROW_HEIGHT * range.len() as f32
     {
         return None;
     }
-    let range = panel_window(total, selected, capacity);
     let item_offset = ((y - geometry.items_y) / PANEL_ROW_HEIGHT) as usize;
     (item_offset < range.len()).then_some(range.start + item_offset)
 }
@@ -6824,6 +6823,8 @@ struct App {
     ui_motion: ui_motion::UiMotion,
     /// Cuándo se muestra la ayuda del botón bajo el puntero.
     tooltip: ui_motion::TooltipTimer,
+    /// Desplazamiento de la lista abierta en un panel o menú.
+    panel_scroll: list_view::ListScroll,
     /// Texto que un IME todavía está componiendo. No forma parte de la fuente
     /// ni puede llegar al guardado hasta que Windows emite un `Commit`.
     ime_preedit: Option<String>,
@@ -7114,6 +7115,7 @@ impl App {
             pointer: None,
             ui_motion: ui_motion::UiMotion::default(),
             tooltip: ui_motion::TooltipTimer::default(),
+            panel_scroll: list_view::ListScroll::default(),
             ime_preedit: None,
             tab_drag_id: None,
             selecting: false,
@@ -8556,6 +8558,24 @@ impl ApplicationHandler<AppEvent> for App {
                     }
                 }
             }
+            WindowEvent::KeyboardInput { event, .. }
+                if self.navigation_panel_is_open()
+                    && list_nav_for_key(
+                        &event,
+                        self.modifiers.control_key() || self.modifiers.alt_key(),
+                    )
+                    .is_some() =>
+            {
+                if let Some(nav) = list_nav_for_key(
+                    &event,
+                    self.modifiers.control_key() || self.modifiers.alt_key(),
+                ) {
+                    self.navigate_open_list(nav);
+                }
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+            }
             WindowEvent::KeyboardInput { event, .. } if self.pane_split_picker.is_some() => {
                 self.handle_pane_split_picker_key(&event);
             }
@@ -9093,6 +9113,24 @@ impl ApplicationHandler<AppEvent> for App {
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 self.tooltip.suppress();
+                // Sobre una lista abierta, la rueda la desplaza a ella y no al
+                // documento de fondo.
+                if let Some((px, py)) = self.pointer
+                    && self.navigation_panel_contains(px, py)
+                {
+                    let rows = match delta {
+                        MouseScrollDelta::LineDelta(_, lines) => -(lines * 3.0).round() as isize,
+                        MouseScrollDelta::PixelDelta(pixels) => {
+                            -(pixels.y as f32 / PANEL_ROW_HEIGHT).round() as isize
+                        }
+                    };
+                    if self.scroll_open_list(rows)
+                        && let Some(window) = &self.window
+                    {
+                        window.request_redraw();
+                    }
+                    return;
+                }
                 if let Some((x, y)) = self.pointer {
                     let _ = self.focus_document_pane_at(x, y);
                 }
@@ -10009,12 +10047,6 @@ impl App {
             PhysicalKey::Code(KeyCode::ArrowUp) => {
                 self.symbol_picker = Some((selected + count - 1) % count);
             }
-            PhysicalKey::Code(KeyCode::PageDown) => {
-                self.symbol_picker = Some((selected + PANEL_CAPACITY).min(count - 1));
-            }
-            PhysicalKey::Code(KeyCode::PageUp) => {
-                self.symbol_picker = Some(selected.saturating_sub(PANEL_CAPACITY));
-            }
             PhysicalKey::Code(KeyCode::Enter) if !event.repeat => {
                 self.insert_symbol(selected);
                 return;
@@ -10089,43 +10121,19 @@ impl App {
     }
 
     fn navigation_panel_geometry(&self, item_count: usize) -> Option<PanelGeometry> {
-        let window = self.window.as_ref()?;
-        let size = window.inner_size();
+        let (width, height) = self.view_size()?;
         Some(if self.workspace_column_is_open() {
-            workspace_column_geometry(size.width as f32, size.height as f32)
+            workspace_column_geometry(width, height)
         } else {
-            navigation_panel_geometry(
-                size.width as f32,
-                size.height as f32,
-                panel_window(item_count, 0, PANEL_CAPACITY).len(),
-            )
+            navigation_panel_geometry(width, height, floating_rows(item_count, height))
         })
     }
 
     fn navigation_panel_contains(&self, x: f32, y: f32) -> bool {
-        if self.window.is_none() {
-            return false;
-        }
-        let item_count = if self.pane_split_picker.is_some() {
-            self.pane_split_candidates.len()
-        } else if self.symbol_picker.is_some() {
-            SYMBOLS.len()
-        } else if self.command_palette.is_some() {
-            self.command_palette_actions().len()
-        } else if self.workspace_search_query.is_some() {
-            self.workspace_search_matches().len()
-        } else if let Some(paths) = &self.workspace_paths {
-            paths.len()
-        } else if let Some(paths) = &self.backlink_paths {
-            paths.len()
-        } else if let Some(rows) = &self.link_diagnostics {
-            rows.len()
-        } else if let Some(headings) = &self.outline_headings {
-            headings.len()
-        } else {
+        let Some(list) = self.open_list() else {
             return false;
         };
-        self.navigation_panel_geometry(item_count)
+        self.navigation_panel_geometry(list.total)
             .is_some_and(|geometry| panel_contains_point(x, y, geometry))
     }
 
@@ -10151,17 +10159,6 @@ impl App {
         };
         let size = window.inner_size();
         let docked = self.workspace_column_is_open();
-        let panel_geometry = |count: usize, selected: usize| {
-            if docked {
-                workspace_column_geometry(size.width as f32, size.height as f32)
-            } else {
-                navigation_panel_geometry(
-                    size.width as f32,
-                    size.height as f32,
-                    panel_window(count, selected, PANEL_CAPACITY).len(),
-                )
-            }
-        };
         if docked {
             let geometry = workspace_column_geometry(size.width as f32, size.height as f32);
             if workspace_column_close_at(x, y, geometry) {
@@ -10176,21 +10173,18 @@ impl App {
         if self.pane_split_picker.is_some() {
             let count = self.pane_split_candidates.len();
             let selected = self.pane_split_match;
-            let geometry = panel_geometry(count, selected);
-            if let Some(index) = panel_item_at(x, y, count, selected, geometry) {
+            if let Some(index) = self.list_item_at(x, y, count, selected) {
                 self.choose_document_pane_split(index);
                 return true;
             }
         } else if let Some(selected) = self.symbol_picker {
-            let geometry = panel_geometry(SYMBOLS.len(), selected);
-            if let Some(index) = panel_item_at(x, y, SYMBOLS.len(), selected, geometry) {
+            if let Some(index) = self.list_item_at(x, y, SYMBOLS.len(), selected) {
                 self.insert_symbol(index);
                 return true;
             }
         } else if let Some(selected) = self.command_palette {
             let actions = self.command_palette_actions();
-            let geometry = panel_geometry(actions.len(), selected);
-            if let Some(index) = panel_item_at(x, y, actions.len(), selected, geometry) {
+            if let Some(index) = self.list_item_at(x, y, actions.len(), selected) {
                 self.command_palette = None;
                 self.command_palette_query.clear();
                 self.command_palette_scope = CommandPaletteScope::All;
@@ -10200,43 +10194,33 @@ impl App {
         } else if self.workspace_search_query.is_some() {
             let count = self.workspace_search_matches().len();
             let selected = self.workspace_search_match;
-            let geometry = panel_geometry(count, selected);
-            if let Some(index) = panel_item_at(x, y, count, selected, geometry) {
+            if let Some(index) = self.list_item_at(x, y, count, selected) {
                 self.workspace_search_match = index;
                 self.open_workspace_search_match();
                 return true;
             }
         } else if let Some(paths) = &self.workspace_paths {
             let selected = self.workspace_path_match;
-            let geometry = panel_geometry(paths.len(), selected);
-            if let Some(index) = panel_item_at(x, y, paths.len(), selected, geometry) {
+            if let Some(index) = self.list_item_at(x, y, paths.len(), selected) {
                 self.workspace_path_match = index;
                 self.open_workspace_path_match();
                 return true;
             }
         } else if let Some(paths) = &self.backlink_paths {
             let selected = self.backlink_match;
-            let geometry = panel_geometry(paths.len(), selected);
-            if let Some(index) = panel_item_at(x, y, paths.len(), selected, geometry) {
+            if let Some(index) = self.list_item_at(x, y, paths.len(), selected) {
                 self.backlink_match = index;
                 self.open_backlink_match();
                 return true;
             }
         } else if let Some(rows) = &self.link_diagnostics {
             let selected = self.link_diagnostic_match;
-            let geometry = panel_geometry(rows.len(), selected);
-            if let Some(index) = panel_item_at(x, y, rows.len(), selected, geometry) {
+            if let Some(index) = self.list_item_at(x, y, rows.len(), selected) {
                 self.link_diagnostic_match = index;
                 return true;
             }
         } else if let Some(headings) = &self.outline_headings
-            && let Some(index) = panel_item_at(
-                x,
-                y,
-                headings.len(),
-                self.outline_match,
-                panel_geometry(headings.len(), self.outline_match),
-            )
+            && let Some(index) = self.list_item_at(x, y, headings.len(), self.outline_match)
         {
             self.outline_match = index;
             self.open_outline_match();
@@ -14129,9 +14113,26 @@ impl App {
         });
         let workspace_panel_capacity =
             panel_capacity(workspace_column_geometry(w.get() as f32, h.get() as f32));
+        let panel_key = self.list_key();
+        let floating_cap = floating_capacity(h.get() as f32);
+        // Filas visibles de la lista abierta, para su indicador de posición.
+        let docked_panel = self.workspace_column_is_open();
+        let panel_scrollbar = self.open_list().map(|list| {
+            let capacity = if docked_panel {
+                workspace_panel_capacity
+            } else {
+                floating_rows(list.total, h.get() as f32)
+            };
+            let range = self
+                .panel_scroll
+                .range(panel_key, list.total, list.selected, capacity);
+            (list.total, range)
+        });
         let navigation_panel_rows = if let Some(selected) = self.symbol_picker {
             let selected = selected % SYMBOLS.len();
-            let range = panel_window(SYMBOLS.len(), selected, PANEL_CAPACITY);
+            let range = self
+                .panel_scroll
+                .sync(panel_key, SYMBOLS.len(), selected, floating_cap);
             Some(NavigationPanelRows {
                 title: "Insertar símbolo o emoji".to_string(),
                 items: range
@@ -14147,7 +14148,9 @@ impl App {
             (pane_split_axis, pane_split_candidates.as_ref())
         {
             let selected = self.pane_split_match % candidates.len().max(1);
-            let range = panel_window(candidates.len(), selected, PANEL_CAPACITY);
+            let range = self
+                .panel_scroll
+                .sync(panel_key, candidates.len(), selected, floating_cap);
             Some(NavigationPanelRows {
                 title: format!("Dividir {} · ¿qué mostrar en el panel nuevo?", axis.label()),
                 items: range
@@ -14167,9 +14170,11 @@ impl App {
             let capacity = if self.command_palette_scope == CommandPaletteScope::Workspace {
                 workspace_panel_capacity
             } else {
-                PANEL_CAPACITY
+                floating_cap
             };
-            let range = panel_window(actions.len(), selected, capacity);
+            let range = self
+                .panel_scroll
+                .sync(panel_key, actions.len(), selected, capacity);
             let title = if self.command_palette_query.is_empty() {
                 match self.command_palette_scope {
                     CommandPaletteScope::All => "Acciones · escribe para filtrar".to_string(),
@@ -14205,7 +14210,9 @@ impl App {
             workspace_search_results.as_ref(),
         ) {
             let selected = self.workspace_search_match % paths.len().max(1);
-            let range = panel_window(paths.len(), selected, workspace_panel_capacity);
+            let range =
+                self.panel_scroll
+                    .sync(panel_key, paths.len(), selected, workspace_panel_capacity);
             let workspace_root = self.workspace.as_ref().map(|(root, _)| root.root());
             let workspace_name = workspace_name(workspace_root);
             let title = if query.is_empty() {
@@ -14231,7 +14238,9 @@ impl App {
             })
         } else if let Some(paths) = self.workspace_paths.as_ref() {
             let selected = self.workspace_path_match % paths.len().max(1);
-            let range = panel_window(paths.len(), selected, workspace_panel_capacity);
+            let range =
+                self.panel_scroll
+                    .sync(panel_key, paths.len(), selected, workspace_panel_capacity);
             let (workspace_root, note_count) = self
                 .workspace
                 .as_ref()
@@ -14252,7 +14261,9 @@ impl App {
             })
         } else if let Some(paths) = self.backlink_paths.as_ref() {
             let selected = self.backlink_match % paths.len().max(1);
-            let range = panel_window(paths.len(), selected, workspace_panel_capacity);
+            let range =
+                self.panel_scroll
+                    .sync(panel_key, paths.len(), selected, workspace_panel_capacity);
             Some(NavigationPanelRows {
                 title: backlinks_panel_title(paths.len()),
                 items: range
@@ -14268,7 +14279,9 @@ impl App {
             })
         } else if let Some(rows) = self.link_diagnostics.as_ref() {
             let selected = self.link_diagnostic_match % rows.len().max(1);
-            let range = panel_window(rows.len(), selected, workspace_panel_capacity);
+            let range =
+                self.panel_scroll
+                    .sync(panel_key, rows.len(), selected, workspace_panel_capacity);
             Some(NavigationPanelRows {
                 title: format!("Enlaces de bóveda · {}", rows.len()),
                 items: range
@@ -14279,7 +14292,12 @@ impl App {
             })
         } else if let Some(headings) = self.outline_headings.as_ref() {
             let selected = self.outline_match % headings.len().max(1);
-            let range = panel_window(headings.len(), selected, workspace_panel_capacity);
+            let range = self.panel_scroll.sync(
+                panel_key,
+                headings.len(),
+                selected,
+                workspace_panel_capacity,
+            );
             Some(NavigationPanelRows {
                 title: format!("Índice · {} encabezados", headings.len()),
                 items: range
@@ -16399,18 +16417,34 @@ impl App {
                 } else {
                     geometry.items_y + PANEL_ROW_HEIGHT * rows.items.len() as f32
                 };
-                if selected {
+                let hovered = is_item
+                    && menu_pointer.is_some_and(|(px, py)| {
+                        px >= geometry.x + PANEL_PADDING
+                            && px < geometry.x + geometry.width - PANEL_PADDING
+                            && py >= y
+                            && py < y + PANEL_ROW_HEIGHT
+                    });
+                if selected || hovered {
                     let ac = palette.accent;
-                    let mut selected_paint = Paint::default();
-                    selected_paint.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 44));
-                    if let Some(rect) = Rect::from_xywh(
+                    let mut row_paint = Paint {
+                        anti_alias: true,
+                        ..Default::default()
+                    };
+                    row_paint.set_color(Color::from_rgba8(
+                        ac.0,
+                        ac.1,
+                        ac.2,
+                        if selected { 44 } else { 20 },
+                    ));
+                    fill_rounded_rect(
+                        pixmap,
                         geometry.x + PANEL_PADDING,
                         y,
                         geometry.width - PANEL_PADDING * 2.0,
                         PANEL_ROW_HEIGHT,
-                    ) {
-                        pixmap.fill_rect(rect, &selected_paint, Transform::identity(), None);
-                    }
+                        6.0,
+                        &row_paint,
+                    );
                 }
                 for line in layout.lines() {
                     for entry in line.items() {
@@ -16427,6 +16461,27 @@ impl App {
                         }
                     }
                 }
+            }
+            // Indicador de posición: una barra fina a la derecha de las filas.
+            if let Some((total, range)) = panel_scrollbar.as_ref()
+                && let Some((start, height)) = list_view::ListScroll::thumb(*total, range)
+            {
+                let track = PANEL_ROW_HEIGHT * rows.items.len() as f32;
+                let dim = palette.dim;
+                let mut thumb_paint = Paint {
+                    anti_alias: true,
+                    ..Default::default()
+                };
+                thumb_paint.set_color(Color::from_rgba8(dim.0, dim.1, dim.2, 130));
+                fill_rounded_rect(
+                    pixmap,
+                    geometry.x + geometry.width - 8.0,
+                    geometry.items_y + start * track + 1.0,
+                    3.0,
+                    (height * track - 2.0).max(12.0),
+                    1.5,
+                    &thumb_paint,
+                );
             }
         }
 
@@ -17450,6 +17505,10 @@ fn main() {
 mod pruebas {
     use super::*;
 
+    /// Filas de la primera página de la paleta en una ventana chica: lo más
+    /// usado tiene que estar ahí sin desplazarse.
+    const PRIMERAS_FILAS: usize = 9;
+
     #[test]
     fn el_contador_en_vivo_cuenta_la_fuente_sin_marcadores_sueltos() {
         let metrics = DocumentMetrics::from_source(
@@ -18033,11 +18092,11 @@ let x = 1;
     fn la_paleta_filtra_acciones_sin_inventar_comandos() {
         assert_eq!(filtered_actions("").len(), APP_ACTIONS.len());
         assert!(
-            filtered_actions("")[..PANEL_CAPACITY].contains(&AppAction::WorkspaceHub),
+            filtered_actions("")[..PRIMERAS_FILAS].contains(&AppAction::WorkspaceHub),
             "espacio de trabajo debe ser visible sin escribir una búsqueda"
         );
         assert!(
-            filtered_actions("")[..PANEL_CAPACITY].contains(&AppAction::ToggleTheme),
+            filtered_actions("")[..PRIMERAS_FILAS].contains(&AppAction::ToggleTheme),
             "el cambio de tema debe ser visible sin escribir una búsqueda"
         );
         assert_eq!(filtered_actions("backlinks"), vec![AppAction::Backlinks]);
@@ -18089,25 +18148,33 @@ let x = 1;
         assert_eq!(panel_window(30, 29, 9), 21..30);
         assert_eq!(panel_window(3, 2, 9), 0..3);
         assert_eq!(panel_window(0, 0, 9), 0..0);
+        let filas = panel_window(30, 15, 9);
         assert_eq!(
-            panel_item_at(60.0, geometry.items_y, 30, 15, geometry),
+            panel_item_at(60.0, geometry.items_y, filas.clone(), geometry),
             Some(11)
         );
         assert_eq!(
-            panel_item_at(60.0, geometry.items_y + PANEL_ROW_HEIGHT, 30, 15, geometry),
+            panel_item_at(
+                60.0,
+                geometry.items_y + PANEL_ROW_HEIGHT,
+                filas.clone(),
+                geometry
+            ),
             Some(12)
         );
         assert_eq!(
-            panel_item_at(20.0, geometry.items_y, 30, 15, geometry),
+            panel_item_at(20.0, geometry.items_y, filas.clone(), geometry),
             None
         );
-        assert_eq!(panel_item_at(60.0, geometry.y, 30, 15, geometry), None);
+        assert_eq!(
+            panel_item_at(60.0, geometry.y, filas.clone(), geometry),
+            None
+        );
         assert_eq!(
             panel_item_at(
                 geometry.x + geometry.width + 1.0,
                 geometry.items_y,
-                30,
-                15,
+                filas,
                 geometry
             ),
             None
@@ -18124,8 +18191,7 @@ let x = 1;
             panel_item_at(
                 geometry.x + geometry.width + 0.5,
                 geometry.items_y,
-                9,
-                0,
+                0..9,
                 geometry
             ),
             None
@@ -18144,7 +18210,7 @@ let x = 1;
         assert_eq!(document.x, column.width);
         assert_eq!(document.x + document.width, 1_200.0);
         assert!(document.width >= WORKSPACE_DOCUMENT_MIN_WIDTH);
-        assert!(panel_capacity(column) > PANEL_CAPACITY);
+        assert!(panel_capacity(column) > PRIMERAS_FILAS);
 
         let narrow = document_area_geometry(640.0, 480.0, true);
         assert_eq!(narrow.width, WORKSPACE_DOCUMENT_MIN_WIDTH);

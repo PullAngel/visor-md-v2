@@ -60,7 +60,7 @@ pub(crate) fn chrome_target_at(
 
 impl App {
     /// Tamaño del cuadro: el de la ventana o, sin ella, el del último lienzo.
-    fn view_size(&self) -> Option<(f32, f32)> {
+    pub(crate) fn view_size(&self) -> Option<(f32, f32)> {
         if let Some(window) = &self.window {
             let size = window.inner_size();
             return Some((size.width as f32, size.height as f32));

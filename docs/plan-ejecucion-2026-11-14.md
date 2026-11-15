@@ -366,11 +366,11 @@ aparcada (con el motivo).
 - [x] **3.2** D-17, clic fuera que también actúa.
   - Prueba: con la paleta abierta, un clic en Leer cambia el modo en un solo
     clic.
-- [ ] **3.3** D-16 `ListView`, como módulo y sus pruebas, sin integrarlo.
-- [ ] **3.4** Integrar `ListView` en la paleta y los cinco menús.
-- [ ] **3.5** Integrarlo en el índice, el árbol, la búsqueda en la carpeta, las
+- [x] **3.3** D-16 `ListView`, como módulo y sus pruebas, sin integrarlo.
+- [x] **3.4** Integrar `ListView` en la paleta y los cinco menús.
+- [x] **3.5** Integrarlo en el índice, el árbol, la búsqueda en la carpeta, las
   notas que enlazan aquí, el diagnóstico, los símbolos y la división.
-- [ ] **3.6** La rueda va a la lista bajo el puntero (`MouseWheel`).
+- [x] **3.6** La rueda va a la lista bajo el puntero (`MouseWheel`).
   - Prueba: con un puntero sobre la columna, la rueda no cambia `scroll`.
 - [ ] **3.7** D-18 geometría, `draw_floating_surface` y barra de desplazamiento.
   - Referencias: `paleta`, `menu-bloques` y `menu-mas` a 480 y 720 de alto.
