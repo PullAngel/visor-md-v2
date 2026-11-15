@@ -9673,6 +9673,26 @@ impl App {
         }
     }
 
+    /// Nombre de una acción en la paleta. Las que activan o desactivan algo
+    /// dicen su estado actual: «Movimiento reducido: activado».
+    fn action_display_name(&self, action: AppAction) -> String {
+        let (base, enabled) = match action {
+            AppAction::ToggleReduceMotion => ("Movimiento reducido", self.reduce_motion),
+            AppAction::ToggleRecovery => ("Recuperación de cambios", self.recovery_enabled),
+            AppAction::ToggleFloatingOutline => ("Índice flotante", self.settings.floating_outline),
+            AppAction::TogglePinOnTop => ("Ventana siempre encima", self.pinned_on_top),
+            _ => return action_name(action).to_string(),
+        };
+        format!(
+            "{base}: {}",
+            if enabled {
+                "activado ✓"
+            } else {
+                "desactivado"
+            }
+        )
+    }
+
     fn open_command_palette(&mut self) {
         self.clear_pane_split_picker();
         self.context_menu = None;
@@ -14252,7 +14272,7 @@ impl App {
                     .map(|index| {
                         (
                             index == selected,
-                            abbreviated_label(action_name(actions[index]), 48),
+                            abbreviated_label(&self.action_display_name(actions[index]), 48),
                         )
                     })
                     .collect(),
@@ -17614,6 +17634,31 @@ mod pruebas {
     /// Filas de la primera página de la paleta en una ventana chica: lo más
     /// usado tiene que estar ahí sin desplazarse.
     const PRIMERAS_FILAS: usize = 9;
+
+    #[test]
+    fn las_alternancias_de_la_paleta_dicen_su_estado() {
+        let mut app = App::for_tests(NIGHT);
+        // Reducir movimiento arranca activado en las pruebas.
+        assert_eq!(
+            app.action_display_name(AppAction::ToggleReduceMotion),
+            "Movimiento reducido: activado ✓"
+        );
+        app.reduce_motion = false;
+        assert_eq!(
+            app.action_display_name(AppAction::ToggleReduceMotion),
+            "Movimiento reducido: desactivado"
+        );
+        assert_eq!(
+            app.action_display_name(AppAction::TogglePinOnTop),
+            "Ventana siempre encima: desactivado"
+        );
+        app.pinned_on_top = true;
+        assert_eq!(
+            app.action_display_name(AppAction::TogglePinOnTop),
+            "Ventana siempre encima: activado ✓"
+        );
+        assert_eq!(app.action_display_name(AppAction::Save), "Guardar");
+    }
 
     #[test]
     fn el_contador_en_vivo_cuenta_la_fuente_sin_marcadores_sueltos() {
