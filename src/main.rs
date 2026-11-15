@@ -301,6 +301,16 @@ const LIST_ACTIONS: [AppAction; 3] = [
 /// Símbolos, entidades frecuentes y emojis de estudio. Se insertan como texto
 /// Unicode literal: el archivo sigue siendo Markdown portable.
 const SYMBOLS: [(&str, &str); 40] = [
+    ("✅", "emoji hecho"),
+    ("❌", "emoji error"),
+    ("⚠️", "emoji atención"),
+    ("❓", "emoji duda"),
+    ("💡", "emoji idea"),
+    ("📌", "emoji importante"),
+    ("📚", "emoji estudio"),
+    ("⭐", "emoji destacado"),
+    ("🔥", "emoji urgente"),
+    ("👍", "emoji de acuerdo"),
     ("→", "flecha a la derecha"),
     ("←", "flecha a la izquierda"),
     ("↔", "flecha doble"),
@@ -331,16 +341,6 @@ const SYMBOLS: [(&str, &str); 40] = [
     ("™", "marca"),
     ("§", "sección"),
     ("¶", "párrafo"),
-    ("✅", "emoji hecho"),
-    ("❌", "emoji error"),
-    ("⚠️", "emoji atención"),
-    ("❓", "emoji duda"),
-    ("💡", "emoji idea"),
-    ("📌", "emoji importante"),
-    ("📚", "emoji estudio"),
-    ("⭐", "emoji destacado"),
-    ("🔥", "emoji urgente"),
-    ("👍", "emoji de acuerdo"),
 ];
 
 const INSERT_ACTIONS: [AppAction; 7] = [
@@ -1116,6 +1116,21 @@ fn toolbar_button_x(action: AppAction, window_width: f32, mode: DocumentMode) ->
         .iter()
         .position(|item| *item == action)?;
     contextual_toolbar_item_geometry(index, window_width, mode).map(|geometry| geometry.x)
+}
+
+/// Posiciones de `SYMBOLS` que coinciden con lo escrito, sin distinguir
+/// mayúsculas ni tildes. Sin consulta, todas, con los emojis primero.
+fn symbol_matches(query: &str) -> Vec<usize> {
+    let query = query.trim();
+    let folded = search_fold(query);
+    SYMBOLS
+        .iter()
+        .enumerate()
+        .filter(|(_, (symbol, name))| {
+            folded.is_empty() || search_fold(name).contains(&folded) || symbol.contains(query)
+        })
+        .map(|(index, _)| index)
+        .collect()
 }
 
 /// Nombre de una acción sin su atajo: «Guardar · Ctrl+S» es «Guardar».
@@ -6923,6 +6938,8 @@ struct App {
     pane_split_picker: Option<DocumentPaneAxis>,
     /// Selector de símbolos abierto y su fila elegida.
     symbol_picker: Option<usize>,
+    /// Texto con el que se filtra el selector de símbolos.
+    symbol_query: String,
     /// Filas del índice flotante del último cuadro: rectángulo y bloque.
     floating_outline_rows: Vec<(DialogRect, usize)>,
     pane_split_candidates: Vec<u64>,
@@ -7188,6 +7205,7 @@ impl App {
             command_palette_scope: CommandPaletteScope::All,
             pane_split_picker: None,
             symbol_picker: None,
+            symbol_query: String::new(),
             floating_outline_rows: Vec::new(),
             pane_split_candidates: Vec::new(),
             pane_split_match: 0,
@@ -10074,6 +10092,7 @@ impl App {
         }
         self.context_menu = None;
         self.dismiss_navigation_panel();
+        self.symbol_query.clear();
         self.symbol_picker = Some(0);
         if let Some(window) = &self.window {
             window.request_redraw();
@@ -10083,7 +10102,11 @@ impl App {
     /// Inserta el símbolo como texto en el cursor, con un único deshacer.
     fn insert_symbol(&mut self, index: usize) {
         self.symbol_picker = None;
-        let Some((symbol, name)) = SYMBOLS.get(index).copied() else {
+        let Some((symbol, name)) = symbol_matches(&self.symbol_query)
+            .get(index)
+            .and_then(|symbol_index| SYMBOLS.get(*symbol_index))
+            .copied()
+        else {
             return;
         };
         if !self.document.mode.is_editable() {
@@ -10098,7 +10121,7 @@ impl App {
         if event.state != ElementState::Pressed {
             return;
         }
-        let count = SYMBOLS.len();
+        let count = symbol_matches(&self.symbol_query).len().max(1);
         let selected = self.symbol_picker.unwrap_or(0) % count;
         match event.physical_key {
             PhysicalKey::Code(KeyCode::Escape) => {
@@ -10111,11 +10134,27 @@ impl App {
             PhysicalKey::Code(KeyCode::ArrowUp) => {
                 self.symbol_picker = Some((selected + count - 1) % count);
             }
+            PhysicalKey::Code(KeyCode::Backspace) => {
+                self.symbol_query.pop();
+                self.symbol_picker = Some(0);
+            }
             PhysicalKey::Code(KeyCode::Enter) if !event.repeat => {
                 self.insert_symbol(selected);
                 return;
             }
-            _ => return,
+            _ => {
+                let text = typed_text(
+                    event.text.as_deref(),
+                    self.modifiers.control_key(),
+                    self.modifiers.alt_key(),
+                );
+                if let Some(text) = text {
+                    append_limited_text(&mut self.symbol_query, text, MAX_SEARCH_QUERY_CHARS);
+                    self.symbol_picker = Some(0);
+                } else {
+                    return;
+                }
+            }
         }
         if let Some(window) = &self.window {
             window.request_redraw();
@@ -10248,7 +10287,8 @@ impl App {
                 return true;
             }
         } else if let Some(selected) = self.symbol_picker {
-            if let Some(index) = self.list_item_at(x, y, SYMBOLS.len(), selected) {
+            let total = symbol_matches(&self.symbol_query).len();
+            if let Some(index) = self.list_item_at(x, y, total, selected) {
                 self.insert_symbol(index);
                 return true;
             }
@@ -14200,21 +14240,33 @@ impl App {
             (list.total, range)
         });
         let navigation_panel_rows = if let Some(selected) = self.symbol_picker {
-            let selected = selected % SYMBOLS.len();
+            let matches = symbol_matches(&self.symbol_query);
+            let selected = selected % matches.len().max(1);
             let range = self
                 .panel_scroll
-                .sync(panel_key, SYMBOLS.len(), selected, floating_cap);
+                .sync(panel_key, matches.len(), selected, floating_cap);
             Some(NavigationPanelRows {
                 shortcuts: Vec::new(),
-                title: "Insertar símbolo o emoji".to_string(),
+                title: if self.symbol_query.is_empty() {
+                    "Símbolos y emojis · escribí para filtrar".to_string()
+                } else {
+                    abbreviated_label(
+                        &format!(
+                            "Símbolos: {} · {}",
+                            self.symbol_query,
+                            count_noun(matches.len(), "resultado", "resultados")
+                        ),
+                        48,
+                    )
+                },
                 items: range
                     .clone()
                     .map(|index| {
-                        let (symbol, name) = SYMBOLS[index];
+                        let (symbol, name) = SYMBOLS[matches[index]];
                         (index == selected, format!("{symbol}   {name}"))
                     })
                     .collect(),
-                footer: format!("{} · Enter inserta", panel_footer(SYMBOLS.len(), range)),
+                footer: format!("{} · Enter inserta", panel_footer(matches.len(), range)),
             })
         } else if let (Some(axis), Some(candidates)) =
             (pane_split_axis, pane_split_candidates.as_ref())
@@ -17634,6 +17686,38 @@ mod pruebas {
     /// Filas de la primera página de la paleta en una ventana chica: lo más
     /// usado tiene que estar ahí sin desplazarse.
     const PRIMERAS_FILAS: usize = 9;
+
+    #[test]
+    fn el_selector_de_simbolos_muestra_los_emojis_primero_y_se_filtra_al_escribir() {
+        let todos = symbol_matches("");
+        assert_eq!(todos.len(), SYMBOLS.len());
+        // Los diez emojis encabezan la lista.
+        for index in 0..10 {
+            assert!(SYMBOLS[todos[index]].1.starts_with("emoji"), "{index}");
+        }
+        // Se filtra por nombre, sin tildes ni mayúsculas.
+        let idea = symbol_matches("IDEA");
+        assert_eq!(idea.len(), 1);
+        assert_eq!(SYMBOLS[idea[0]].0, "💡");
+        assert!(symbol_matches("raiz").iter().any(|i| SYMBOLS[*i].0 == "√"));
+        // Se filtra por el propio símbolo.
+        assert_eq!(symbol_matches("→").len(), 1);
+        // Nada que coincida.
+        assert!(symbol_matches("zzzz").is_empty());
+        // Los espacios sobrantes no cambian el resultado.
+        assert_eq!(symbol_matches("  idea "), idea);
+    }
+
+    #[test]
+    fn insertar_un_simbolo_usa_la_posicion_de_la_lista_filtrada() {
+        let mut app = App::for_tests(NIGHT);
+        app.load_for_test("", DocumentMode::SourceEditing);
+        app.symbol_query = "idea".to_string();
+        app.symbol_picker = Some(0);
+        app.insert_symbol(0);
+        assert_eq!(app.document.source.to_string(), "💡");
+        assert!(app.symbol_picker.is_none());
+    }
 
     #[test]
     fn las_alternancias_de_la_paleta_dicen_su_estado() {

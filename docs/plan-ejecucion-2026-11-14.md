@@ -388,7 +388,7 @@ aparcada (con el motivo).
   - Prueba: «napoleon» coincide con «Napoleón»; «ano» coincide con «año».
   - Origen: la verificación en vivo de la fase 1 mostró que «napoleon» daba 0
     resultados contra «Napoleón».
-- [ ] **3.10** Símbolos: emojis primero, filtro con `typed_text` y columna de
+- [x] **3.10** Símbolos: emojis primero, filtro con `typed_text` y columna de
   24 px.
 - [ ] **3.11** Índice: abre con la sección visible elegida. En el flotante, la
   sección activa es el último título cuya `y` ≤ `scroll + viewport / 3` y, al

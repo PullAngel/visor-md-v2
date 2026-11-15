@@ -55,7 +55,7 @@ impl App {
         let (total, selected) = if self.pane_split_picker.is_some() {
             (self.pane_split_candidates.len(), self.pane_split_match)
         } else if let Some(selected) = self.symbol_picker {
-            (SYMBOLS.len(), selected)
+            (symbol_matches(&self.symbol_query).len(), selected)
         } else if let Some(selected) = self.command_palette {
             (self.command_palette_actions().len(), selected)
         } else if self.workspace_search_query.is_some() {
