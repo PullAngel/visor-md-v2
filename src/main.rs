@@ -7183,6 +7183,38 @@ impl App {
         app.palette = palette;
         app
     }
+
+    /// Carga un Markdown ya leído, como lo haría una apertura terminada, sin
+    /// disco ni hilos. Solo para pruebas.
+    #[cfg(test)]
+    fn load_for_test(&mut self, markdown: &str, mode: DocumentMode) {
+        self.document.source = TextBuffer::from_text(markdown);
+        self.document.source_editor = SourceEditor::new();
+        self.document.mode = mode;
+        let outcome = self
+            .document
+            .content_kind
+            .prepare_view(markdown)
+            .expect("el documento de prueba debe ser válido");
+        apply_view_outcome(&mut self.document, outcome);
+        if mode != DocumentMode::Reading {
+            self.document.blocks = safe_buffer_blocks(&self.document.source)
+                .expect("la fuente de prueba debe ser válida");
+        }
+        self.laid_for_width = -1.0;
+        self.preview_laid_for_width = -1.0;
+        self.notice = None;
+    }
+
+    /// Dibuja un cuadro del tamaño pedido y devuelve el lienzo. Solo para
+    /// pruebas.
+    #[cfg(test)]
+    fn draw_for_test(&mut self, width: u32, height: u32) -> &Pixmap {
+        let w = NonZeroU32::new(width).expect("ancho distinto de cero");
+        let h = NonZeroU32::new(height).expect("alto distinto de cero");
+        self.render_frame(w, h).expect("el cuadro debe dibujarse");
+        self.pixmap.as_ref().expect("el cuadro deja un lienzo")
+    }
 }
 
 impl ApplicationHandler<AppEvent> for App {
@@ -13770,9 +13802,31 @@ impl App {
         };
 
         let frame_start = Instant::now();
+        self.render_frame(w, h)?;
+        self.present_frame(w, h)?;
+
+        let ms = frame_start.elapsed().as_secs_f64() * 1000.0;
+        if self.first_paint_done {
+            self.frames += 1;
+            self.frame_time_total += ms;
+        } else {
+            self.first_paint_done = true;
+            self.log.push(format!(
+                "[medicion] primer pintado: {:.0} ms desde el arranque",
+                self.started.elapsed().as_secs_f64() * 1000.0
+            ));
+        }
+        Ok(())
+    }
+
+    /// Dibuja un cuadro completo en `self.pixmap` sin presentarlo. No necesita
+    /// ventana: sin ella, las peticiones de redibujo se omiten. Es lo que
+    /// permite dibujar escenas en pruebas.
+    fn render_frame(&mut self, w: NonZeroU32, h: NonZeroU32) -> Result<(), String> {
+        let window = self.window.clone();
         let workspace_column_open = self.workspace_column_is_open();
         let document_area =
-            document_area_geometry(size.width as f32, size.height as f32, workspace_column_open);
+            document_area_geometry(w.get() as f32, h.get() as f32, workspace_column_open);
         let document_layouts = document_pane_layouts_in(&self.document_panes, document_area);
         let focused_outer = document_layouts
             .iter()
@@ -13981,7 +14035,9 @@ impl App {
         }
 
         if self.autoscroll_selection(panes.source.y, viewport_height) {
-            window.request_redraw();
+            if let Some(window) = &window {
+                window.request_redraw();
+            }
         }
 
         let menu = self.context_menu.clone();
@@ -14727,7 +14783,6 @@ impl App {
             glyphs,
             scroll,
             doc_height,
-            surface,
             palette,
             selection,
             focused_link,
@@ -16548,11 +16603,19 @@ impl App {
                 );
             }
         }
+        Ok(())
+    }
 
-        // Volcado del pixmap a la ventana.
-        let surface = surface
+    /// Copia `self.pixmap` a la superficie de la ventana y lo presenta.
+    fn present_frame(&mut self, w: NonZeroU32, h: NonZeroU32) -> Result<(), String> {
+        let surface = self
+            .surface
             .as_mut()
             .ok_or_else(|| "la superficie grafica no esta disponible".to_string())?;
+        let pixmap = self
+            .pixmap
+            .as_ref()
+            .ok_or_else(|| "el framebuffer no esta disponible".to_string())?;
         surface
             .resize(w, h)
             .map_err(|error| format!("no se pudo redimensionar la superficie: {error}"))?;
@@ -16565,18 +16628,6 @@ impl App {
         buffer
             .present()
             .map_err(|error| format!("no se pudo presentar el cuadro: {error}"))?;
-
-        let ms = frame_start.elapsed().as_secs_f64() * 1000.0;
-        if self.first_paint_done {
-            self.frames += 1;
-            self.frame_time_total += ms;
-        } else {
-            self.first_paint_done = true;
-            self.log.push(format!(
-                "[medicion] primer pintado: {:.0} ms desde el arranque",
-                self.started.elapsed().as_secs_f64() * 1000.0
-            ));
-        }
         Ok(())
     }
 
@@ -17400,6 +17451,46 @@ let x = 1;
                     .is_some()
             );
         }
+    }
+
+    const DOCUMENTO_DE_PRUEBA: &str = "# Título\n\nUn párrafo con **negrita** y `código`.\n\n- uno\n- dos\n\n> [!NOTE]\n> una nota\n";
+
+    fn pixeles_distintos_del_fondo(pixmap: &Pixmap, fondo: (u8, u8, u8)) -> usize {
+        pixmap
+            .pixels()
+            .iter()
+            .filter(|pixel| (pixel.red(), pixel.green(), pixel.blue()) != fondo)
+            .count()
+    }
+
+    #[test]
+    fn un_cuadro_se_dibuja_sin_ventana_en_cada_modo_y_tamano() {
+        for (width, height) in [(640, 480), (1100, 720)] {
+            for mode in [
+                DocumentMode::Reading,
+                DocumentMode::SourceEditing,
+                DocumentMode::Split,
+            ] {
+                let mut app = App::for_tests(NIGHT);
+                app.load_for_test(DOCUMENTO_DE_PRUEBA, mode);
+                let pixmap = app.draw_for_test(width, height);
+                assert_eq!((pixmap.width(), pixmap.height()), (width, height));
+                let con_tinta = pixeles_distintos_del_fondo(pixmap, NIGHT.surface);
+                assert!(
+                    con_tinta > 2_000,
+                    "{mode:?} a {width}x{height} dibujó solo {con_tinta} píxeles"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn dibujar_dos_veces_el_mismo_cuadro_da_la_misma_imagen() {
+        let mut app = App::for_tests(NIGHT);
+        app.load_for_test(DOCUMENTO_DE_PRUEBA, DocumentMode::Reading);
+        let primero = app.draw_for_test(900, 560).data().to_vec();
+        let segundo = app.draw_for_test(900, 560).data().to_vec();
+        assert_eq!(primero, segundo);
     }
 
     #[test]
