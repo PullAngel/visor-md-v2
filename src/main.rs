@@ -20,6 +20,7 @@ mod fonts;
 mod images;
 mod limits;
 mod list_view;
+mod menu;
 mod panel_list;
 mod panes;
 mod pdf;
@@ -29,6 +30,7 @@ mod surface;
 mod theme;
 mod ui_motion;
 mod ui_target;
+use menu::MenuEntry;
 use panel_list::{floating_capacity, floating_rows, list_nav_for_key};
 use surface::toolbar_button_active;
 use ui_target::UiTarget;
@@ -283,6 +285,62 @@ const STUDY_ACTIONS: [AppAction; 9] = [
     AppAction::PrepareStudySummary,
     AppAction::PrepareStudyConceptList,
     AppAction::PrepareAiFragments,
+];
+/// Grupos con encabezado de un menú: el título y sus acciones.
+type MenuGroup = (&'static str, &'static [AppAction]);
+
+fn grouped_entries(groups: &[MenuGroup]) -> Vec<MenuEntry> {
+    groups
+        .iter()
+        .flat_map(|(title, actions)| {
+            std::iter::once(MenuEntry::Heading(title))
+                .chain(actions.iter().copied().map(MenuEntry::Item))
+        })
+        .collect()
+}
+
+const BLOCK_GROUPS: [MenuGroup; 2] = [
+    (
+        "Títulos",
+        &[
+            AppAction::InsertHeading1,
+            AppAction::InsertHeading,
+            AppAction::InsertHeading3,
+            AppAction::InsertHeading4,
+            AppAction::InsertHeading5,
+            AppAction::InsertHeading6,
+        ],
+    ),
+    (
+        "Bloques",
+        &[
+            AppAction::InsertQuote,
+            AppAction::InsertCodeBlock,
+            AppAction::InsertHorizontalRule,
+            AppAction::InsertCallout,
+        ],
+    ),
+];
+const STUDY_GROUPS: [MenuGroup; 2] = [
+    (
+        "Insertar en el documento",
+        &[
+            AppAction::InsertStudyQuestion,
+            AppAction::InsertStudySummary,
+            AppAction::InsertStudyConceptList,
+            AppAction::InsertStudyUnderstood,
+            AppAction::InsertStudyDoubt,
+            AppAction::InsertStudyPending,
+        ],
+    ),
+    (
+        "Desde la selección",
+        &[
+            AppAction::PrepareStudySummary,
+            AppAction::PrepareStudyConceptList,
+            AppAction::PrepareAiFragments,
+        ],
+    ),
 ];
 const BLOCK_ACTIONS: [AppAction; 10] = [
     AppAction::InsertHeading1,
@@ -768,6 +826,9 @@ struct NavigationPanelRows {
     items: Vec<(bool, String)>,
     /// Atajo de cada fila, alineado a la derecha. Vacío si el panel no tiene.
     shortcuts: Vec<Option<&'static str>>,
+    /// Filas que son encabezados de grupo: no se resaltan ni se pulsan. Vacío
+    /// si el panel no tiene.
+    headings: Vec<bool>,
     footer: String,
 }
 
@@ -9915,7 +9976,8 @@ impl App {
         let Some(selected) = self.command_palette else {
             return;
         };
-        let actions = self.command_palette_actions();
+        let entries = self.command_palette_entries();
+        let selected = menu::snap(&entries, selected);
         match event.physical_key {
             PhysicalKey::Code(KeyCode::Escape) => {
                 self.command_palette = None;
@@ -9925,17 +9987,19 @@ impl App {
                 self.command_palette_query.pop();
                 self.command_palette = Some(0);
             }
-            PhysicalKey::Code(KeyCode::ArrowDown | KeyCode::Tab) if !actions.is_empty() => {
-                self.command_palette = Some((selected + 1) % actions.len());
+            PhysicalKey::Code(KeyCode::ArrowDown | KeyCode::Tab) if !entries.is_empty() => {
+                self.command_palette = Some(menu::step(&entries, selected, true));
             }
-            PhysicalKey::Code(KeyCode::ArrowUp) if !actions.is_empty() => {
-                self.command_palette = Some((selected + actions.len() - 1) % actions.len());
+            PhysicalKey::Code(KeyCode::ArrowUp) if !entries.is_empty() => {
+                self.command_palette = Some(menu::step(&entries, selected, false));
             }
-            PhysicalKey::Code(KeyCode::Enter) if !actions.is_empty() => {
-                self.command_palette = None;
-                self.command_palette_query.clear();
-                self.command_palette_scope = CommandPaletteScope::All;
-                self.perform_action(actions[selected % actions.len()]);
+            PhysicalKey::Code(KeyCode::Enter) if !entries.is_empty() => {
+                if let Some(action) = entries.get(selected).and_then(|entry| entry.action()) {
+                    self.command_palette = None;
+                    self.command_palette_query.clear();
+                    self.command_palette_scope = CommandPaletteScope::All;
+                    self.perform_action(action);
+                }
             }
             _ => {
                 let text = typed_text(
@@ -9965,6 +10029,23 @@ impl App {
             MAX_SEARCH_QUERY_CHARS,
         );
         self.command_palette = Some(0);
+    }
+
+    /// Filas de la paleta o menú abierto. Sin texto escrito conservan sus
+    /// grupos con encabezado; al filtrar, solo las acciones que coinciden.
+    fn command_palette_entries(&self) -> Vec<MenuEntry> {
+        if !self.command_palette_query.trim().is_empty() {
+            return menu::items(&self.command_palette_actions());
+        }
+        match self.command_palette_scope {
+            CommandPaletteScope::All => menu::items(&APP_ACTIONS),
+            CommandPaletteScope::Writing => menu::items(&WRITING_ACTIONS),
+            CommandPaletteScope::Blocks => grouped_entries(&BLOCK_GROUPS),
+            CommandPaletteScope::Lists => menu::items(&LIST_ACTIONS),
+            CommandPaletteScope::Insert => menu::items(&INSERT_ACTIONS),
+            CommandPaletteScope::Workspace => menu::items(&WORKSPACE_HUB_ACTIONS),
+            CommandPaletteScope::Study => grouped_entries(&STUDY_GROUPS),
+        }
     }
 
     fn command_palette_actions(&self) -> Vec<AppAction> {
@@ -10442,12 +10523,16 @@ impl App {
                 return true;
             }
         } else if let Some(selected) = self.command_palette {
-            let actions = self.command_palette_actions();
-            if let Some(index) = self.list_item_at(x, y, actions.len(), selected) {
-                self.command_palette = None;
-                self.command_palette_query.clear();
-                self.command_palette_scope = CommandPaletteScope::All;
-                self.perform_action(actions[index]);
+            let entries = self.command_palette_entries();
+            if let Some(index) = self.list_item_at(x, y, entries.len(), selected) {
+                // Un clic sobre un encabezado no hace nada, pero tampoco cae
+                // al documento que queda detrás.
+                if let Some(action) = entries.get(index).and_then(|entry| entry.action()) {
+                    self.command_palette = None;
+                    self.command_palette_query.clear();
+                    self.command_palette_scope = CommandPaletteScope::All;
+                    self.perform_action(action);
+                }
                 return true;
             }
         } else if self.workspace_search_query.is_some() {
@@ -14369,7 +14454,7 @@ impl App {
         let workspace_search_results = workspace_search_query
             .as_ref()
             .map(|_| self.workspace_search_matches());
-        let palette_actions = self.command_palette.map(|_| self.command_palette_actions());
+        let palette_entries = self.command_palette.map(|_| self.command_palette_entries());
         let pane_split_axis = self.pane_split_picker;
         let pane_split_candidates = pane_split_axis.map(|_| {
             self.pane_split_candidates
@@ -14414,6 +14499,7 @@ impl App {
                 .sync(panel_key, matches.len(), selected, floating_cap);
             Some(NavigationPanelRows {
                 shortcuts: Vec::new(),
+                headings: Vec::new(),
                 title: if self.symbol_query.is_empty() {
                     "Símbolos y emojis · escribí para filtrar".to_string()
                 } else {
@@ -14444,6 +14530,7 @@ impl App {
                 .sync(panel_key, candidates.len(), selected, floating_cap);
             Some(NavigationPanelRows {
                 shortcuts: Vec::new(),
+                headings: Vec::new(),
                 title: format!("Dividir {} · ¿qué mostrar en el panel nuevo?", axis.label()),
                 items: range
                     .clone()
@@ -14455,10 +14542,10 @@ impl App {
                     format!("{} · Enter divide", panel_footer(candidates.len(), range))
                 },
             })
-        } else if let (Some(selected), Some(actions)) =
-            (self.command_palette, palette_actions.as_ref())
+        } else if let (Some(selected), Some(entries)) =
+            (self.command_palette, palette_entries.as_ref())
         {
-            let selected = selected % actions.len().max(1);
+            let selected = menu::snap(entries, selected);
             let capacity = if self.command_palette_scope == CommandPaletteScope::Workspace {
                 workspace_panel_capacity
             } else {
@@ -14466,7 +14553,7 @@ impl App {
             };
             let range = self
                 .panel_scroll
-                .sync(panel_key, actions.len(), selected, capacity);
+                .sync(panel_key, entries.len(), selected, capacity);
             let title = if self.command_palette_query.is_empty() {
                 match self.command_palette_scope {
                     CommandPaletteScope::All => "Acciones · escribe para filtrar".to_string(),
@@ -14481,28 +14568,33 @@ impl App {
                 format!(
                     "Acciones: {} · {}",
                     self.command_palette_query,
-                    count_noun(actions.len(), "resultado", "resultados")
+                    count_noun(entries.len(), "resultado", "resultados")
                 )
             };
             Some(NavigationPanelRows {
                 title: abbreviated_label(&title, 48),
                 items: range
                     .clone()
-                    .map(|index| {
-                        (
+                    .map(|index| match entries[index] {
+                        MenuEntry::Heading(title) => (false, title.to_string()),
+                        MenuEntry::Item(action) => (
                             index == selected,
                             abbreviated_label(
-                                &self.action_display_name(actions[index]),
+                                &self.action_display_name(action),
                                 MAX_OVERLAY_LABEL_CHARS,
                             ),
-                        )
+                        ),
                     })
                     .collect(),
                 shortcuts: range
                     .clone()
-                    .map(|index| action_shortcut(actions[index]))
+                    .map(|index| entries[index].action().and_then(action_shortcut))
                     .collect(),
-                footer: panel_footer(actions.len(), range),
+                headings: range
+                    .clone()
+                    .map(|index| entries[index].is_heading())
+                    .collect(),
+                footer: panel_footer(entries.len(), range),
             })
         } else if let (Some(query), Some(paths)) = (
             workspace_search_query.as_ref(),
@@ -14524,6 +14616,7 @@ impl App {
             };
             Some(NavigationPanelRows {
                 shortcuts: Vec::new(),
+                headings: Vec::new(),
                 title: abbreviated_label(&title, 48),
                 items: range
                     .clone()
@@ -14548,6 +14641,7 @@ impl App {
                 .unwrap_or((None, 0));
             Some(NavigationPanelRows {
                 shortcuts: Vec::new(),
+                headings: Vec::new(),
                 title: workspace_panel_title(workspace_root, note_count),
                 items: range
                     .clone()
@@ -14567,6 +14661,7 @@ impl App {
                     .sync(panel_key, paths.len(), selected, workspace_panel_capacity);
             Some(NavigationPanelRows {
                 shortcuts: Vec::new(),
+                headings: Vec::new(),
                 title: backlinks_panel_title(paths.len()),
                 items: range
                     .clone()
@@ -14589,6 +14684,7 @@ impl App {
                     .sync(panel_key, rows.len(), selected, workspace_panel_capacity);
             Some(NavigationPanelRows {
                 shortcuts: Vec::new(),
+                headings: Vec::new(),
                 title: format!("Enlaces de bóveda · {}", rows.len()),
                 items: range
                     .clone()
@@ -14611,6 +14707,7 @@ impl App {
             );
             Some(NavigationPanelRows {
                 shortcuts: Vec::new(),
+                headings: Vec::new(),
                 title: format!("Índice · {} encabezados", headings.len()),
                 items: range
                     .clone()
@@ -14657,6 +14754,25 @@ impl App {
             rows.labels()
                 .enumerate()
                 .map(|(row, label)| {
+                    let is_heading = row
+                        .checked_sub(1)
+                        .filter(|item| *item < item_count)
+                        .is_some_and(|item| rows.headings.get(item).copied().unwrap_or(false));
+                    if is_heading {
+                        // Encabezado de grupo: más chico, en negrita y atenuado.
+                        return (
+                            build_ui_text_layout(
+                                label,
+                                &mut self.font_cx,
+                                &mut self.layout_cx,
+                                self.palette.dim,
+                                11.5,
+                                true,
+                                None,
+                            ),
+                            false,
+                        );
+                    }
                     let shortcut_width = row
                         .checked_sub(1)
                         .filter(|item| *item < item_count)
@@ -16898,7 +17014,9 @@ impl App {
                 } else {
                     geometry.items_y + PANEL_ROW_HEIGHT * rows.items.len() as f32
                 };
+                let is_heading = is_item && rows.headings.get(row - 1).copied().unwrap_or(false);
                 let hovered = is_item
+                    && !is_heading
                     && menu_pointer.is_some_and(|(px, py)| {
                         px >= geometry.x + PANEL_PADDING
                             && px < geometry.x + geometry.width - PANEL_PADDING
@@ -18072,6 +18190,44 @@ mod pruebas {
         assert_eq!(
             action_shortcut(AppAction::ToggleTheme),
             Some("Ctrl+Shift+D")
+        );
+    }
+
+    #[test]
+    fn un_menu_con_grupos_salta_los_encabezados_con_teclado_y_con_clic() {
+        let mut app = App::for_tests(NIGHT);
+        app.load_for_test("", DocumentMode::SourceEditing);
+        app.draw_for_test(900, 560);
+        app.open_block_actions();
+        let entradas = app.command_palette_entries();
+        assert!(entradas[0].is_heading());
+        assert_eq!(entradas.len(), 12, "2 encabezados y 10 acciones");
+        // La lista expone todas las filas y la elegida nunca es un encabezado.
+        let lista = app.open_list().expect("el menú es una lista abierta");
+        assert_eq!(lista.total, 12);
+        assert_eq!(lista.selected, 1);
+        // Home y End caen en elementos, no en encabezados.
+        app.navigate_open_list(list_view::ListNav::Home);
+        assert!(!entradas[app.open_list().expect("abierta").selected].is_heading());
+        // La fila 0 es un encabezado: no tiene acción que ejecutar.
+        app.draw_for_test(900, 560);
+        let geometria = app
+            .navigation_panel_geometry(lista.total)
+            .expect("hay geometría");
+        let (x, y) = (
+            geometria.x + 40.0,
+            geometria.items_y + PANEL_ROW_HEIGHT * 0.5,
+        );
+        let fila = app.list_item_at(x, y, lista.total, lista.selected);
+        assert_eq!(fila, Some(0));
+        assert!(entradas[0].action().is_none());
+        assert!(app.command_palette.is_some());
+        // Con texto escrito el menú es una lista plana sin encabezados.
+        app.append_command_palette_text("cita");
+        assert!(
+            app.command_palette_entries()
+                .iter()
+                .all(|e| !e.is_heading())
         );
     }
 

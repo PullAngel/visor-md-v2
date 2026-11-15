@@ -57,7 +57,8 @@ impl App {
         } else if let Some(selected) = self.symbol_picker {
             (symbol_matches(&self.symbol_query).len(), selected)
         } else if let Some(selected) = self.command_palette {
-            (self.command_palette_actions().len(), selected)
+            let entries = self.command_palette_entries();
+            (entries.len(), menu::snap(&entries, selected))
         } else if self.workspace_search_query.is_some() {
             (
                 self.workspace_search_matches().len(),
@@ -83,7 +84,8 @@ impl App {
         } else if self.symbol_picker.is_some() {
             self.symbol_picker = Some(index);
         } else if self.command_palette.is_some() {
-            self.command_palette = Some(index);
+            let entries = self.command_palette_entries();
+            self.command_palette = Some(menu::snap(&entries, index));
         } else if self.workspace_search_query.is_some() {
             self.workspace_search_match = index;
         } else if self.workspace_paths.is_some() {

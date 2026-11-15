@@ -355,9 +355,10 @@ Diseño completo, inventario de las 69 acciones y riesgos en
   tooltip de D-15. *Supuesto*: la frase del propietario sobre «pasar el cursor
   por encima» quedó cortada; se tomó como este tooltip y se confirma al
   probar.
-- **D-36. Menú con secciones.** `enum MenuEntry { Item(AppAction), Heading(&str),
-  Separator }`. Encabezados y separadores no se seleccionan; la navegación los
-  salta. Las alternancias muestran «✓» a la izquierda cuando están activas.
+- **D-36. Menú con secciones.** `enum MenuEntry { Item(AppAction), Heading(&str) }`
+  en `src/menu.rs`. Los encabezados hacen de separadores y no se seleccionan; la
+  navegación los salta (no hay `Separator`: las filas tienen todas la misma
+  altura). Las alternancias muestran «✓» a la izquierda cuando están activas.
 - **D-37. Barra adaptable.** `top_bar_layout(window_width, mode)` reparte el
   espacio por prioridad y devuelve rectángulos para dibujo, puntero, foco y
   tooltip. Lo que no cabe pasa al menú «≡». A 640 px caben los cuatro botones
@@ -626,9 +627,10 @@ iba a ampliar, y el texto de la fase 7 se escribe ya sobre ellos.
   - prueba: con el Índice abierto, Ctrl+Shift+D cambia el tema; la T sola no.
 - [x] **10.3** D-35 tooltip de texto completo en filas recortadas de las listas
   abiertas (`UiTarget::ListRow`, escena `indice-recortado`).
-- [ ] **10.4** D-36 `MenuEntry` y su navegación (`list_view.rs`, `panel_list.rs`):
-  encabezados y separadores no seleccionables, «✓» a la izquierda. Pruebas
-  de navegación con saltos.
+- [x] **10.4** D-36 `MenuEntry` y su navegación (`menu.rs`): encabezados no
+  seleccionables y saltados por flechas, Re Pág, Inicio y Fin; ya lo usan los
+  menús Bloques y Estudio. Pendiente: «✓» a la izquierda de las alternancias
+  (con la 10.6).
 - [ ] **10.5** D-37 `top_bar_layout` y la prueba de solapes de 640 a 2000 px.
   Reemplaza `PRIMARY_TOOLBAR_ACTIONS`, `MODE_SWITCH_X` y los cálculos
   repetidos (`toolbar_button_x`, `toolbar_action_at`, foco F6, tooltip, dibujo).
@@ -723,7 +725,7 @@ asociación.
 | 4 | Hecho | c441983, c3b3a76, 1c6f87a, 98f6793 y el ajuste de bloques |
 | 2 | Hecho | 01bacf8, 898665a, e127b66, 9d1a167, 5888201 y la capa de tooltip |
 | 3 | Casi hecha | Hechas 3.1 a 3.8, 3.9b, 3.10 a 3.12. Pendientes: 3.9 (caja de búsqueda con borde y barra anclada); la 3.13 pasa a la 10.7 |
-| 10 | En curso | Hechas 10.1 a 10.3 (texto recortado, botón y Ctrl+Shift+D, tooltip de filas). Siguiente: 10.4 |
+| 10 | En curso | Hechas 10.1 a 10.4 (texto recortado, tema, tooltip de filas, menú con grupos). Siguiente: 10.5 |
 | 5 | En curso | Hecha 5.1 (verde propio de la pestaña). Pendientes 5.2 a 5.4 y 5.8; la 5.5 a 5.7 pasan a la fase 11 |
 | 11 | Pendiente | Mosaico: cabecera como pestaña, divisor, intercambio, soltado |
 | 6 | Pendiente | — |

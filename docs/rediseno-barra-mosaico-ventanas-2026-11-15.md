@@ -228,13 +228,13 @@ Las filas de los menús ya son listas con rueda, barra de posición y hover
 
 ```text
 enum MenuEntry {
-    Item { action: AppAction },
+    Item(AppAction),
     Heading(&'static str),   // «Modo», «Mosaico», «Apariencia»
-    Separator,
 }
 ```
 
-- Los encabezados y separadores no se seleccionan: las flechas los saltan.
+- Los encabezados hacen de separadores y no se seleccionan: las flechas los
+  saltan. No hay `Separator` porque todas las filas miden lo mismo.
 - Las alternancias muestran «✓» a la izquierda cuando están activas (en lugar
   del texto «activado ✓» al final).
 - El atajo va a la derecha (ya existe).
