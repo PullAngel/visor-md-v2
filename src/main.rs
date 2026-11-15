@@ -6820,6 +6820,8 @@ struct App {
     pointer: Option<(f32, f32)>,
     /// Hover y pulsación con transición. El dibujo lo consume desde la fase 8.
     ui_motion: ui_motion::UiMotion,
+    /// Cuándo se muestra la ayuda del botón bajo el puntero.
+    tooltip: ui_motion::TooltipTimer,
     /// Texto que un IME todavía está componiendo. No forma parte de la fuente
     /// ni puede llegar al guardado hasta que Windows emite un `Commit`.
     ime_preedit: Option<String>,
@@ -7109,6 +7111,7 @@ impl App {
             mode_transition: None,
             pointer: None,
             ui_motion: ui_motion::UiMotion::default(),
+            tooltip: ui_motion::TooltipTimer::default(),
             ime_preedit: None,
             tab_drag_id: None,
             selecting: false,
@@ -7255,6 +7258,21 @@ impl ApplicationHandler<AppEvent> for App {
                 Some(transition.next_frame_at(now))
             }
         });
+        let tooltip_since = self
+            .ui_motion
+            .hover_since()
+            .filter(|(target, _)| matches!(target, UiTarget::Toolbar(_) | UiTarget::ModeSegment(_)))
+            .map(|(_, since)| since);
+        let tooltip_deadline = match self.tooltip.poll(tooltip_since, now) {
+            ui_motion::TooltipPoll::Idle => None,
+            ui_motion::TooltipPoll::WakeAt(due) => Some(due),
+            ui_motion::TooltipPoll::Reveal => {
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+                None
+            }
+        };
         let toast_deadline = self.notice_visible_until.and_then(|until| {
             if until <= now {
                 self.notice_visible_until = None;
@@ -7269,6 +7287,7 @@ impl ApplicationHandler<AppEvent> for App {
         let next = [
             theme_deadline,
             mode_deadline,
+            tooltip_deadline,
             toast_deadline,
             self.next_recovery_deadline(),
         ]
@@ -8015,8 +8034,17 @@ impl ApplicationHandler<AppEvent> for App {
                     }
                 }
                 let ui_target = self.ui_target_at(position.x as f32, position.y as f32);
-                self.ui_motion
-                    .set_hover(ui_target, Instant::now(), self.reduce_motion);
+                if self
+                    .ui_motion
+                    .set_hover(ui_target, Instant::now(), self.reduce_motion)
+                {
+                    // Cambiar de objetivo reinicia la espera del tooltip y
+                    // quita el anterior de inmediato.
+                    self.tooltip.reset();
+                    if let Some(window) = &self.window {
+                        window.request_redraw();
+                    }
+                }
                 let toolbar_hover = matches!(
                     ui_target,
                     Some(UiTarget::Toolbar(_) | UiTarget::ModeSegment(_))
@@ -8104,6 +8132,7 @@ impl ApplicationHandler<AppEvent> for App {
                     if let Some(target) = self.pointer.and_then(|(x, y)| self.ui_target_at(x, y)) {
                         self.ui_motion.press(target, Instant::now());
                     }
+                    self.tooltip.suppress();
                     if self.image_preview.take().is_some() {
                         self.set_notice("vista previa de imagen cerrada");
                         if let Some(window) = &self.window {
@@ -9045,6 +9074,7 @@ impl ApplicationHandler<AppEvent> for App {
                 self.perform_action(AppAction::ToggleTheme);
             }
             WindowEvent::MouseWheel { delta, .. } => {
+                self.tooltip.suppress();
                 if let Some((x, y)) = self.pointer {
                     let _ = self.focus_document_pane_at(x, y);
                 }
@@ -14320,9 +14350,13 @@ impl App {
             })
             .collect::<Vec<_>>();
         let toolbar_focus = self.toolbar_focus;
+        // La ayuda nunca se dibuja con un diálogo, un menú o un panel abierto.
+        // Con el puntero espera su retraso; con el foco de F6 aparece al instante.
+        let overlay_open =
+            self.dialog.is_some() || self.context_menu.is_some() || self.navigation_panel_is_open();
         let toolbar_hint_label = toolbar_hint_label(
-            toolbar_focus,
-            menu_pointer,
+            toolbar_focus.filter(|_| !overlay_open),
+            menu_pointer.filter(|_| !overlay_open && self.tooltip.is_shown()),
             w.get() as f32,
             self.document.mode,
         );
@@ -15842,28 +15876,6 @@ impl App {
             }
         }
 
-        if let Some(layout) = toolbar_hint_layout {
-            let hint_width = (layout.width() + 20.0).min(w.get() as f32 - MARGIN * 2.0);
-            let hint_x = toolbar_hint_anchor_x
-                .min((w.get() as f32 - hint_width - MARGIN).max(MARGIN))
-                .max(MARGIN);
-            let hint_y = DOCUMENT_VIEWPORT_TOP + 4.0;
-            if let Some(rect) = Rect::from_xywh(hint_x, hint_y, hint_width, 26.0) {
-                pixmap.fill_rect(rect, &floating_paint, Transform::identity(), None);
-            }
-            if let Some(rect) = Rect::from_xywh(hint_x, hint_y, 3.0, 26.0) {
-                pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
-            }
-            for line in layout.lines() {
-                for entry in line.items() {
-                    if let PositionedLayoutItem::GlyphRun(run) = entry {
-                        draw_run_background(pixmap, &run, hint_x + 9.0, hint_y + 5.0);
-                        draw_glyph_run(pixmap, scale_cx, glyphs, &run, hint_x + 9.0, hint_y + 5.0);
-                    }
-                }
-            }
-        }
-
         if let Some(layout) = toast_layout {
             let window_width = w.get() as f32;
             let toast_width = (layout.width() + 40.0).min(window_width - MARGIN * 2.0);
@@ -16448,6 +16460,30 @@ impl App {
                                 y + row as f32 * menu.row_height + 9.0,
                             );
                         }
+                    }
+                }
+            }
+        }
+
+        // La ayuda de un botón va al final: por encima de paneles, columnas y
+        // menús, nunca recortada por ellos.
+        if let Some(layout) = toolbar_hint_layout {
+            let hint_width = (layout.width() + 20.0).min(w.get() as f32 - MARGIN * 2.0);
+            let hint_x = toolbar_hint_anchor_x
+                .min((w.get() as f32 - hint_width - MARGIN).max(MARGIN))
+                .max(MARGIN);
+            let hint_y = DOCUMENT_VIEWPORT_TOP + 4.0;
+            if let Some(rect) = Rect::from_xywh(hint_x, hint_y, hint_width, 26.0) {
+                pixmap.fill_rect(rect, &floating_paint, Transform::identity(), None);
+            }
+            if let Some(rect) = Rect::from_xywh(hint_x, hint_y, 3.0, 26.0) {
+                pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
+            }
+            for line in layout.lines() {
+                for entry in line.items() {
+                    if let PositionedLayoutItem::GlyphRun(run) = entry {
+                        draw_run_background(pixmap, &run, hint_x + 9.0, hint_y + 5.0);
+                        draw_glyph_run(pixmap, scale_cx, glyphs, &run, hint_x + 9.0, hint_y + 5.0);
                     }
                 }
             }

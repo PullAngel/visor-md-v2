@@ -30,6 +30,72 @@ pub(crate) fn transition_progress(
     linear * linear * (3.0 - 2.0 * linear)
 }
 
+/// Espera con el puntero quieto sobre el mismo objetivo antes de mostrar su
+/// ayuda. Evita que un tooltip parpadee al cruzar la barra.
+pub(crate) const TOOLTIP_DELAY: Duration = Duration::from_millis(400);
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum TooltipPhase {
+    /// Esperando a que pase el retraso.
+    #[default]
+    Pending,
+    Shown,
+    /// Oculto hasta que el puntero cambie de objetivo: se pulsó, se usó la
+    /// rueda o se abrió un menú.
+    Suppressed,
+}
+
+/// Qué debe hacer el bucle de eventos con el tooltip.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TooltipPoll {
+    /// Nada que hacer.
+    Idle,
+    /// Despertar en ese instante.
+    WakeAt(Instant),
+    /// Acaba de cumplirse el retraso: hay que redibujar para mostrarlo.
+    Reveal,
+}
+
+/// Cuándo se muestra la ayuda de un botón. Es puro: solo recibe instantes.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct TooltipTimer {
+    phase: TooltipPhase,
+}
+
+impl TooltipTimer {
+    /// El puntero cambió de objetivo: vuelve a esperar.
+    pub(crate) fn reset(&mut self) {
+        self.phase = TooltipPhase::Pending;
+    }
+
+    /// Oculta la ayuda hasta el próximo cambio de objetivo.
+    pub(crate) fn suppress(&mut self) {
+        self.phase = TooltipPhase::Suppressed;
+    }
+
+    pub(crate) fn is_shown(&self) -> bool {
+        self.phase == TooltipPhase::Shown
+    }
+
+    /// Avanza con el reloj. `hover_since` es desde cuándo el puntero está
+    /// sobre un objetivo que tiene ayuda, o `None` si no lo está.
+    pub(crate) fn poll(&mut self, hover_since: Option<Instant>, now: Instant) -> TooltipPoll {
+        let Some(since) = hover_since else {
+            return TooltipPoll::Idle;
+        };
+        if self.phase != TooltipPhase::Pending {
+            return TooltipPoll::Idle;
+        }
+        let due = since + TOOLTIP_DELAY;
+        if due <= now {
+            self.phase = TooltipPhase::Shown;
+            TooltipPoll::Reveal
+        } else {
+            TooltipPoll::WakeAt(due)
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct UiMotion {
     /// Objetivo bajo el puntero y desde cuándo.
@@ -60,6 +126,11 @@ impl UiMotion {
         }
         self.hover = target.map(|target| (target, now));
         true
+    }
+
+    /// Objetivo bajo el puntero y desde cuándo.
+    pub(crate) fn hover_since(&self) -> Option<(UiTarget, Instant)> {
+        self.hover
     }
 
     pub(crate) fn press(&mut self, target: UiTarget, now: Instant) {
@@ -241,6 +312,44 @@ mod pruebas {
         assert!(!motion.is_animating(despues(t0, 400), false));
         // Con Reducir movimiento nunca hay nada que animar.
         assert_eq!(motion.next_frame_at(despues(t0, 210), cuadro, true), None);
+    }
+
+    #[test]
+    fn el_tooltip_espera_el_retraso_y_se_muestra_una_sola_vez() {
+        let t0 = Instant::now();
+        let mut tooltip = TooltipTimer::default();
+        assert_eq!(tooltip.poll(None, t0), TooltipPoll::Idle);
+        assert_eq!(
+            tooltip.poll(Some(t0), despues(t0, 100)),
+            TooltipPoll::WakeAt(despues(t0, 400))
+        );
+        assert!(!tooltip.is_shown());
+        assert_eq!(
+            tooltip.poll(Some(t0), despues(t0, 400)),
+            TooltipPoll::Reveal
+        );
+        assert!(tooltip.is_shown());
+        assert_eq!(tooltip.poll(Some(t0), despues(t0, 500)), TooltipPoll::Idle);
+    }
+
+    #[test]
+    fn el_tooltip_se_oculta_al_suprimirlo_y_vuelve_al_cambiar_de_objetivo() {
+        let t0 = Instant::now();
+        let mut tooltip = TooltipTimer::default();
+        tooltip.poll(Some(t0), despues(t0, 400));
+        assert!(tooltip.is_shown());
+        tooltip.suppress();
+        assert!(!tooltip.is_shown());
+        // Suprimido, no reaparece aunque pase el tiempo.
+        assert_eq!(tooltip.poll(Some(t0), despues(t0, 900)), TooltipPoll::Idle);
+        assert!(!tooltip.is_shown());
+        // Al cambiar de objetivo vuelve a esperar el retraso completo.
+        tooltip.reset();
+        let nuevo = despues(t0, 1000);
+        assert_eq!(
+            tooltip.poll(Some(nuevo), despues(nuevo, 10)),
+            TooltipPoll::WakeAt(despues(nuevo, 400))
+        );
     }
 
     #[test]

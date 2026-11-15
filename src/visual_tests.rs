@@ -51,7 +51,33 @@ fn mostrar_aviso(app: &mut App) {
     app.set_notice("Documento guardado");
 }
 
-const ESCENAS: [Escena; 9] = [
+/// Puntero quieto sobre «Guardar» desde hace más que el retraso del tooltip.
+fn apuntar_a_guardar(app: &mut App) {
+    let x = TOOLBAR_X + 2.0 * TOOLBAR_ITEM_WIDTH + 18.0;
+    let y = TOOLBAR_Y + TOOLBAR_HEIGHT * 0.5;
+    app.pointer = Some((x, y));
+    let ahora = Instant::now();
+    let desde = ahora
+        .checked_sub(std::time::Duration::from_secs(2))
+        .expect("el reloj permite restar dos segundos");
+    app.ui_motion.set_hover(
+        Some(UiTarget::Toolbar(AppAction::Save)),
+        desde,
+        app.reduce_motion,
+    );
+    app.tooltip.poll(Some(desde), ahora);
+}
+
+fn mostrar_tooltip(app: &mut App) {
+    apuntar_a_guardar(app);
+}
+
+fn dialogo_con_el_puntero_sobre_un_boton(app: &mut App) {
+    apuntar_a_guardar(app);
+    abrir_dialogo_de_cierre(app);
+}
+
+const ESCENAS: [Escena; 11] = [
     Escena {
         nombre: "lectura",
         modo: DocumentMode::Reading,
@@ -96,6 +122,16 @@ const ESCENAS: [Escena; 9] = [
         nombre: "aviso",
         modo: DocumentMode::Reading,
         preparar: mostrar_aviso,
+    },
+    Escena {
+        nombre: "tooltip",
+        modo: DocumentMode::Reading,
+        preparar: mostrar_tooltip,
+    },
+    Escena {
+        nombre: "dialogo-sin-tooltip",
+        modo: DocumentMode::SourceEditing,
+        preparar: dialogo_con_el_puntero_sobre_un_boton,
     },
 ];
 

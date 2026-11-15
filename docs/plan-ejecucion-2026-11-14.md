@@ -355,7 +355,7 @@ aparcada (con el motivo).
 - [x] **2.6** D-14 estado de hover y pulsación, todavía sin dibujarlo.
   - Prueba: `transition_progress` en 0, la mitad, el final y con Reducir
     movimiento.
-- [ ] **2.7** D-15 capa de tooltip.
+- [x] **2.7** D-15 capa de tooltip.
   - Prueba: escena `tooltip-columna` y escena «diálogo sin tooltip».
   - Hecho: se corrige el hallazgo del tooltip encima del diálogo.
 
@@ -555,8 +555,8 @@ Orden por defecto para un solo ejecutor: 1 → 4 → 2 → 3 → 5 → 6 → 7 �
 | Preparación | Hecho | Herramientas instaladas; decisiones D-01 a D-28 |
 | 1 | Hecho | a76ddca, 5f9c2ae, 1a74b6f; ejecutable entregado |
 | 4 | Hecho | c441983, c3b3a76, 1c6f87a, 98f6793 y el ajuste de bloques |
-| 2 | **Activa** | — |
-| 3 | Pendiente | — |
+| 2 | Hecho | 01bacf8, 898665a, e127b66, 9d1a167, 5888201 y la capa de tooltip |
+| 3 | **Activa** | — |
 | 5 | Pendiente | — |
 | 6 | Pendiente | — |
 | 7 | Pendiente | — |
