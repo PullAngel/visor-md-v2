@@ -657,7 +657,19 @@ iba a ampliar, y el texto de la fase 7 se escribe ya sobre ellos.
   como texto atenuado a la derecha («Archivo», «Párrafo»…). Prueba de
   inventario de D-29 (toda acción en un menú o en `PALETTE_ONLY`, sin
   repetidas en un menú).
-- [ ] **10.10** Cierre de fase: referencias `barra-640`, `barra-1100`,
+- [ ] **10.11** Pulido que salió de la `design-critique` del 15 de noviembre:
+  - los menús (no las búsquedas) no muestran la fila de título repetida ni el
+    pie «1–13 de 13 · Esc para cerrar»; el pie solo aparece si hay desplazamiento;
+  - el panel de un menú mide lo que mide su fila más larga (mínimo 220 px,
+    máximo 420 px) y se ancla al botón;
+  - los textos de las filas de Párrafo pasan de «Convertir línea en encabezado
+    H1» a «Título 1» (con la 7.1 y la `ux-copy`);
+  - la flecha ▾ de los menús sube a 6 px y se separa 6 px del texto, tanto en
+    la fila 1 como en la 2;
+  - el buscador de acciones usa el ícono `>_` en lugar de «···»;
+  - «Comparar» no queda pegado al borde del selector (padding de 6 px).
+- [ ] **10.10** Cierre de fase (`design-critique` hecha; faltan `/code-review`,
+  prueba en vivo con la build de evaluación y las referencias nuevas): referencias `barra-640`, `barra-1100`,
   `menu-archivo`, `menu-vista`, `menu-parrafo`; `design-critique`;
   `/code-review`; ejecutable nuevo.
 
