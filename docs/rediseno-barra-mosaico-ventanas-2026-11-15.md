@@ -211,9 +211,8 @@ prioridad. Si algo no cabe pasa al menú «≡» sin desaparecer.
 | 2 | Selector de modo | 236 | Nunca se quita |
 | 3 | Nuevo, Abrir, Guardar, Buscar | 4 × 40 | Nunca se quita |
 | 4 | Botón día/noche | 36 | Se quita por debajo de 640 px (queda en Vista y en Ctrl+Shift+D) |
-| 5 | Archivo, Vista, Carpeta con rótulo | ~72 cada uno | Pasan a íconos con ▾ |
-| 6 | Íconos con ▾ (34 px) | 3 × 34 | Pasan a un solo «≡» |
-| 7 | «≡» (40 px), menú único con tres secciones | 40 | — |
+| 5 | Archivo, Vista, Carpeta con rótulo y el buscador | 74 + 62 + 76 + 36 | Pasan a un solo «≡» (no hay nivel intermedio de íconos) |
+| 6 | «≡» (40 px), menú único con los tres menús | 40 | — |
 
 A 640 px: 12 + 160 (directos) + 8 + 236 (modo) = 416; «≡» 40 → 456; controles
 5 × 36 = 180 → empiezan en 460. Cabe con 4 px de aire. A 860 px o más hay

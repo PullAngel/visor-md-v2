@@ -30,7 +30,11 @@ pub(crate) fn surface_for_action(action: AppAction, workspace_open: bool) -> Opt
         | AppAction::ListTools
         | AppAction::InsertTools
         | AppAction::StudyTools
-        | AppAction::WritingTools => Some(action),
+        | AppAction::WritingTools
+        | AppAction::MenuFile
+        | AppAction::MenuView
+        | AppAction::MenuFolder
+        | AppAction::MenuAll => Some(action),
         AppAction::WorkspaceHub => Some(if workspace_open {
             AppAction::WorkspaceFiles
         } else {
@@ -69,6 +73,10 @@ impl App {
         if self.command_palette.is_some() {
             return Some(match self.command_palette_scope {
                 CommandPaletteScope::All => AppAction::CommandPalette,
+                CommandPaletteScope::File => AppAction::MenuFile,
+                CommandPaletteScope::View => AppAction::MenuView,
+                CommandPaletteScope::Folder => AppAction::MenuFolder,
+                CommandPaletteScope::Menu => AppAction::MenuAll,
                 CommandPaletteScope::Writing => AppAction::WritingTools,
                 CommandPaletteScope::Blocks => AppAction::BlockTools,
                 CommandPaletteScope::Lists => AppAction::ListTools,
