@@ -102,7 +102,15 @@ impl App {
         if let Some(list) = self.open_list()
             && let Some(index) = self.list_item_at(x, y, list.total, list.selected)
         {
-            return Some(UiTarget::ListRow(index));
+            // Un encabezado de grupo no es una fila con la que se pueda actuar.
+            let is_heading = self.command_palette.is_some()
+                && self
+                    .command_palette_entries()
+                    .get(index)
+                    .is_some_and(|entry| entry.is_heading());
+            if !is_heading {
+                return Some(UiTarget::ListRow(index));
+            }
         }
         if let Some((block, preview)) = self.code_copy_at(x, y) {
             return Some(UiTarget::CodeCopy { block, preview });

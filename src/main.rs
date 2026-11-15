@@ -10425,7 +10425,6 @@ impl App {
         self.command_palette_query.clear();
         self.command_palette_scope = CommandPaletteScope::Workspace;
         self.toolbar_focus = None;
-        self.set_notice("espacio de trabajo · elige una acción");
         if let Some(window) = &self.window {
             window.request_redraw();
         }
@@ -10443,7 +10442,6 @@ impl App {
         self.command_palette_query.clear();
         self.command_palette_scope = CommandPaletteScope::Study;
         self.toolbar_focus = None;
-        self.set_notice("estudio · elegí una herramienta portable");
         if let Some(window) = &self.window {
             window.request_redraw();
         }
@@ -10454,10 +10452,7 @@ impl App {
     }
 
     fn open_insert_actions(&mut self) {
-        self.open_writing_scope(
-            CommandPaletteScope::Insert,
-            "insertar · elegí enlace, tabla o bloque",
-        );
+        self.open_menu_scope(CommandPaletteScope::Insert);
     }
 
     /// Abre uno de los menús de la barra. No avisa nada: la lista ya se ve.
@@ -10473,24 +10468,6 @@ impl App {
         self.command_palette_query.clear();
         self.command_palette_scope = scope;
         self.toolbar_focus = None;
-        if let Some(window) = &self.window {
-            window.request_redraw();
-        }
-    }
-
-    fn open_writing_scope(&mut self, scope: CommandPaletteScope, notice: &str) {
-        self.clear_pane_split_picker();
-        self.context_menu = None;
-        self.search_query = None;
-        self.workspace_search_query = None;
-        self.workspace_paths = None;
-        self.backlink_paths = None;
-        self.outline_headings = None;
-        self.command_palette = Some(0);
-        self.command_palette_query.clear();
-        self.command_palette_scope = scope;
-        self.toolbar_focus = None;
-        self.set_notice(notice);
         if let Some(window) = &self.window {
             window.request_redraw();
         }
