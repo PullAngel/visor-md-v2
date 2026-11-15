@@ -647,8 +647,9 @@ impl SourceEditor {
     }
 
     /// Rodea la selección con sintaxis Markdown mediante un único cambio
-    /// reversible. Si no hay selección, inserta un texto guía y lo deja
-    /// seleccionado para que la siguiente escritura lo reemplace.
+    /// reversible. Sin selección, si el cursor está dentro o al final de una
+    /// palabra, rodea esa palabra entera; si no, inserta un texto guía y lo
+    /// deja seleccionado para que la siguiente escritura lo reemplace.
     pub fn surround(
         &mut self,
         source: &mut TextBuffer,
@@ -656,7 +657,12 @@ impl SourceEditor {
         suffix: &str,
         placeholder: &str,
     ) -> Result<bool, EditError> {
-        let range = self.selection();
+        let mut range = self.selection();
+        if range.is_empty()
+            && let Some(word) = word_range_at(source, range.start)?
+        {
+            range = word;
+        }
         let selected = source.slice_bytes(range.clone())?;
         let content = if selected.is_empty() {
             placeholder
@@ -1092,6 +1098,34 @@ impl SourceEditor {
     }
 }
 
+/// Palabra (letras, números o guion bajo) que contiene el desplazamiento o
+/// termina en él, sin salir de la línea. Con el cursor justo antes de una
+/// palabra no se elige ninguna: ahí la persona empieza algo nuevo.
+fn word_range_at(source: &TextBuffer, offset: usize) -> Result<Option<Range<usize>>, EditError> {
+    let line = source.line_at_byte(offset);
+    let line_start = source.line_start_byte(line);
+    let text = source.slice_bytes(line_start..source.line_end(line))?;
+    let at = offset.saturating_sub(line_start);
+    if at > text.len() || !text.is_char_boundary(at) {
+        return Ok(None);
+    }
+    let before: usize = text[..at]
+        .chars()
+        .rev()
+        .take_while(|character| is_word_character(*character))
+        .map(char::len_utf8)
+        .sum();
+    let after: usize = text[at..]
+        .chars()
+        .take_while(|character| is_word_character(*character))
+        .map(char::len_utf8)
+        .sum();
+    if before == 0 {
+        return Ok(None);
+    }
+    Ok(Some(line_start + at - before..line_start + at + after))
+}
+
 /// Saltos que necesita un bloque insertado en `range` para quedar aislado:
 /// una línea en blanco antes y otra después, salvo al inicio o al final del
 /// documento o si ya hay una.
@@ -1215,6 +1249,53 @@ mod tests {
         let mut editor = editor_at(&source, offset);
         assert!(editor.insert_block(&mut source, "---", eol, None).unwrap());
         (source.to_string(), editor.cursor())
+    }
+
+    fn negrita_en(text: &str, offset: usize) -> (String, String) {
+        let mut source = buffer(text);
+        let mut editor = editor_at(&source, offset);
+        assert!(editor.surround(&mut source, "**", "**", "texto").unwrap());
+        let selected = source.slice_bytes(editor.selection()).unwrap();
+        (source.to_string(), selected)
+    }
+
+    #[test]
+    fn el_formato_sin_seleccion_rodea_la_palabra_bajo_el_cursor() {
+        for (text, offset, expected, selected) in [
+            ("resumen", 4, "**resumen**", "resumen"),
+            ("resumen", 0, "**texto**resumen", "texto"),
+            ("resumen", 7, "**resumen**", "resumen"),
+            ("ab cd", 2, "**ab** cd", "ab"),
+            ("ab cd", 3, "ab **texto**cd", "texto"),
+            ("ab cd", 5, "ab **cd**", "cd"),
+            ("canción ñandú", 3, "**canción** ñandú", "canción"),
+            ("😀hola", "😀".len(), "😀**texto**hola", "texto"),
+            ("😀hola", "😀hola".len(), "😀**hola**", "hola"),
+            ("snake_case x", 3, "**snake_case** x", "snake_case"),
+            ("a  b", 2, "a **texto** b", "texto"),
+            ("", 0, "**texto**", "texto"),
+            (
+                "linea uno\nlinea dos",
+                15,
+                "linea uno\n**linea** dos",
+                "linea",
+            ),
+        ] {
+            let (result, chosen) = negrita_en(text, offset);
+            assert_eq!(result, expected, "{text:?} en {offset}");
+            assert_eq!(chosen, selected, "{text:?} en {offset}");
+        }
+    }
+
+    #[test]
+    fn el_formato_con_seleccion_no_cambia_de_comportamiento() {
+        let mut source = buffer("una frase larga");
+        let mut editor = editor_at(&source, 4);
+        editor.set_cursor(&source, 9, true).unwrap();
+        assert!(editor.surround(&mut source, "**", "**", "texto").unwrap());
+        assert_eq!(source.to_string(), "una **frase** larga");
+        assert!(editor.undo(&mut source).unwrap());
+        assert_eq!(source.to_string(), "una frase larga");
     }
 
     #[test]
