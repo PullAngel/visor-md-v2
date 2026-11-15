@@ -598,6 +598,54 @@ impl SourceEditor {
         Ok(changed)
     }
 
+    /// Inserta un bloque Markdown (tabla, regla, recuadro, código) en su propia
+    /// línea, con una línea en blanco antes y después cuando hace falta. Sin
+    /// esa separación el bloque se pega al párrafo vecino y deja de
+    /// reconocerse. Una selección se reemplaza, como en `insert`. `select` es
+    /// el rango de la plantilla que queda seleccionado; sin él, el cursor
+    /// queda al final del bloque.
+    pub fn insert_block(
+        &mut self,
+        source: &mut TextBuffer,
+        template: &str,
+        eol: &str,
+        select: Option<Range<usize>>,
+    ) -> Result<bool, EditError> {
+        let range = self.selection();
+        let (lead, trail) = block_padding(source, &range, eol)?;
+        let text = format!("{lead}{template}{trail}");
+        let changed = self.history.apply(source, range.clone(), &text)?;
+        if changed {
+            let base = range.start + lead.len();
+            let (anchor, cursor) = match select {
+                Some(inner) => (base + inner.start, base + inner.end),
+                None => (base + template.len(), base + template.len()),
+            };
+            self.anchor = source.normalize_edit_boundary(anchor);
+            self.cursor = source.normalize_edit_boundary(cursor);
+            self.preferred_column = None;
+        }
+        Ok(changed)
+    }
+
+    /// Bloque de código con cercas. Con selección, la envuelve; sin ella,
+    /// deja un texto guía seleccionado.
+    pub fn insert_code_block(
+        &mut self,
+        source: &mut TextBuffer,
+        eol: &str,
+    ) -> Result<bool, EditError> {
+        let selected = source.slice_bytes(self.selection())?;
+        let content = if selected.is_empty() {
+            "código"
+        } else {
+            selected.as_str()
+        };
+        let template = format!("```{eol}{content}{eol}```");
+        let start = 3 + eol.len();
+        self.insert_block(source, &template, eol, Some(start..start + content.len()))
+    }
+
     /// Rodea la selección con sintaxis Markdown mediante un único cambio
     /// reversible. Si no hay selección, inserta un texto guía y lo deja
     /// seleccionado para que la siguiente escritura lo reemplace.
@@ -1044,6 +1092,48 @@ impl SourceEditor {
     }
 }
 
+/// Saltos que necesita un bloque insertado en `range` para quedar aislado:
+/// una línea en blanco antes y otra después, salvo al inicio o al final del
+/// documento o si ya hay una.
+fn block_padding(
+    source: &TextBuffer,
+    range: &Range<usize>,
+    eol: &str,
+) -> Result<(String, String), EditError> {
+    let line_start = source.line_start(range.start);
+    let before = source.slice_bytes(line_start..range.start)?;
+    let lead = if !before.trim().is_empty() {
+        format!("{eol}{eol}")
+    } else if line_start > 0 {
+        let previous_start = source.line_start(line_start - 1);
+        let previous = source.slice_bytes(previous_start..line_start)?;
+        if previous.trim().is_empty() {
+            String::new()
+        } else {
+            eol.to_string()
+        }
+    } else {
+        String::new()
+    };
+
+    let end_line = source.line_at_byte(range.end);
+    let after = source.slice_bytes(range.end..source.line_end(end_line))?;
+    let trail = if !after.trim().is_empty() {
+        format!("{eol}{eol}")
+    } else if end_line + 1 < source.line_count() {
+        let next_start = source.line_start_byte(end_line + 1);
+        let next = source.slice_bytes(next_start..source.line_end(end_line + 1))?;
+        if next.trim().is_empty() {
+            String::new()
+        } else {
+            eol.to_string()
+        }
+    } else {
+        String::new()
+    };
+    Ok((lead, trail))
+}
+
 fn is_word_character(character: char) -> bool {
     character.is_alphanumeric() || character == '_'
 }
@@ -1118,6 +1208,63 @@ mod tests {
         assert!(editor.insert_newline(&mut source, "\r\n").unwrap());
         assert_eq!(source.to_string(), "- uno\r\n\r\n");
         assert_eq!(editor.cursor(), source.len_bytes());
+    }
+
+    fn insertar_bloque(text: &str, offset: usize, eol: &str) -> (String, usize) {
+        let mut source = buffer(text);
+        let mut editor = editor_at(&source, offset);
+        assert!(editor.insert_block(&mut source, "---", eol, None).unwrap());
+        (source.to_string(), editor.cursor())
+    }
+
+    #[test]
+    fn un_bloque_queda_aislado_con_lineas_en_blanco() {
+        // (documento, posición del cursor, resultado esperado)
+        for (text, offset, expected) in [
+            ("", 0, "---"),
+            ("texto", 5, "texto\n\n---"),
+            ("texto\n", 6, "texto\n\n---"),
+            ("texto\n\n", 7, "texto\n\n---"),
+            ("ab\ncd", 2, "ab\n\n---\n\ncd"),
+            ("ab|cd", 3, "ab|\n\n---\n\ncd"),
+            ("a\n\nb", 2, "a\n\n---\n\nb"),
+            ("- uno\n- dos", 11, "- uno\n- dos\n\n---"),
+            ("\ntexto", 0, "---\n\ntexto"),
+        ] {
+            let (result, _) = insertar_bloque(text, offset, "\n");
+            assert_eq!(result, expected, "{text:?} en {offset}");
+        }
+    }
+
+    #[test]
+    fn un_bloque_conserva_crlf_y_deja_el_cursor_al_final_del_bloque() {
+        let (result, cursor) = insertar_bloque("texto", 5, "\r\n");
+        assert_eq!(result, "texto\r\n\r\n---");
+        assert_eq!(cursor, result.len());
+
+        let (result, cursor) = insertar_bloque("ab\r\ncd", 2, "\r\n");
+        assert_eq!(result, "ab\r\n\r\n---\r\n\r\ncd");
+        assert_eq!(cursor, "ab\r\n\r\n---".len());
+    }
+
+    #[test]
+    fn el_bloque_de_codigo_envuelve_la_seleccion_o_deja_un_texto_guia() {
+        let mut source = buffer("antes");
+        let mut editor = editor_at(&source, 5);
+        assert!(editor.insert_code_block(&mut source, "\n").unwrap());
+        assert_eq!(source.to_string(), "antes\n\n```\ncódigo\n```");
+        let selected = source.slice_bytes(editor.selection()).unwrap();
+        assert_eq!(selected, "código");
+
+        let mut source = buffer("let x = 1;");
+        let mut editor = editor_at(&source, 0);
+        editor
+            .set_cursor(&source, source.len_bytes(), true)
+            .unwrap();
+        assert!(editor.insert_code_block(&mut source, "\n").unwrap());
+        assert_eq!(source.to_string(), "```\nlet x = 1;\n```");
+        assert!(editor.undo(&mut source).unwrap());
+        assert_eq!(source.to_string(), "let x = 1;");
     }
 
     #[test]

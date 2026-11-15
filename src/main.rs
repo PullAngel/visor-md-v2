@@ -10585,7 +10585,7 @@ impl App {
             return;
         }
         let eol = self.document_line_ending();
-        self.apply_markdown_surround(&format!("```{eol}"), &format!("{eol}```"), "código");
+        self.edit_source(|editor, source| editor.insert_code_block(source, eol));
     }
 
     fn insert_table(&mut self) {
@@ -10595,7 +10595,7 @@ impl App {
         }
         let eol = self.document_line_ending();
         let template = format!("| Columna | Valor |{eol}| --- | --- |{eol}| texto | valor |");
-        self.edit_source(|editor, source| editor.insert(source, &template));
+        self.edit_source(|editor, source| editor.insert_block(source, &template, eol, None));
     }
 
     fn insert_horizontal_rule(&mut self) {
@@ -10603,7 +10603,8 @@ impl App {
             self.set_notice("activa edición para insertar una regla horizontal");
             return;
         }
-        self.edit_source(|editor, source| editor.insert(source, "---"));
+        let eol = self.document_line_ending();
+        self.edit_source(|editor, source| editor.insert_block(source, "---", eol, None));
     }
 
     fn insert_callout(&mut self) {
@@ -10613,7 +10614,10 @@ impl App {
         }
         let eol = self.document_line_ending();
         let template = format!("> [!NOTE]{eol}> nota");
-        self.edit_source(|editor, source| editor.insert(source, &template));
+        let placeholder = template.len() - "nota".len()..template.len();
+        self.edit_source(|editor, source| {
+            editor.insert_block(source, &template, eol, Some(placeholder.clone()))
+        });
     }
 
     fn insert_study_question(&mut self) {
@@ -10623,7 +10627,7 @@ impl App {
         }
         let eol = self.document_line_ending();
         let template = format!("> [!QUESTION]- Pregunta{eol}>{eol}> Escribí aquí la respuesta");
-        self.edit_source(|editor, source| editor.insert(source, &template));
+        self.edit_source(|editor, source| editor.insert_block(source, &template, eol, None));
     }
 
     fn insert_study_summary(&mut self) {
@@ -10631,8 +10635,9 @@ impl App {
             self.set_notice("activa edición para insertar un resumen de estudio");
             return;
         }
-        let template = study_summary_template(self.document_line_ending());
-        self.edit_source(|editor, source| editor.insert(source, &template));
+        let eol = self.document_line_ending();
+        let template = study_summary_template(eol);
+        self.edit_source(|editor, source| editor.insert_block(source, &template, eol, None));
     }
 
     fn insert_study_concept_list(&mut self) {
@@ -10642,7 +10647,7 @@ impl App {
         }
         let eol = self.document_line_ending();
         let template = study_concept_list_template(eol);
-        self.edit_source(|editor, source| editor.insert(source, &template));
+        self.edit_source(|editor, source| editor.insert_block(source, &template, eol, None));
     }
 
     /// Crea una pestaña derivada para copiar o guardar fragmentos. El archivo
