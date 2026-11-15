@@ -142,3 +142,47 @@ La fase 9 repite exactamente la evaluación del 14 de noviembre:
 Se lanzan dos subagentes en paralelo, cada uno con su copia (`qa` y
 `usuario`) y un perfil vacío. En los prompts, `<EVAL>` se reemplaza por la ruta
 absoluta de la carpeta de trabajo de la evaluación.
+
+## Trampas de herramientas (aprendidas ejecutando las fases 1 a 2)
+
+- **Clippy y el código de salida.** `cargo clippy ... | tail` oculta el código
+  de salida y un `&&` después comitea igual con errores. Verificar así:
+
+  ```bash
+  cargo clippy --all-targets -- -D warnings >/dev/null 2>&1; echo "clippy=$?"
+  ```
+
+  Debe imprimir `clippy=0`. El perfil de pruebas también cuenta: una función
+  `#[cfg(test)]` sin usar falla con `-D warnings`.
+- **Editar archivos.** La herramienta Edit exige haber leído el archivo antes.
+  Para cambios de varios fragmentos, un script de Python con
+  `edit(ruta, [(viejo, nuevo), ...])` que verifique que cada `viejo` es único
+  antes de escribir. Escribir ese script con la herramienta Write: el shell
+  interpreta las barras invertidas de un heredoc y cambia `\n` por un salto
+  real dentro de las cadenas de Rust.
+- **rustfmt reformatea.** Después de `cargo fmt`, una línea de prueba puede
+  quedar partida en varias; los anclajes de ediciones posteriores hay que
+  releerlos del archivo, no recordarlos.
+- **Prueba en vivo.** La build normal borra la posición del puntero cuando
+  Windows avisa que el cursor real salió de la ventana, y desde la tarea 1.3 un
+  clic sin posición no hace nada. La herramienta de evaluación necesita la
+  build con `scripts/evaluacion/build-evaluacion.patch`:
+
+  ```bash
+  git worktree add --detach ../visor-md-v2-eval HEAD
+  cd ../visor-md-v2-eval && git apply ../visor-md-v2/scripts/evaluacion/build-evaluacion.patch
+  CARGO_TARGET_DIR=../visor-md-v2/target-eval cargo build --release
+  ```
+
+  Al terminar: `git worktree remove --force ../visor-md-v2-eval` y borrar
+  `target-eval`.
+- **Primer arranque en vivo.** Un perfil limpio abre el diálogo de privacidad
+  de la recuperación: pulsar «Entendido» (centro de la ventana) antes de usar
+  la app.
+- **Tipeo de la herramienta.** `type` a veces duplica o intercala letras justo
+  después de un clic o de Enter. No es un defecto de la app; repetir con
+  pausas.
+- **Pruebas de imagen.** Si un cambio visual es deliberado:
+  `VISOR_BLESS=1 cargo test visual`, mirar las imágenes nuevas con la
+  herramienta de lectura de imágenes y comitearlas con el cambio. Solo
+  cambian las imágenes de las escenas afectadas.
