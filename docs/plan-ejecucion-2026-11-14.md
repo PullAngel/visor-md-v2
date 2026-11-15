@@ -361,9 +361,9 @@ aparcada (con el motivo).
 
 ### Fase 3 · Listas, menús y alternancia
 
-- [ ] **3.1** D-17 `open_surface` y la tabla de alternancia.
+- [x] **3.1** D-17 `open_surface` y la tabla de alternancia.
   - Prueba: tabla pura con 4 casos por botón de panel.
-- [ ] **3.2** D-17, clic fuera que también actúa.
+- [x] **3.2** D-17, clic fuera que también actúa.
   - Prueba: con la paleta abierta, un clic en Leer cambia el modo en un solo
     clic.
 - [ ] **3.3** D-16 `ListView`, como módulo y sus pruebas, sin integrarlo.

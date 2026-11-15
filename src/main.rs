@@ -23,9 +23,11 @@ mod panes;
 mod pdf;
 mod recovery;
 mod settings;
+mod surface;
 mod theme;
 mod ui_motion;
 mod ui_target;
+use surface::toolbar_button_active;
 use ui_target::UiTarget;
 mod vfs;
 #[cfg(test)]
@@ -8207,12 +8209,28 @@ impl ApplicationHandler<AppEvent> for App {
                             return;
                         }
                         if !self.workspace_column_is_open() {
-                            self.dismiss_navigation_panel();
-                            self.selecting = false;
-                            if let Some(window) = &self.window {
-                                window.request_redraw();
+                            // Un clic sobre la barra no se pierde: un botón
+                            // decide si cierra o cambia de panel; el resto del
+                            // cromo cierra el panel y actúa en el mismo clic.
+                            let target = self.pointer.and_then(|(x, y)| self.ui_target_at(x, y));
+                            match target {
+                                Some(UiTarget::Toolbar(_)) => {}
+                                Some(
+                                    UiTarget::ModeSegment(_)
+                                    | UiTarget::Tab(_)
+                                    | UiTarget::TabClose(_)
+                                    | UiTarget::NewTab
+                                    | UiTarget::WindowControl(_),
+                                ) => self.dismiss_navigation_panel(),
+                                _ => {
+                                    self.dismiss_navigation_panel();
+                                    self.selecting = false;
+                                    if let Some(window) = &self.window {
+                                        window.request_redraw();
+                                    }
+                                    return;
+                                }
                             }
-                            return;
                         }
                     }
                     let resize_direction = self.window.as_ref().and_then(|window| {
@@ -8273,7 +8291,7 @@ impl ApplicationHandler<AppEvent> for App {
                             toolbar_action_at(x, y, size.width as f32, self.document.mode)
                         {
                             self.toolbar_focus = None;
-                            self.perform_action(action);
+                            self.press_toolbar_action(action);
                             self.selecting = false;
                             return;
                         }
@@ -9611,7 +9629,7 @@ impl App {
                 if let Some(target) = toolbar_focus_mode(index) {
                     self.select_mode(target);
                 } else if let Some(action) = toolbar_focus_action(index, self.document.mode) {
-                    self.perform_action(action);
+                    self.press_toolbar_action(action);
                 }
             }
             _ => return,
@@ -14791,6 +14809,8 @@ impl App {
         // Se desarma `self` en campos sueltos para que el prestamo del pixmap
         // no choque con el de la cache de glifos ni con el de los bloques.
         let context_mode = self.document.mode;
+        let open_surface = self.open_surface();
+        let workspace_open = self.workspace.is_some();
         let workspace_generation = self.workspace_generation;
         let App {
             pixmap,
@@ -15678,7 +15698,7 @@ impl App {
                     && (TOOLBAR_Y..TOOLBAR_Y + TOOLBAR_HEIGHT).contains(&pointer_y)
             });
             let focused = toolbar_focus == Some(index);
-            let active = toolbar_action_is_active(action, context_mode);
+            let active = toolbar_button_active(action, context_mode, open_surface, workspace_open);
             if (hovered || focused || active)
                 && let Some(rect) = Rect::from_xywh(x, TOOLBAR_Y, width, TOOLBAR_HEIGHT)
             {
@@ -15804,7 +15824,7 @@ impl App {
                         .contains(&pointer_y)
             });
             let focused = toolbar_focus == Some(contextual_toolbar_focus_start() + index);
-            let active = toolbar_action_is_active(action, context_mode);
+            let active = toolbar_button_active(action, context_mode, open_surface, workspace_open);
             if (hovered || focused || active)
                 && let Some(rect) =
                     Rect::from_xywh(x, CONTEXT_TOOLBAR_Y, width, CONTEXT_TOOLBAR_HEIGHT)
