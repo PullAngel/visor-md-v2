@@ -1104,6 +1104,30 @@ fn append_limited_text(destination: &mut String, text: &str, limit: usize) {
     destination.extend(text.chars().take(remaining));
 }
 
+/// Botón Copiar de un bloque de código: tinta de acento que sube al pasar el
+/// puntero, destella al pulsar y queda más marcada mientras dice «Copiado».
+fn draw_copy_button(
+    pixmap: &mut Pixmap,
+    (x, y, width, height): (f32, f32, f32, f32),
+    accent: (u8, u8, u8),
+    hover: f32,
+    press: f32,
+    copied: bool,
+) {
+    let alpha = 42.0 + 38.0 * hover + 70.0 * press + if copied { 56.0 } else { 0.0 };
+    let mut paint = Paint {
+        anti_alias: true,
+        ..Default::default()
+    };
+    paint.set_color(Color::from_rgba8(
+        accent.0,
+        accent.1,
+        accent.2,
+        alpha.min(230.0) as u8,
+    ));
+    fill_rounded_rect(pixmap, x, y, width, height, 5.0, &paint);
+}
+
 /// Borde izquierdo del botón de la barra que dispara `action`.
 fn toolbar_button_x(action: AppAction, window_width: f32, mode: DocumentMode) -> Option<f32> {
     if let Some(index) = PRIMARY_TOOLBAR_ACTIONS
@@ -7359,6 +7383,18 @@ impl ApplicationHandler<AppEvent> for App {
                 None
             }
         };
+        // Solo se piden cuadros por los objetivos cuyo dibujo ya se anima.
+        let animated = |target: UiTarget| matches!(target, UiTarget::CodeCopy { .. });
+        self.ui_motion.settle(now);
+        let motion_deadline = self
+            .ui_motion
+            .is_animating_where(now, self.reduce_motion, animated)
+            .then(|| {
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+                now + THEME_TRANSITION_FRAME
+            });
         let toast_deadline = self.notice_visible_until.and_then(|until| {
             if until <= now {
                 self.notice_visible_until = None;
@@ -7373,6 +7409,7 @@ impl ApplicationHandler<AppEvent> for App {
         let next = [
             theme_deadline,
             mode_deadline,
+            motion_deadline,
             tooltip_deadline,
             toast_deadline,
             self.next_recovery_deadline(),
@@ -14258,6 +14295,9 @@ impl App {
         });
         let workspace_panel_capacity =
             panel_capacity(workspace_column_geometry(w.get() as f32, h.get() as f32));
+        let motion = self.ui_motion;
+        let motion_now = Instant::now();
+        let motion_reduced = self.reduce_motion;
         let panel_key = self.list_key();
         let panel_anchor = self.panel_anchor;
         let floating_cap = floating_capacity(h.get() as f32);
@@ -15336,12 +15376,18 @@ impl App {
                                 *scale_factor,
                                 panes.source,
                             );
-                            let ac = palette.accent;
-                            let mut button = Paint::default();
-                            button.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 42));
-                            if let Some(rect) = Rect::from_xywh(x, y, width, height) {
-                                pixmap.fill_rect(rect, &button, Transform::identity(), None);
-                            }
+                            let target = UiTarget::CodeCopy {
+                                block: i,
+                                preview: false,
+                            };
+                            draw_copy_button(
+                                pixmap,
+                                (x, y, width, height),
+                                palette.accent,
+                                motion.hover_amount(target, motion_now, motion_reduced),
+                                motion.press_amount(target, motion_now, motion_reduced),
+                                copied_code_block == Some(i),
+                            );
                             let label = if copied_code_block == Some(i) {
                                 &code_copied_layout
                             } else {
@@ -15631,12 +15677,18 @@ impl App {
                                     *scale_factor,
                                     preview_pane,
                                 );
-                                let ac = palette.accent;
-                                let mut button = Paint::default();
-                                button.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 42));
-                                if let Some(rect) = Rect::from_xywh(bx, by, bw, bh) {
-                                    pixmap.fill_rect(rect, &button, Transform::identity(), None);
-                                }
+                                let target = UiTarget::CodeCopy {
+                                    block: index,
+                                    preview: true,
+                                };
+                                draw_copy_button(
+                                    pixmap,
+                                    (bx, by, bw, bh),
+                                    palette.accent,
+                                    motion.hover_amount(target, motion_now, motion_reduced),
+                                    motion.press_amount(target, motion_now, motion_reduced),
+                                    copied_preview_block == Some(index),
+                                );
                                 let label = if copied_preview_block == Some(index) {
                                     &code_copied_layout
                                 } else {

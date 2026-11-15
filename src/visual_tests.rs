@@ -68,6 +68,28 @@ fn apuntar_a_guardar(app: &mut App) {
     app.tooltip.poll(Some(desde), ahora);
 }
 
+/// Puntero sobre el botón Copiar del primer bloque de código.
+fn apuntar_a_copiar(app: &mut App) {
+    let bloque = app
+        .document
+        .blocks
+        .iter()
+        .position(|block| matches!(block.kind, Kind::Code))
+        .expect("el documento de prueba tiene un bloque de código");
+    let ahora = Instant::now();
+    let desde = ahora
+        .checked_sub(std::time::Duration::from_secs(2))
+        .expect("el reloj permite restar dos segundos");
+    app.ui_motion.set_hover(
+        Some(UiTarget::CodeCopy {
+            block: bloque,
+            preview: false,
+        }),
+        desde,
+        app.reduce_motion,
+    );
+}
+
 fn mostrar_tooltip(app: &mut App) {
     apuntar_a_guardar(app);
 }
@@ -77,7 +99,7 @@ fn dialogo_con_el_puntero_sobre_un_boton(app: &mut App) {
     abrir_dialogo_de_cierre(app);
 }
 
-const ESCENAS: [Escena; 11] = [
+const ESCENAS: [Escena; 12] = [
     Escena {
         nombre: "lectura",
         modo: DocumentMode::Reading,
@@ -122,6 +144,11 @@ const ESCENAS: [Escena; 11] = [
         nombre: "aviso",
         modo: DocumentMode::Reading,
         preparar: mostrar_aviso,
+    },
+    Escena {
+        nombre: "copiar-hover",
+        modo: DocumentMode::Reading,
+        preparar: apuntar_a_copiar,
     },
     Escena {
         nombre: "tooltip",

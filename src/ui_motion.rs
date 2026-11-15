@@ -166,18 +166,29 @@ impl UiMotion {
 
     /// Hay alguna transición sin terminar.
     pub(crate) fn is_animating(&self, now: Instant, reduce_motion: bool) -> bool {
+        self.is_animating_where(now, reduce_motion, |_| true)
+    }
+
+    /// Hay una transición sin terminar sobre un objetivo que el dibujo anima.
+    /// Los objetivos sin dibujo propio no gastan cuadros.
+    pub(crate) fn is_animating_where(
+        &self,
+        now: Instant,
+        reduce_motion: bool,
+        relevant: impl Fn(UiTarget) -> bool,
+    ) -> bool {
         if reduce_motion {
             return false;
         }
-        let hovering = self
-            .hover
-            .is_some_and(|(_, entered)| now.saturating_duration_since(entered) < HOVER_FADE_IN);
-        let leaving = self
-            .leaving
-            .is_some_and(|(_, left, _)| now.saturating_duration_since(left) < HOVER_FADE_OUT);
-        let pressing = self
-            .press
-            .is_some_and(|(_, started)| now.saturating_duration_since(started) < PRESS_FLASH);
+        let hovering = self.hover.is_some_and(|(target, entered)| {
+            relevant(target) && now.saturating_duration_since(entered) < HOVER_FADE_IN
+        });
+        let leaving = self.leaving.is_some_and(|(target, left, _)| {
+            relevant(target) && now.saturating_duration_since(left) < HOVER_FADE_OUT
+        });
+        let pressing = self.press.is_some_and(|(target, started)| {
+            relevant(target) && now.saturating_duration_since(started) < PRESS_FLASH
+        });
         hovering || leaving || pressing
     }
 
@@ -350,6 +361,18 @@ mod pruebas {
             tooltip.poll(Some(nuevo), despues(nuevo, 10)),
             TooltipPoll::WakeAt(despues(nuevo, 400))
         );
+    }
+
+    #[test]
+    fn los_objetivos_sin_dibujo_propio_no_piden_cuadros() {
+        let t0 = Instant::now();
+        let mut motion = UiMotion::default();
+        motion.set_hover(Some(A), t0, false);
+        let solo_b = |target: UiTarget| target == B;
+        assert!(motion.is_animating(despues(t0, 10), false));
+        assert!(!motion.is_animating_where(despues(t0, 10), false, solo_b));
+        motion.press(B, despues(t0, 10));
+        assert!(motion.is_animating_where(despues(t0, 20), false, solo_b));
     }
 
     #[test]

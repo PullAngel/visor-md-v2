@@ -499,7 +499,8 @@ Es independiente de las fases 2 y 3. Toca solo `editor.rs` y las funciones
 
 - [ ] **8.1** Dibujo del hover y la pulsación (D-14) en todos los `UiTarget`.
   Los fondos de barra tienen radio de 6 px.
-- [ ] **8.2** Copiar:
+- [~] **8.2** Copiar (hecho: botón redondeado, hover y destello con
+  programación de cuadros solo mientras anima; falta el ícono y el ✓ trazado):
   - botón redondeado con un ícono de dos hojas;
   - al pulsar, fondo de acento con alfa 76 y un ✓ que se traza en 160 ms;
   - a los 1,6 s vuelve en 200 ms;
