@@ -107,22 +107,33 @@ pub(crate) struct WorkspaceNote {
     source_modified: Option<SystemTime>,
 }
 
+/// Las búsquedas ignoran mayúsculas y tildes («napoleon» encuentra «Napoleón»).
+trait SearchFold {
+    fn search_fold(&self) -> String;
+}
+
+impl SearchFold for str {
+    fn search_fold(&self) -> String {
+        crate::search_fold(self)
+    }
+}
+
 impl WorkspaceNote {
     /// Explica de forma acotada por qué una búsqueda local encontró esta nota.
     /// Todo deriva del texto ya retenido por el índice: no relee el archivo ni
     /// aumenta la capacidad de la búsqueda sobre la bóveda.
     pub(crate) fn search_context(&self, query: &str) -> Option<String> {
-        let query = query.trim().to_lowercase();
+        let query = query.trim().search_fold();
         if query.is_empty() {
             return None;
         }
-        if self.title.to_lowercase().contains(&query) {
+        if self.title.search_fold().contains(&query) {
             return Some("título".to_string());
         }
         if self
             .relative_path
             .to_string_lossy()
-            .to_lowercase()
+            .search_fold()
             .contains(&query)
         {
             return Some("ruta".to_string());
@@ -130,7 +141,7 @@ impl WorkspaceNote {
         if let Some(heading) = self
             .headings
             .iter()
-            .find(|heading| heading.text.to_lowercase().contains(&query))
+            .find(|heading| heading.text.search_fold().contains(&query))
         {
             return Some(format!(
                 "encabezado: {}",
@@ -139,7 +150,7 @@ impl WorkspaceNote {
         }
         self.search_text
             .lines()
-            .find(|line| line.to_lowercase().contains(&query))
+            .find(|line| line.search_fold().contains(&query))
             .map(|line| format!("contenido: {}", compact_search_excerpt(line)))
     }
 }
@@ -264,24 +275,24 @@ impl WorkspaceIndex {
     }
 
     pub(crate) fn search(&self, query: &str) -> Vec<&WorkspaceNote> {
-        let query = query.trim().to_lowercase();
+        let query = query.trim().search_fold();
         if query.is_empty() {
             return Vec::new();
         }
         self.notes
             .iter()
             .filter(|note| {
-                note.title.to_lowercase().contains(&query)
+                note.title.search_fold().contains(&query)
                     || note
                         .relative_path
                         .to_string_lossy()
-                        .to_lowercase()
+                        .search_fold()
                         .contains(&query)
                     || note
                         .headings
                         .iter()
-                        .any(|heading| heading.text.to_lowercase().contains(&query))
-                    || note.search_text.to_lowercase().contains(&query)
+                        .any(|heading| heading.text.search_fold().contains(&query))
+                    || note.search_text.search_fold().contains(&query)
             })
             .collect()
     }

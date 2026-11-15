@@ -1432,6 +1432,8 @@ fn search_fold(text: &str) -> String {
             'í' | 'ì' | 'ï' | 'î' => 'i',
             'ó' | 'ò' | 'ö' | 'ô' => 'o',
             'ú' | 'ù' | 'ü' | 'û' => 'u',
+            'ñ' => 'n',
+            'ç' => 'c',
             other => other,
         })
         .collect()
@@ -17084,7 +17086,7 @@ fn case_insensitive_match_ranges(text: &str, query: &str) -> Vec<std::ops::Range
     let mut characters = Vec::new();
     for (source_start, character) in text.char_indices() {
         let folded_start = folded.len();
-        folded.extend(character.to_lowercase());
+        folded.push_str(&search_fold(character.encode_utf8(&mut [0; 4])));
         characters.push((
             folded_start,
             folded.len(),
@@ -17092,7 +17094,7 @@ fn case_insensitive_match_ranges(text: &str, query: &str) -> Vec<std::ops::Range
             source_start + character.len_utf8(),
         ));
     }
-    let folded_query = query.to_lowercase();
+    let folded_query = search_fold(query);
     folded
         .match_indices(&folded_query)
         .filter_map(|(folded_start, matched)| {
@@ -20422,6 +20424,18 @@ con dos lineas
             ]
         );
         assert!(case_insensitive_match_ranges("texto", "").is_empty());
+        // Sin distinguir tildes: lo escrito sin tilde encuentra lo acentuado y
+        // al revés, y el rango apunta al texto original.
+        let texto = "Termina con el golpe de Napoleón.";
+        let rangos = case_insensitive_match_ranges(texto, "napoleon");
+        assert_eq!(rangos.len(), 1);
+        assert_eq!(&texto[rangos[0].clone()], "Napoleón");
+        assert_eq!(
+            case_insensitive_match_ranges("Napoleon", "NAPOLEÓN").len(),
+            1
+        );
+        assert_eq!(case_insensitive_match_ranges("el año", "ano").len(), 1);
+        assert!(case_insensitive_match_ranges("el año", "anos").is_empty());
     }
 
     #[test]

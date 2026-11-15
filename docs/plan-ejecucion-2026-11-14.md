@@ -381,7 +381,7 @@ aparcada (con el motivo).
 - [ ] **3.9** Caja de búsqueda con borde, cursor y estado vacío «Escribí para
   buscar…» en la paleta y en la búsqueda de carpeta. Buscar en documento pasa a
   ser una barra anclada arriba a la derecha.
-- [ ] **3.9b** La búsqueda en el documento y en la carpeta ignora tildes y
+- [x] **3.9b** La búsqueda en el documento y en la carpeta ignora tildes y
   mayúsculas, con el mismo plegado que usa la paleta (`search_fold`).
   Decisión: «ñ» se pliega a «n», igual que en la paleta, para no complicar la
   regla.
