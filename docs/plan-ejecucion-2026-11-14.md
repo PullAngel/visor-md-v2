@@ -366,6 +366,38 @@ Diseño completo, inventario de las 69 acciones y riesgos en
   puntero, foco y tooltip. A 640 px caben los cuatro botones directos, el
   selector de modo, «≡» y los cinco controles. Prueba de solapes de 640 a
   2000 px.
+- **D-38. Recuperación continua con pérdida acotada.** Ninguna garantía puede
+  depender de un aviso de cierre (matar el proceso y el apagado de Windows no lo
+  dan). El servicio escribe copias continuas: pausa de 2 s, **tope de 10 s** en
+  una ráfaga continua, y de inmediato al cambiar de pestaña, perder el foco,
+  abrir un diálogo o cerrar. Pérdida máxima: 10 s (30 s en documentos de más de
+  2 MiB). Detalle en `docs/arquitectura-recuperacion-2026-11-15.md`.
+- **D-39. Una copia por documento.** Identidad `doc_key` de 128 bits aleatorios
+  (no derivada de la ruta ni del contenido); una sola copia atómica por
+  documento, sin historial. Formato `.vmdr` con cabecera acotada, `body_len` y
+  CRC-32; una copia dañada no se restaura. Cuota de 50 copias y 64 MiB; las
+  huérfanas expiran a los 30 días; se vacían los temporales huérfanos.
+- **D-40. Dueño por cerrojo, no por pid.** Cada proceso mantiene abierto sin
+  compartir `s-<sesión>.lock` (`share_mode(0)` en Windows, `File::try_lock` en
+  Linux, sin `unsafe`). Una sesión es huérfana si su cerrojo se puede abrir. La
+  adopción de una copia es un renombrado atómico entre carpetas de sesión; es
+  también el traspaso de una pestaña entre ventanas (D-33).
+- **D-41. Restaurar nunca pisa.** Al arrancar se avisa sin ventana modal y se
+  abre la lista de recuperaciones (6.7); nada se restaura solo. Origen sin
+  cambios: pestaña ligada al archivo; origen cambiado: pestaña separada con
+  aviso y Comparar; origen ausente: pestaña nueva. El contenido pasa por
+  `recovered_document` y el modo seguro como cualquier archivo.
+- **D-42. Un solo hilo escritor con el último gana, y gancho de pánico.**
+  `Rope::clone` (O(1)) hacia un buzón por `doc_key`; reintentos con espera; un
+  registro compartido que `std::panic::set_hook` vuelca antes del aborto. Un
+  fallo de escritura se ve en la interfaz (el punto «•» cambia de tono y la
+  descripción dice «Copia de seguridad hace N s»).
+- **D-43. Seguridad del almacén.** Sin recurso a `temp_dir()` (si no hay perfil,
+  la recuperación se desactiva con aviso); `create_new`; se rechazan enlaces
+  simbólicos y puntos de reanálisis; nombres solo en hex; la ruta de origen es
+  un dato mostrado, nunca un destino; el registro no contiene rutas ni
+  contenido. Cifrado con DPAPI y `WM_ENDSESSION` fuera de la v1 (13.9, opcional,
+  en un módulo aislado y revisado a mano porque exigen `unsafe`).
 
 ## Fases y tareas
 
@@ -686,6 +718,12 @@ iba a ampliar, y el texto de la fase 7 se escribe ya sobre ellos.
   «•» y no «●» porque la fuente de la interfaz no dibuja «●». Pendiente de la
   fase 7: que el aviso diga «sin guardar» con las palabras del glosario.
 
+- [~] **P-02** (15 de noviembre) Que lo sin guardar no se pierda si la
+  aplicación se fuerza a cerrar o la computadora se apaga, sin archivos basura
+  ni agujeros de seguridad. Diseñado en
+  `docs/arquitectura-recuperacion-2026-11-15.md` (D-38 a D-43); se ejecuta en la
+  fase 13.
+
 ### Fase 11 · Mosaico
 
 Absorbe las tareas 5.5, 5.6 y 5.7. Va después de la 5.
@@ -735,6 +773,43 @@ Va después de la 8 y antes de la 9.
 - [ ] **12.8** Cierre de fase: prueba manual con dos ventanas, arrastre entre ellas,
   apertura desde el Explorador y desde Claude; ejecutable nuevo.
 
+### Fase 13 · Servicio de recuperación (P-02)
+
+Diseño: `docs/arquitectura-recuperacion-2026-11-15.md`. Las tareas 13.1 y 13.2
+corrigen huecos de hoy y se hacen **antes** de la fase 5; la 13.3 a la 13.6 se
+hacen con la fase 6 (comparten la 6.7); la 13.7 y la 13.8 con la fase 12.
+
+- [ ] **13.1** Arreglos inmediatos sobre `src/recovery.rs`:
+  - tope de 10 s en una ráfaga (H1) y escritura inmediata al cambiar de pestaña,
+    perder el foco o abrir un diálogo (H2);
+  - quitar el recurso a `temp_dir()` (H8) y desactivar la recuperación con un
+    aviso si no hay perfil;
+  - barrer los temporales huérfanos (H9);
+  - mostrar en la interfaz que la copia falló (H10).
+
+  Pruebas en `recovery.rs` y una escena visual del punto «•» con falla.
+- [ ] **13.2** Un solo hilo escritor con buzón «el último gana» (en lugar de un
+  hilo por escritura) y omitir la escritura si el CRC-32 no cambió.
+- [ ] **13.3** `src/recuperacion/formato.rs` y `politica.rs` (puros), con todas
+  las pruebas de la sección 7 del diseño.
+- [ ] **13.4** `src/recuperacion/almacen.rs`: sesión con cerrojo, carpeta por
+  sesión, una copia por `doc_key`, listado de huérfanas por cabecera, adopción
+  por renombrado, barrido y cuota. Prueba de muerte real del proceso con
+  `Child::kill` y prueba de adopción con dos hilos.
+- [ ] **13.5** Migrar `main.rs` a la interfaz nueva (`iniciar`, `instantanea`,
+  `descartar`, `forzar_todo`, `huerfanas`, `adoptar`, `estado`); quitar
+  `RecoverySession` por pestaña; `doc_key` viaja con la pestaña.
+- [ ] **13.6** Aviso al arrancar y lista de recuperaciones (con la 6.7) con las
+  cuatro situaciones de D-41; «Restaurar todo» y «Descartar todo».
+- [ ] **13.7** Gancho de pánico con el registro compartido (D-42) y traspaso de
+  una pestaña entre ventanas por adopción (con la 12.3 y la 12.4).
+- [ ] **13.8** Documentación: `docs/security.md`, `docs/threat-model.md`,
+  `docs/architecture.md`, `docs/test-matrix.md` y el QA manual (matar con el
+  Administrador de tareas y reiniciar Windows con `shutdown /r /t 0`).
+- [ ] **13.9** *Opcional.* Módulo aislado de integración con el sistema operativo
+  para `WM_ENDSESSION` y evaluar DPAPI; solo si 13.1 a 13.8 no bastan. Exige
+  levantar `forbid(unsafe_code)` en ese módulo y revisión manual.
+
 ## Secuencia
 
 ```text
@@ -743,7 +818,8 @@ Fase 4 ─┘            Fase 6 ── Fase 7 ───────────�
 ```
 
 Orden por defecto para un solo ejecutor:
-1 → 4 → 2 → 3 → 10 → 5 → 11 → 6 → 7 → 8 → 12 → 9.
+1 → 4 → 2 → 3 → 10 → **13.1–13.2** → 5 → 11 → 6 (+ 13.3–13.6) → 7 → 8 →
+12 (+ 13.7–13.8) → 9.
 
 La fase 10 va antes de la 5 y la 7 porque los menús nuevos cambian los textos y
 las barras sobre las que ellas trabajan; la 11 absorbe tres tareas de la 5; la 12
@@ -767,3 +843,4 @@ asociación.
 | 8 | En curso | Hecho el hover y destello de Copiar (8.2 parcial). Pendientes el resto de 8 |
 | 12 | Pendiente | Ventanas (un proceso por ventana) y asociación de archivos |
 | 9 | Pendiente | — |
+| 13 | Diseñada | Servicio de recuperación (P-02): D-38 a D-43; 13.1 y 13.2 van antes de la fase 5 |
