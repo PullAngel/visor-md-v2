@@ -1118,6 +1118,26 @@ fn toolbar_button_x(action: AppAction, window_width: f32, mode: DocumentMode) ->
     contextual_toolbar_item_geometry(index, window_width, mode).map(|geometry| geometry.x)
 }
 
+/// Sección «actual» de un documento: el último título que ya llegó al tercio
+/// superior de la vista. Al llegar al final del documento es la última, aunque
+/// su título no alcance ese tercio. `title_ys` va en orden de aparición;
+/// `f32::INFINITY` marca un título sin medir.
+fn active_heading_index(
+    title_ys: &[f32],
+    scroll: f32,
+    viewport_height: f32,
+    document_height: f32,
+) -> usize {
+    if title_ys.is_empty() {
+        return 0;
+    }
+    if viewport_height > 0.0 && scroll + viewport_height >= document_height - 2.0 && scroll > 0.0 {
+        return title_ys.len() - 1;
+    }
+    let threshold = scroll + viewport_height / 3.0;
+    title_ys.iter().rposition(|y| *y <= threshold).unwrap_or(0)
+}
+
 /// Posiciones de `SYMBOLS` que coinciden con lo escrito, sin distinguir
 /// mayúsculas ni tildes. Sin consulta, todas, con los emojis primero.
 fn symbol_matches(query: &str) -> Vec<usize> {
@@ -12886,7 +12906,22 @@ impl App {
         self.workspace_search_query = None;
         self.workspace_paths = None;
         self.backlink_paths = None;
-        self.outline_match = 0;
+        // Abre con la sección en la que estás elegida, no siempre con la primera.
+        let heading_ys = headings
+            .iter()
+            .map(|(block, _)| {
+                self.slots
+                    .get(*block)
+                    .filter(|slot| slot.height >= 0.0)
+                    .map_or(f32::INFINITY, |slot| slot.y)
+            })
+            .collect::<Vec<_>>();
+        self.outline_match = active_heading_index(
+            &heading_ys,
+            self.scroll,
+            self.focused_document_viewport_height(),
+            self.doc_height,
+        );
         self.outline_headings = Some(headings);
         self.set_notice("índice del documento · flechas eligen, Enter enfoca, Escape cierra");
         if let Some(window) = &self.window {
@@ -14573,14 +14608,21 @@ impl App {
                         _ => None,
                     })
                     .collect::<Vec<_>>();
-                let current = headings
+                let heading_ys = headings
                     .iter()
-                    .rposition(|(index, _, _)| {
+                    .map(|(index, _, _)| {
                         self.slots
                             .get(*index)
-                            .is_some_and(|slot| slot.height >= 0.0 && slot.y <= self.scroll + 24.0)
+                            .filter(|slot| slot.height >= 0.0)
+                            .map_or(f32::INFINITY, |slot| slot.y)
                     })
-                    .unwrap_or(0);
+                    .collect::<Vec<_>>();
+                let current = active_heading_index(
+                    &heading_ys,
+                    self.scroll,
+                    panes.source.height,
+                    self.doc_height,
+                );
                 let range = panel_window(headings.len(), current, OUTLINE_MAX_ROWS);
                 let x = panes.source.x + panes.source.width - OUTLINE_WIDTH - 16.0;
                 let y = DOCUMENT_VIEWPORT_TOP + panes.source.y + 20.0;
@@ -17686,6 +17728,49 @@ mod pruebas {
     /// Filas de la primera página de la paleta en una ventana chica: lo más
     /// usado tiene que estar ahí sin desplazarse.
     const PRIMERAS_FILAS: usize = 9;
+
+    #[test]
+    fn la_seccion_actual_es_la_del_tercio_superior_y_la_ultima_al_final() {
+        let ys = [0.0, 400.0, 900.0, 1_500.0];
+        let (vista, alto) = (600.0, 2_000.0);
+        // Al inicio.
+        assert_eq!(active_heading_index(&ys, 0.0, vista, alto), 0);
+        // El segundo título entra en el tercio superior (scroll + 200).
+        assert_eq!(active_heading_index(&ys, 150.0, vista, alto), 0);
+        assert_eq!(active_heading_index(&ys, 250.0, vista, alto), 1);
+        // El tercero todavía no llegó.
+        assert_eq!(active_heading_index(&ys, 600.0, vista, alto), 1);
+        assert_eq!(active_heading_index(&ys, 710.0, vista, alto), 2);
+        // Al final del documento es la última, aunque su título no llegue.
+        assert_eq!(active_heading_index(&ys, 1_400.0, vista, alto), 3);
+        // Un documento sin títulos o con títulos sin medir.
+        assert_eq!(active_heading_index(&[], 0.0, vista, alto), 0);
+        assert_eq!(
+            active_heading_index(&[f32::INFINITY; 3], 0.0, vista, alto),
+            0
+        );
+        // Un documento que entra entero en la vista se rige por el tercio superior.
+        assert_eq!(active_heading_index(&ys, 0.0, 3_000.0, 2_000.0), 2);
+    }
+
+    #[test]
+    fn el_indice_abre_con_la_seccion_visible_elegida() {
+        let mut app = App::for_tests(NIGHT);
+        let mut texto = String::new();
+        for numero in 1..=30 {
+            texto.push_str(&format!(
+                "## Capítulo {numero}\n\n{}\n\n",
+                "Texto. ".repeat(60)
+            ));
+        }
+        app.load_for_test(&texto, DocumentMode::Reading);
+        app.draw_for_test(900, 560);
+        app.scroll = 3_000.0;
+        app.show_document_outline();
+        let elegido = app.outline_match;
+        assert!(elegido > 3, "abrió en el capítulo {elegido}");
+        assert!(elegido < 29);
+    }
 
     #[test]
     fn el_selector_de_simbolos_muestra_los_emojis_primero_y_se_filtra_al_escribir() {

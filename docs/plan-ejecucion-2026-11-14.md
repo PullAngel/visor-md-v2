@@ -390,7 +390,7 @@ aparcada (con el motivo).
     resultados contra «Napoleón».
 - [x] **3.10** Símbolos: emojis primero, filtro con `typed_text` y columna de
   24 px.
-- [ ] **3.11** Índice: abre con la sección visible elegida. En el flotante, la
+- [x] **3.11** Índice: abre con la sección visible elegida. En el flotante, la
   sección activa es el último título cuya `y` ≤ `scroll + viewport / 3` y, al
   final del documento, la última. Los títulos se truncan con «…».
 - [x] **3.12** Alternancias con estado: rótulos dinámicos con ✓.
