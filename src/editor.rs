@@ -598,6 +598,24 @@ impl SourceEditor {
         Ok(changed)
     }
 
+    /// Inserta un símbolo o emoji. Si el cursor está después del `|` final de
+    /// una fila de tabla, lo coloca dentro de la última celda: fuera de ella la
+    /// fila dejaría de ser una fila y el símbolo desaparecería de la lectura.
+    pub fn insert_symbol(
+        &mut self,
+        source: &mut TextBuffer,
+        symbol: &str,
+    ) -> Result<bool, EditError> {
+        if self.selection().is_empty()
+            && let Some(position) = table_row_content_end(source, self.cursor)?
+        {
+            self.cursor = position;
+            self.anchor = position;
+            return self.insert(source, &format!(" {symbol}"));
+        }
+        self.insert(source, symbol)
+    }
+
     /// Inserta un bloque Markdown (tabla, regla, recuadro, código) en su propia
     /// línea, con una línea en blanco antes y después cuando hace falta. Sin
     /// esa separación el bloque se pega al párrafo vecino y deja de
@@ -1098,6 +1116,24 @@ impl SourceEditor {
     }
 }
 
+/// Fin del contenido de una fila de tabla (`| a | b |`) cuando el cursor está
+/// después de su `|` final: el desplazamiento justo tras el último texto de la
+/// última celda. Con el cursor en cualquier otro lugar, `None`.
+fn table_row_content_end(source: &TextBuffer, offset: usize) -> Result<Option<usize>, EditError> {
+    let line = source.line_at_byte(offset);
+    let line_start = source.line_start_byte(line);
+    let text = source.slice_bytes(line_start..source.line_end(line))?;
+    let row = text.trim_end();
+    if row.len() < 2 || !text.trim_start().starts_with('|') || !row.ends_with('|') {
+        return Ok(None);
+    }
+    if offset.saturating_sub(line_start) < row.len() {
+        return Ok(None);
+    }
+    let inner = row[..row.len() - 1].trim_end().len();
+    Ok(Some(line_start + inner))
+}
+
 /// Palabra (letras, números o guion bajo) que contiene el desplazamiento o
 /// termina en él, sin salir de la línea. Con el cursor justo antes de una
 /// palabra no se elige ninguna: ahí la persona empieza algo nuevo.
@@ -1233,6 +1269,49 @@ mod tests {
         let mut editor = editor_at(&source, source.len_bytes());
         assert!(editor.insert_newline(&mut source, "\n").unwrap());
         assert_eq!(source.to_string(), "texto\n");
+    }
+
+    fn simbolo_en(text: &str, offset: usize) -> String {
+        let mut source = buffer(text);
+        let mut editor = editor_at(&source, offset);
+        assert!(editor.insert_symbol(&mut source, "✓").unwrap());
+        source.to_string()
+    }
+
+    #[test]
+    fn un_simbolo_tras_el_pipe_final_entra_en_la_ultima_celda() {
+        let fila = "| texto | valor |";
+        assert_eq!(simbolo_en(fila, fila.len()), "| texto | valor ✓ |");
+        assert_eq!(
+            simbolo_en("| a | b |  ", "| a | b |  ".len()),
+            "| a | b ✓ |  "
+        );
+        assert_eq!(simbolo_en("| a | b |", "| a | b |".len()), "| a | b ✓ |");
+        // Sin espacio antes del pipe final.
+        assert_eq!(simbolo_en("|a|b|", 5), "|a|b ✓|");
+        // CRLF: el salto no cuenta como parte de la fila.
+        assert_eq!(simbolo_en("| a |\r\nsigue", 5), "| a ✓ |\r\nsigue");
+    }
+
+    #[test]
+    fn un_simbolo_fuera_del_final_de_una_fila_se_inserta_donde_esta_el_cursor() {
+        // En medio de una celda.
+        assert_eq!(simbolo_en("| texto | valor |", 4), "| te✓xto | valor |");
+        // Línea que no es una fila.
+        assert_eq!(simbolo_en("texto |", 7), "texto |✓");
+        // Fila sin pipe final.
+        assert_eq!(simbolo_en("| a | b", 7), "| a | b✓");
+        // Un solo pipe.
+        assert_eq!(simbolo_en("|", 1), "|✓");
+    }
+
+    #[test]
+    fn un_simbolo_en_una_fila_se_deshace_de_una_vez() {
+        let mut source = buffer("| a |");
+        let mut editor = editor_at(&source, source.len_bytes());
+        assert!(editor.insert_symbol(&mut source, "✓").unwrap());
+        assert!(editor.undo(&mut source).unwrap());
+        assert_eq!(source.to_string(), "| a |");
     }
 
     #[test]

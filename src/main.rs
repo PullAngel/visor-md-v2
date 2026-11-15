@@ -9672,7 +9672,7 @@ impl App {
             self.set_notice("activá Editar para insertar símbolos en el Markdown");
             return;
         }
-        self.edit_source(|editor, source| editor.insert(source, symbol));
+        self.edit_source(|editor, source| editor.insert_symbol(source, symbol));
         self.set_notice(&format!("{name} insertado · Ctrl+Z para deshacer"));
     }
 
