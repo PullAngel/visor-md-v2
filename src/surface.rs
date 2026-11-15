@@ -30,6 +30,7 @@ pub(crate) fn surface_for_action(action: AppAction, workspace_open: bool) -> Opt
         | AppAction::InsertTools
         | AppAction::StudyTools
         | AppAction::MenuFile
+        | AppAction::MenuEdit
         | AppAction::MenuView
         | AppAction::MenuFolder
         | AppAction::MenuAll => Some(action),
@@ -72,6 +73,7 @@ impl App {
             return Some(match self.command_palette_scope {
                 CommandPaletteScope::All => AppAction::CommandPalette,
                 CommandPaletteScope::File => AppAction::MenuFile,
+                CommandPaletteScope::Edit => AppAction::MenuEdit,
                 CommandPaletteScope::View => AppAction::MenuView,
                 CommandPaletteScope::Folder => AppAction::MenuFolder,
                 CommandPaletteScope::Menu => AppAction::MenuAll,

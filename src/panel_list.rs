@@ -11,13 +11,13 @@ use crate::list_view::{ListKey, ListNav, navigate};
 const MAX_FLOATING_ROWS: usize = 14;
 
 /// Filas que caben en un panel flotante según el alto de la ventana.
-pub(crate) fn floating_capacity(window_height: f32) -> usize {
-    let overhead = FLOATING_PANEL_Y
-        + STATUS_HEIGHT
-        + 12.0
-        + PANEL_PADDING * 2.0
-        + PANEL_ROW_HEIGHT
-        + PANEL_FOOTER_HEIGHT;
+pub(crate) fn floating_capacity(window_height: f32, compact: bool) -> usize {
+    let title_and_footer = if compact {
+        0.0
+    } else {
+        PANEL_ROW_HEIGHT + PANEL_FOOTER_HEIGHT
+    };
+    let overhead = FLOATING_PANEL_Y + STATUS_HEIGHT + 12.0 + PANEL_PADDING * 2.0 + title_and_footer;
     let rows = ((window_height - overhead) / PANEL_ROW_HEIGHT)
         .floor()
         .max(1.0) as usize;
@@ -25,8 +25,8 @@ pub(crate) fn floating_capacity(window_height: f32) -> usize {
 }
 
 /// Filas que muestra un panel flotante con `total` elementos.
-pub(crate) fn floating_rows(total: usize, window_height: f32) -> usize {
-    total.min(floating_capacity(window_height))
+pub(crate) fn floating_rows(total: usize, window_height: f32, compact: bool) -> usize {
+    total.min(floating_capacity(window_height, compact))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -159,11 +159,14 @@ mod pruebas {
 
     #[test]
     fn un_panel_flotante_muestra_mas_filas_si_hay_lugar_y_nunca_mas_de_catorce() {
-        assert!(floating_capacity(480.0) >= 7);
-        assert!(floating_capacity(480.0) < floating_capacity(720.0));
-        assert_eq!(floating_capacity(1_400.0), MAX_FLOATING_ROWS);
-        assert_eq!(floating_rows(3, 720.0), 3);
-        assert_eq!(floating_rows(69, 720.0), floating_capacity(720.0));
+        assert!(floating_capacity(480.0, false) >= 7);
+        assert!(floating_capacity(480.0, false) < floating_capacity(720.0, false));
+        assert_eq!(floating_capacity(1_400.0, false), MAX_FLOATING_ROWS);
+        assert_eq!(floating_rows(3, 720.0, false), 3);
+        assert_eq!(
+            floating_rows(69, 720.0, false),
+            floating_capacity(720.0, false)
+        );
     }
 
     #[test]
@@ -177,7 +180,7 @@ mod pruebas {
         assert_eq!(lista.selected, 0);
         // La capacidad sale de la geometría del panel.
         let capacidad = app.list_capacity(lista.total);
-        assert_eq!(capacidad, floating_capacity(560.0));
+        assert_eq!(capacidad, floating_capacity(560.0, false));
 
         assert!(app.scroll_open_list(5));
         assert_eq!(app.open_list().unwrap().selected, 0);

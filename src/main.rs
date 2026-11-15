@@ -178,8 +178,9 @@ const PRIMARY_TOOLBAR_ACTIONS: [AppAction; 4] = [
 /// Primer botón de menú: a la derecha del selector de modo.
 const TOP_MENU_X: f32 = MODE_SWITCH_X + MODE_SWITCH_WIDTH + 8.0;
 const TOP_MENU_GAP: f32 = 4.0;
-const TOP_MENUS_LABELED: [AppAction; 4] = [
+const TOP_MENUS_LABELED: [AppAction; 5] = [
     AppAction::MenuFile,
+    AppAction::MenuEdit,
     AppAction::MenuView,
     AppAction::MenuFolder,
     AppAction::CommandPalette,
@@ -208,11 +209,20 @@ fn mode_target_at(x: f32, y: f32) -> Option<ModeTarget> {
 fn top_menu_width(action: AppAction) -> f32 {
     match action {
         AppAction::MenuFile => 74.0,
+        AppAction::MenuEdit => 64.0,
         AppAction::MenuView => 62.0,
         AppAction::MenuFolder => 76.0,
         AppAction::CommandPalette => 36.0,
         _ => 40.0,
     }
+}
+
+/// Archivo, Editar, Vista y Carpeta: los menús con nombre de la fila 1.
+const fn is_top_menu(action: AppAction) -> bool {
+    matches!(
+        action,
+        AppAction::MenuFile | AppAction::MenuEdit | AppAction::MenuView | AppAction::MenuFolder
+    )
 }
 
 /// Hasta dónde llegan los botones de la fila 1: los controles de ventana o el
@@ -353,6 +363,10 @@ fn grouped_entries(groups: &[MenuGroup]) -> Vec<MenuEntry> {
         .collect()
 }
 
+/// Acciones que solo se encuentran en el buscador de acciones: no tienen un
+/// botón ni un menú propio. Una prueba exige que esta lista sea exacta.
+#[cfg(test)]
+const PALETTE_ONLY: [AppAction; 0] = [];
 const FILE_ACTIONS: [AppAction; 7] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
@@ -375,6 +389,28 @@ const FILE_GROUPS: [MenuGroup; 3] = [
     ),
     ("Carpeta de apuntes", &[AppAction::ChooseWorkspace]),
     ("Pestaña", &[AppAction::CloseDocument]),
+];
+const EDIT_ACTIONS: [AppAction; 8] = [
+    AppAction::Undo,
+    AppAction::Redo,
+    AppAction::Cut,
+    AppAction::Copy,
+    AppAction::Paste,
+    AppAction::SearchDocument,
+    AppAction::CopyPlatform,
+    AppAction::CopyTableTsv,
+];
+const EDIT_GROUPS: [MenuGroup; 4] = [
+    ("Historial", &[AppAction::Undo, AppAction::Redo]),
+    (
+        "Portapapeles",
+        &[AppAction::Cut, AppAction::Copy, AppAction::Paste],
+    ),
+    (
+        "Copiar para otros programas",
+        &[AppAction::CopyPlatform, AppAction::CopyTableTsv],
+    ),
+    ("Buscar", &[AppAction::SearchDocument]),
 ];
 const VIEW_ACTIONS: [AppAction; 11] = [
     AppAction::ToggleMode,
@@ -454,9 +490,10 @@ const FOLDER_GROUPS: [MenuGroup; 4] = [
     ),
 ];
 /// El menú «≡» de las ventanas angostas: los tres menús en una sola lista.
-const MENU_GROUPS: [MenuGroup; 7] = [
+const MENU_GROUPS: [MenuGroup; 8] = [
     ("Buscar", &[AppAction::CommandPalette]),
     ("Archivo", &FILE_ACTIONS),
+    ("Editar", &EDIT_ACTIONS),
     (
         "Modo y mosaico",
         &[
@@ -520,7 +557,7 @@ const BLOCK_GROUPS: [MenuGroup; 3] = [
             AppAction::InsertTask,
         ],
     ),
-    ("Cita", &[AppAction::InsertQuote]),
+    ("Bloque", &[AppAction::InsertQuote]),
 ];
 const STUDY_GROUPS: [MenuGroup; 2] = [
     (
@@ -838,25 +875,37 @@ struct PanelGeometry {
     width: f32,
     height: f32,
     items_y: f32,
+    /// Menú sin fila de título ni pie: solo las filas.
+    compact: bool,
 }
 
+/// Geometría del panel flotante. Con `compact_width`, un menú de la barra:
+/// mide lo que piden sus filas y no lleva título ni pie.
 fn navigation_panel_geometry(
     window_width: f32,
     window_height: f32,
     item_count: usize,
     anchor_x: Option<f32>,
+    compact_width: Option<f32>,
 ) -> PanelGeometry {
-    let width = PANEL_WIDTH.min((window_width - MARGIN * 2.0).max(120.0));
+    let compact = compact_width.is_some();
+    let width = compact_width
+        .unwrap_or(PANEL_WIDTH)
+        .min((window_width - MARGIN * 2.0).max(120.0));
     let max_x = (window_width - width).max(0.0);
     let x = match anchor_x {
         // Anclado a un botón: queda un respiro con el borde derecho.
         Some(anchor) => anchor.min((max_x - 12.0).max(0.0)).max(0.0),
         None => PANEL_X.min(max_x),
     };
-    let requested_height = PANEL_PADDING * 2.0
-        + PANEL_ROW_HEIGHT
-        + PANEL_ROW_HEIGHT * item_count as f32
-        + PANEL_FOOTER_HEIGHT;
+    let requested_height = if compact {
+        PANEL_PADDING * 2.0 + PANEL_ROW_HEIGHT * item_count as f32
+    } else {
+        PANEL_PADDING * 2.0
+            + PANEL_ROW_HEIGHT
+            + PANEL_ROW_HEIGHT * item_count as f32
+            + PANEL_FOOTER_HEIGHT
+    };
     let available_height =
         (window_height - FLOATING_PANEL_Y - STATUS_HEIGHT - 12.0).max(PANEL_ROW_HEIGHT);
     let height = requested_height.min(available_height);
@@ -865,7 +914,8 @@ fn navigation_panel_geometry(
         y: FLOATING_PANEL_Y,
         width,
         height,
-        items_y: FLOATING_PANEL_Y + PANEL_PADDING + PANEL_ROW_HEIGHT,
+        items_y: FLOATING_PANEL_Y + PANEL_PADDING + if compact { 0.0 } else { PANEL_ROW_HEIGHT },
+        compact,
     }
 }
 
@@ -886,6 +936,7 @@ fn workspace_column_geometry(window_width: f32, window_height: f32) -> PanelGeom
             + WORKSPACE_DESTINATION_HEIGHT
             + PANEL_PADDING
             + PANEL_ROW_HEIGHT,
+        compact: false,
     }
 }
 
@@ -926,7 +977,12 @@ fn panel_item_at(
 }
 
 fn panel_capacity(geometry: PanelGeometry) -> usize {
-    ((geometry.height - (geometry.items_y - geometry.y) - PANEL_FOOTER_HEIGHT - PANEL_PADDING)
+    let footer = if geometry.compact {
+        0.0
+    } else {
+        PANEL_FOOTER_HEIGHT
+    };
+    ((geometry.height - (geometry.items_y - geometry.y) - footer - PANEL_PADDING)
         / PANEL_ROW_HEIGHT)
         .floor()
         .max(0.0) as usize
@@ -1631,18 +1687,22 @@ enum AppAction {
     CommandPalette,
     /// Menús de la fila 1: no son acciones de la paleta, abren su lista.
     MenuFile,
+    MenuEdit,
     MenuView,
     MenuFolder,
     MenuAll,
+    Undo,
+    Redo,
+    Copy,
+    Paste,
 }
 
-const APP_ACTIONS: [AppAction; 67] = [
+const APP_ACTIONS: [AppAction; 70] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
     AppAction::ToggleMode,
     AppAction::SearchDocument,
-    AppAction::WorkspaceHub,
     AppAction::ToggleTheme,
     AppAction::ToggleReduceMotion,
     AppAction::TogglePinOnTop,
@@ -1657,7 +1717,11 @@ const APP_ACTIONS: [AppAction; 67] = [
     AppAction::ToggleSplitOrientation,
     AppAction::SplitDocumentRight,
     AppAction::SplitDocumentBelow,
+    AppAction::Undo,
+    AppAction::Redo,
     AppAction::Cut,
+    AppAction::Copy,
+    AppAction::Paste,
     AppAction::FormatBold,
     AppAction::FormatItalic,
     AppAction::FormatStrikethrough,
@@ -1733,16 +1797,16 @@ impl AppAction {
             Self::FormatStrikethrough => "Aplicar tachado",
             Self::FormatInlineCode => "Aplicar código en línea",
             Self::InsertLink => "Insertar enlace · Ctrl+K",
-            Self::InsertHeading1 => "Convertir línea en encabezado H1",
-            Self::InsertHeading => "Convertir línea en encabezado H2",
-            Self::InsertHeading3 => "Convertir línea en encabezado H3",
-            Self::InsertHeading4 => "Convertir línea en encabezado H4",
-            Self::InsertHeading5 => "Convertir línea en encabezado H5",
-            Self::InsertHeading6 => "Convertir línea en encabezado H6",
-            Self::InsertBulletList => "Convertir línea en lista con viñetas",
-            Self::InsertOrderedList => "Convertir línea en lista ordenada",
-            Self::InsertTask => "Convertir línea en tarea",
-            Self::InsertQuote => "Convertir línea en cita",
+            Self::InsertHeading1 => "Título 1 (H1)",
+            Self::InsertHeading => "Título 2 (H2)",
+            Self::InsertHeading3 => "Título 3 (H3)",
+            Self::InsertHeading4 => "Título 4 (H4)",
+            Self::InsertHeading5 => "Título 5 (H5)",
+            Self::InsertHeading6 => "Título 6 (H6)",
+            Self::InsertBulletList => "Lista con viñetas",
+            Self::InsertOrderedList => "Lista numerada",
+            Self::InsertTask => "Tarea",
+            Self::InsertQuote => "Cita",
             Self::InsertCodeBlock => "Insertar bloque de código",
             Self::InsertTable => "Insertar tabla Markdown",
             Self::InsertHorizontalRule => "Insertar regla horizontal",
@@ -1778,7 +1842,12 @@ impl AppAction {
             Self::ToggleRecovery => "Activar o desactivar recuperación local",
             Self::CommandPalette => "Buscar una acción · Ctrl+Shift+P",
             Self::MenuFile => "Archivo",
+            Self::MenuEdit => "Editar",
             Self::MenuView => "Vista",
+            Self::Undo => "Deshacer · Ctrl+Z",
+            Self::Redo => "Rehacer · Ctrl+Y",
+            Self::Copy => "Copiar · Ctrl+C",
+            Self::Paste => "Pegar · Ctrl+V",
             Self::MenuFolder => "Carpeta",
             Self::MenuAll => "Menú",
         }
@@ -1820,6 +1889,7 @@ fn filtered_actions(query: &str) -> Vec<AppAction> {
 enum CommandPaletteScope {
     All,
     File,
+    Edit,
     View,
     Folder,
     Menu,
@@ -2113,6 +2183,7 @@ fn toolbar_action_has_menu(action: AppAction) -> bool {
             | AppAction::WorkspaceHub
             | AppAction::CommandPalette
             | AppAction::MenuFile
+            | AppAction::MenuEdit
             | AppAction::MenuView
             | AppAction::MenuFolder
             | AppAction::MenuAll
@@ -3862,11 +3933,12 @@ fn draw_toolbar_icon(
             path.line_to(right - 2.0, bottom - 2.0);
         }
         AppAction::CommandPalette => {
-            for dot in [left + 5.0, center_x, right - 5.0] {
-                if let Some(rect) = Rect::from_xywh(dot - 1.5, center_y - 1.5, 3.0, 3.0) {
-                    pixmap.fill_rect(rect, &paint, Transform::identity(), None);
-                }
-            }
+            // Línea de comandos: «>» y un guion bajo.
+            path.move_to(left + 3.5, top + 4.5);
+            path.line_to(center_x, center_y);
+            path.line_to(left + 3.5, bottom - 4.5);
+            path.move_to(center_x + 1.0, bottom - 4.5);
+            path.line_to(right - 3.0, bottom - 4.5);
         }
         AppAction::DocumentOutline => {
             for row in [top + 5.0, center_y, bottom - 5.0] {
@@ -4111,8 +4183,8 @@ fn draw_toolbar_icon(
 fn draw_menu_chevron(pixmap: &mut Pixmap, x: f32, y: f32, color: (u8, u8, u8)) {
     let mut path = tiny_skia::PathBuilder::new();
     path.move_to(x, y);
-    path.line_to(x + 4.0, y);
-    path.line_to(x + 2.0, y + 2.5);
+    path.line_to(x + 7.0, y);
+    path.line_to(x + 3.5, y + 4.0);
     path.close();
     let mut paint = Paint {
         anti_alias: true,
@@ -8521,9 +8593,8 @@ impl ApplicationHandler<AppEvent> for App {
                     }
                 }
                 // Con un menú de la barra abierto, pasar sobre otro lo abre.
-                if let Some(UiTarget::Toolbar(
-                    action @ (AppAction::MenuFile | AppAction::MenuView | AppAction::MenuFolder),
-                )) = ui_target
+                if let Some(UiTarget::Toolbar(action)) = ui_target
+                    && is_top_menu(action)
                     && self.open_top_menu().is_some_and(|open| open != action)
                 {
                     self.press_toolbar_action(action);
@@ -9815,7 +9886,12 @@ impl App {
             AppAction::ToggleRecovery => self.toggle_recovery(),
             AppAction::CommandPalette => self.open_command_palette(),
             AppAction::MenuFile => self.open_menu_scope(CommandPaletteScope::File),
+            AppAction::MenuEdit => self.open_menu_scope(CommandPaletteScope::Edit),
             AppAction::MenuView => self.open_menu_scope(CommandPaletteScope::View),
+            AppAction::Undo => self.undo_edit(),
+            AppAction::Redo => self.redo_edit(),
+            AppAction::Copy => self.copy_current_selection(),
+            AppAction::Paste => self.paste_into_source(),
             AppAction::MenuFolder => self.open_menu_scope(CommandPaletteScope::Folder),
             AppAction::MenuAll => self.open_menu_scope(CommandPaletteScope::Menu),
         }
@@ -10161,18 +10237,14 @@ impl App {
 
     /// Menú de la fila 1 que está abierto (Archivo, Vista o Carpeta).
     fn open_top_menu(&self) -> Option<AppAction> {
-        self.open_surface().filter(|action| {
-            matches!(
-                action,
-                AppAction::MenuFile | AppAction::MenuView | AppAction::MenuFolder
-            )
-        })
+        self.open_surface().filter(|action| is_top_menu(*action))
     }
 
     /// Pasa al menú vecino con ← y →, dando la vuelta.
     fn switch_top_menu(&mut self, forward: bool) {
-        const MENUS: [AppAction; 3] = [
+        const MENUS: [AppAction; 4] = [
             AppAction::MenuFile,
+            AppAction::MenuEdit,
             AppAction::MenuView,
             AppAction::MenuFolder,
         ];
@@ -10311,6 +10383,7 @@ impl App {
         match self.command_palette_scope {
             CommandPaletteScope::All => menu::items(&APP_ACTIONS),
             CommandPaletteScope::File => grouped_entries(&FILE_GROUPS),
+            CommandPaletteScope::Edit => grouped_entries(&EDIT_GROUPS),
             CommandPaletteScope::View => grouped_entries(&VIEW_GROUPS),
             CommandPaletteScope::Folder => grouped_entries(&FOLDER_GROUPS),
             CommandPaletteScope::Menu => grouped_entries(&MENU_GROUPS),
@@ -10325,6 +10398,7 @@ impl App {
         let actions = match self.command_palette_scope {
             CommandPaletteScope::All | CommandPaletteScope::Menu => &APP_ACTIONS[..],
             CommandPaletteScope::File => &FILE_ACTIONS[..],
+            CommandPaletteScope::Edit => &EDIT_ACTIONS[..],
             CommandPaletteScope::View => &VIEW_ACTIONS[..],
             CommandPaletteScope::Folder => &FOLDER_ACTIONS[..],
             CommandPaletteScope::Blocks => &BLOCK_ACTIONS[..],
@@ -10730,16 +10804,45 @@ impl App {
 
     fn navigation_panel_geometry(&self, item_count: usize) -> Option<PanelGeometry> {
         let (width, height) = self.view_size()?;
+        let compact = self.compact_menu_width();
         Some(if self.workspace_column_is_open() {
             workspace_column_geometry(width, height)
         } else {
             navigation_panel_geometry(
                 width,
                 height,
-                floating_rows(item_count, height),
+                floating_rows(item_count, height, compact.is_some()),
                 self.panel_anchor,
+                compact,
             )
         })
+    }
+
+    /// Ancho de un menú de la barra: lo que piden sus filas, entre 220 y 420 px.
+    /// `None` si lo abierto es una búsqueda o una lista con título y pie.
+    fn compact_menu_width(&self) -> Option<f32> {
+        if self.command_palette.is_none()
+            || !self.command_palette_query.is_empty()
+            || matches!(
+                self.command_palette_scope,
+                CommandPaletteScope::All | CommandPaletteScope::Workspace
+            )
+        {
+            return None;
+        }
+        let widest = self
+            .command_palette_entries()
+            .iter()
+            .map(|entry| match entry {
+                MenuEntry::Heading(title) => title.chars().count() as f32 * 6.8,
+                MenuEntry::Item(action) => {
+                    self.action_display_name(*action).chars().count() as f32 * 7.6
+                        + action_shortcut(*action)
+                            .map_or(0.0, |shortcut| shortcut.chars().count() as f32 * 6.8 + 28.0)
+                }
+            })
+            .fold(0.0_f32, f32::max);
+        Some((widest + 44.0).clamp(220.0, PANEL_WIDTH))
     }
 
     fn navigation_panel_contains(&self, x: f32, y: f32) -> bool {
@@ -12942,6 +13045,30 @@ impl App {
         let _ = self.write_text_to_clipboard(text, kind);
     }
 
+    fn undo_edit(&mut self) {
+        self.edit_source(|editor, source| editor.undo(source));
+        if self.document.mode == DocumentMode::Reading {
+            self.refresh_reading_async("deshaciendo cambio");
+        }
+    }
+
+    fn redo_edit(&mut self) {
+        self.edit_source(|editor, source| editor.redo(source));
+        if self.document.mode == DocumentMode::Reading {
+            self.refresh_reading_async("rehaciendo cambio");
+        }
+    }
+
+    /// Copiar del menú: la fuente seleccionada al editar, el texto de la
+    /// selección al leer.
+    fn copy_current_selection(&mut self) {
+        if self.document.mode.is_editable() {
+            self.copy_source_selection();
+        } else {
+            self.copy_selection(false);
+        }
+    }
+
     fn cut_source_selection(&mut self) {
         if !self.document.mode.is_editable() {
             self.set_notice("cortar solo está disponible durante la edición");
@@ -14752,14 +14879,15 @@ impl App {
         let motion_reduced = self.reduce_motion;
         let panel_key = self.list_key();
         let panel_anchor = self.panel_anchor;
-        let floating_cap = floating_capacity(h.get() as f32);
+        let compact_width = self.compact_menu_width();
+        let floating_cap = floating_capacity(h.get() as f32, compact_width.is_some());
         // Filas visibles de la lista abierta, para su indicador de posición.
         let docked_panel = self.workspace_column_is_open();
         let panel_scrollbar = self.open_list().map(|list| {
             let capacity = if docked_panel {
                 workspace_panel_capacity
             } else {
-                floating_rows(list.total, h.get() as f32)
+                floating_rows(list.total, h.get() as f32, compact_width.is_some())
             };
             let range = self
                 .panel_scroll
@@ -14833,6 +14961,7 @@ impl App {
                 match self.command_palette_scope {
                     CommandPaletteScope::All => "Acciones · escribe para filtrar".to_string(),
                     CommandPaletteScope::File => "Archivo".to_string(),
+                    CommandPaletteScope::Edit => "Editar".to_string(),
                     CommandPaletteScope::View => "Vista".to_string(),
                     CommandPaletteScope::Folder => "Carpeta de apuntes".to_string(),
                     CommandPaletteScope::Menu => "Menú".to_string(),
@@ -15023,7 +15152,9 @@ impl App {
         let navigation_text_width = if workspace_column_open {
             workspace_column_geometry(w.get() as f32, h.get() as f32).width
         } else {
-            PANEL_WIDTH.min((w.get() as f32 - MARGIN * 2.0).max(120.0))
+            compact_width
+                .unwrap_or(PANEL_WIDTH)
+                .min((w.get() as f32 - MARGIN * 2.0).max(120.0))
         } - NAVIGATION_TEXT_INSET
             - NAVIGATION_TEXT_RIGHT_INSET;
         let navigation_fit = navigation_panel_rows.as_ref().map(|rows| {
@@ -15174,6 +15305,7 @@ impl App {
                     h.get() as f32,
                     rows.items.len(),
                     panel_anchor,
+                    compact_width,
                 )
             };
             if pointer_x < geometry.x + PANEL_PADDING
@@ -15410,10 +15542,7 @@ impl App {
             .copied()
             .enumerate()
             .map(|(index, action)| {
-                if !matches!(
-                    action,
-                    AppAction::MenuFile | AppAction::MenuView | AppAction::MenuFolder
-                ) {
+                if !is_top_menu(action) {
                     return None;
                 }
                 let (x, width) = top_menu_geometry(index, w.get() as f32)?;
@@ -16676,8 +16805,8 @@ impl App {
                 );
                 draw_menu_chevron(
                     pixmap,
-                    x + width - 13.0,
-                    TOOLBAR_Y + TOOLBAR_HEIGHT * 0.5 - 1.0,
+                    x + width - 15.0,
+                    TOOLBAR_Y + TOOLBAR_HEIGHT * 0.5 - 2.0,
                     icon_color,
                 );
             } else {
@@ -16843,8 +16972,8 @@ impl App {
             if toolbar_action_has_menu(action) {
                 draw_menu_chevron(
                     pixmap,
-                    x + width - 8.0,
-                    CONTEXT_TOOLBAR_Y + CONTEXT_TOOLBAR_HEIGHT - 8.0,
+                    x + width - 11.0,
+                    CONTEXT_TOOLBAR_Y + CONTEXT_TOOLBAR_HEIGHT - 9.0,
                     icon_color,
                 );
             }
@@ -17258,6 +17387,7 @@ impl App {
                     h.get() as f32,
                     rows.items.len(),
                     panel_anchor,
+                    compact_width,
                 )
             };
             if workspace_column_open {
@@ -17378,6 +17508,10 @@ impl App {
             }
             for (row, layout) in layouts.iter().enumerate() {
                 let is_item = row > 0 && row <= rows.items.len();
+                // Un menú de la barra no lleva título ni pie.
+                if geometry.compact && !is_item {
+                    continue;
+                }
                 let selected = is_item && rows.items[row - 1].0;
                 let y = if row == 0 {
                     geometry.y
@@ -18545,7 +18679,7 @@ mod pruebas {
         }
         // Con poco ancho: «≡»; con mucho: tres menús y el buscador.
         assert_eq!(top_menu_actions(640.0), &[AppAction::MenuAll]);
-        assert_eq!(top_menu_actions(1_100.0).len(), 4);
+        assert_eq!(top_menu_actions(1_100.0).len(), 5);
     }
 
     #[test]
@@ -18602,6 +18736,49 @@ mod pruebas {
     }
 
     #[test]
+    fn toda_accion_de_la_paleta_esta_en_un_menu_o_se_declara_solo_paleta() {
+        let en_menus = [
+            &FILE_ACTIONS[..],
+            &EDIT_ACTIONS[..],
+            &VIEW_ACTIONS[..],
+            &FOLDER_ACTIONS[..],
+            &BLOCK_ACTIONS[..],
+            &INSERT_ACTIONS[..],
+            &STUDY_ACTIONS[..],
+            // Los botones de la barra de edición y de lectura.
+            &EDITING_CONTEXT_TOOLBAR_ACTIONS[..],
+            &READING_CONTEXT_TOOLBAR_ACTIONS[..],
+            &PRIMARY_TOOLBAR_ACTIONS[..],
+        ];
+        let sueltas = APP_ACTIONS
+            .iter()
+            .filter(|accion| !en_menus.iter().any(|menu| menu.contains(accion)))
+            .copied()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            sueltas, PALETTE_ONLY,
+            "una acción nueva va en un menú o en PALETTE_ONLY"
+        );
+        // Ningún menú repite una acción.
+        for (nombre, grupos) in [
+            ("Archivo", &FILE_GROUPS[..]),
+            ("Editar", &EDIT_GROUPS[..]),
+            ("Vista", &VIEW_GROUPS[..]),
+            ("Carpeta", &FOLDER_GROUPS[..]),
+            ("Párrafo", &BLOCK_GROUPS[..]),
+            ("Estudio", &STUDY_GROUPS[..]),
+        ] {
+            let mut vistas = Vec::new();
+            for (_, acciones) in grupos {
+                for accion in *acciones {
+                    assert!(!vistas.contains(accion), "{nombre} repite {accion:?}");
+                    vistas.push(*accion);
+                }
+            }
+        }
+    }
+
+    #[test]
     fn las_flechas_izquierda_y_derecha_pasan_de_un_menu_de_la_barra_a_otro() {
         let mut app = App::for_tests(NIGHT);
         app.load_for_test(
@@ -18612,16 +18789,19 @@ mod pruebas {
         app.draw_for_test(1_100, 720);
         app.press_toolbar_action(AppAction::MenuFile);
         assert_eq!(app.open_top_menu(), Some(AppAction::MenuFile));
-        app.switch_top_menu(true);
-        assert_eq!(app.open_top_menu(), Some(AppAction::MenuView));
-        app.switch_top_menu(true);
-        assert_eq!(app.open_top_menu(), Some(AppAction::MenuFolder));
-        app.switch_top_menu(true);
-        assert_eq!(app.open_top_menu(), Some(AppAction::MenuFile));
+        for esperado in [
+            AppAction::MenuEdit,
+            AppAction::MenuView,
+            AppAction::MenuFolder,
+            AppAction::MenuFile,
+        ] {
+            app.switch_top_menu(true);
+            assert_eq!(app.open_top_menu(), Some(esperado));
+        }
         app.switch_top_menu(false);
         assert_eq!(app.open_top_menu(), Some(AppAction::MenuFolder));
         // Cada menú se abre bajo su botón y se cierra con el mismo botón.
-        let (x, _) = top_menu_geometry(2, 1_100.0).expect("Carpeta cabe a 1100 px");
+        let (x, _) = top_menu_geometry(3, 1_100.0).expect("Carpeta cabe a 1100 px");
         assert_eq!(app.panel_anchor, Some(x));
         app.press_toolbar_action(AppAction::MenuFolder);
         assert_eq!(app.open_top_menu(), None);
@@ -19098,22 +19278,31 @@ let x = 1;
         assert_eq!(mode_target_at(370.0, 12.0), Some(ModeTarget::Compare));
         assert_eq!(mode_target_at(179.0, 12.0), None);
         assert_eq!(mode_target_at(408.0, 12.0), None);
-        // Con ancho hay tres menús con nombre y el buscador de acciones.
+        // Con ancho hay cuatro menús con nombre y el buscador de acciones.
         assert_eq!(
-            toolbar_action_at(TOP_MENU_X + 10.0, 12.0, 900.0, DocumentMode::Reading),
+            toolbar_action_at(TOP_MENU_X + 10.0, 12.0, 1_000.0, DocumentMode::Reading),
             Some(AppAction::MenuFile)
         );
         assert_eq!(
-            toolbar_action_at(TOP_MENU_X + 90.0, 12.0, 900.0, DocumentMode::Reading),
+            toolbar_action_at(TOP_MENU_X + 90.0, 12.0, 1_000.0, DocumentMode::Reading),
+            Some(AppAction::MenuEdit)
+        );
+        assert_eq!(
+            toolbar_action_at(TOP_MENU_X + 160.0, 12.0, 1_000.0, DocumentMode::Reading),
             Some(AppAction::MenuView)
         );
         assert_eq!(
-            toolbar_action_at(TOP_MENU_X + 160.0, 12.0, 900.0, DocumentMode::Reading),
+            toolbar_action_at(TOP_MENU_X + 230.0, 12.0, 1_000.0, DocumentMode::Reading),
             Some(AppAction::MenuFolder)
         );
         assert_eq!(
-            toolbar_action_at(TOP_MENU_X + 240.0, 12.0, 900.0, DocumentMode::Reading),
+            toolbar_action_at(TOP_MENU_X + 310.0, 12.0, 1_000.0, DocumentMode::Reading),
             Some(AppAction::CommandPalette)
+        );
+        // Con menos ancho, todo está en «≡».
+        assert_eq!(
+            toolbar_action_at(TOP_MENU_X + 10.0, 12.0, 900.0, DocumentMode::Reading),
+            Some(AppAction::MenuAll)
         );
         // En el mínimo, un solo botón «≡».
         assert_eq!(
@@ -19341,7 +19530,7 @@ let x = 1;
         // Después del selector de modo vienen los menús, y luego la franja
         // contextual.
         assert_eq!(
-            toolbar_focus_action(first_mode_focus + 3, DocumentMode::Reading, 900.0),
+            toolbar_focus_action(first_mode_focus + 3, DocumentMode::Reading, 1_000.0),
             Some(AppAction::MenuFile)
         );
         assert_eq!(
@@ -19395,10 +19584,10 @@ let x = 1;
 
         // Incluye documento, workspace, estudio y accesibilidad sin convertir
         // la paleta en un menú de IDE: las familias densas también tienen
-        // ámbitos propios desde el menú contextual. Superar 69 exige revisar
+        // ámbitos propios desde el menú contextual. Superar 71 exige revisar
         // esa jerarquía antes de añadir otra acción. Las últimas fueron fijar
         // la ventana encima, símbolos y emojis, índice flotante y PDF.
-        assert!(original_len <= 69, "el catálogo dejó de ser pequeño");
+        assert!(original_len <= 71, "el catálogo dejó de ser pequeño");
         assert_eq!(labels.len(), original_len);
     }
 
@@ -19450,10 +19639,9 @@ let x = 1;
     #[test]
     fn la_paleta_filtra_acciones_sin_inventar_comandos() {
         assert_eq!(filtered_actions("").len(), APP_ACTIONS.len());
-        assert!(
-            filtered_actions("")[..PRIMERAS_FILAS].contains(&AppAction::WorkspaceHub),
-            "espacio de trabajo debe ser visible sin escribir una búsqueda"
-        );
+        // La carpeta de apuntes tiene su propio menú en la barra: el buscador ya
+        // no necesita ofrecer «Espacio de trabajo» en las primeras filas.
+        assert!(!APP_ACTIONS.contains(&AppAction::WorkspaceHub));
         assert!(
             filtered_actions("")[..PRIMERAS_FILAS].contains(&AppAction::ToggleTheme),
             "el cambio de tema debe ser visible sin escribir una búsqueda"
@@ -19501,7 +19689,7 @@ let x = 1;
 
     #[test]
     fn un_panel_largo_mantiene_visible_la_fila_elegida() {
-        let geometry = navigation_panel_geometry(900.0, 560.0, 9, None);
+        let geometry = navigation_panel_geometry(900.0, 560.0, 9, None, None);
         assert_eq!(panel_window(30, 0, 9), 0..9);
         assert_eq!(panel_window(30, 15, 9), 11..20);
         assert_eq!(panel_window(30, 29, 9), 21..30);
@@ -19542,7 +19730,7 @@ let x = 1;
 
     #[test]
     fn la_geometria_del_panel_comparte_ancho_para_dibujo_y_click() {
-        let geometry = navigation_panel_geometry(200.0, 480.0, 9, None);
+        let geometry = navigation_panel_geometry(200.0, 480.0, 9, None, None);
         assert_eq!(geometry.width, 120.0);
         assert_eq!(geometry.x, 48.0);
         assert!(geometry.height <= 480.0 - FLOATING_PANEL_Y - STATUS_HEIGHT - 12.0);
@@ -20765,7 +20953,7 @@ let x = 1;
 
     #[test]
     fn el_clic_fuera_del_panel_se_distingue_del_marco_y_las_filas() {
-        let panel = navigation_panel_geometry(1_200.0, 800.0, 4, None);
+        let panel = navigation_panel_geometry(1_200.0, 800.0, 4, None, None);
 
         assert!(panel_contains_point(panel.x + 1.0, panel.y + 1.0, panel));
         assert!(panel_contains_point(

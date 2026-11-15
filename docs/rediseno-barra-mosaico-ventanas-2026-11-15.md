@@ -179,7 +179,7 @@ Carpeta.
 
 ```text
 Fila 1 (28 px)
-  + 📂 💾 🔍 | Leer · Editar · Comparar | Archivo ▾  Vista ▾  Carpeta ▾  ⌘ | ☾ 📌 – □ ✕
+  + 📂 💾 🔍 | Leer · Editar · Comparar | Archivo ▾  Editar ▾  Vista ▾  Carpeta ▾  >_ | ☾ 📌 – □ ✕
 
 Fila 2 (contextual)
   Lectura:  Índice · Plegar sección · Copiar ▾
@@ -245,9 +245,10 @@ enum MenuEntry {
 Guardar · Guardar como · Exportar a PDF · Cerrar pestaña · Hacer de Visor MD el
 programa para .md y .txt…
 
-**Editar** (solo con edición o comparación; en lectura se muestra atenuado con
-«Cambiá a Editar»): Deshacer · Rehacer · Cortar · Copiar · Pegar · Buscar en
-documento.
+**Editar** (en la fila 1, entre Archivo y Vista, porque Deshacer, Copiar y
+Buscar sirven también en lectura): Deshacer · Rehacer · Cortar · Copiar ·
+Pegar · Copiar para Discord o correo · Copiar tabla para hoja de cálculo ·
+Buscar en documento.
 
 **Vista**: Modo (Leer, Editar, Comparar, Disposición de la comparación) ·
 Mosaico (Dividir a la derecha, Dividir abajo, Quitar del mosaico, Mover a

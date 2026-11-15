@@ -304,7 +304,7 @@ Diseño completo, inventario de las 69 acciones y riesgos en
 
 - **D-29. Menús.** La paleta «···» deja de ser el menú de todo y pasa a ser
   solo un buscador de acciones. Los menús son **Archivo, Vista y Carpeta**
-  (fila 1) y **Editar, Formato, Párrafo, Insertar, Estudio y Copiar** (fila 2,
+  (fila 1, con **Editar** entre Archivo y Vista) y **Párrafo, Insertar y Estudio** (fila 2,
   según el modo). «Más formato Markdown» (`WRITING_ACTIONS`) se elimina; sus
   acciones ya están en otro menú. Cada `AppAction` está en al menos un menú o
   en la lista `PALETTE_ONLY`; una prueba lo exige y también que ningún menú
@@ -643,21 +643,21 @@ iba a ampliar, y el texto de la fase 7 se escribe ya sobre ellos.
   menú «≡», cambio de menú al pasar el puntero con uno abierto, F10 y flechas
   ← →. Las alternancias conservan el rótulo «…: activado ✓» (más claro para un
   lector de pantalla que un ✓ suelto); «Tema de noche» también lo tiene.
-- [~] **10.7** Fila 2. Hecho: «Bloques» y «Listas» pasan a un solo menú
-  **Párrafo** (títulos, listas y cita); se eliminan «Más formato Markdown»
-  (`WRITING_ACTIONS`, `AppAction::WritingTools`), `AppAction::ListTools` y sus
-  alcances; en el menú contextual también. La orientación de la comparación
-  está en Vista y las acciones repetidas, solo en Insertar. La fila de lectura
-  conserva sus seis botones (acceso directo a la carpeta). Pendiente, con la
-  3.13: Editar (Deshacer, Rehacer, Cortar, Copiar, Pegar), Copiar ▾ en lectura
-  y el menú contextual completo.
-- [ ] **10.8** Acciones nuevas: `Undo`, `Redo`, `Copy`, `Paste`, `MoveToNewWindow`
-  (queda deshabilitada hasta la 12.3) y las que pidan los menús.
-- [ ] **10.9** La paleta «···» pasa a ser buscador: ícono propio, la categoría
-  como texto atenuado a la derecha («Archivo», «Párrafo»…). Prueba de
-  inventario de D-29 (toda acción en un menú o en `PALETTE_ONLY`, sin
-  repetidas en un menú).
-- [ ] **10.11** Pulido que salió de la `design-critique` del 15 de noviembre:
+- [x] **10.7** Fila 2 y menú Editar. «Bloques» y «Listas» pasan a un solo menú
+  **Párrafo**; se eliminan «Más formato Markdown» (`WRITING_ACTIONS`,
+  `AppAction::WritingTools`) y `AppAction::ListTools`, también del menú
+  contextual. **Editar** vive en la fila 1, entre Archivo y Vista (Deshacer,
+  Rehacer, Cortar, Copiar, Pegar, Copiar para otros programas y Buscar), porque
+  Deshacer, Copiar y Buscar sirven también en lectura. La fila de lectura
+  conserva sus seis botones. El menú contextual completo (3.13) sigue aparte.
+- [x] **10.8** Acciones nuevas: `Undo`, `Redo`, `Copy`, `Paste`, `MenuEdit`.
+  (`MoveToNewWindow` llega con la 12.3.)
+- [~] **10.9** Buscador de acciones. Hecho: ícono `>_`, `WorkspaceHub` fuera de
+  la paleta y la prueba de inventario de D-29
+  (`toda_accion_de_la_paleta_esta_en_un_menu_o_se_declara_solo_paleta`, con
+  `PALETTE_ONLY` vacío). Pendiente: la categoría como texto atenuado a la
+  derecha de cada fila sin atajo.
+- [x] **10.11** Pulido que salió de la `design-critique` del 15 de noviembre:
   - los menús (no las búsquedas) no muestran la fila de título repetida ni el
     pie «1–13 de 13 · Esc para cerrar»; el pie solo aparece si hay desplazamiento;
   - el panel de un menú mide lo que mide su fila más larga (mínimo 220 px,
@@ -746,7 +746,7 @@ asociación.
 | 4 | Hecho | c441983, c3b3a76, 1c6f87a, 98f6793 y el ajuste de bloques |
 | 2 | Hecho | 01bacf8, 898665a, e127b66, 9d1a167, 5888201 y la capa de tooltip |
 | 3 | Casi hecha | Hechas 3.1 a 3.8, 3.9b, 3.10 a 3.12. Pendientes: 3.9 (caja de búsqueda con borde y barra anclada); la 3.13 pasa a la 10.7 |
-| 10 | En curso | Hechas 10.1 a 10.6 y parte de la 10.7 (menú Párrafo, sin «Más»). Siguiente: 10.8 |
+| 10 | En curso | Hechas 10.1 a 10.8 y 10.11; 10.9 a medias. Siguiente: 10.9 y el cierre 10.10 |
 | 5 | En curso | Hecha 5.1 (verde propio de la pestaña). Pendientes 5.2 a 5.4 y 5.8; la 5.5 a 5.7 pasan a la fase 11 |
 | 11 | Pendiente | Mosaico: cabecera como pestaña, divisor, intercambio, soltado |
 | 6 | Pendiente | — |
