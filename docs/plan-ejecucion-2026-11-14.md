@@ -559,9 +559,9 @@ Orden por defecto para un solo ejecutor: 1 → 4 → 2 → 3 → 5 → 6 → 7 �
 | 1 | Hecho | a76ddca, 5f9c2ae, 1a74b6f; ejecutable entregado |
 | 4 | Hecho | c441983, c3b3a76, 1c6f87a, 98f6793 y el ajuste de bloques |
 | 2 | Hecho | 01bacf8, 898665a, e127b66, 9d1a167, 5888201 y la capa de tooltip |
-| 3 | **Activa** | — |
-| 5 | Pendiente | — |
+| 3 | Casi hecha | Hechas 3.1 a 3.8, 3.9b, 3.10 a 3.12. Pendientes: 3.9 (caja de búsqueda con borde y barra anclada) y 3.13 (menú contextual completo) |
+| 5 | En curso | Hecha 5.1 (verde propio de la pestaña). Pendientes 5.2 a 5.8 |
 | 6 | Pendiente | — |
 | 7 | Pendiente | — |
-| 8 | Pendiente | — |
+| 8 | En curso | Hecho el hover y destello de Copiar (8.2 parcial). Pendientes el resto de 8 |
 | 9 | Pendiente | — |
