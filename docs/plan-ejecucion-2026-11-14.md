@@ -676,6 +676,16 @@ iba a ampliar, y el texto de la fase 7 se escribe ya sobre ellos.
   `menu-archivo`, `menu-vista`, `menu-parrafo`; `design-critique`;
   `/code-review`; ejecutable nuevo.
 
+### Pedidos sueltos del propietario
+
+- [x] **P-01** (15 de noviembre) Un documento nuevo se llama como su primer
+  título (`src/titulo.rs`: H1, si no el título de menor nivel, si no la primera
+  línea con texto) y lleva la marca «•» mientras no esté guardado, en la
+  pestaña y en la cabecera de panel. Al guardar manda el nombre del archivo;
+  «Guardar como» y «Exportar a PDF» proponen el título como nombre. La marca es
+  «•» y no «●» porque la fuente de la interfaz no dibuja «●». Pendiente de la
+  fase 7: que el aviso diga «sin guardar» con las palabras del glosario.
+
 ### Fase 11 · Mosaico
 
 Absorbe las tareas 5.5, 5.6 y 5.7. Va después de la 5.

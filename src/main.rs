@@ -28,6 +28,7 @@ mod recovery;
 mod settings;
 mod surface;
 mod theme;
+mod titulo;
 mod ui_motion;
 mod ui_target;
 use menu::MenuEntry;
@@ -1426,15 +1427,25 @@ fn document_display_name(path: &str) -> String {
     )
 }
 
-fn tab_label(path: &str, dirty: bool, pinned: bool, max_chars: usize) -> String {
-    let path_buf = PathBuf::from(path);
-    let name = path_buf
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or(path);
+/// Etiqueta de pestaña de un documento: su nombre, la chincheta si está fijado
+/// y la marca de sin guardar.
+fn tab_label_for(document: &DocumentState, max_chars: usize) -> String {
+    tab_title(
+        &document.display_name(),
+        document.is_unsaved(),
+        document.pinned,
+        max_chars,
+    )
+}
+
+fn tab_title(name: &str, unsaved: bool, pinned: bool, max_chars: usize) -> String {
     let max_chars = max_chars.max(4);
     let prefix = if pinned { "• " } else { "" };
-    let suffix = if dirty { " *" } else { "" };
+    let suffix = if unsaved {
+        format!(" {}", titulo::UNSAVED_MARK)
+    } else {
+        String::new()
+    };
     let available = max_chars.saturating_sub(prefix.chars().count() + suffix.chars().count());
     let shortened = if name.chars().count() > available {
         format!(
@@ -6709,11 +6720,53 @@ struct DocumentState {
     pending_recovery: Option<PendingRecovery>,
 }
 
+/// Ruta con la que nace un documento nuevo, mientras no se guarda.
+const UNTITLED_PATH: &str = "sin título.md";
+
 impl DocumentState {
+    /// Documento que nunca se guardó ni se abrió desde un archivo.
+    fn is_untitled(&self) -> bool {
+        self.source_identity.is_none() && self.path == UNTITLED_PATH
+    }
+
+    /// Título provisional tomado del texto, si el documento lo tiene.
+    fn provisional_title(&self) -> Option<String> {
+        titulo::provisional_title(self.source.lines().take(200).map(|line| line.to_string()))
+    }
+
+    /// Nombre que se muestra: el del archivo, o, mientras es nuevo, de qué
+    /// trata.
+    fn display_name(&self) -> String {
+        if self.is_untitled() {
+            self.provisional_title()
+                .unwrap_or_else(|| titulo::UNTITLED_NAME.to_string())
+        } else {
+            document_display_name(&self.path)
+        }
+    }
+
+    /// Hay cambios sin guardar o un documento nuevo con texto que aún no es un
+    /// archivo.
+    fn is_unsaved(&self) -> bool {
+        self.is_dirty() || (self.is_untitled() && !self.source.is_empty())
+    }
+
+    /// Nombre sin extensión que se propone al guardar o exportar.
+    fn suggested_stem(&self) -> String {
+        if self.is_untitled() {
+            return titulo::suggested_file_stem(self.provisional_title().as_deref());
+        }
+        std::path::Path::new(&self.path)
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or("documento")
+            .to_string()
+    }
+
     fn untitled() -> Self {
         Self {
             id: NEXT_DOCUMENT_ID.fetch_add(1, Ordering::Relaxed),
-            path: "sin título.md".to_string(),
+            path: UNTITLED_PATH.to_string(),
             content_kind: DocumentContentKind::Markdown,
             pinned: false,
             source: TextBuffer::new(),
@@ -7539,7 +7592,7 @@ impl App {
                 id: initial_document_id,
                 path: opening_path
                     .clone()
-                    .unwrap_or_else(|| "sin título.md".to_string()),
+                    .unwrap_or_else(|| UNTITLED_PATH.to_string()),
                 content_kind: opening_path
                     .as_deref()
                     .map(|path| DocumentContentKind::for_path(std::path::Path::new(path)))
@@ -10022,12 +10075,7 @@ impl App {
                 return;
             }
         };
-        let name = document_display_name(&self.document.path);
-        let stem = std::path::Path::new(&name)
-            .file_stem()
-            .and_then(|stem| stem.to_str())
-            .unwrap_or("documento")
-            .to_string();
+        let stem = self.document.suggested_stem();
         let Some(mut path) = self
             .file_dialog()
             .add_filter("PDF", &["pdf"])
@@ -12210,7 +12258,7 @@ impl App {
         let Some(path) = self
             .file_dialog()
             .add_filter("Markdown", &["md", "markdown"])
-            .set_file_name("nota.md")
+            .set_file_name(format!("{}.md", self.document.suggested_stem()))
             .save_file()
         else {
             self.set_notice("guardar como cancelado");
@@ -12516,7 +12564,7 @@ impl App {
         } else {
             false
         };
-        let name = document_display_name(&self.document.path);
+        let name = self.document.display_name();
         self.open_dialog(
             Dialog::close_tab(&name, recovery_preserved),
             Some(self.document.id),
@@ -13085,9 +13133,13 @@ impl App {
     fn refresh_title(&self) {
         if let Some(window) = &self.window {
             window.set_title(&window_title(
-                &self.document.path,
+                &if self.document.is_untitled() {
+                    self.document.display_name()
+                } else {
+                    self.document.path.clone()
+                },
                 self.document.safe_mode,
-                self.document.source_editor.is_dirty(),
+                self.document.is_unsaved(),
                 self.hover_destination
                     .as_deref()
                     .or(self.focus_destination.as_deref())
@@ -14842,9 +14894,7 @@ impl App {
                     SPLIT_NEW_DOCUMENT => "Documento nuevo".to_string(),
                     SPLIT_OPEN_FILE => "Abrir un archivo…".to_string(),
                     _ => document_by_id(&self.document, &self.inactive_documents, *document_id)
-                        .map(|document| {
-                            tab_label(&document.path, document.is_dirty(), document.pinned, 42)
-                        })
+                        .map(|document| tab_label_for(document, 42))
                         .unwrap_or_else(|| "Pestaña no disponible".to_string()),
                 })
                 .collect::<Vec<_>>()
@@ -15444,8 +15494,12 @@ impl App {
                         let header = pane_header_rect(layout.geometry);
                         let name = format!(
                             "{}{}",
-                            document_display_name(&document.path),
-                            if document.is_dirty() { " *" } else { "" }
+                            document.display_name(),
+                            if document.is_unsaved() {
+                                format!(" {}", titulo::UNSAVED_MARK)
+                            } else {
+                                String::new()
+                            }
                         );
                         let title = build_ui_text_layout(
                             &abbreviated_label(&name, 40),
@@ -15694,12 +15748,7 @@ impl App {
                 let document = document_by_id(&self.document, &self.inactive_documents, *id)?;
                 Some((
                     document.id == self.document.id,
-                    tab_label(
-                        &document.path,
-                        document.is_dirty(),
-                        document.pinned,
-                        tab_label_chars,
-                    ),
+                    tab_label_for(document, tab_label_chars),
                 ))
             })
             .collect::<Vec<_>>();
@@ -15757,10 +15806,10 @@ impl App {
                         workspace_name(Some(root.root())),
                         relative.to_string_lossy().replace('\\', " › ")
                     ),
-                    Err(_) => document_display_name(&self.document.path),
+                    Err(_) => self.document.display_name(),
                 }
             }
-            None => document_display_name(&self.document.path),
+            None => self.document.display_name(),
         };
         let status_location_layout = build_ui_text_layout(
             &abbreviated_label(&status_location, 90),
@@ -18828,6 +18877,47 @@ mod pruebas {
     }
 
     #[test]
+    fn un_documento_nuevo_se_llama_como_su_primer_titulo_y_avisa_que_no_esta_guardado() {
+        let mut app = App::for_tests(NIGHT);
+        // Vacío: sin título y sin marca (no hay nada que perder).
+        assert!(app.document.is_untitled());
+        assert_eq!(app.document.display_name(), titulo::UNTITLED_NAME);
+        assert!(!app.document.is_unsaved());
+        assert_eq!(tab_label_for(&app.document, 40), titulo::UNTITLED_NAME);
+        // Con texto: toma el título y lleva la marca de sin guardar.
+        app.load_for_test(
+            "# Apuntes de biología
+
+texto",
+            DocumentMode::SourceEditing,
+        );
+        assert_eq!(app.document.display_name(), "Apuntes de biología");
+        assert!(app.document.is_unsaved());
+        let etiqueta = tab_label_for(&app.document, 40);
+        assert_eq!(
+            etiqueta,
+            format!("Apuntes de biología {}", titulo::UNSAVED_MARK)
+        );
+        // Cambiar el título del texto cambia el nombre.
+        app.load_for_test(
+            "# Otro tema
+",
+            DocumentMode::SourceEditing,
+        );
+        assert_eq!(app.document.display_name(), "Otro tema");
+        // El nombre que se propone al guardar sale del título.
+        assert_eq!(app.document.suggested_stem(), "Otro tema");
+        // Un archivo guardado conserva el nombre de su archivo.
+        app.document.path = r"C:
+otas\clase.md"
+            .to_string();
+        app.document.source_identity = None;
+        assert!(!app.document.is_untitled());
+        assert_eq!(app.document.display_name(), "clase.md");
+        assert_eq!(app.document.suggested_stem(), "clase");
+    }
+
+    #[test]
     fn el_puntero_sobre_una_fila_de_la_lista_abierta_la_señala_como_objetivo() {
         let mut app = App::for_tests(NIGHT);
         let titulo = "Un título larguísimo que no cabe en la columna de la carpeta de apuntes";
@@ -19844,9 +19934,9 @@ let x = 1;
 
     #[test]
     fn la_etiqueta_de_pestana_conserva_unicode_y_marca_cambios() {
-        let label = tab_label(r"C:\notas\日本語 y ciberseguridad.md", true, true, 18);
+        let label = tab_title("日本語 y ciberseguridad.md", true, true, 18);
 
-        assert!(label.ends_with('*'));
+        assert!(label.ends_with(titulo::UNSAVED_MARK));
         assert!(label.starts_with("• "));
         assert!(label.chars().count() <= 18);
         assert!(label.is_char_boundary(label.len()));
