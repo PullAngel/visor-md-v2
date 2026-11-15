@@ -309,3 +309,31 @@ que ni el índice ni una preview PNG lo siguen.
 La recuperación prueba una ráfaga de dos cambios: solo el último request vence
 tres segundos después de la última edición. También prueba cancelación y que el
 deadline de una pestaña inactiva participa del próximo despertar del event loop.
+
+## Pruebas de imagen de referencia
+
+`src/visual_tests.rs` dibuja nueve escenas sin ventana (lectura, edición,
+comparar, paleta, menú Bloques, índice, dos pestañas, diálogo de cierre y
+aviso) en noche y día, a 640×480 y 1100×720, y compara cada una píxel a píxel
+con su imagen de `tests/visual/referencia/`. Un cambio visual involuntario
+rompe la prueba.
+
+- **Fuentes.** Solo las embebidas (`App::for_tests`): el resultado no depende de
+  las fuentes instaladas ni de la configuración de la persona.
+- **Tolerancia.** Hasta 2 niveles por canal, y como máximo el 0,1 % de los
+  píxeles puede superarla. Es margen para el antialias entre CPU.
+- **Cuando falla.** La imagen actual queda en `target/visual/actual/` y la
+  diferencia, con los píxeles distintos en magenta, en `target/visual/diff/`.
+  `kompari review tests/visual/referencia target/visual/actual` las muestra
+  lado a lado.
+- **Cambio deliberado.** Se regeneran con
+  `VISOR_BLESS=1 cargo test visual`, se revisan con `kompari` o a ojo y se
+  confirman en el mismo commit que el cambio visual, diciendo qué escenas
+  cambiaron y por qué. Nunca se aprueban sin mirarlas.
+- **Plataforma.** Las referencias se generaron en Windows. En otras
+  plataformas la prueba se omite (`ignore`) hasta confirmar que el rasterizado
+  coincide.
+- **Escenas nuevas.** Se agregan a `ESCENAS` con una función que prepara el
+  estado. Cada fase del rediseño suma las suyas.
+- **Duración.** Unos 30 s: cada escena crea una app con su contexto de fuentes.
+  Para iterar sin ellas, `cargo test -- --skip visual`.

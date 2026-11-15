@@ -332,18 +332,18 @@ aparcada (con el motivo).
 
 ### Fase 2 · Dibujo sin ventana, objetivos y animación
 
-- [ ] **2.1** D-09 `AppNotifier`.
+- [x] (01bacf8) **2.1** D-09 `AppNotifier`.
   - Hecho: compila, todas las pruebas verdes y la app funciona igual (captura).
-- [ ] **2.2** D-10 `App::new` y `App::for_tests`.
+- [x] (01bacf8) **2.2** D-10 `App::new` y `App::for_tests`.
   - Prueba: `App::for_tests(1100, 720, NIGHT)` se construye.
-- [ ] **2.3** D-08 `render_frame`, en dos commits:
+- [x] (898665a, 165e8bd) **2.3** D-08 `render_frame`, en dos commits:
   1. mover el código sin cambios;
   2. sustituir el acceso a la ventana.
 
   - Prueba: una prueba dibuja un documento cargado con D-11 y comprueba que el
     píxel (5,5) no sea transparente.
   - Hecho: `cargo run --release -- --bench` no empeora más de 5 %.
-- [ ] **2.4** D-12 imágenes de referencia. Escenas iniciales: `lectura`,
+- [x] **2.4** D-12 imágenes de referencia. Escenas iniciales: `lectura`,
   `edicion`, `comparar`, `paleta`, `menu-bloques`, `indice`, `dos-pestanas`,
   `dialogo-cierre` y `aviso`.
   - Hecho: `VISOR_BLESS=1` genera las referencias, `cargo test visual` pasa y

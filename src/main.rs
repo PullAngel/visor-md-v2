@@ -25,6 +25,8 @@ mod recovery;
 mod settings;
 mod theme;
 mod vfs;
+#[cfg(test)]
+mod visual_tests;
 mod workspace;
 
 use std::collections::{BTreeSet, HashMap, HashSet};
