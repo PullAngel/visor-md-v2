@@ -638,11 +638,11 @@ iba a ampliar, y el texto de la fase 7 se escribe ya sobre ellos.
   Vista, Carpeta y el buscador de acciones; en ventanas angostas un solo «≡»).
   Foco F6 en orden visual, prueba de solapes de 640 a 2000 px y referencias
   regeneradas. El botón de tema ya cabe en el mínimo de 640 px.
-- [~] **10.6** Menús Archivo, Vista y Carpeta (fila 1) con las entradas de la
-  sección 3.4 del diseño. Hecho: contenido con encabezados, apertura bajo su
-  botón y el menú «≡». Pendiente: conmutación al pasar el puntero con uno
-  abierto, F10, flechas ← → entre menús y «✓» a la izquierda de las
-  alternancias.
+- [x] **10.6** Menús Archivo, Vista y Carpeta (fila 1) con las entradas de la
+  sección 3.4 del diseño: contenido con encabezados, apertura bajo su botón,
+  menú «≡», cambio de menú al pasar el puntero con uno abierto, F10 y flechas
+  ← →. Las alternancias conservan el rótulo «…: activado ✓» (más claro para un
+  lector de pantalla que un ✓ suelto); «Tema de noche» también lo tiene.
 - [ ] **10.7** Fila 2: menús Editar, Formato, Párrafo, Insertar, Estudio y Copiar;
   eliminar «Más» y `WRITING_ACTIONS`; en lectura, Índice, Plegar sección y
   Copiar. Absorbe la 3.13 (menú contextual: Cortar, Copiar, Pegar, Deshacer,
@@ -730,7 +730,7 @@ asociación.
 | 4 | Hecho | c441983, c3b3a76, 1c6f87a, 98f6793 y el ajuste de bloques |
 | 2 | Hecho | 01bacf8, 898665a, e127b66, 9d1a167, 5888201 y la capa de tooltip |
 | 3 | Casi hecha | Hechas 3.1 a 3.8, 3.9b, 3.10 a 3.12. Pendientes: 3.9 (caja de búsqueda con borde y barra anclada); la 3.13 pasa a la 10.7 |
-| 10 | En curso | Hechas 10.1 a 10.5 y parte de la 10.6 (barra adaptable con menús Archivo, Vista y Carpeta). Siguiente: terminar la 10.6 |
+| 10 | En curso | Hechas 10.1 a 10.6 (barra adaptable con menús Archivo, Vista y Carpeta). Siguiente: 10.7 |
 | 5 | En curso | Hecha 5.1 (verde propio de la pestaña). Pendientes 5.2 a 5.4 y 5.8; la 5.5 a 5.7 pasan a la fase 11 |
 | 11 | Pendiente | Mosaico: cabecera como pestaña, divisor, intercambio, soltado |
 | 6 | Pendiente | — |

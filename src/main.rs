@@ -8567,6 +8567,14 @@ impl ApplicationHandler<AppEvent> for App {
                         window.request_redraw();
                     }
                 }
+                // Con un menú de la barra abierto, pasar sobre otro lo abre.
+                if let Some(UiTarget::Toolbar(
+                    action @ (AppAction::MenuFile | AppAction::MenuView | AppAction::MenuFolder),
+                )) = ui_target
+                    && self.open_top_menu().is_some_and(|open| open != action)
+                {
+                    self.press_toolbar_action(action);
+                }
                 let toolbar_hover = matches!(
                     ui_target,
                     Some(UiTarget::Toolbar(_) | UiTarget::ModeSegment(_))
@@ -9156,6 +9164,26 @@ impl ApplicationHandler<AppEvent> for App {
                 if let Some(window) = &self.window {
                     window.request_redraw();
                 }
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::F10),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } => {
+                // F10 abre el primer menú de la barra, como en cualquier
+                // programa de escritorio.
+                let first = top_menu_actions(self.view_size().map_or(900.0, |size| size.0))[0];
+                let first = if first == AppAction::MenuAll {
+                    first
+                } else {
+                    AppAction::MenuFile
+                };
+                self.press_toolbar_action(first);
             }
             WindowEvent::KeyboardInput {
                 event:
@@ -10169,6 +10197,7 @@ impl App {
             AppAction::ToggleRecovery => ("Recuperación de cambios", self.recovery_enabled),
             AppAction::ToggleFloatingOutline => ("Índice flotante", self.settings.floating_outline),
             AppAction::TogglePinOnTop => ("Ventana siempre encima", self.pinned_on_top),
+            AppAction::ToggleTheme => ("Tema de noche", self.palette.bg.0 < 0x80),
             _ => return action_name(action).to_string(),
         };
         format!(
@@ -10179,6 +10208,31 @@ impl App {
                 "desactivado"
             }
         )
+    }
+
+    /// Menú de la fila 1 que está abierto (Archivo, Vista o Carpeta).
+    fn open_top_menu(&self) -> Option<AppAction> {
+        self.open_surface().filter(|action| {
+            matches!(
+                action,
+                AppAction::MenuFile | AppAction::MenuView | AppAction::MenuFolder
+            )
+        })
+    }
+
+    /// Pasa al menú vecino con ← y →, dando la vuelta.
+    fn switch_top_menu(&mut self, forward: bool) {
+        const MENUS: [AppAction; 3] = [
+            AppAction::MenuFile,
+            AppAction::MenuView,
+            AppAction::MenuFolder,
+        ];
+        let Some(current) = self.open_top_menu() else {
+            return;
+        };
+        let position = MENUS.iter().position(|menu| *menu == current).unwrap_or(0);
+        let next = MENUS[(position + if forward { 1 } else { MENUS.len() - 1 }) % MENUS.len()];
+        self.press_toolbar_action(next);
     }
 
     fn open_command_palette(&mut self) {
@@ -10254,6 +10308,12 @@ impl App {
             }
             PhysicalKey::Code(KeyCode::ArrowUp) if !entries.is_empty() => {
                 self.command_palette = Some(menu::step(&entries, selected, false));
+            }
+            PhysicalKey::Code(KeyCode::ArrowLeft | KeyCode::ArrowRight)
+                if self.command_palette_query.is_empty() && self.open_top_menu().is_some() =>
+            {
+                let forward = event.physical_key == PhysicalKey::Code(KeyCode::ArrowRight);
+                self.switch_top_menu(forward);
             }
             PhysicalKey::Code(KeyCode::Enter) if !entries.is_empty() => {
                 if let Some(action) = entries.get(selected).and_then(|entry| entry.action()) {
@@ -18612,6 +18672,37 @@ mod pruebas {
         assert_eq!(
             action_shortcut(AppAction::ToggleTheme),
             Some("Ctrl+Shift+D")
+        );
+    }
+
+    #[test]
+    fn las_flechas_izquierda_y_derecha_pasan_de_un_menu_de_la_barra_a_otro() {
+        let mut app = App::for_tests(NIGHT);
+        app.load_for_test(
+            "# Uno
+",
+            DocumentMode::Reading,
+        );
+        app.draw_for_test(1_100, 720);
+        app.press_toolbar_action(AppAction::MenuFile);
+        assert_eq!(app.open_top_menu(), Some(AppAction::MenuFile));
+        app.switch_top_menu(true);
+        assert_eq!(app.open_top_menu(), Some(AppAction::MenuView));
+        app.switch_top_menu(true);
+        assert_eq!(app.open_top_menu(), Some(AppAction::MenuFolder));
+        app.switch_top_menu(true);
+        assert_eq!(app.open_top_menu(), Some(AppAction::MenuFile));
+        app.switch_top_menu(false);
+        assert_eq!(app.open_top_menu(), Some(AppAction::MenuFolder));
+        // Cada menú se abre bajo su botón y se cierra con el mismo botón.
+        let (x, _) = top_menu_geometry(2, 1_100.0).expect("Carpeta cabe a 1100 px");
+        assert_eq!(app.panel_anchor, Some(x));
+        app.press_toolbar_action(AppAction::MenuFolder);
+        assert_eq!(app.open_top_menu(), None);
+        // «Tema de noche» dice su estado en el menú Vista.
+        assert_eq!(
+            app.action_display_name(AppAction::ToggleTheme),
+            "Tema de noche: activado ✓"
         );
     }
 
