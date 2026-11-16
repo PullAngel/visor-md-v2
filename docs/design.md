@@ -274,3 +274,25 @@ redimensionar, cerrar o comprender el foco.
 Los PNG, ZIP y MHTML recuperados en `Artifac opciones de diseño` son referencias
 locales. No son runtime ni código de producción. Las decisiones vigentes se
 mantienen en este documento para que el proyecto no dependa del artifact.
+
+## Contraste medido (16 de noviembre de 2026)
+
+Cifras calculadas con la fórmula de contraste de WCAG 2.1 sobre los colores de
+`src/theme.rs`; la prueba `ambos_temas_conservan_contraste_para_lectura_y_controles`
+y `el_tema_de_dia_tiene_margen_en_texto_tenue_y_enlaces_externos` las vigilan.
+No se midieron con el analizador de Accessibility Insights: esa comprobación
+sobre la ventana real queda para la re-evaluación de la fase 9.
+
+D-24 aplicado: en el tema de día `dim` pasó de `#6C6151` a `#5A5043` y
+`external_link` de `#1E68C4` a `#1A5AAE`.
+
+| Par | Día | Noche |
+| --- | --- | --- |
+| Texto sobre documento (`text` / `surface`) | 13.1:1 | 14.9:1 |
+| Texto tenue sobre documento (`dim` / `surface`) | 6.8:1 | 7.0:1 |
+| Texto tenue sobre fondo (`dim` / `bg`) | 5.9:1 | 7.4:1 |
+| Texto tenue sobre bloque (`dim` / `elevated`) | 6.1:1 | 6.4:1 |
+| Texto tenue sobre pestaña activa (`dim` / `tab`) | 6.1:1 | 5.5:1 |
+| Texto tenue sobre pestaña inactiva (`dim` / `tab_idle`) | 6.2:1 | 6.4:1 |
+| Enlace externo sobre documento (`external_link` / `surface`) | 5.8:1 | 8.5:1 |
+| Acento sobre documento (`accent` / `surface`) | 5.5:1 | 8.9:1 |

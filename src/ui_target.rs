@@ -34,6 +34,10 @@ pub(crate) enum UiTarget {
     PaneDivider(usize),
     /// Botón grande de la pantalla de bienvenida.
     Welcome(usize),
+    /// Tirador de la barra de desplazamiento del documento.
+    ScrollThumb,
+    /// «Quitar del mosaico», en la cabecera del panel con ese índice.
+    PaneClose(usize),
 }
 
 /// Objetivo del cromo de la ventana (controles, barras y pestañas) bajo el
@@ -97,6 +101,24 @@ impl App {
             chrome_target_at(x, y, width, height, self.document.mode, self.tab_strip())
         {
             return Some(target);
+        }
+        let layouts = self.visible_document_pane_layouts();
+        if layouts.len() > 1
+            && let Some(index) = layouts.iter().position(|layout| {
+                pane_header_hit(
+                    pane_header_rect(layout.geometry),
+                    x,
+                    y - DOCUMENT_VIEWPORT_TOP,
+                ) == Some(PaneHeaderHit::Close)
+            })
+        {
+            return Some(UiTarget::PaneClose(index));
+        }
+        if self.scroll_bar_visible(Instant::now())
+            && let Some(thumb) = self.scroll_thumb()
+            && thumb.contains(x, y)
+        {
+            return Some(UiTarget::ScrollThumb);
         }
         if let Some(divider) = divider_at(&self.pane_dividers(), x, y - DOCUMENT_VIEWPORT_TOP) {
             return Some(UiTarget::PaneDivider(divider.index));

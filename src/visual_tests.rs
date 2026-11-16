@@ -336,7 +336,12 @@ fn bienvenida(app: &mut App) {
     app.laid_for_width = -1.0;
 }
 
-const ESCENAS: [Escena; 25] = [
+/// La barra de desplazamiento visible (acaba de desplazarse).
+fn barra_de_desplazamiento(app: &mut App) {
+    app.scroll_bar_until = Some(Instant::now() + std::time::Duration::from_secs(3600));
+}
+
+const ESCENAS: [Escena; 26] = [
     Escena {
         nombre: "lectura",
         modo: DocumentMode::Reading,
@@ -458,6 +463,11 @@ const ESCENAS: [Escena; 25] = [
         preparar: dialogo_con_el_puntero_sobre_un_boton,
     },
     Escena {
+        nombre: "barra-desplazamiento",
+        modo: DocumentMode::Reading,
+        preparar: barra_de_desplazamiento,
+    },
+    Escena {
         nombre: "bienvenida",
         modo: DocumentMode::SourceEditing,
         preparar: bienvenida,
@@ -477,6 +487,7 @@ fn dibujar(escena: &Escena, palette: Palette, ancho: u32, alto: u32) -> Pixmap {
         "division-arrastrando",
         "mosaico-4",
         "mosaico-soltar",
+        "barra-desplazamiento",
     ]
     .contains(&escena.nombre)
     {

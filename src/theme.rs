@@ -48,9 +48,9 @@ pub(crate) const DAY: Palette = Palette {
     floating: (0xFA, 0xF4, 0xE7),
     border: (0xD3, 0xC4, 0xA7),
     text: (0x2B, 0x25, 0x1C),
-    dim: (0x6C, 0x61, 0x51),
+    dim: (0x5A, 0x50, 0x43),
     accent: (0x2F, 0x6B, 0x45),
-    external_link: (0x1E, 0x68, 0xC4),
+    external_link: (0x1A, 0x5A, 0xAE),
     mark: (0xD9, 0xE4, 0xC9),
     kbd: (0xE5, 0xDA, 0xC3),
     tab: (0xDC, 0xE6, 0xCF),
@@ -153,6 +153,17 @@ mod tests {
             assert!(contrast(palette.dim, palette.tab_idle) >= 4.5);
             assert!(contrast(palette.accent, palette.tab) >= 4.5);
         }
+    }
+
+    /// D-24: el tema de día sube sus mínimos para texto tenue y enlaces
+    /// externos, que eran lo más justo.
+    #[test]
+    fn el_tema_de_dia_tiene_margen_en_texto_tenue_y_enlaces_externos() {
+        assert!(contrast(DAY.dim, DAY.surface) >= 5.5);
+        assert!(contrast(DAY.dim, DAY.bg) >= 5.5);
+        assert!(contrast(DAY.dim, DAY.elevated) >= 5.5);
+        assert!(contrast(DAY.dim, DAY.tab) >= 5.5);
+        assert!(contrast(DAY.external_link, DAY.surface) >= 5.5);
     }
 
     #[test]

@@ -28,6 +28,7 @@ mod panel_list;
 mod panes;
 mod pdf;
 mod recovery;
+mod scrollbar;
 mod settings;
 mod surface;
 mod theme;
@@ -727,13 +728,20 @@ fn window_control_at(x: f32, y: f32, window_width: f32) -> Option<WindowControl>
 }
 
 /// Texto de ayuda de un control de ventana. `night` indica el tema actual.
-fn window_control_label(control: WindowControl, night: bool) -> &'static str {
+fn window_control_label(
+    control: WindowControl,
+    night: bool,
+    pinned: bool,
+    maximized: bool,
+) -> &'static str {
     match control {
         WindowControl::ToggleTheme if night => "Cambiar a tema de día · Ctrl+Shift+D",
         WindowControl::ToggleTheme => "Cambiar a tema de noche · Ctrl+Shift+D",
+        WindowControl::PinOnTop if pinned => "Fijada · clic para soltar",
         WindowControl::PinOnTop => "Fijar la ventana encima de las demás",
         WindowControl::Minimize => "Minimizar",
-        WindowControl::ToggleMaximize => "Maximizar o restaurar",
+        WindowControl::ToggleMaximize if maximized => "Restaurar",
+        WindowControl::ToggleMaximize => "Maximizar",
         WindowControl::Close => "Cerrar",
     }
 }
@@ -1163,6 +1171,8 @@ struct NavigationPanelRows {
     /// Filas que son encabezados de grupo: no se resaltan ni se pulsan. Vacío
     /// si el panel no tiene.
     headings: Vec<bool>,
+    /// Posición absoluta en la lista de la primera fila que se ve.
+    first: usize,
     footer: String,
 }
 
@@ -1593,6 +1603,46 @@ fn append_limited_text(destination: &mut String, text: &str, limit: usize) {
 
 /// Botón Copiar de un bloque de código: tinta de acento que sube al pasar el
 /// puntero, destella al pulsar y queda más marcada mientras dice «Copiado».
+/// Cuánto resaltado tiene un control: el hover entra en 120 ms y sale en 80, y
+/// la pulsación deja un destello de 160 ms (D-14).
+#[derive(Clone, Copy, Default)]
+struct Feel {
+    hover: f32,
+    press: f32,
+}
+
+impl Feel {
+    fn any(self) -> bool {
+        self.hover > 0.0 || self.press > 0.0
+    }
+}
+
+/// Fondo de un control con hover y pulsación: el color de base aparece con el
+/// hover y un velo de acento marca la pulsación. Las barras usan radio de 6 px.
+fn draw_feedback_fill(
+    pixmap: &mut Pixmap,
+    (x, y, width, height): (f32, f32, f32, f32),
+    radius: f32,
+    base: (u8, u8, u8),
+    accent: (u8, u8, u8),
+    feel: Feel,
+) {
+    let mut paint = Paint {
+        anti_alias: true,
+        ..Default::default()
+    };
+    if feel.hover > 0.0 {
+        let alpha = (feel.hover.clamp(0.0, 1.0) * 255.0).round() as u8;
+        paint.set_color(Color::from_rgba8(base.0, base.1, base.2, alpha));
+        fill_rounded_rect(pixmap, x, y, width, height, radius, &paint);
+    }
+    if feel.press > 0.0 {
+        let alpha = (feel.press.clamp(0.0, 1.0) * 64.0).round() as u8;
+        paint.set_color(Color::from_rgba8(accent.0, accent.1, accent.2, alpha));
+        fill_rounded_rect(pixmap, x, y, width, height, radius, &paint);
+    }
+}
+
 fn draw_copy_button(
     pixmap: &mut Pixmap,
     (x, y, width, height): (f32, f32, f32, f32),
@@ -6165,6 +6215,16 @@ fn estimate_height(block: &Block, width: f32, scale: f32) -> f32 {
     lines * size * scale * block.kind.line_height()
 }
 
+/// Espacio entre dos cercas de código contiguas.
+const ADJACENT_CODE_GAP: f32 = 12.0;
+
+/// Primera palabra de la cerca (` ```rust title=x ` → `rust`), acotada: es lo
+/// que se muestra como lenguaje junto a «Copiar».
+fn code_language(info: &str) -> Option<String> {
+    let word = info.split_whitespace().next()?;
+    Some(word.chars().take(16).collect())
+}
+
 /// Pasada de posicionamiento. Con `exact`, maqueta cada bloque para sacarle el
 /// alto real y descarta el layout. Sin `exact`, lo estima sin maquetar: en un
 /// documento de 43 mil bloques la diferencia es de segundos a milisegundos.
@@ -6208,7 +6268,17 @@ fn measure_all(
         } else {
             estimate_height(block, width, scale)
         };
-        y += block.kind.space_before() * scale;
+        // Dos cercas de código seguidas necesitan aire entre sus fondos; las
+        // líneas de una misma cerca siguen pegadas.
+        let after_other_fence = index > 0
+            && matches!(block.kind, Kind::Code)
+            && matches!(blocks[index - 1].kind, Kind::Code)
+            && !same_code_group(&blocks[index - 1], block);
+        y += if after_other_fence {
+            ADJACENT_CODE_GAP
+        } else {
+            block.kind.space_before()
+        } * scale;
         slots.push(Slot {
             y,
             height,
@@ -7844,6 +7914,16 @@ struct App {
     /// Divisor que se está arrastrando y el último clic sobre un divisor, para
     /// el doble clic que lo devuelve al 50 %.
     divider_drag: Option<usize>,
+    /// Desplazamiento que se vio en el último cuadro, para saber cuándo se
+    /// desplazó y mostrar la barra.
+    scroll_bar_seen: f32,
+    /// Hasta cuándo se ve la barra tras desplazar.
+    scroll_bar_until: Option<Instant>,
+    /// Se arrastra el tirador: distancia desde su borde superior al puntero.
+    scroll_thumb_drag: Option<f32>,
+    /// El puntero estaba en la zona activa de la barra en el último movimiento:
+    /// entrar o salir pide un cuadro para mostrarla u ocultarla.
+    scroll_hot: bool,
     last_divider_click: Option<(usize, Instant)>,
     /// Arrastre de una cabecera de panel o de una pestaña sobre el mosaico.
     mosaic_drag: Option<MosaicDrag>,
@@ -8170,6 +8250,10 @@ impl App {
             ui_motion: ui_motion::UiMotion::default(),
             tooltip: ui_motion::TooltipTimer::default(),
             divider_drag: None,
+            scroll_bar_seen: 0.0,
+            scroll_bar_until: None,
+            scroll_thumb_drag: None,
+            scroll_hot: false,
             last_divider_click: None,
             mosaic_drag: None,
             panel_scroll: list_view::ListScroll::default(),
@@ -8342,6 +8426,7 @@ impl ApplicationHandler<AppEvent> for App {
                         | UiTarget::ListRow(_)
                         | UiTarget::Tab(_)
                         | UiTarget::TabClose(_)
+                        | UiTarget::PaneClose(_)
                 )
             })
             .map(|(_, since)| since);
@@ -8356,7 +8441,7 @@ impl ApplicationHandler<AppEvent> for App {
             }
         };
         // Solo se piden cuadros por los objetivos cuyo dibujo ya se anima.
-        let animated = |target: UiTarget| matches!(target, UiTarget::CodeCopy { .. });
+        let animated = |_target: UiTarget| true;
         self.ui_motion.settle(now);
         let motion_deadline = self
             .ui_motion
@@ -8378,12 +8463,24 @@ impl ApplicationHandler<AppEvent> for App {
                 Some(until)
             }
         });
+        let scroll_bar_deadline = self.scroll_bar_until.and_then(|until| {
+            if until <= now {
+                self.scroll_bar_until = None;
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+                None
+            } else {
+                Some(until)
+            }
+        });
         let next = [
             theme_deadline,
             mode_deadline,
             motion_deadline,
             tooltip_deadline,
             toast_deadline,
+            scroll_bar_deadline,
             self.next_recovery_deadline(),
         ]
         .into_iter()
@@ -9192,6 +9289,18 @@ impl ApplicationHandler<AppEvent> for App {
                 if let Some(index) = self.divider_drag {
                     self.drag_divider_to(index, position.x as f32, position.y as f32);
                 }
+                if self.scroll_thumb_drag.is_some() {
+                    self.drag_scroll_thumb_to(position.y as f32);
+                }
+                let in_scroll_zone = self.scroll_thumb().is_some_and(|thumb| {
+                    thumb.hot_zone_contains(position.x as f32, position.y as f32)
+                });
+                if in_scroll_zone != self.scroll_hot {
+                    self.scroll_hot = in_scroll_zone;
+                    if let Some(window) = &self.window {
+                        window.request_redraw();
+                    }
+                }
                 if let Some(drag) = &mut self.mosaic_drag {
                     let (ox, oy) = drag.origin;
                     let moved = (position.x as f32 - ox).hypot(position.y as f32 - oy);
@@ -9335,6 +9444,19 @@ impl ApplicationHandler<AppEvent> for App {
                     if let Some((x, y)) = self.pointer
                         && self.press_privacy_toast(x, y)
                     {
+                        if let Some(window) = &self.window {
+                            window.request_redraw();
+                        }
+                        return;
+                    }
+                    if let Some((x, y)) = self.pointer
+                        && self.dialog.is_none()
+                        && self.scroll_bar_visible(Instant::now())
+                        && let Some(thumb) = self.scroll_thumb()
+                        && thumb.contains(x, y)
+                    {
+                        self.scroll_thumb_drag = Some(y - thumb.y);
+                        self.selecting = false;
                         if let Some(window) = &self.window {
                             window.request_redraw();
                         }
@@ -9646,6 +9768,11 @@ impl ApplicationHandler<AppEvent> for App {
                     self.selecting = false;
                     self.tab_drag_id = None;
                     self.divider_drag = None;
+                    if self.scroll_thumb_drag.take().is_some()
+                        && let Some(window) = &self.window
+                    {
+                        window.request_redraw();
+                    }
                     self.finish_mosaic_drag();
                 }
             },
@@ -13827,6 +13954,51 @@ impl App {
         true
     }
 
+    /// El tirador de la barra del panel enfocado, si el documento no cabe.
+    fn scroll_thumb(&self) -> Option<scrollbar::Thumb> {
+        let panes = self.focused_document_panes()?;
+        scrollbar::thumb(
+            panes.source.x,
+            DOCUMENT_VIEWPORT_TOP + panes.source.y,
+            panes.source.width,
+            panes.source.height,
+            self.scroll,
+            self.doc_height,
+        )
+    }
+
+    /// La barra se ve mientras se arrastra, 1 s después de desplazar y cuando
+    /// el puntero está en los 12 px del borde derecho.
+    fn scroll_bar_visible(&self, now: Instant) -> bool {
+        if self.scroll_thumb_drag.is_some() {
+            return true;
+        }
+        if self.scroll_bar_until.is_some_and(|until| until > now) {
+            return true;
+        }
+        match (self.scroll_thumb(), self.pointer) {
+            (Some(thumb), Some((x, y))) => thumb.hot_zone_contains(x, y),
+            _ => false,
+        }
+    }
+
+    /// Arrastra el tirador: el documento sigue al puntero.
+    fn drag_scroll_thumb_to(&mut self, pointer_y: f32) {
+        let (Some(grab), Some(thumb), Some(panes)) = (
+            self.scroll_thumb_drag,
+            self.scroll_thumb(),
+            self.focused_document_panes(),
+        ) else {
+            return;
+        };
+        let scroll = thumb.scroll_for(pointer_y - grab, panes.source.height, self.doc_height);
+        self.set_clamped_focused_pane_scroll(scroll);
+        self.scroll_bar_seen = self.scroll;
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
     /// Dónde están los botones de la bienvenida, si se está mostrando.
     fn welcome_geometry(&self) -> Option<bienvenida::WelcomeGeometry> {
         let (width, height) = self.view_size()?;
@@ -16462,6 +16634,34 @@ impl App {
         let motion = self.ui_motion;
         let motion_now = Instant::now();
         let motion_reduced = self.reduce_motion;
+        // Desplazar muestra la barra durante un segundo.
+        if (self.scroll - self.scroll_bar_seen).abs() > 0.5 {
+            self.scroll_bar_seen = self.scroll;
+            self.scroll_bar_until = Some(motion_now + scrollbar::VISIBLE_AFTER_SCROLL);
+        }
+        let scroll_bar = self
+            .scroll_thumb()
+            .filter(|_| self.scroll_bar_visible(motion_now))
+            .map(|thumb| {
+                let active = self.scroll_thumb_drag.is_some()
+                    || self.pointer.is_some_and(|(x, y)| thumb.contains(x, y));
+                (thumb, active)
+            });
+        // Resaltado de un objetivo. Si el puntero está encima pero el estado de
+        // movimiento no lo sigue (una escena de prueba), se ve resaltado entero.
+        let feel_of = |target: UiTarget, pointer_inside: bool| -> Feel {
+            let tracked = motion
+                .hover_since()
+                .is_some_and(|(current, _)| current == target);
+            let mut hover = motion.hover_amount(target, motion_now, motion_reduced);
+            if pointer_inside && !tracked {
+                hover = 1.0;
+            }
+            Feel {
+                hover,
+                press: motion.press_amount(target, motion_now, motion_reduced),
+            }
+        };
         let panel_key = self.list_key();
         let panel_anchor = self.panel_anchor;
         let compact_width = self.compact_menu_width();
@@ -16509,6 +16709,7 @@ impl App {
                         (index == selected, format!("{symbol}   {name}"))
                     })
                     .collect(),
+                first: range.start,
                 footer: format!("{} · Enter inserta", panel_footer(matches.len(), range)),
             })
         } else if let (Some(axis), Some(candidates)) =
@@ -16528,6 +16729,7 @@ impl App {
                     .clone()
                     .map(|index| (index == selected, candidates[index].clone()))
                     .collect(),
+                first: range.start,
                 footer: if candidates.is_empty() {
                     "No hay otra pestaña disponible · Esc para cerrar".to_string()
                 } else {
@@ -16599,6 +16801,7 @@ impl App {
                     .clone()
                     .map(|index| entries[index].is_heading())
                     .collect(),
+                first: range.start,
                 footer: panel_footer(entries.len(), range),
             })
         } else if let (Some(query), Some(paths)) = (
@@ -16634,6 +16837,7 @@ impl App {
                         )
                     })
                     .collect(),
+                first: range.start,
                 footer: panel_footer(paths.len(), range),
             })
         } else if let Some(paths) = self.workspace_paths.as_ref() {
@@ -16664,6 +16868,7 @@ impl App {
                         )
                     })
                     .collect(),
+                first: range.start,
                 footer: panel_footer(paths.len(), range),
             })
         } else if let Some(paths) = self.backlink_paths.as_ref() {
@@ -16692,6 +16897,7 @@ impl App {
                         )
                     })
                     .collect(),
+                first: range.start,
                 footer: panel_footer(paths.len(), range),
             })
         } else if let Some(rows) = self.recovery_list.as_ref() {
@@ -16721,6 +16927,7 @@ impl App {
                         )
                     })
                     .collect(),
+                first: range.start,
                 footer: "Enter restaura · Supr descarta · Esc cierra".to_string(),
             })
         } else if let Some(rows) = self.link_diagnostics.as_ref() {
@@ -16743,6 +16950,7 @@ impl App {
                         )
                     })
                     .collect(),
+                first: range.start,
                 footer: panel_footer(rows.len(), range),
             })
         } else if let Some(headings) = self.outline_headings.as_ref() {
@@ -16771,6 +16979,7 @@ impl App {
                         )
                     })
                     .collect(),
+                first: range.start,
                 footer: panel_footer(headings.len(), range),
             })
         } else {
@@ -16890,6 +17099,30 @@ impl App {
                 })
                 .collect::<Vec<_>>()
         });
+        let mut code_language_layouts: HashMap<String, Layout<Brush>> = HashMap::new();
+        for block in self
+            .document
+            .blocks
+            .iter()
+            .chain(self.document.rendered_blocks.iter())
+            .filter(|block| matches!(block.kind, Kind::Code))
+        {
+            if let Some(language) = block.code_info.as_deref().and_then(code_language)
+                && !code_language_layouts.contains_key(&language)
+                && code_language_layouts.len() < 32
+            {
+                let layout = build_ui_text_layout(
+                    &language,
+                    &mut self.font_cx,
+                    &mut self.layout_cx,
+                    self.palette.dim,
+                    12.0,
+                    false,
+                    None,
+                );
+                code_language_layouts.insert(language, layout);
+            }
+        }
         let code_copy_layout = build_menu_layout(
             "Copiar",
             &mut self.font_cx,
@@ -17006,6 +17239,31 @@ impl App {
                 Some((text, left, anchor_y))
             });
         let row_tooltip = row_tooltip.or(tab_tooltip);
+        // «Quitar del mosaico»: el botón de la cabecera de un panel.
+        let pane_close_tooltip = menu_pointer
+            .filter(|_| {
+                self.dialog.is_none() && self.context_menu.is_none() && self.tooltip.is_shown()
+            })
+            .and_then(|(x, y)| {
+                let layouts = self.visible_document_pane_layouts();
+                if layouts.len() < 2 {
+                    return None;
+                }
+                layouts.iter().find_map(|layout| {
+                    let header = pane_header_rect(layout.geometry);
+                    (pane_header_hit(header, x, y - DOCUMENT_VIEWPORT_TOP)
+                        == Some(PaneHeaderHit::Close))
+                    .then(|| {
+                        (
+                            "Quitar del mosaico".to_string(),
+                            header.x + header.width - PANE_HEADER_CLOSE_WIDTH - 60.0,
+                            DOCUMENT_VIEWPORT_TOP + header.y + PANE_HEADER_HEIGHT
+                                - PANEL_ROW_HEIGHT,
+                        )
+                    })
+                })
+            });
+        let row_tooltip = row_tooltip.or(pane_close_tooltip);
         let row_tooltip_layout = row_tooltip.as_ref().map(|(label, x, y)| {
             let max_width = (w.get() as f32 - MARGIN * 2.0 - 20.0).min(420.0);
             let layout = build_ui_text_layout(
@@ -17024,7 +17282,16 @@ impl App {
             menu_pointer
                 .filter(|_| !overlay_open && self.tooltip.is_shown())
                 .and_then(|(x, y)| window_control_at(x, y, w.get() as f32))
-                .map(|control| window_control_label(control, self.palette.bg.0 < 0x80))
+                .map(|control| {
+                    window_control_label(
+                        control,
+                        self.palette.bg.0 < 0x80,
+                        self.pinned_on_top,
+                        self.window
+                            .as_ref()
+                            .is_some_and(|window| window.is_maximized()),
+                    )
+                })
         });
         let toolbar_hint_layout = toolbar_hint_label.map(|label| {
             build_menu_layout(label, &mut self.font_cx, &mut self.layout_cx, self.palette)
@@ -17317,6 +17584,10 @@ impl App {
             .unwrap_or_default();
         let dialog_hover = self.pointer;
         let pinned_on_top = self.pinned_on_top;
+        let window_maximized = self
+            .window
+            .as_ref()
+            .is_some_and(|window| window.is_maximized());
         let welcome_render = self
             .welcome_geometry_in(w.get() as f32, h.get() as f32)
             .map(|geometry| {
@@ -17919,6 +18190,21 @@ impl App {
                                 motion.press_amount(target, motion_now, motion_reduced),
                                 copied_code_block == Some(i),
                             );
+                            if let Some(language) = blocks[i]
+                                .code_info
+                                .as_deref()
+                                .and_then(code_language)
+                                .and_then(|language| code_language_layouts.get(&language))
+                            {
+                                draw_text_layout(
+                                    pixmap,
+                                    scale_cx,
+                                    glyphs,
+                                    language,
+                                    (x - language.width() - 8.0).round(),
+                                    y + 4.0,
+                                );
+                            }
                             let label = if copied_code_block == Some(i) {
                                 &code_copied_layout
                             } else {
@@ -18284,6 +18570,21 @@ impl App {
                                     motion.press_amount(target, motion_now, motion_reduced),
                                     copied_preview_block == Some(index),
                                 );
+                                if let Some(language) = document.rendered_blocks[index]
+                                    .code_info
+                                    .as_deref()
+                                    .and_then(code_language)
+                                    .and_then(|language| code_language_layouts.get(&language))
+                                {
+                                    draw_text_layout(
+                                        pixmap,
+                                        scale_cx,
+                                        glyphs,
+                                        language,
+                                        (bx - language.width() - 8.0).round(),
+                                        by + 4.0,
+                                    );
+                                }
                                 let label = if copied_preview_block == Some(index) {
                                     &code_copied_layout
                                 } else {
@@ -18451,6 +18752,28 @@ impl App {
                 hint,
                 (panes.source.x + MARGIN * *scale_factor + 6.0).round(),
                 (DOCUMENT_VIEWPORT_TOP + panes.source.y + MARGIN * *scale_factor + 2.0).round(),
+            );
+        }
+        if let Some((thumb, active)) = scroll_bar {
+            let mut paint = Paint {
+                anti_alias: true,
+                ..Default::default()
+            };
+            let dim = palette.dim;
+            paint.set_color(Color::from_rgba8(
+                dim.0,
+                dim.1,
+                dim.2,
+                if active { 210 } else { 120 },
+            ));
+            fill_rounded_rect(
+                pixmap,
+                thumb.x,
+                thumb.y,
+                scrollbar::WIDTH,
+                thumb.height,
+                scrollbar::WIDTH * 0.5,
+                &paint,
             );
         }
         if let Some((geometry, title, labels, shortcuts, hints, hover)) = &welcome_render {
@@ -18684,7 +19007,7 @@ impl App {
             });
             let focused = toolbar_focus == Some(index);
             let active = toolbar_button_active(action, context_mode, open_surface, workspace_open);
-            if (hovered || focused || active)
+            if (focused || active)
                 && let Some(rect) = Rect::from_xywh(x, TOOLBAR_Y, width, TOOLBAR_HEIGHT)
             {
                 if active {
@@ -18695,6 +19018,17 @@ impl App {
                 } else {
                     pixmap.fill_rect(rect, &elevated_paint, Transform::identity(), None);
                 }
+            }
+            let feel = feel_of(UiTarget::Toolbar(action), hovered);
+            if !active && !focused && feel.any() {
+                draw_feedback_fill(
+                    pixmap,
+                    (x, TOOLBAR_Y, width, TOOLBAR_HEIGHT),
+                    6.0,
+                    palette.elevated,
+                    palette.accent,
+                    feel,
+                );
             }
             if (active || focused)
                 && let Some(rect) = Rect::from_xywh(x, TOOLBAR_Y + TOOLBAR_HEIGHT - 2.0, width, 2.0)
@@ -18734,7 +19068,7 @@ impl App {
             });
             let focused = toolbar_focus == Some(top_menu_focus_start() + index);
             let active = toolbar_button_active(action, context_mode, open_surface, workspace_open);
-            if (hovered || focused || active)
+            if (focused || active)
                 && let Some(rect) = Rect::from_xywh(x, TOOLBAR_Y, width, TOOLBAR_HEIGHT)
             {
                 if active {
@@ -18745,6 +19079,17 @@ impl App {
                 } else {
                     pixmap.fill_rect(rect, &elevated_paint, Transform::identity(), None);
                 }
+            }
+            let feel = feel_of(UiTarget::Toolbar(action), hovered);
+            if !active && !focused && feel.any() {
+                draw_feedback_fill(
+                    pixmap,
+                    (x, TOOLBAR_Y, width, TOOLBAR_HEIGHT),
+                    6.0,
+                    palette.elevated,
+                    palette.accent,
+                    feel,
+                );
             }
             if (active || focused)
                 && let Some(rect) = Rect::from_xywh(x, TOOLBAR_Y + TOOLBAR_HEIGHT - 2.0, width, 2.0)
@@ -18812,6 +19157,37 @@ impl App {
             4.0,
             &mode_active_paint,
         );
+        for (slot, target) in [
+            ModeTarget::Reading,
+            ModeTarget::Editing,
+            ModeTarget::Compare,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let x = MODE_SWITCH_X + slot as f32 * mode_width;
+            let inside = menu_pointer.is_some_and(|(px, py)| {
+                px >= x
+                    && px < x + mode_width
+                    && (TOOLBAR_Y..TOOLBAR_Y + MODE_SWITCH_HEIGHT).contains(&py)
+            });
+            let feel = feel_of(UiTarget::ModeSegment(target), inside);
+            if feel.any() && mode_target_for_document(context_mode) != target {
+                draw_feedback_fill(
+                    pixmap,
+                    (
+                        x + 2.0,
+                        TOOLBAR_Y + 2.0,
+                        mode_width - 4.0,
+                        MODE_SWITCH_HEIGHT - 4.0,
+                    ),
+                    4.0,
+                    palette.floating,
+                    palette.accent,
+                    feel,
+                );
+            }
+        }
         for separator in 1..3 {
             if let Some(rect) = Rect::from_xywh(
                 MODE_SWITCH_X + separator as f32 * mode_width,
@@ -18874,7 +19250,7 @@ impl App {
             let focused =
                 toolbar_focus == Some(contextual_toolbar_focus_start(w.get() as f32) + index);
             let active = toolbar_button_active(action, context_mode, open_surface, workspace_open);
-            if (hovered || focused || active)
+            if (focused || active)
                 && let Some(rect) =
                     Rect::from_xywh(x, CONTEXT_TOOLBAR_Y, width, CONTEXT_TOOLBAR_HEIGHT)
             {
@@ -18886,6 +19262,17 @@ impl App {
                 } else {
                     pixmap.fill_rect(rect, &elevated_paint, Transform::identity(), None);
                 }
+            }
+            let feel = feel_of(UiTarget::Toolbar(action), hovered);
+            if !active && !focused && feel.any() {
+                draw_feedback_fill(
+                    pixmap,
+                    (x, CONTEXT_TOOLBAR_Y, width, CONTEXT_TOOLBAR_HEIGHT),
+                    6.0,
+                    palette.elevated,
+                    palette.accent,
+                    feel,
+                );
             }
             if (active || focused)
                 && let Some(rect) = Rect::from_xywh(
@@ -19019,19 +19406,21 @@ impl App {
                         &active,
                     );
                 }
-                if hovered {
-                    let mut control_paint = Paint::default();
+                let feel = feel_of(UiTarget::WindowControl(control), hovered);
+                if feel.any() {
                     let color = if control == WindowControl::Close {
                         (150, 55, 55)
                     } else {
                         palette.surface
                     };
-                    control_paint.set_color(Color::from_rgba8(color.0, color.1, color.2, 255));
-                    if let Some(rect) =
-                        Rect::from_xywh(x, 0.0, WINDOW_CONTROL_WIDTH, WINDOW_CHROME_HEIGHT)
-                    {
-                        pixmap.fill_rect(rect, &control_paint, Transform::identity(), None);
-                    }
+                    draw_feedback_fill(
+                        pixmap,
+                        (x, 0.0, WINDOW_CONTROL_WIDTH, WINDOW_CHROME_HEIGHT),
+                        0.0,
+                        color,
+                        palette.accent,
+                        feel,
+                    );
                 }
                 let center_x = x + WINDOW_CONTROL_WIDTH * 0.5;
                 let center_y = WINDOW_CHROME_HEIGHT * 0.5;
@@ -19090,6 +19479,19 @@ impl App {
                         path.move_to(center_x - 6.0, center_y + 4.0);
                         path.line_to(center_x + 6.0, center_y + 4.0);
                     }
+                    WindowControl::ToggleMaximize if window_maximized => {
+                        // Restaurar: dos hojas, la de atrás asoma arriba y a la derecha.
+                        path.move_to(center_x - 5.0, center_y - 2.0);
+                        path.line_to(center_x + 2.0, center_y - 2.0);
+                        path.line_to(center_x + 2.0, center_y + 5.0);
+                        path.line_to(center_x - 5.0, center_y + 5.0);
+                        path.close();
+                        path.move_to(center_x - 2.0, center_y - 2.0);
+                        path.line_to(center_x - 2.0, center_y - 5.0);
+                        path.line_to(center_x + 5.0, center_y - 5.0);
+                        path.line_to(center_x + 5.0, center_y + 2.0);
+                        path.line_to(center_x + 2.0, center_y + 2.0);
+                    }
                     WindowControl::ToggleMaximize => {
                         path.move_to(center_x - 5.0, center_y - 5.0);
                         path.line_to(center_x + 5.0, center_y - 5.0);
@@ -19105,9 +19507,24 @@ impl App {
                     }
                 }
                 if let Some(path) = path.finish() {
+                    // Chincheta activa: rellena y en el color de acento.
+                    let pinned_now = control == WindowControl::PinOnTop && pinned_on_top;
+                    if pinned_now {
+                        pixmap.fill_path(
+                            &path,
+                            &accent_paint,
+                            tiny_skia::FillRule::Winding,
+                            Transform::identity(),
+                            None,
+                        );
+                    }
                     pixmap.stroke_path(
                         &path,
-                        &dim_paint,
+                        if pinned_now {
+                            &accent_paint
+                        } else {
+                            &dim_paint
+                        },
                         &tiny_skia::Stroke {
                             width: 1.5,
                             ..Default::default()
@@ -19199,13 +19616,28 @@ impl App {
             let top = TAB_STRIP_Y + 5.0;
             let height = TAB_STRIP_HEIGHT - 5.0;
             let hovered = hovered_tab == Some(index);
-            if *active || hovered {
-                let paint = if *active {
-                    &tab_surface
+            let tab_feel = feel_of(UiTarget::Tab(index), hovered);
+            if *active || tab_feel.any() {
+                if *active {
+                    fill_rounded_rect(
+                        pixmap,
+                        x + 2.0,
+                        top,
+                        tab_width - 4.0,
+                        height,
+                        7.0,
+                        &tab_surface,
+                    );
                 } else {
-                    &tab_hover_paint
-                };
-                fill_rounded_rect(pixmap, x + 2.0, top, tab_width - 4.0, height, 7.0, paint);
+                    draw_feedback_fill(
+                        pixmap,
+                        (x + 2.0, top, tab_width - 4.0, height),
+                        7.0,
+                        palette.tab_idle,
+                        palette.accent,
+                        tab_feel,
+                    );
+                }
                 if *active {
                     // Base recta: la pestaña continúa en el documento.
                     if let Some(rect) =
@@ -19284,15 +19716,20 @@ impl App {
         let plus_x = new_tab_button_x(window_width, tab_count);
         let plus_hovered =
             tab_hover.is_some_and(|(x, y)| new_tab_button_at(x, y, window_width, tab_count));
-        if plus_hovered {
-            fill_rounded_rect(
+        let plus_feel = feel_of(UiTarget::NewTab, plus_hovered);
+        if plus_feel.any() {
+            draw_feedback_fill(
                 pixmap,
-                plus_x + 2.0,
-                TAB_STRIP_Y + 6.0,
-                NEW_TAB_BUTTON_WIDTH - 4.0,
-                TAB_STRIP_HEIGHT - 12.0,
+                (
+                    plus_x + 2.0,
+                    TAB_STRIP_Y + 6.0,
+                    NEW_TAB_BUTTON_WIDTH - 4.0,
+                    TAB_STRIP_HEIGHT - 12.0,
+                ),
                 6.0,
-                &tab_hover_paint,
+                palette.tab_idle,
+                palette.accent,
+                plus_feel,
             );
         }
         let plus_center_x = plus_x + NEW_TAB_BUTTON_WIDTH * 0.5;
@@ -19526,7 +19963,12 @@ impl App {
                             && py >= y
                             && py < y + PANEL_ROW_HEIGHT
                     });
-                if selected || hovered {
+                let row_feel = if is_item {
+                    feel_of(UiTarget::ListRow(rows.first + row - 1), hovered)
+                } else {
+                    Feel::default()
+                };
+                if selected || hovered || row_feel.any() {
                     let ac = palette.accent;
                     let mut row_paint = Paint {
                         anti_alias: true,
@@ -19536,7 +19978,13 @@ impl App {
                         ac.0,
                         ac.1,
                         ac.2,
-                        if selected { 44 } else { 20 },
+                        if selected {
+                            44
+                        } else {
+                            (20.0 * row_feel.hover.max(if hovered { 1.0 } else { 0.0 })
+                                + 40.0 * row_feel.press)
+                                .round() as u8
+                        },
                     ));
                     fill_rounded_rect(
                         pixmap,
@@ -19872,11 +20320,7 @@ impl App {
                             8.0,
                             &paint,
                         );
-                        let fill = if hovered {
-                            palette.elevated
-                        } else {
-                            palette.floating
-                        };
+                        let fill = palette.floating;
                         paint.set_color(Color::from_rgba8(fill.0, fill.1, fill.2, 255));
                         fill_rounded_rect(
                             pixmap,
@@ -19886,6 +20330,19 @@ impl App {
                             rect.height - 2.0,
                             7.0,
                             &paint,
+                        );
+                        draw_feedback_fill(
+                            pixmap,
+                            (
+                                rect.x + 1.0,
+                                rect.y + 1.0,
+                                rect.width - 2.0,
+                                rect.height - 2.0,
+                            ),
+                            7.0,
+                            palette.elevated,
+                            palette.accent,
+                            feel_of(UiTarget::DialogButton(index), hovered),
                         );
                     }
                 }
@@ -20320,13 +20777,20 @@ fn export_pdf_bytes(
                     let cell_x = x + column as f32 * column_width + TABLE_CELL_PADDING;
                     let cell_y = y + (row_height - layout.height()).max(0.0) * 0.5;
                     for line in layout.lines() {
+                        let mut cursor = GlyphCursor::default();
                         for item in line.items() {
                             if let PositionedLayoutItem::GlyphRun(run) = item {
                                 pdf_glyph_run(
                                     &mut out,
                                     scale_cx,
+                                    &mut cursor,
                                     &run,
-                                    &block.text,
+                                    // El texto de la celda, no el de toda la fila:
+                                    // los clusters indexan el texto de su layout.
+                                    block
+                                        .table_cells
+                                        .get(column)
+                                        .map_or(block.text.as_str(), |cell| cell.text.as_str()),
                                     cell_x,
                                     cell_y,
                                     &to_x,
@@ -20417,11 +20881,13 @@ fn export_pdf_bytes(
                         _ => "",
                     };
                     for marker_line in marker.lines() {
+                        let mut cursor = GlyphCursor::default();
                         for item in marker_line.items() {
                             if let PositionedLayoutItem::GlyphRun(run) = item {
                                 pdf_glyph_run(
                                     &mut out,
                                     scale_cx,
+                                    &mut cursor,
                                     &run,
                                     marker_text,
                                     marker_x,
@@ -20453,11 +20919,13 @@ fn export_pdf_bytes(
                     }
                 }
             }
+            let mut cursor = GlyphCursor::default();
             for item in line.items() {
                 if let PositionedLayoutItem::GlyphRun(run) = item {
                     pdf_glyph_run(
                         &mut out,
                         scale_cx,
+                        &mut cursor,
                         &run,
                         &block.text,
                         x,
@@ -20475,6 +20943,15 @@ fn export_pdf_bytes(
     (out.finish(title), pages)
 }
 
+/// Qué glifos de un `Run` ya se emitieron. Un `Run` de parley se parte en varios
+/// `GlyphRun` cuando cambia el estilo (un enlace, una negrita): cada uno debe
+/// escribir en la capa de texto solo sus propios glifos, no todos los del `Run`.
+#[derive(Default)]
+struct GlyphCursor {
+    run_range: Option<std::ops::Range<usize>>,
+    consumed: usize,
+}
+
 /// Dibuja un run como formas de glifo vectoriales y agrega su texto en la
 /// capa invisible. Fondo, subrayado y tachado salen del mismo estilo que usa
 /// la lectura en pantalla.
@@ -20485,6 +20962,7 @@ fn export_pdf_bytes(
 fn pdf_glyph_run(
     out: &mut pdf::PdfBuilder,
     scale_cx: &mut ScaleContext,
+    cursor: &mut GlyphCursor,
     run: &GlyphRun<'_, Brush>,
     text: &str,
     origin_x: f32,
@@ -20559,9 +21037,24 @@ fn pdf_glyph_run(
         );
     }
 
-    // Capa de texto: un fragmento por cluster, en su posición exacta.
+    // Capa de texto: un fragmento por cluster, en su posición exacta, solo de
+    // los glifos de este `GlyphRun`.
+    let run_range = r.text_range();
+    if cursor.run_range.as_ref() != Some(&run_range) {
+        cursor.run_range = Some(run_range);
+        cursor.consumed = 0;
+    }
+    let first_glyph = cursor.consumed;
+    let glyph_count = run.glyphs().count();
+    cursor.consumed += glyph_count;
+    let mut glyph_index = 0;
     let mut cluster_x = origin_x + run.offset();
-    for cluster in r.clusters() {
+    for cluster in r.visual_clusters() {
+        let mine = glyph_index >= first_glyph && glyph_index < first_glyph + glyph_count;
+        glyph_index += cluster.glyphs().count();
+        if !mine {
+            continue;
+        }
         let advance = cluster.advance();
         if !cluster.is_ligature_continuation()
             && let Some(fragment) = text.get(cluster.text_range())
@@ -22147,6 +22640,196 @@ agregado por otro programa
     }
 
     #[test]
+    fn el_fondo_de_hover_y_pulsacion_crece_con_el_resaltado() {
+        let pixel = |hover: f32, press: f32| {
+            let mut lienzo = Pixmap::new(40, 20).unwrap();
+            let mut base = Paint::default();
+            base.set_color(Color::from_rgba8(10, 10, 10, 255));
+            lienzo.fill_rect(
+                Rect::from_xywh(0.0, 0.0, 40.0, 20.0).unwrap(),
+                &base,
+                Transform::identity(),
+                None,
+            );
+            draw_feedback_fill(
+                &mut lienzo,
+                (2.0, 2.0, 36.0, 16.0),
+                6.0,
+                (200, 200, 200),
+                (0, 255, 0),
+                Feel { hover, press },
+            );
+            let centro = lienzo.pixel(20, 10).unwrap();
+            (centro.red(), centro.green())
+        };
+        let (reposo, _) = pixel(0.0, 0.0);
+        let (medio, _) = pixel(0.5, 0.0);
+        let (pleno, _) = pixel(1.0, 0.0);
+        assert_eq!(reposo, 10, "sin resaltado no se dibuja nada");
+        assert!(
+            reposo < medio && medio < pleno,
+            "el hover aparece de a poco"
+        );
+        // La pulsación suma un velo de acento sobre el hover.
+        let (_, verde_sin) = pixel(1.0, 0.0);
+        let (_, verde_con) = pixel(1.0, 1.0);
+        assert!(verde_con > verde_sin);
+        // Las esquinas respetan el radio de 6 px.
+        let mut lienzo = Pixmap::new(40, 20).unwrap();
+        draw_feedback_fill(
+            &mut lienzo,
+            (0.0, 0.0, 40.0, 20.0),
+            6.0,
+            (255, 255, 255),
+            (0, 255, 0),
+            Feel {
+                hover: 1.0,
+                press: 0.0,
+            },
+        );
+        assert_eq!(lienzo.pixel(0, 0).unwrap().alpha(), 0);
+        assert_eq!(lienzo.pixel(20, 10).unwrap().alpha(), 255);
+    }
+
+    #[test]
+    fn el_hover_de_una_barra_entra_en_120_ms_y_sin_movimiento_es_inmediato() {
+        let mut movimiento = ui_motion::UiMotion::default();
+        let objetivo = UiTarget::Toolbar(AppAction::Save);
+        let inicio = Instant::now();
+        movimiento.set_hover(Some(objetivo), inicio, false);
+        assert_eq!(movimiento.hover_amount(objetivo, inicio, false), 0.0);
+        let mitad = movimiento.hover_amount(objetivo, inicio + Duration::from_millis(60), false);
+        assert!(mitad > 0.2 && mitad < 0.8, "a mitad de camino: {mitad}");
+        assert_eq!(
+            movimiento.hover_amount(objetivo, inicio + Duration::from_millis(130), false),
+            1.0
+        );
+        assert_eq!(movimiento.hover_amount(objetivo, inicio, true), 1.0);
+    }
+
+    #[test]
+    fn la_barra_de_desplazamiento_aparece_al_desplazar_se_arrastra_y_se_va() {
+        let mut app = App::for_tests(NIGHT);
+        let largo = "Un párrafo de relleno.
+
+"
+        .repeat(120);
+        app.load_for_test(&largo, DocumentMode::Reading);
+        app.draw_for_test(1100, 720);
+        app.draw_for_test(1100, 720);
+        let ahora = Instant::now();
+        let thumb = app.scroll_thumb().expect("el documento no cabe");
+        // En reposo y con el puntero lejos del borde no se ve.
+        app.pointer = Some((400.0, 300.0));
+        assert!(!app.scroll_bar_visible(ahora));
+        // Con el puntero en los 12 px del borde derecho, sí.
+        app.pointer = Some((1096.0, thumb.y + 4.0));
+        assert!(app.scroll_bar_visible(ahora));
+        assert_eq!(
+            app.ui_target_at(1096.0, thumb.y + 4.0),
+            Some(UiTarget::ScrollThumb)
+        );
+        // Arrastrarlo desplaza el documento.
+        app.scroll_thumb_drag = Some(4.0);
+        let antes = app.scroll;
+        app.drag_scroll_thumb_to(thumb.y + 4.0 + 120.0);
+        assert!(app.scroll > antes + 100.0, "{} → {}", antes, app.scroll);
+        // Desplazar la deja un segundo; después se va.
+        app.scroll_thumb_drag = None;
+        app.pointer = Some((400.0, 300.0));
+        app.scroll_bar_until = Some(ahora + scrollbar::VISIBLE_AFTER_SCROLL);
+        assert!(app.scroll_bar_visible(ahora));
+        assert!(!app.scroll_bar_visible(ahora + Duration::from_millis(1_100)));
+    }
+
+    #[test]
+    fn la_ayuda_de_la_chincheta_y_de_maximizar_dice_el_estado() {
+        assert_eq!(
+            window_control_label(WindowControl::PinOnTop, true, true, false),
+            "Fijada · clic para soltar"
+        );
+        assert_eq!(
+            window_control_label(WindowControl::PinOnTop, true, false, false),
+            "Fijar la ventana encima de las demás"
+        );
+        assert_eq!(
+            window_control_label(WindowControl::ToggleMaximize, true, false, true),
+            "Restaurar"
+        );
+    }
+
+    #[test]
+    fn dos_cercas_de_codigo_vecinas_se_separan_y_las_lineas_de_una_no() {
+        let mut font_cx = FontContext::new();
+        register_embedded_fonts(&mut font_cx);
+        let mut layout_cx = LayoutContext::new();
+        let fuente = "```rust\nuno\ndos\n```\n\n```bash\ntres\n```\n";
+        let blocks = parse_blocks(fuente).expect("válido").blocks;
+        let codigo: Vec<usize> = blocks
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| matches!(b.kind, Kind::Code))
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(codigo.len(), 3, "tres líneas de código");
+        let (slots, _, _) =
+            measure_all(&blocks, &mut font_cx, &mut layout_cx, 800.0, 1.0, true, &[]);
+        let dentro = slots[codigo[1]].y - (slots[codigo[0]].y + slots[codigo[0]].height);
+        let entre = slots[codigo[2]].y - (slots[codigo[1]].y + slots[codigo[1]].height);
+        assert!(
+            dentro < 4.0,
+            "las líneas de una cerca siguen pegadas: {dentro}"
+        );
+        assert!(
+            (entre - ADJACENT_CODE_GAP).abs() < 0.5,
+            "doce px entre cercas: {entre}"
+        );
+    }
+
+    #[test]
+    fn el_lenguaje_de_una_cerca_es_su_primera_palabra_acotada() {
+        assert_eq!(code_language("rust").as_deref(), Some("rust"));
+        assert_eq!(
+            code_language("rust title=\"a.rs\"").as_deref(),
+            Some("rust")
+        );
+        assert_eq!(code_language("   ").as_deref(), None);
+        assert_eq!(code_language(&"x".repeat(40)).map(|l| l.len()), Some(16));
+    }
+
+    #[test]
+    fn el_boton_de_quitar_del_mosaico_es_un_objetivo_con_ayuda() {
+        let mut app = App::for_tests(NIGHT);
+        app.load_for_test("# Uno", DocumentMode::Reading);
+        app.perform_action(AppAction::NewDocument);
+        app.document.source = TextBuffer::from_text("# Dos");
+        app.open_document_pane_picker(DocumentPaneAxis::Vertical);
+        app.choose_document_pane_split(2);
+        app.draw_for_test(1100, 720);
+        let layouts = app.visible_document_pane_layouts();
+        assert_eq!(layouts.len(), 2);
+        let header = pane_header_rect(layouts[1].geometry);
+        let x = header.x + header.width - 6.0;
+        let y = DOCUMENT_VIEWPORT_TOP + header.y + header.height * 0.5;
+        assert_eq!(app.ui_target_at(x, y), Some(UiTarget::PaneClose(1)));
+        // El título de la cabecera no es ese botón.
+        assert_ne!(
+            app.ui_target_at(header.x + 20.0, y),
+            Some(UiTarget::PaneClose(0))
+        );
+        // Con el puntero quieto sobre el botón, la ayuda aparece.
+        app.pointer = Some((x, y));
+        app.ui_motion
+            .set_hover(app.ui_target_at(x, y), Instant::now(), false);
+        app.tooltip.poll(
+            Some(Instant::now() - Duration::from_secs(1)),
+            Instant::now(),
+        );
+        assert!(app.tooltip.is_shown());
+        app.draw_for_test(1100, 720);
+    }
+
+    #[test]
     fn una_copia_danada_no_se_abre_y_avisa() {
         let (orphan, carpeta) = copia_huerfana("Rota", "", "contenido");
         let mut bytes = fs::read(orphan.path()).unwrap();
@@ -23318,6 +24001,72 @@ agregado por otro programa
             &mut scale_cx,
         );
         assert!(pages > 3, "{pages} páginas");
+    }
+
+    /// Los fragmentos `( … ) Tj` de la capa de texto invisible, en el orden en
+    /// que están en el PDF, sin espacios.
+    fn texto_de_la_capa_del_pdf(markdown: &str) -> String {
+        let mut font_cx = FontContext::new();
+        register_embedded_fonts(&mut font_cx);
+        let mut layout_cx = LayoutContext::new();
+        let mut scale_cx = ScaleContext::new();
+        let blocks = parse_blocks(markdown).expect("válido").blocks;
+        let (bytes, _) =
+            export_pdf_bytes(&blocks, "capa", &mut font_cx, &mut layout_cx, &mut scale_cx);
+        let contenido = String::from_utf8_lossy(&bytes);
+        let mut salida = String::new();
+        for linea in contenido.lines().filter(|l| l.contains(" Tr /F1 ")) {
+            let (Some(abre), Some(cierra)) = (linea.find('('), linea.rfind(") Tj")) else {
+                continue;
+            };
+            salida.push_str(&linea[abre + 1..cierra]);
+        }
+        salida.split_whitespace().collect()
+    }
+
+    #[test]
+    fn la_capa_de_texto_del_pdf_sigue_el_orden_de_los_bloques_sin_duplicar() {
+        assert_eq!(
+            texto_de_la_capa_del_pdf(
+                "# Titulo
+
+Primer parrafo.
+
+Segundo parrafo.
+"
+            ),
+            "TituloPrimerparrafo.Segundoparrafo."
+        );
+        // Una lista y una cita siguen en orden de lectura.
+        assert_eq!(
+            texto_de_la_capa_del_pdf(
+                "- uno
+- dos
+
+> cita
+"
+            ),
+            // La vineta (bullet en WinAnsi, octal 225) es parte del texto que se ve.
+            "\\225uno\\225doscita"
+        );
+        // Una tabla se lee fila por fila y no repite el texto de la fila en cada celda.
+        assert_eq!(
+            texto_de_la_capa_del_pdf(
+                "| A | B |
+| --- | --- |
+| uno | dos |
+"
+            ),
+            "ABunodos"
+        );
+        // Un enlace no duplica su texto.
+        assert_eq!(
+            texto_de_la_capa_del_pdf(
+                "Ver [la guia](https://example.com) hoy.
+"
+            ),
+            "Verlaguiahoy."
+        );
     }
 
     #[test]

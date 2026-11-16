@@ -635,32 +635,57 @@ que fijan su geometría y su efecto).
 
 ### Fase 8 · Hover, pulsación y lectura
 
-- [ ] **8.1** Dibujo del hover y la pulsación (D-14) en todos los `UiTarget`.
-  Los fondos de barra tienen radio de 6 px.
+- [x] **8.1** Hover y pulsación (D-14) dibujados con transición en la barra
+  principal, los menús rotulados, la barra contextual, el selector de modo, los
+  controles de ventana, las pestañas, el botón «+», las filas de lista y los
+  botones de diálogo. El hover entra en 120 ms, sale en 80 y la pulsación deja un
+  velo de acento de 160 ms; con movimiento reducido es inmediato. Los fondos de
+  barra tienen radio de 6 px. Verificado en vivo con el hover del botón «+».
 - [~] **8.2** Copiar (hecho: botón redondeado, hover y destello con
-  programación de cuadros solo mientras anima; falta el ícono y el ✓ trazado):
+  programación de cuadros solo mientras anima; falta el ícono de dos hojas y el ✓
+  trazado en 160 ms):
   - botón redondeado con un ícono de dos hojas;
   - al pulsar, fondo de acento con alfa 76 y un ✓ que se traza en 160 ms;
   - a los 1,6 s vuelve en 200 ms;
   - se quita el aviso adicional.
-- [ ] **8.3** Chincheta rellena en acento cuando está activa, con tooltip
-  «Fijada · clic para soltar»; ícono de restaurar si `is_maximized()`.
-- [ ] **8.4** Barra de desplazamiento del documento: 6 px, visible 1 s después
-  de desplazar y al pasar el puntero por los 12 px del borde derecho.
-  Arrastrable (`UiTarget::ScrollThumb`).
+- [x] **8.3** Chincheta rellena y en acento cuando está activa, con ayuda
+  «Fijada · clic para soltar»; ícono de restaurar y ayuda «Restaurar» cuando la
+  ventana está maximizada. Además, «Quitar del mosaico» tiene ayuda propia
+  (`UiTarget::PaneClose`, pendiente de la fase 11).
+- [x] **8.4** Barra de desplazamiento del documento (`src/scrollbar.rs`): 6 px,
+  se ve 1 s después de desplazar y al pasar el puntero por los 12 px del borde
+  derecho, y se arrastra (`UiTarget::ScrollThumb`). Verificada en vivo con la
+  versión de evaluación: aparece al pasar el puntero y arrastrarla desplaza el
+  documento.
 - [ ] **8.5** Recuadro: la etiqueta va dentro del bloque, en la primera línea,
-  con un ícono, a 12 px del filete.
-- [ ] **8.6** Código: 12 px entre bloques de código contiguos y el lenguaje en
-  `dim` junto a Copiar.
+  con un ícono, a 12 px del filete. **No hecha:** la etiqueta hoy es un marcador
+  fuera del bloque; meterla dentro cambia el alto del bloque y toca selección,
+  búsqueda y PDF. Pide decidir si va en una línea propia o a la izquierda del
+  texto.
+- [x] **8.6** Código: 12 px entre cercas contiguas (las líneas de una misma
+  cerca siguen pegadas) y el lenguaje, en tono tenue, junto a «Copiar» (lectura
+  y vista previa de Comparar).
 - [ ] **8.7** Escala H2 y H3 más separada (H3 = 0,85 × H2, tenue). Columna de
-  lectura centrada cuando sobran más de 200 px.
-- [ ] **8.8** D-24: contraste de día. Medir con el analizador de Accessibility
-  Insights y anotar las cifras en [`design.md`](design.md).
-- [ ] **8.9** D-28: capa de texto del PDF.
+  lectura centrada cuando sobran más de 200 px. **No hecha:** el texto de la
+  escala se contradice (0,85 × H2 acerca H3 a H2, hoy está en 0,8) y centrar la
+  columna choca con el índice flotante, que usa justo ese espacio sobrante.
+- [x] **8.8** D-24: aplicado (`dim` de día a `#5A5043`, `external_link` a
+  `#1A5AAE`, mínimos de día subidos a 5,5 en la prueba de `theme.rs`). Las cifras
+  están en [`design.md`](design.md), calculadas con la fórmula de WCAG; la
+  medición con Accessibility Insights sobre la ventana real queda para la fase 9.
+- [x] **8.9** D-28: capa de texto del PDF. Se encontraron y corrigieron dos
+  defectos: cada celda de una tabla escribía el texto de toda la fila y un enlace
+  o un cambio de estilo repetía el párrafo entero por cada tramo. Una prueba
+  extrae los fragmentos de `export_pdf_bytes` y los compara con el texto de los
+  bloques.
 - [ ] **8.10** Cierre de fase:
-  - las referencias de todas las escenas, actualizadas;
-  - `design-critique` y `accessibility-review`;
-  - ejecutable nuevo.
+  - las referencias de todas las escenas, actualizadas (hecho);
+  - `design-critique` y `accessibility-review` (pendientes);
+  - ejecutable nuevo (hecho).
+
+**Pendiente de la fase 11 que sigue abierto:** el recuadro vacío de la tira de
+pestañas cuando todos los documentos están en paneles y el resalte del divisor
+junto al borde del panel enfocado.
 
 ### Fase 9 · Re-evaluación
 
@@ -948,7 +973,7 @@ asociación.
 | 11 | Hecho | 11.1 a 11.8; tooltip de «Quitar del mosaico» a la fase 8 |
 | 6 | Hecha | 6.1 a 6.8 y 13.3 a 13.6 |
 | 7 | Hecha | 7.1 a 7.8 |
-| 8 | En curso | Hecho el hover y destello de Copiar (8.2 parcial). Pendientes el resto de 8 |
+| 8 | En curso | Hechas 8.1, 8.3, 8.4, 8.6, 8.8 y 8.9. Pendientes 8.2 (ícono y ✓), 8.5 y 8.7 (piden decisión) y las críticas de 8.10 |
 | 12 | Pendiente | Ventanas (un proceso por ventana) y asociación de archivos |
 | 9 | Pendiente | — |
 | 13 | En curso | Hechas 13.1 a 13.6. Pendientes: 13.7 (gancho de pánico y traspaso entre ventanas), 13.8 (documentación) y la opcional 13.9 |
