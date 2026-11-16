@@ -418,14 +418,22 @@ de archivos en pérdida de datos.
 
 La recuperación de sesión actual escribe texto UTF-8 sin cifrar en el perfil
 local de la persona, nunca dentro de la bóveda ni junto al documento. Se crea
-tres segundos después del último cambio de una ráfaga, mediante el event loop y
-sin polling ni un hilo por pulsación; se borra después de guardar y solo se abre
+dos segundos después del último cambio, con un tope de diez desde el primero
+(quien escribe sin parar igual tiene copia), y de inmediato al perder el foco,
+cambiar de pestaña o abrir un diálogo. Usa el event loop, sin polling, y un
+único hilo escritor que conserva solo la última versión de cada copia y omite la
+escritura si el contenido no cambió. Si una escritura falla, la interfaz lo
+avisa una vez. La carpeta sale del perfil de la persona y nunca de la carpeta
+temporal del sistema; sin perfil, la recuperación no está disponible y el cierre
+no queda bloqueado. Se borra después de guardar y solo se abre
 mediante una acción explícita como documento sin destino. Es una defensa contra
 cierres inesperados, no un backup ni una garantía de durabilidad; la UI lo
 explica una vez antes de usarla y permitirá desactivarla cuando exista
 configuración persistente. Los snapshots propios de más de catorce días se
-limpian al iniciar; el proceso no elimina enlaces simbólicos ni archivos ajenos
-dentro de ese directorio.
+limpian al iniciar, igual que los temporales huérfanos de más de una hora; el
+proceso no elimina enlaces simbólicos ni archivos ajenos dentro de ese
+directorio. El rediseño completo está en
+[`arquitectura-recuperacion-2026-11-15.md`](arquitectura-recuperacion-2026-11-15.md).
 
 Las preferencias de modo por archivo no almacenan rutas en claro: guardan como
 máximo 128 hashes estables y uno de tres valores de presentación. Ese hash no es

@@ -152,7 +152,11 @@ const THEME_TRANSITION_FRAME: Duration = Duration::from_millis(16);
 const MODE_SWITCH_TRANSITION_DURATION: Duration = Duration::from_millis(180);
 /// Espera una pausa breve de escritura antes de materializar la recuperación.
 /// El event loop despierta en este deadline; no se crea un hilo por pulsación.
-const RECOVERY_DEBOUNCE: Duration = Duration::from_secs(3);
+/// Pausa tras el último cambio antes de escribir la copia.
+const RECOVERY_DEBOUNCE: Duration = Duration::from_secs(2);
+/// Tope desde el primer cambio sin copia: quien escribe sin parar igual tiene
+/// una copia cada tanto. Es la pérdida máxima si el proceso muere (D-38).
+const RECOVERY_MAX_WAIT: Duration = Duration::from_secs(10);
 /// Fuente y resultado tienen el mismo espacio en la comparación. La evidencia
 /// de QA mostró que privilegiar lectura comprimía demasiado la fuente y hacía
 /// que ambas columnas dejaran de corresponder visualmente.
@@ -6701,6 +6705,8 @@ fn blit_color(pixmap: &mut Pixmap, g: &CachedGlyph, gx: f32, gy: f32, width: i32
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct PendingRecovery {
     due_at: Instant,
+    /// Cuándo cambió por primera vez desde la última copia.
+    first_at: Instant,
     request: u64,
 }
 
@@ -6855,10 +6861,20 @@ impl DocumentState {
     }
 
     fn queue_recovery(&mut self, request: u64, now: Instant) {
+        let first_at = self
+            .pending_recovery
+            .map_or(now, |pending| pending.first_at);
         self.pending_recovery = Some(PendingRecovery {
-            due_at: now + RECOVERY_DEBOUNCE,
+            due_at: (now + RECOVERY_DEBOUNCE).min(first_at + RECOVERY_MAX_WAIT),
+            first_at,
             request,
         });
+    }
+
+    /// La solicitud pendiente sin esperar su plazo: para cuando la persona se
+    /// va de la ventana o de la pestaña.
+    fn take_pending_recovery(&mut self) -> Option<u64> {
+        self.pending_recovery.take().map(|pending| pending.request)
     }
 
     fn take_due_recovery(&mut self, now: Instant) -> Option<u64> {
@@ -8621,6 +8637,10 @@ impl ApplicationHandler<AppEvent> for App {
         if self.recovery_privacy_notice_pending {
             self.recovery_privacy_notice_pending = false;
             self.open_dialog(Dialog::recovery_privacy(), None);
+        } else if self.recovery_enabled && self.recovery.is_none() {
+            self.set_notice(
+                "La recuperación de cambios no está disponible en esta cuenta: guardá seguido",
+            );
         }
     }
 
@@ -8760,6 +8780,7 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
             WindowEvent::Focused(false) => {
+                self.flush_recoveries_now();
                 self.selecting = false;
                 self.tab_drag_id = None;
                 self.ime_preedit = None;
@@ -10243,23 +10264,56 @@ impl App {
     /// venció. La lista se reúne antes de crear hilos para no retener préstamos
     /// de pestañas mientras se interactúa con disco.
     fn flush_due_recoveries(&mut self, now: Instant) {
+        self.flush_recoveries(Some(now));
+    }
+
+    /// Escribe de inmediato lo que está esperando su plazo: al perder el foco,
+    /// cambiar de pestaña o abrir un diálogo la persona puede irse sin volver.
+    fn flush_recoveries_now(&mut self) {
+        self.flush_recoveries(None);
+    }
+
+    /// Con `Some(now)`, solo lo vencido; con `None`, todo lo pendiente. Las
+    /// copias van al hilo escritor, que no bloquea la interfaz.
+    fn flush_recoveries(&mut self, due: Option<Instant>) {
+        let take = |document: &mut DocumentState| match due {
+            Some(now) => document.take_due_recovery(now),
+            None => document.take_pending_recovery(),
+        };
         let mut pending = Vec::new();
-        if let (Some(recovery), Some(request)) =
-            (self.recovery.clone(), self.document.take_due_recovery(now))
-        {
+        if let (Some(recovery), Some(request)) = (self.recovery.clone(), take(&mut self.document)) {
             pending.push((recovery, self.document.source.to_string(), request));
         }
         for tab in &mut self.inactive_documents {
-            if let (Some(recovery), Some(request)) =
-                (tab.recovery.clone(), tab.document.take_due_recovery(now))
+            if let (Some(recovery), Some(request)) = (tab.recovery.clone(), take(&mut tab.document))
             {
                 pending.push((recovery, tab.document.source.to_string(), request));
             }
         }
         for (recovery, source, request) in pending {
-            thread::spawn(move || {
-                let _ = recovery.write_if_current(&source, request);
+            recovery.submit(source, request);
+        }
+        self.report_recovery_failure();
+    }
+
+    /// Si una copia no se pudo escribir, la persona lo sabe: sin ese aviso
+    /// creería tener una copia que no existe.
+    fn report_recovery_failure(&mut self) {
+        let failed = self
+            .recovery
+            .iter()
+            .chain(
+                self.inactive_documents
+                    .iter()
+                    .filter_map(|tab| tab.recovery.as_ref()),
+            )
+            .fold(false, |failed, recovery| {
+                recovery.take_new_failure() | failed
             });
+        if failed {
+            self.log
+                .push("[recuperación] no se pudo escribir una copia".into());
+            self.set_notice("No se pudo guardar la copia de seguridad: guardá el documento");
         }
     }
 
@@ -11290,6 +11344,7 @@ impl App {
     }
 
     fn open_document_in_tab(&mut self, document: DocumentState) {
+        self.flush_recoveries_now();
         let new_id = document.id;
         self.save_focused_pane_scroll();
         self.document.scroll = self.scroll;
@@ -11330,6 +11385,7 @@ impl App {
         if document_id == self.document.id {
             return;
         }
+        self.flush_recoveries_now();
         let Some(index) = self
             .inactive_documents
             .iter()
@@ -12445,6 +12501,7 @@ impl App {
     }
 
     fn open_dialog(&mut self, dialog: Dialog, document: Option<u64>) {
+        self.flush_recoveries_now();
         self.context_menu = None;
         self.selecting = false;
         self.dialog = Some(dialog);
@@ -12588,11 +12645,11 @@ impl App {
             }
             return true;
         }
-        let recovery_preserved = if self.recovery_enabled {
-            let Some(recovery) = &self.recovery else {
-                self.set_notice("no se cerró: no hay recuperación local disponible");
-                return false;
-            };
+        // Sin carpeta de perfil no hay recuperación: el cierre sigue, y el
+        // diálogo dice que no hay copia, en lugar de dejar la pestaña atrapada.
+        let enabled = self.recovery_enabled;
+        let recovery_preserved = if let Some(recovery) = self.recovery.as_ref().filter(|_| enabled)
+        {
             if let Err(error) = recovery.write(&self.document.source.to_string()) {
                 self.log.push(format!("[recuperación] {error}"));
                 self.set_notice("no se cerró: no se pudo conservar la recuperación local");
@@ -12640,27 +12697,21 @@ impl App {
         }
 
         let current_result = if self.recovery_enabled && self.document.is_dirty() {
-            self.recovery
-                .as_ref()
-                .ok_or("recuperación no disponible")
-                .and_then(|recovery| {
-                    recovery
-                        .write(&self.document.source.to_string())
-                        .map_err(|_| "falló la recuperación")
-                })
+            self.recovery.as_ref().map_or(Ok(()), |recovery| {
+                recovery
+                    .write(&self.document.source.to_string())
+                    .map_err(|_| "falló la recuperación")
+            })
         } else {
             Ok(())
         };
         let inactive_result = if self.recovery_enabled {
             dirty_inactive.into_iter().try_for_each(|tab| {
-                tab.recovery
-                    .as_ref()
-                    .ok_or("recuperación no disponible")
-                    .and_then(|recovery| {
-                        recovery
-                            .write(&tab.document.source.to_string())
-                            .map_err(|_| "falló la recuperación")
-                    })
+                tab.recovery.as_ref().map_or(Ok(()), |recovery| {
+                    recovery
+                        .write(&tab.document.source.to_string())
+                        .map_err(|_| "falló la recuperación")
+                })
             })
         } else {
             Ok(())
@@ -12670,7 +12721,10 @@ impl App {
             return false;
         }
         self.open_dialog(
-            Dialog::close_window(dirty_count, self.recovery_enabled),
+            Dialog::close_window(
+                dirty_count,
+                self.recovery_enabled && self.recovery.is_some(),
+            ),
             None,
         );
         false
@@ -22124,6 +22178,43 @@ con dos lineas
             inactive.recovery_deadline(),
             "una pestaña inactiva no pierde su recuperación solo por cambiar de foco"
         );
+    }
+
+    #[test]
+    fn escribir_sin_parar_no_posterga_la_copia_mas_alla_del_tope() {
+        let start = Instant::now();
+        let mut document = DocumentState::untitled();
+        // Una pulsación por segundo durante un minuto: la pausa nunca llega.
+        for second in 0..60 {
+            document.queue_recovery(second + 1, start + Duration::from_secs(second));
+            let deadline = document
+                .recovery_deadline()
+                .expect("hay una copia pendiente");
+            assert!(
+                deadline <= start + RECOVERY_MAX_WAIT,
+                "el segundo {second}: la copia se aplaza más allá del tope"
+            );
+            if document
+                .take_due_recovery(start + Duration::from_secs(second))
+                .is_some()
+            {
+                // Tras escribir, la ráfaga siguiente cuenta desde cero.
+                assert!(second >= RECOVERY_MAX_WAIT.as_secs() - 1);
+                return;
+            }
+        }
+        panic!("en un minuto de escritura continua no se escribió ninguna copia");
+    }
+
+    #[test]
+    fn irse_de_la_ventana_escribe_lo_pendiente_sin_esperar_el_plazo() {
+        let mut document = DocumentState::untitled();
+        let start = Instant::now();
+        document.queue_recovery(7, start);
+        assert_eq!(document.take_due_recovery(start), None);
+        assert_eq!(document.take_pending_recovery(), Some(7));
+        assert_eq!(document.recovery_deadline(), None);
+        assert_eq!(document.take_pending_recovery(), None);
     }
 
     #[test]

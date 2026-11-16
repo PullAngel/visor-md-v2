@@ -787,7 +787,7 @@ Diseño: `docs/arquitectura-recuperacion-2026-11-15.md`. Las tareas 13.1 y 13.2
 corrigen huecos de hoy y se hacen **antes** de la fase 5; la 13.3 a la 13.6 se
 hacen con la fase 6 (comparten la 6.7); la 13.7 y la 13.8 con la fase 12.
 
-- [ ] **13.1** Arreglos inmediatos sobre `src/recovery.rs`:
+- [x] **13.1** Arreglos inmediatos sobre `src/recovery.rs`:
   - tope de 10 s en una ráfaga (H1) y escritura inmediata al cambiar de pestaña,
     perder el foco o abrir un diálogo (H2);
   - quitar el recurso a `temp_dir()` (H8) y desactivar la recuperación con un
@@ -795,9 +795,13 @@ hacen con la fase 6 (comparten la 6.7); la 13.7 y la 13.8 con la fase 12.
   - barrer los temporales huérfanos (H9);
   - mostrar en la interfaz que la copia falló (H10).
 
-  Pruebas en `recovery.rs` y una escena visual del punto «•» con falla.
-- [ ] **13.2** Un solo hilo escritor con buzón «el último gana» (en lugar de un
-  hilo por escritura) y omitir la escritura si el CRC-32 no cambió.
+  Pruebas en `recovery.rs` y `main.rs`. Hecho con un aviso («No se pudo guardar
+  la copia de seguridad: guardá el documento»), no con el tono del punto «•»,
+  que queda para la 13.5. Plazos: pausa de 2 s y tope de 10 s. Sin perfil, el
+  cierre ya no queda bloqueado.
+- [x] **13.2** Un solo hilo escritor con buzón «el último gana» (en lugar de un
+  hilo por escritura) y omitir la escritura si el contenido no cambió (hash de
+  la biblioteca estándar, sin dependencia nueva).
 - [ ] **13.3** `src/recuperacion/formato.rs` y `politica.rs` (puros), con todas
   las pruebas de la sección 7 del diseño.
 - [ ] **13.4** `src/recuperacion/almacen.rs`: sesión con cerrojo, carpeta por

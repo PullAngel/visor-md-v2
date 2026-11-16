@@ -319,8 +319,9 @@ separado y nunca se presenta como guardado definitivo.
 
 La recuperación local actual escribe snapshots limitados y separados por
 pestaña en el perfil del usuario, fuera de documentos y bóvedas. Tras el último
-cambio de una ráfaga espera tres segundos mediante el deadline del event loop:
-no usa polling ni crea un hilo por pulsación. El cierre de la ventana no
+cambio espera dos segundos, con un tope de diez desde el primero, mediante el
+deadline del event loop: no usa polling. Las escrituras las hace un único hilo
+que conserva solo la última versión pendiente de cada copia. El cierre de la ventana no
 continúa si no puede preservar todos los documentos modificados. Las escrituras
 se serializan y versionan: una tarea anterior no puede reemplazar una
 recuperación más nueva ni recrearla después de un guardado que la eliminó.
