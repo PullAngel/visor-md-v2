@@ -756,15 +756,19 @@ Absorbe las tareas 5.5, 5.6 y 5.7. Va después de la 5.
   `set_fraction_at`, objetivo `UiTarget::PaneDivider`, cursor de redimensionar,
   arrastre, doble clic a 50 % y mínimo de 240 px. Pruebas en `panes.rs`.
 - [x] **11.3** Teclado Alt+Shift+flechas (pasos de 5 %, la división más cercana en ese sentido; respeta el mínimo útil).
-- [ ] **11.4** `swap_panes` y arrastre de cabecera sobre cabecera, con fantasma y
-  resalte del destino (sin fantasma con movimiento reducido).
-- [ ] **11.5** Soltar una pestaña de la tira sobre un panel (centro reemplaza,
-  borde divide) y soltar una cabecera sobre la tira (quitar). Zonas con
-  acento al 18 %; Esc cancela.
-- [ ] **11.6** Foco visible: filete de acento de 2 px y cabecera con `palette.tab`
+- [x] **11.4** `swap_panes` (intercambia hoja, documento, posición y caché) y
+  arrastre de cabecera sobre otro panel, con fantasma y resalte del destino
+  (sin fantasma con movimiento reducido). Umbral de 6 px: antes es un clic.
+- [x] **11.5** Soltar una pestaña de la tira sobre un panel (centro reemplaza,
+  borde divide, `split_pane_side`) y soltar una cabecera sobre la tira (quitar).
+  Zonas con acento al 18 %; Esc cancela. Una pestaña que sale de la tira hacia
+  el documento pasa de reordenar a soltar.
+- [x] **11.6** Foco visible: filete de acento de 2 px y cabecera con `palette.tab`
   en el panel enfocado.
-- [ ] **11.7** Cerrar una pestaña conserva la división (era la 5.5) y un panel
-  nuevo abre en Leer (era la 5.6).
+- [x] **11.7** Cerrar una pestaña conserva la división (era la 5.5): otra
+  pestaña de la tira ocupa el panel y solo si no queda ninguna se cierra el
+  panel. Un panel creado con una pestaña que estaba en Comparar abre en Leer
+  (era la 5.6; los documentos nuevos conservan su modo).
 - [ ] **11.8** Cierre de fase: referencias `mosaico-2`, `mosaico-4`,
   `mosaico-soltar`; `design-critique`; ejecutable nuevo.
 

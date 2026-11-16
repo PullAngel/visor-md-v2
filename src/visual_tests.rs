@@ -105,10 +105,11 @@ fn dividir_hasta(app: &mut App, paneles: usize) {
     while app.document_panes.pane_count() < paneles {
         app.perform_action(AppAction::NewDocument);
         let nuevo = app.document.id;
-        app.document.source = TextBuffer::from_text(&format!(
-            "# Nota {nuevo}
-"
-        ));
+        // El título no puede depender de la identidad del documento: esa cuenta
+        // es global y cambia con el orden en que corren las pruebas.
+        let numero = app.document_panes.pane_count() + 1;
+        app.document.source = TextBuffer::from_text(&format!("# Nota {numero}
+"));
         app.open_document_pane_picker(DocumentPaneAxis::Vertical);
         let candidato = app
             .pane_split_candidates
