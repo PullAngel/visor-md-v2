@@ -769,8 +769,18 @@ Absorbe las tareas 5.5, 5.6 y 5.7. Va después de la 5.
   pestaña de la tira ocupa el panel y solo si no queda ninguna se cierra el
   panel. Un panel creado con una pestaña que estaba en Comparar abre en Leer
   (era la 5.6; los documentos nuevos conservan su modo).
-- [ ] **11.8** Cierre de fase: referencias `mosaico-2`, `mosaico-4`,
-  `mosaico-soltar`; `design-critique`; ejecutable nuevo.
+- [x] **11.8** Cierre de fase: referencias `division`, `division-arrastrando`,
+  `mosaico-4` y `mosaico-soltar`; `design-critique`; ejecutable nuevo. Prueba
+  en vivo del 15 de noviembre con la build de evaluación (el parche
+  `scripts/evaluacion/build-evaluacion.patch` se regeneró y aplica limpio):
+  dividir, arrastrar el divisor a 700 px e intercambiar paneles arrastrando la
+  cabecera funcionan. No verificado en vivo: el doble clic sobre el divisor
+  (la herramienta no lo reproduce; la lógica está en el código) y Alt+Shift+
+  flechas (las combinaciones no llegan por la herramienta; hay prueba
+  unitaria). Crítica: el recuadro vacío de la tira cuando todos los documentos
+  están en paneles, el tooltip de «Quitar del mosaico» (no hay objetivo de
+  cabecera) y el resalte del divisor junto al borde del panel enfocado pasan
+  a la fase 8.
 
 ### Fase 12 · Ventanas y sistema
 
@@ -899,7 +909,7 @@ asociación.
 | 3 | Casi hecha | Hechas 3.1 a 3.8, 3.9b, 3.10 a 3.12. Pendientes: 3.9 (caja de búsqueda con borde y barra anclada); la 3.13 pasa a la 10.7 |
 | 10 | Hecho | 10.1 a 10.11; prueba en vivo del 15 de noviembre |
 | 5 | Hecho | 5.1 a 5.4 y 5.8; la 5.5 a 5.7 pasaron a la fase 11 |
-| 11 | Pendiente | Mosaico: cabecera como pestaña, divisor, intercambio, soltado |
+| 11 | Hecho | 11.1 a 11.8; tooltip de «Quitar del mosaico» a la fase 8 |
 | 6 | Pendiente | — |
 | 7 | Pendiente | — |
 | 8 | En curso | Hecho el hover y destello de Copiar (8.2 parcial). Pendientes el resto de 8 |
