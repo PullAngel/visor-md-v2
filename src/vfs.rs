@@ -25,6 +25,10 @@ pub(crate) enum VfsError {
     OutsideRoot,
     ReparsePoint,
     Io(std::io::ErrorKind),
+    /// El nombre de una nota nueva no es un nombre simple y válido.
+    InvalidName,
+    /// Ya hay una nota con ese nombre.
+    AlreadyExists,
 }
 
 impl fmt::Display for VfsError {
@@ -46,6 +50,8 @@ impl fmt::Display for VfsError {
                 "la referencia atraviesa un enlace simbólico o junction no permitido"
             }
             Self::Io(_) => "no se pudo resolver el archivo referido",
+            Self::InvalidName => "el nombre de la nota no es válido",
+            Self::AlreadyExists => "ya existe una nota con ese nombre",
         };
         formatter.write_str(text)
     }
@@ -65,6 +71,28 @@ impl WorkspaceRoot {
 
     pub(crate) fn root(&self) -> &Path {
         &self.canonical_root
+    }
+
+    /// Crea una nota vacía `<nombre>.md` en la raíz de la carpeta. Solo acepta
+    /// un nombre simple: sin rutas, sin caracteres que Windows no admite y sin
+    /// nombres reservados. Nunca reemplaza un archivo: si existe, falla.
+    pub(crate) fn create_note(&self, name: &str) -> Result<PathBuf, VfsError> {
+        let stem = name.trim().trim_end_matches(".md").trim();
+        if !is_simple_note_name(stem) {
+            return Err(VfsError::InvalidName);
+        }
+        let path = self.canonical_root.join(format!("{stem}.md"));
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(_) => Ok(path),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                Err(VfsError::AlreadyExists)
+            }
+            Err(error) => Err(VfsError::Io(error.kind())),
+        }
     }
 
     /// Resuelve solo un archivo existente. Primero inspecciona cada componente
@@ -156,6 +184,30 @@ impl WorkspaceRoot {
     }
 }
 
+/// Un nombre usable como archivo: una sola pieza, sin separadores ni
+/// caracteres inválidos en Windows, sin puntos al inicio o al final y que no
+/// sea un dispositivo reservado.
+fn is_simple_note_name(stem: &str) -> bool {
+    if stem.is_empty() || stem.chars().count() > 120 {
+        return false;
+    }
+    if stem.starts_with('.') || stem.ends_with(['.', ' ']) {
+        return false;
+    }
+    if stem.chars().any(|c| {
+        c.is_control() || matches!(c, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*')
+    }) {
+        return false;
+    }
+    let base = stem.split('.').next().unwrap_or(stem).to_ascii_uppercase();
+    let reserved = ["CON", "PRN", "AUX", "NUL"];
+    let numbered = |prefix: &str| {
+        base.strip_prefix(prefix)
+            .is_some_and(|rest| rest.len() == 1 && rest.chars().all(|c| c.is_ascii_digit()))
+    };
+    !(reserved.contains(&base.as_str()) || numbered("COM") || numbered("LPT"))
+}
+
 /// `symlink_metadata` no sigue el último componente. En Windows, una junction
 /// no siempre se anuncia como symlink, por lo que también se consulta el bit
 /// de reparse point. La raíz elegida explícitamente queda fuera de esta regla;
@@ -225,6 +277,46 @@ mod tests {
         fs::create_dir_all(root.join("apuntes")).expect("se crea la fixture");
         fs::write(root.join("apuntes").join("redes.md"), "# redes").expect("se crea el documento");
         root
+    }
+
+    #[test]
+    fn crear_una_nota_acepta_solo_nombres_simples_y_no_reemplaza() {
+        let root = fixture_root();
+        let vfs = WorkspaceRoot::open(&root).expect("la raíz es válida");
+        let creada = vfs.create_note("Lección 1").expect("nombre simple");
+        assert!(creada.ends_with("Lección 1.md"));
+        assert!(creada.starts_with(vfs.root()));
+        assert_eq!(fs::read_to_string(&creada).unwrap(), "");
+        // Una segunda vez no pisa nada.
+        fs::write(&creada, "contenido").unwrap();
+        assert!(matches!(
+            vfs.create_note("Lección 1"),
+            Err(VfsError::AlreadyExists)
+        ));
+        assert_eq!(fs::read_to_string(&creada).unwrap(), "contenido");
+        // La extensión escrita no se duplica.
+        assert!(vfs.create_note("otra.md").unwrap().ends_with("otra.md"));
+        for malo in [
+            "",
+            "  ",
+            "../fuera",
+            "a/b",
+            "a\\b",
+            "c:x",
+            "nota?",
+            ".oculta",
+            "fin.",
+            "CON",
+            "com1",
+            "Lpt9.txt",
+            "tab\tulado",
+        ] {
+            assert!(
+                matches!(vfs.create_note(malo), Err(VfsError::InvalidName)),
+                "{malo:?}"
+            );
+        }
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

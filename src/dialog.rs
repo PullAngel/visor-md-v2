@@ -21,6 +21,10 @@ pub(crate) enum DialogChoice {
     KeepEditing,
     LoadImage,
     SkipImage,
+    CreateNote,
+    SkipCreateNote,
+    UseDocumentFolder,
+    SkipUseFolder,
 }
 
 /// Peso visual de un botón. El primario es la acción recomendada; el
@@ -259,6 +263,45 @@ impl Dialog {
         )
     }
 
+    /// Un enlace a una nota que no existe: ofrece crearla en la carpeta de
+    /// apuntes.
+    pub(crate) fn create_note(name: &str) -> Self {
+        Self::new(
+            "Esta nota no existe",
+            format!(
+                "«{name}» todavía no está en tu carpeta de apuntes. Podés crearla vacía y empezar a escribirla."
+            ),
+            vec![
+                button(
+                    "Ahora no",
+                    DialogChoice::SkipCreateNote,
+                    ButtonTone::Neutral,
+                ),
+                button("Crear nota", DialogChoice::CreateNote, ButtonTone::Primary),
+            ],
+            DialogChoice::SkipCreateNote,
+        )
+    }
+
+    /// Un enlace a otra nota sin carpeta de apuntes elegida.
+    pub(crate) fn use_document_folder(folder: &str) -> Self {
+        Self::new(
+            "No hay carpeta de apuntes",
+            format!(
+                "Para abrir enlaces a otras notas hace falta una carpeta de apuntes. ¿Usás la carpeta «{folder}», donde está este archivo?"
+            ),
+            vec![
+                button("Ahora no", DialogChoice::SkipUseFolder, ButtonTone::Neutral),
+                button(
+                    "Usar esta carpeta",
+                    DialogChoice::UseDocumentFolder,
+                    ButtonTone::Primary,
+                ),
+            ],
+            DialogChoice::SkipUseFolder,
+        )
+    }
+
     /// Tab y las flechas recorren los botones en ciclo, sin salir del diálogo.
     pub(crate) fn move_focus(&mut self, backwards: bool) {
         let count = self.buttons.len();
@@ -405,6 +448,8 @@ mod tests {
             Dialog::close_tab("nota.md", true),
             Dialog::close_window(2, false),
             Dialog::local_image(),
+            Dialog::create_note("Biología"),
+            Dialog::use_document_folder("apuntes"),
         ];
         for dialog in dialogs {
             assert!(!dialog.buttons.is_empty());

@@ -108,8 +108,10 @@ fn dividir_hasta(app: &mut App, paneles: usize) {
         // El título no puede depender de la identidad del documento: esa cuenta
         // es global y cambia con el orden en que corren las pruebas.
         let numero = app.document_panes.pane_count() + 1;
-        app.document.source = TextBuffer::from_text(&format!("# Nota {numero}
-"));
+        app.document.source = TextBuffer::from_text(&format!(
+            "# Nota {numero}
+"
+        ));
         app.open_document_pane_picker(DocumentPaneAxis::Vertical);
         let candidato = app
             .pane_split_candidates
@@ -149,6 +151,31 @@ fn mosaico_soltar(app: &mut App) {
         active: true,
     });
     app.pointer = Some((60.0, DOCUMENT_VIEWPORT_TOP + 250.0));
+}
+
+/// Un enlace web (con ↗), una nota que existe y otra que no (subrayado
+/// punteado), con una carpeta de apuntes que solo tiene la primera.
+fn enlaces(app: &mut App) {
+    let carpeta =
+        std::env::temp_dir().join(format!("visor-md-escena-enlaces-{}", std::process::id()));
+    std::fs::create_dir_all(&carpeta).expect("se crea la carpeta");
+    std::fs::write(
+        carpeta.join("existe.md"),
+        "# Existe
+",
+    )
+    .expect("se crea la nota");
+    let root = WorkspaceRoot::open(&carpeta).expect("la carpeta es válida");
+    let index = workspace::index_workspace(&root, WorkspaceLimits::default());
+    app.workspace = Some((root, index));
+    app.load_for_test(
+        "# Enlaces
+
+La guía está en [la documentación](https://www.ejemplo.org/guia), sigue en [[existe]] y falta [[nota pendiente]].
+",
+        DocumentMode::Reading,
+    );
+    let _ = std::fs::remove_dir_all(&carpeta);
 }
 
 fn abrir_dialogo_de_cierre(app: &mut App) {
@@ -240,7 +267,7 @@ fn dialogo_con_el_puntero_sobre_un_boton(app: &mut App) {
     abrir_dialogo_de_cierre(app);
 }
 
-const ESCENAS: [Escena; 20] = [
+const ESCENAS: [Escena; 21] = [
     Escena {
         nombre: "lectura",
         modo: DocumentMode::Reading,
@@ -310,6 +337,11 @@ const ESCENAS: [Escena; 20] = [
         nombre: "mosaico-soltar",
         modo: DocumentMode::Reading,
         preparar: mosaico_soltar,
+    },
+    Escena {
+        nombre: "enlaces",
+        modo: DocumentMode::Reading,
+        preparar: enlaces,
     },
     Escena {
         nombre: "dialogo-cierre",

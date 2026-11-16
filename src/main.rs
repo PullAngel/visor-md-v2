@@ -2543,6 +2543,18 @@ fn classify_link_destination(destination: &str) -> LinkDestinationKind {
     }
 }
 
+/// El dominio de un destino web, para avisar adónde se va a ir: «https://
+/// www.ejemplo.org:8080/ruta?x» es «ejemplo.org». Sin usuario, puerto ni «www.».
+fn web_domain(destination: &str) -> String {
+    let rest = destination
+        .split_once("://")
+        .map_or(destination, |(_, rest)| rest);
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or(rest);
+    let host = authority.rsplit('@').next().unwrap_or(authority);
+    let host = host.split(':').next().unwrap_or(host);
+    host.strip_prefix("www.").unwrap_or(host).to_string()
+}
+
 fn relative_destination_parts(destination: &str) -> (&str, Option<&str>) {
     destination
         .split_once('#')
@@ -6800,6 +6812,9 @@ struct DocumentState {
     content_kind: DocumentContentKind,
     /// Protección reversible de sesión. No se persiste ni modifica el archivo.
     pinned: bool,
+    /// Modo con el que debe abrir el archivo que se está cargando, por encima
+    /// del recordado: un enlace abre en Leer y una nota nueva en Editar.
+    open_mode_override: Option<DocumentMode>,
     source: TextBuffer,
     source_metadata: TextMetadata,
     source_identity: Option<FileIdentity>,
@@ -6935,6 +6950,7 @@ impl DocumentState {
             path: UNTITLED_PATH.to_string(),
             content_kind: DocumentContentKind::Markdown,
             pinned: false,
+            open_mode_override: None,
             source: TextBuffer::new(),
             source_metadata: TextMetadata::default(),
             source_identity: None,
@@ -7674,6 +7690,15 @@ struct App {
     pinned_on_top: bool,
     /// Imagen local que espera el consentimiento del diálogo.
     pending_image_destination: Option<String>,
+    /// Nota que un enlace nombraba y que el diálogo ofrece crear.
+    pending_new_note: Option<String>,
+    /// Carpeta del archivo actual y enlace que se sigue si se la usa como
+    /// carpeta de apuntes.
+    pending_folder_link: Option<(PathBuf, String)>,
+    /// Enlace que se sigue cuando termina de indexarse la carpeta.
+    pending_wikilink_after_index: Option<String>,
+    /// Enlaces a notas que no existen en el documento actual, con su clave.
+    broken_links_cache: Option<((u64, u64, u64, u64), Vec<(usize, usize)>)>,
     /// Conserva el resultado fatal para devolver un codigo de salida distinto
     /// de cero despues de cerrar ordenadamente el event loop.
     fatal_error: bool,
@@ -7780,6 +7805,7 @@ impl App {
                     .map(|path| DocumentContentKind::for_path(std::path::Path::new(path)))
                     .unwrap_or(DocumentContentKind::Markdown),
                 pinned: false,
+                open_mode_override: None,
                 source: TextBuffer::new(),
                 source_metadata: TextMetadata::default(),
                 source_identity: None,
@@ -7925,6 +7951,10 @@ impl App {
             exit_requested: false,
             pinned_on_top: false,
             pending_image_destination: None,
+            pending_new_note: None,
+            pending_folder_link: None,
+            pending_wikilink_after_index: None,
+            broken_links_cache: None,
             fatal_error: false,
         }
     }
@@ -8153,11 +8183,15 @@ impl ApplicationHandler<AppEvent> for App {
                 let block_len = outcome.blocks.len();
                 let safe_mode = outcome.degradation;
                 let byte_len = identity.byte_len;
-                let remembered_mode = self
-                    .settings
-                    .document_mode(&path)
-                    .unwrap_or(DocumentModePreference::Reading)
-                    .into();
+                let remembered_mode =
+                    document_by_id(&self.document, &self.inactive_documents, document_id)
+                        .and_then(|document| document.open_mode_override)
+                        .unwrap_or_else(|| {
+                            self.settings
+                                .document_mode(&path)
+                                .unwrap_or(DocumentModePreference::Reading)
+                                .into()
+                        });
                 let Some(document) = document_by_id_mut(
                     &mut self.document,
                     &mut self.inactive_documents,
@@ -8177,6 +8211,7 @@ impl ApplicationHandler<AppEvent> for App {
                     return;
                 }
                 self.view_requests.remove(&document_id);
+                document.open_mode_override = None;
                 document.cancel_pending_recovery();
                 document.path = path.to_string_lossy().into_owned();
                 document.content_kind = DocumentContentKind::for_path(&path);
@@ -8531,6 +8566,10 @@ impl ApplicationHandler<AppEvent> for App {
                     count_noun(note_count, "nota", "notas"),
                     count_noun(skipped, "omitida", "omitidas")
                 ));
+                // Un enlace que esperaba la carpeta se sigue ahora.
+                if let Some(destination) = self.pending_wikilink_after_index.take() {
+                    self.open_workspace_wikilink(&destination);
+                }
             }
             AppEvent::WorkspaceFailed { request, error } => {
                 if request != self.workspace_request {
@@ -8893,6 +8932,11 @@ impl ApplicationHandler<AppEvent> for App {
                 let target = self
                     .target_at(position.x as f32, position.y as f32)
                     .map(|target| {
+                        if target.kind == InlineTargetKind::WikiLink
+                            && self.wikilink_is_missing(&target.destination)
+                        {
+                            return format!("Esta nota no existe: {}", target.destination);
+                        }
                         let label = target_label(target.kind, &target.destination);
                         format!("{label}: {}", target.destination)
                     });
@@ -13207,6 +13251,19 @@ impl App {
                 self.pending_image_destination = None;
                 self.set_notice("imagen local no cargada");
             }
+            DialogChoice::CreateNote => {
+                if let Some(name) = self.pending_new_note.take() {
+                    self.create_note_from_link(&name);
+                }
+            }
+            DialogChoice::SkipCreateNote => self.pending_new_note = None,
+            DialogChoice::UseDocumentFolder => {
+                if let Some((folder, destination)) = self.pending_folder_link.take() {
+                    self.pending_wikilink_after_index = Some(destination);
+                    self.start_workspace_index(folder, "indexando la carpeta de apuntes", None);
+                }
+            }
+            DialogChoice::SkipUseFolder => self.pending_folder_link = None,
         }
     }
 
@@ -13955,6 +14012,7 @@ impl App {
                     Some(Ok(path)) => {
                         if self.open_document_path(path) {
                             self.document.pending_heading = heading.map(str::to_owned);
+                            self.open_loading_note_in(DocumentMode::Reading);
                         }
                     }
                     Some(Err(error)) => {
@@ -13972,9 +14030,21 @@ impl App {
                 self.set_notice("destino bloqueado por la política de seguridad");
             }
             LinkDestinationKind::Web | LinkDestinationKind::Mail => {
-                if let Err(error) = open_external_destination(&destination.1) {
-                    self.log.push(format!("[enlace] {error}"));
-                    self.set_notice("no se pudo abrir el enlace");
+                match open_external_destination(&destination.1) {
+                    Ok(()) => {
+                        if classify_link_destination(&destination.1) == LinkDestinationKind::Web {
+                            self.set_notice(&format!(
+                                "Abriendo en el navegador: {}",
+                                web_domain(&destination.1)
+                            ));
+                        } else {
+                            self.set_notice("Abriendo tu programa de correo");
+                        }
+                    }
+                    Err(error) => {
+                        self.log.push(format!("[enlace] {error}"));
+                        self.set_notice("no se pudo abrir el enlace");
+                    }
                 }
             }
         }
@@ -14083,14 +14153,16 @@ impl App {
             return;
         }
         let Some((root, index)) = self.workspace.as_ref() else {
-            self.set_notice("abre una carpeta de trabajo para seguir enlaces de bóveda");
+            self.offer_document_folder_as_workspace(destination);
             return;
         };
         let path = match index.resolve_wikilink(note_target) {
             WikiResolution::Found(note) => root.resolve_existing(&note.relative_path),
             WikiResolution::Missing => {
-                self.set_notice(
-                    "la nota indicada por el enlace no existe en la carpeta de trabajo",
+                self.pending_new_note = Some(note_target.trim().to_string());
+                self.open_dialog(
+                    Dialog::create_note(note_target.trim()),
+                    Some(self.document.id),
                 );
                 return;
             }
@@ -14107,6 +14179,7 @@ impl App {
             Ok(path) => {
                 if self.open_document_path(path) {
                     self.document.pending_heading = heading;
+                    self.open_loading_note_in(DocumentMode::Reading);
                     if let Some(window) = &self.window {
                         window.request_redraw();
                     }
@@ -14117,6 +14190,108 @@ impl App {
                 self.set_notice("el enlace de bóveda fue bloqueado por la política de archivos");
             }
         }
+    }
+
+    /// Marca el archivo que se está cargando para que abra en `mode`, por
+    /// encima del modo recordado. Solo si de verdad está cargando: una pestaña
+    /// que ya estaba abierta conserva su modo.
+    fn open_loading_note_in(&mut self, mode: DocumentMode) {
+        if self.open_requests.contains_key(&self.document.id) {
+            self.document.open_mode_override = Some(mode);
+        }
+    }
+
+    /// Un enlace a otra nota sin carpeta de apuntes: ofrece usar la carpeta de
+    /// este archivo, si lo tiene. Después de indexarla, sigue el enlace.
+    fn offer_document_folder_as_workspace(&mut self, destination: &str) {
+        let folder = (self.document.source_identity.is_some())
+            .then(|| {
+                std::path::Path::new(&self.document.path)
+                    .parent()
+                    .map(std::path::Path::to_path_buf)
+            })
+            .flatten()
+            .filter(|folder| folder.is_dir());
+        let Some(folder) = folder else {
+            self.set_notice("Guardá esta nota para poder abrir enlaces a otras notas");
+            return;
+        };
+        let name = workspace_name(Some(folder.as_path()));
+        self.pending_folder_link = Some((folder, destination.to_string()));
+        self.open_dialog(Dialog::use_document_folder(&name), Some(self.document.id));
+    }
+
+    /// Crea la nota que un enlace nombraba y la abre para escribir. La crea
+    /// vacía y solo en la raíz de la carpeta de apuntes.
+    fn create_note_from_link(&mut self, name: &str) {
+        let Some((root, _)) = self.workspace.as_ref() else {
+            return;
+        };
+        match root.create_note(name) {
+            Ok(path) => {
+                self.reindex_workspace();
+                if self.open_document_path(path) {
+                    self.open_loading_note_in(DocumentMode::SourceEditing);
+                    self.set_notice(&format!("Nota creada: {name}"));
+                }
+            }
+            Err(vfs::VfsError::AlreadyExists) => {
+                self.set_notice("Ya hay una nota con ese nombre: actualizá la carpeta");
+            }
+            Err(vfs::VfsError::InvalidName) => {
+                self.set_notice("Ese nombre no sirve para una nota: usá uno simple, sin barras");
+            }
+            Err(error) => {
+                self.log.push(format!("[vfs] {error}"));
+                self.set_notice("No se pudo crear la nota");
+            }
+        }
+    }
+
+    /// El destino del enlace no está en la carpeta de apuntes. Sin carpeta, no
+    /// se puede saber, y no se marca como roto.
+    fn wikilink_is_missing(&self, destination: &str) -> bool {
+        let Some((_, index)) = &self.workspace else {
+            return false;
+        };
+        let note = destination
+            .split_once('#')
+            .map_or(destination, |(note, _)| note);
+        !note.trim().is_empty() && matches!(index.resolve_wikilink(note), WikiResolution::Missing)
+    }
+
+    /// Posiciones (bloque, destino) de los enlaces a notas que no existen. Se
+    /// recalcula solo si cambian el documento, su texto, la carpeta o los
+    /// bloques: resolver cada enlace recorre el índice.
+    fn broken_wikilink_positions(&mut self) -> Vec<(usize, usize)> {
+        let key = (
+            self.document.id,
+            self.document.source_editor.revision(),
+            self.workspace_generation,
+            self.document.blocks.len() as u64,
+        );
+        if let Some((cached, list)) = &self.broken_links_cache
+            && *cached == key
+        {
+            return list.clone();
+        }
+        let list = self
+            .document
+            .blocks
+            .iter()
+            .enumerate()
+            .flat_map(|(block, item)| {
+                item.targets
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, target)| target.kind == InlineTargetKind::WikiLink)
+                    .map(move |(index, target)| (block, index, target.destination.clone()))
+            })
+            .filter(|(_, _, destination)| self.wikilink_is_missing(destination))
+            .map(|(block, index, _)| (block, index))
+            .collect::<Vec<_>>();
+        self.broken_links_cache = Some((key, list.clone()));
+        list
     }
 
     /// Muestra backlinks derivados únicamente del índice de la carpeta
@@ -16611,6 +16786,7 @@ impl App {
                 )
             });
         let drop_zone_rect = drop_overlay.as_ref().and_then(|(rect, _, _)| *rect);
+        let broken_links = self.broken_wikilink_positions();
         let tab_count = tab_strip;
         let tab_hover = self.pointer;
         // El divisor que se arrastra o que está bajo el puntero se resalta.
@@ -17147,6 +17323,70 @@ impl App {
                             draw_run_background(pixmap, &run, x, top);
                             draw_decorations(pixmap, &run, x, top);
                             draw_glyph_run(pixmap, scale_cx, glyphs, &run, x, top);
+                        }
+                    }
+                }
+
+                // Marcas de los enlaces: ↗ tras los que salen al navegador y
+                // subrayado punteado en los que apuntan a una nota que no existe.
+                for (target_index, target) in blocks[i].targets.iter().enumerate() {
+                    let is_web = target.kind == InlineTargetKind::Link
+                        && classify_link_destination(&target.destination)
+                            == LinkDestinationKind::Web;
+                    let is_broken = broken_links.contains(&(i, target_index));
+                    if !is_web && !is_broken {
+                        continue;
+                    }
+                    let rects = Selection::new(
+                        Cursor::from_byte_index(layout, target.start, Affinity::Downstream),
+                        Cursor::from_byte_index(layout, target.end, Affinity::Downstream),
+                    )
+                    .geometry(layout);
+                    let color = if is_web {
+                        palette.external_link
+                    } else {
+                        palette.accent
+                    };
+                    let mut mark = Paint {
+                        anti_alias: true,
+                        ..Default::default()
+                    };
+                    mark.set_color(Color::from_rgba8(color.0, color.1, color.2, 255));
+                    if is_broken {
+                        for (rect, _) in &rects {
+                            let y = top + rect.y1 as f32 - 1.0;
+                            let mut x = panes.source.x + slot.x + rect.x0 as f32;
+                            let end = panes.source.x + slot.x + rect.x1 as f32;
+                            while x < end {
+                                if let Some(dot) = Rect::from_xywh(x, y, 2.0, 1.2) {
+                                    pixmap.fill_rect(dot, &mark, Transform::identity(), None);
+                                }
+                                x += 4.0;
+                            }
+                        }
+                    }
+                    if is_web && let Some((rect, _)) = rects.last() {
+                        // En voladizo, sobre la altura de las minúsculas: así no tapa
+                        // la coma o el punto que sigue al enlace.
+                        let x = panes.source.x + slot.x + rect.x1 as f32 + 1.0;
+                        let y = top + rect.y0 as f32 + rect.height() as f32 * 0.5 - 9.0;
+                        let mut arrow = tiny_skia::PathBuilder::new();
+                        arrow.move_to(x, y + 6.0);
+                        arrow.line_to(x + 6.0, y);
+                        arrow.move_to(x + 1.0, y);
+                        arrow.line_to(x + 6.0, y);
+                        arrow.line_to(x + 6.0, y + 5.0);
+                        if let Some(arrow) = arrow.finish() {
+                            pixmap.stroke_path(
+                                &arrow,
+                                &mark,
+                                &tiny_skia::Stroke {
+                                    width: 1.2,
+                                    ..Default::default()
+                                },
+                                Transform::identity(),
+                                None,
+                            );
                         }
                     }
                 }
@@ -20482,6 +20722,100 @@ let x = 1;
             .find(|tab| tab.document.id == comparando)
             .expect("la pestaña está inactiva");
         assert_eq!(tab.document.mode, DocumentMode::Reading);
+    }
+
+    #[test]
+    fn el_dominio_del_enlace_web_no_lleva_usuario_puerto_ni_www() {
+        assert_eq!(
+            web_domain("https://www.ejemplo.org:8080/ruta?x=1#a"),
+            "ejemplo.org"
+        );
+        assert_eq!(web_domain("http://usuario:clave@sitio.com/p"), "sitio.com");
+        assert_eq!(web_domain("https://docs.rs"), "docs.rs");
+        assert_eq!(web_domain("ejemplo.com/ruta"), "ejemplo.com");
+    }
+
+    /// Una carpeta de apuntes de prueba con la nota `existe.md` ya indexada.
+    fn carpeta_de_apuntes() -> (App, PathBuf) {
+        let carpeta = std::env::temp_dir().join(format!(
+            "visor-md-enlaces-{}-{}",
+            std::process::id(),
+            NEXT_DOCUMENT_ID.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(&carpeta).expect("se crea la carpeta");
+        fs::write(
+            carpeta.join("existe.md"),
+            "# Existe
+",
+        )
+        .expect("se crea la nota");
+        let root = WorkspaceRoot::open(&carpeta).expect("la carpeta es válida");
+        let index = workspace::index_workspace(&root, WorkspaceLimits::default());
+        let mut app = App::for_tests(NIGHT);
+        app.workspace = Some((root, index));
+        (app, carpeta)
+    }
+
+    #[test]
+    fn un_enlace_a_una_nota_que_no_existe_se_marca_y_ofrece_crearla() {
+        let (mut app, carpeta) = carpeta_de_apuntes();
+        app.load_for_test("Ver [[existe]] y [[nueva nota]].", DocumentMode::Reading);
+        assert!(!app.wikilink_is_missing("existe"));
+        assert!(app.wikilink_is_missing("nueva nota"));
+        assert!(app.wikilink_is_missing("nueva nota#parte"));
+        assert!(!app.wikilink_is_missing(""));
+
+        // Solo el segundo enlace se marca como roto.
+        let rotos = app.broken_wikilink_positions();
+        assert_eq!(rotos.len(), 1);
+        let (bloque, destino) = rotos[0];
+        assert_eq!(
+            app.document.blocks[bloque].targets[destino].destination,
+            "nueva nota"
+        );
+
+        // Seguirlo no crea nada solo: pregunta.
+        app.open_workspace_wikilink("nueva nota");
+        let dialogo = app.dialog.as_ref().expect("se ofrece crear la nota");
+        assert_eq!(dialogo.focused_choice(), DialogChoice::CreateNote);
+        assert_eq!(dialogo.safe_choice, DialogChoice::SkipCreateNote);
+        assert!(!carpeta.join("nueva nota.md").exists());
+
+        // Aceptar la crea vacía y la abre para escribir.
+        app.finish_dialog(DialogChoice::CreateNote);
+        assert_eq!(
+            fs::read_to_string(carpeta.join("nueva nota.md")).expect("la nota existe"),
+            ""
+        );
+        assert_eq!(
+            app.document.open_mode_override,
+            Some(DocumentMode::SourceEditing)
+        );
+        let _ = fs::remove_dir_all(carpeta);
+    }
+
+    #[test]
+    fn un_nombre_que_no_sirve_no_crea_nada_y_avisa() {
+        let (mut app, carpeta) = carpeta_de_apuntes();
+        app.create_note_from_link("../fuera");
+        assert!(!carpeta.parent().unwrap().join("fuera.md").exists());
+        assert_eq!(
+            app.notice.as_deref(),
+            Some("Ese nombre no sirve para una nota: usá uno simple, sin barras")
+        );
+        let _ = fs::remove_dir_all(carpeta);
+    }
+
+    #[test]
+    fn sin_carpeta_un_enlace_a_otra_nota_pide_guardar_si_el_documento_es_nuevo() {
+        let mut app = App::for_tests(NIGHT);
+        app.load_for_test("[[otra]]", DocumentMode::Reading);
+        app.open_workspace_wikilink("otra");
+        assert!(app.dialog.is_none());
+        assert_eq!(
+            app.notice.as_deref(),
+            Some("Guardá esta nota para poder abrir enlaces a otras notas")
+        );
     }
 
     #[test]

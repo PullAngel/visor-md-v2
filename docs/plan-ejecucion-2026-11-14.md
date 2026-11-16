@@ -557,16 +557,16 @@ Es independiente de las fases 2 y 3. Toca solo `editor.rs` y las funciones
 
 ### Fase 6 · Enlaces, carpeta de apuntes y recuperación
 
-- [ ] **6.1** D-02: aviso «Abriendo en el navegador: dominio» e ícono ↗.
-- [ ] **6.2** Enlace roto:
+- [x] **6.1** D-02: aviso «Abriendo en el navegador: dominio» (`web_domain`) e ícono ↗ en voladizo tras el enlace, para no tapar la coma que sigue.
+- [x] **6.2** Enlace roto (la marca se calcula con una caché por documento, revisión y carpeta):
   - un `[[nota]]` que no resuelve en el índice se dibuja con subrayado punteado;
   - al pasar el puntero, el destino dice «Esta nota no existe»;
   - al hacer clic, se ofrece un diálogo «Crear nota» que crea un `.md` vacío
     dentro de la carpeta autorizada, con la validación de Guardar como.
-- [ ] **6.3** `[[nota]]` sin carpeta: diálogo «Usar la carpeta de este archivo
+- [x] **6.3** `[[nota]]` sin carpeta (si el archivo no está guardado, el aviso pide guardarlo; tras indexar, el enlace se sigue solo): diálogo «Usar la carpeta de este archivo
   como carpeta de apuntes» (ejecuta `choose_workspace` con la carpeta del
   documento) o «Cancelar».
-- [ ] **6.4** Una nota abierta desde un enlace abre en Leer.
+- [x] **6.4** Una nota abierta desde un enlace abre en Leer (`open_mode_override`; una nota recién creada abre en Editar).
 - [ ] **6.5** Al elegir la carpeta se muestra el árbol. Además:
   - se reindexa después de cada Guardar o Guardar como dentro de la carpeta;
   - la nota abierta se resalta;
