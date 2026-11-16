@@ -13,6 +13,7 @@
 // existe y cuando exista se aisla en su propio modulo y se revisa a mano.
 #![forbid(unsafe_code)]
 
+mod bienvenida;
 mod dialog;
 pub mod editor;
 mod files;
@@ -4009,8 +4010,24 @@ fn destructive_color(palette: Palette) -> (u8, u8, u8) {
 }
 
 /// Un aviso breve se lee de un vistazo; uno largo necesita algo más de tiempo.
+/// El aviso de privacidad de la recuperación dura más: trae una invitación.
+const PRIVACY_TOAST_DURATION: Duration = Duration::from_secs(6);
+
 /// Distancia del aviso al borde inferior del área del documento.
 const TOAST_BOTTOM_GAP: f32 = 24.0;
+
+/// Dónde cae el aviso para un texto de ese tamaño: centrado en el área del
+/// documento. Dibujo y clic usan la misma cuenta.
+fn toast_rect(text_width: f32, text_height: f32, area: PaneGeometry) -> dialog::DialogRect {
+    let width = (text_width + 40.0).min(area.width - MARGIN * 2.0);
+    let height = text_height + 18.0;
+    dialog::DialogRect {
+        x: (area.x + (area.width - width) * 0.5).round(),
+        y: DOCUMENT_VIEWPORT_TOP + area.height - height - TOAST_BOTTOM_GAP,
+        width,
+        height,
+    }
+}
 
 /// 2,4 s para un aviso corto; los largos suman lo que tarda leerlos, hasta 6 s.
 fn toast_duration(notice: &str) -> Duration {
@@ -4065,7 +4082,21 @@ fn draw_toolbar_icon(
                 path.line_to(right - 2.0, center_y + offset);
             }
         }
-        AppAction::OpenDocument | AppAction::ChooseWorkspace | AppAction::WorkspaceHub => {
+        AppAction::ChooseWorkspace | AppAction::WorkspaceHub => {
+            // Carpeta abierta: el fondo con su pestaña y la tapa inclinada delante.
+            path.move_to(left + 2.0, bottom - 3.0);
+            path.line_to(left + 2.0, top + 4.0);
+            path.line_to(left + 7.0, top + 4.0);
+            path.line_to(left + 9.0, top + 6.5);
+            path.line_to(right - 3.0, top + 6.5);
+            path.line_to(right - 3.0, top + 9.0);
+            path.move_to(left + 2.0, bottom - 3.0);
+            path.line_to(left + 5.0, top + 9.0);
+            path.line_to(right - 1.0, top + 9.0);
+            path.line_to(right - 4.0, bottom - 3.0);
+            path.close();
+        }
+        AppAction::OpenDocument => {
             path.move_to(left + 2.0, top + 6.0);
             path.line_to(left + 7.0, top + 6.0);
             path.line_to(left + 9.0, top + 3.0);
@@ -4107,7 +4138,29 @@ fn draw_toolbar_icon(
                 path.line_to(x2, y2);
             }
         }
-        AppAction::SearchDocument | AppAction::SearchWorkspace => {
+        AppAction::SearchWorkspace => {
+            // Carpeta con lupa: la carpeta arriba a la izquierda y la lente abajo
+            // a la derecha.
+            path.move_to(left + 2.0, center_y + 1.0);
+            path.line_to(left + 2.0, top + 3.0);
+            path.line_to(left + 7.0, top + 3.0);
+            path.line_to(left + 9.0, top + 5.0);
+            path.line_to(right - 3.0, top + 5.0);
+            path.line_to(right - 3.0, center_y - 2.0);
+            let (lens_x, lens_y) = (right - 8.0, bottom - 8.0);
+            path.move_to(lens_x - 2.0, lens_y - 4.0);
+            path.line_to(lens_x + 2.0, lens_y - 4.0);
+            path.line_to(lens_x + 4.0, lens_y - 2.0);
+            path.line_to(lens_x + 4.0, lens_y + 2.0);
+            path.line_to(lens_x + 2.0, lens_y + 4.0);
+            path.line_to(lens_x - 2.0, lens_y + 4.0);
+            path.line_to(lens_x - 4.0, lens_y + 2.0);
+            path.line_to(lens_x - 4.0, lens_y - 2.0);
+            path.close();
+            path.move_to(lens_x + 3.0, lens_y + 3.0);
+            path.line_to(right - 2.0, bottom - 2.0);
+        }
+        AppAction::SearchDocument => {
             path.move_to(left + 4.0, top + 4.0);
             path.line_to(right - 7.0, top + 4.0);
             path.line_to(right - 5.0, top + 7.0);
@@ -4135,9 +4188,11 @@ fn draw_toolbar_icon(
             }
         }
         AppAction::ToggleSection => {
-            path.move_to(left + 5.0, top + 6.0);
+            // Triángulo: plegar o desplegar la sección.
+            path.move_to(left + 6.0, top + 5.0);
             path.line_to(right - 5.0, center_y);
-            path.line_to(left + 5.0, bottom - 6.0);
+            path.line_to(left + 6.0, bottom - 5.0);
+            path.close();
         }
         AppAction::WorkspaceFiles => {
             path.move_to(left + 5.0, top + 2.0);
@@ -6847,6 +6902,9 @@ struct PendingRecovery {
 struct DocumentState {
     id: u64,
     path: String,
+    /// Es la pestaña inicial de «Bienvenida»: sin archivo de argumento y sin
+    /// que nadie haya escrito todavía.
+    welcome: bool,
     content_kind: DocumentContentKind,
     /// Protección reversible de sesión. No se persiste ni modifica el archivo.
     pinned: bool,
@@ -6965,6 +7023,13 @@ impl DocumentState {
         }
     }
 
+    /// La pestaña inicial sigue siendo la bienvenida mientras nadie escribe en
+    /// ella: en cuanto hay una edición (aunque se deshaga) pasa a ser un
+    /// documento nuevo.
+    fn is_welcome(&self) -> bool {
+        self.welcome && self.is_untitled() && self.source.is_empty()
+    }
+
     /// Documento que nunca se guardó ni se abrió desde un archivo.
     fn is_untitled(&self) -> bool {
         self.source_identity.is_none() && self.path == UNTITLED_PATH
@@ -6978,6 +7043,9 @@ impl DocumentState {
     /// Nombre que se muestra: el del archivo, o, mientras es nuevo, de qué
     /// trata.
     fn display_name(&self) -> String {
+        if self.is_welcome() {
+            return "Bienvenida".to_string();
+        }
         if self.is_untitled() {
             self.provisional_title()
                 .unwrap_or_else(|| titulo::UNTITLED_NAME.to_string())
@@ -7008,6 +7076,7 @@ impl DocumentState {
         Self {
             id: NEXT_DOCUMENT_ID.fetch_add(1, Ordering::Relaxed),
             path: UNTITLED_PATH.to_string(),
+            welcome: false,
             content_kind: DocumentContentKind::Markdown,
             pinned: false,
             open_mode_override: None,
@@ -7672,6 +7741,8 @@ struct App {
     /// Solo la primera sesión informa que la recuperación es texto local sin
     /// cifrar. La decisión no depende del documento abierto.
     recovery_privacy_notice_pending: bool,
+    /// El aviso que se ve invita a «Más detalles» sobre la recuperación.
+    privacy_toast: bool,
     workspace: Option<(WorkspaceRoot, WorkspaceIndex)>,
     /// Cambiar de carpeta cancela cooperativamente el recorrido anterior. El
     /// contador descarta además cualquier resultado tardío del hilo anterior.
@@ -7997,6 +8068,7 @@ impl App {
             started,
             document: DocumentState {
                 id: initial_document_id,
+                welcome: opening_path.is_none(),
                 path: opening_path
                     .clone()
                     .unwrap_or_else(|| UNTITLED_PATH.to_string()),
@@ -8043,6 +8115,7 @@ impl App {
             recovery_enabled,
             recovery,
             recovery_privacy_notice_pending,
+            privacy_toast: false,
             workspace: None,
             workspace_request: 0,
             workspace_generation: 0,
@@ -8136,11 +8209,9 @@ impl App {
             pane_split_match: 0,
             toolbar_focus: None,
             clipboard: None,
-            notice: Some(if opening_path.is_some() {
-                "cargando documento".to_string()
-            } else {
-                "documento nuevo · Ctrl+Shift+S para elegir destino".to_string()
-            }),
+            notice: opening_path
+                .is_some()
+                .then(|| "cargando documento".to_string()),
             notice_visible_until: None,
             code_copied: None,
             preview_scroll: 0.0,
@@ -9026,8 +9097,12 @@ impl ApplicationHandler<AppEvent> for App {
         window.request_redraw();
         self.window = Some(window);
         if self.recovery_privacy_notice_pending {
+            // Un aviso largo, no un diálogo: lo que hace falta saber cabe en
+            // una línea y «Más detalles» abre la explicación completa.
             self.recovery_privacy_notice_pending = false;
-            self.open_dialog(Dialog::recovery_privacy(), None);
+            self.set_notice("Tus cambios sin guardar se protegen en este equipo · Más detalles");
+            self.privacy_toast = true;
+            self.notice_visible_until = Some(Instant::now() + PRIVACY_TOAST_DURATION);
         } else if self.recovery_enabled && self.recovery.is_none() {
             self.set_notice(
                 "La recuperación de cambios no está disponible en esta cuenta: guardá seguido",
@@ -9257,6 +9332,14 @@ impl ApplicationHandler<AppEvent> for App {
                         self.ui_motion.press(target, Instant::now());
                     }
                     self.tooltip.suppress();
+                    if let Some((x, y)) = self.pointer
+                        && self.press_privacy_toast(x, y)
+                    {
+                        if let Some(window) = &self.window {
+                            window.request_redraw();
+                        }
+                        return;
+                    }
                     if self.image_preview.take().is_some() {
                         if let Some(window) = &self.window {
                             window.request_redraw();
@@ -9417,6 +9500,11 @@ impl ApplicationHandler<AppEvent> for App {
                         }
                         if new_tab_button_at(x, y, size.width as f32, self.tab_strip()) {
                             self.perform_action(AppAction::NewDocument);
+                            self.selecting = false;
+                            return;
+                        }
+                        if let Some(UiTarget::Welcome(index)) = self.ui_target_at(x, y) {
+                            self.press_welcome_button(index);
                             self.selecting = false;
                             return;
                         }
@@ -12517,6 +12605,9 @@ impl App {
         operation: impl FnOnce(&mut SourceEditor, &mut TextBuffer) -> Result<bool, editor::EditError>,
     ) {
         let mode_before_edit = self.document.mode;
+        // Escribir en la pestaña inicial la convierte en un documento nuevo, y
+        // no vuelve a ser la bienvenida aunque se deshaga todo.
+        self.document.welcome = false;
         let document = &mut self.document;
         match operation(&mut document.source_editor, &mut document.source) {
             Ok(true) => match mode_before_edit
@@ -13709,6 +13800,70 @@ impl App {
         self.open_document_path(path);
     }
 
+    /// Un clic sobre el aviso de privacidad abre el diálogo con los detalles.
+    fn press_privacy_toast(&mut self, x: f32, y: f32) -> bool {
+        let visible = self
+            .notice_visible_until
+            .is_some_and(|until| until > Instant::now());
+        if !self.privacy_toast || !visible {
+            return false;
+        }
+        let (Some(notice), Some((width, height))) = (self.notice.clone(), self.view_size()) else {
+            return false;
+        };
+        let area = document_area_geometry(width, height, self.workspace_column_is_open());
+        let layout = build_menu_layout(
+            &toast_text(&notice),
+            &mut self.font_cx,
+            &mut self.layout_cx,
+            self.palette,
+        );
+        if !toast_rect(layout.width(), layout.height(), area).contains(x, y) {
+            return false;
+        }
+        self.notice_visible_until = None;
+        self.privacy_toast = false;
+        self.open_dialog(Dialog::recovery_privacy(), None);
+        true
+    }
+
+    /// Dónde están los botones de la bienvenida, si se está mostrando.
+    fn welcome_geometry(&self) -> Option<bienvenida::WelcomeGeometry> {
+        let (width, height) = self.view_size()?;
+        self.welcome_geometry_in(width, height)
+    }
+
+    /// Lo mismo para un cuadro de tamaño conocido: el dibujo lo necesita antes
+    /// de que exista el lienzo del primer cuadro.
+    fn welcome_geometry_in(&self, width: f32, height: f32) -> Option<bienvenida::WelcomeGeometry> {
+        if !self.document.is_welcome() || self.document_panes.pane_count() != 1 {
+            return None;
+        }
+        let area = document_area_geometry(width, height, self.workspace_column_is_open());
+        Some(bienvenida::geometry(
+            area.x,
+            DOCUMENT_VIEWPORT_TOP,
+            area.width,
+            area.height,
+        ))
+    }
+
+    /// Un botón de la bienvenida: abrir carpeta, abrir archivo o empezar a
+    /// escribir un apunte nuevo en la misma pestaña.
+    fn press_welcome_button(&mut self, index: usize) {
+        match index {
+            0 => self.perform_action(AppAction::ChooseWorkspace),
+            1 => self.perform_action(AppAction::OpenDocument),
+            _ => {
+                self.document.welcome = false;
+                self.refresh_title();
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+            }
+        }
+    }
+
     fn choose_workspace(&mut self) {
         let Some(path) = self
             .file_dialog()
@@ -14383,6 +14538,7 @@ impl App {
     }
 
     fn set_notice(&mut self, notice: &str) {
+        self.privacy_toast = false;
         // El estado "Copiado" pertenece solo al aviso de la copia.
         self.code_copied = None;
         self.notice = Some(notice.to_owned());
@@ -16961,6 +17117,7 @@ impl App {
             .unwrap_or_default();
         // Un documento vacío en edición invita a escribir sin parecer un error.
         let empty_hint = (self.document.mode.is_editable()
+            && !self.document.is_welcome()
             && self.document.source.is_empty()
             && self.ime_preedit.is_none())
         .then(|| {
@@ -17160,6 +17317,38 @@ impl App {
             .unwrap_or_default();
         let dialog_hover = self.pointer;
         let pinned_on_top = self.pinned_on_top;
+        let welcome_render = self
+            .welcome_geometry_in(w.get() as f32, h.get() as f32)
+            .map(|geometry| {
+                let palette = self.palette;
+                let mut text = |text: &str, color, size, bold, width| {
+                    build_ui_text_layout(
+                        text,
+                        &mut self.font_cx,
+                        &mut self.layout_cx,
+                        color,
+                        size,
+                        bold,
+                        width,
+                    )
+                };
+                let title = text(bienvenida::TITLE, palette.text, 22.0, true, None);
+                let labels = bienvenida::BUTTON_LABELS
+                    .map(|label| text(label, palette.text, 14.0, true, None));
+                let shortcuts = bienvenida::BUTTON_SHORTCUTS
+                    .map(|shortcut| text(shortcut, palette.dim, 12.0, false, None));
+                let hints = text(
+                    bienvenida::HINTS,
+                    palette.dim,
+                    13.0,
+                    false,
+                    Some(geometry.width),
+                );
+                let hover = self
+                    .pointer
+                    .and_then(|(x, y)| bienvenida::button_at(&geometry, x, y));
+                (geometry, title, labels, shortcuts, hints, hover)
+            });
         let toast_layout = self
             .notice_visible_until
             .filter(|until| *until > Instant::now())
@@ -18264,6 +18453,98 @@ impl App {
                 (DOCUMENT_VIEWPORT_TOP + panes.source.y + MARGIN * *scale_factor + 2.0).round(),
             );
         }
+        if let Some((geometry, title, labels, shortcuts, hints, hover)) = &welcome_render {
+            // La bienvenida cubre el editor vacío que hay debajo.
+            let area_x = document_area.x;
+            let mut cover = Paint::default();
+            cover.set_color(Color::from_rgba8(
+                palette.surface.0,
+                palette.surface.1,
+                palette.surface.2,
+                255,
+            ));
+            if let Some(rect) = Rect::from_xywh(
+                area_x,
+                DOCUMENT_VIEWPORT_TOP,
+                document_area.width,
+                document_area.height,
+            ) {
+                pixmap.fill_rect(rect, &cover, Transform::identity(), None);
+            }
+            draw_text_layout(
+                pixmap,
+                scale_cx,
+                glyphs,
+                title,
+                geometry.title_x,
+                geometry.title_y,
+            );
+            for (index, rect) in geometry.buttons.iter().enumerate() {
+                let hovered = *hover == Some(index);
+                let edge = if hovered || index == 0 {
+                    palette.accent
+                } else {
+                    palette.border
+                };
+                let mut edge_paint = Paint::default();
+                edge_paint.set_color(Color::from_rgba8(edge.0, edge.1, edge.2, 255));
+                edge_paint.anti_alias = true;
+                fill_rounded_rect(
+                    pixmap,
+                    rect.x,
+                    rect.y,
+                    rect.width,
+                    rect.height,
+                    10.0,
+                    &edge_paint,
+                );
+                let fill = if hovered {
+                    palette.floating
+                } else {
+                    palette.elevated
+                };
+                let mut fill_paint = Paint::default();
+                fill_paint.set_color(Color::from_rgba8(fill.0, fill.1, fill.2, 255));
+                fill_paint.anti_alias = true;
+                fill_rounded_rect(
+                    pixmap,
+                    rect.x + 1.0,
+                    rect.y + 1.0,
+                    rect.width - 2.0,
+                    rect.height - 2.0,
+                    9.0,
+                    &fill_paint,
+                );
+                let label = &labels[index];
+                draw_text_layout(
+                    pixmap,
+                    scale_cx,
+                    glyphs,
+                    label,
+                    rect.x + 18.0,
+                    (rect.y + (rect.height - label.height()) * 0.5).round(),
+                );
+                let shortcut = &shortcuts[index];
+                if label.width() + shortcut.width() + 54.0 < rect.width {
+                    draw_text_layout(
+                        pixmap,
+                        scale_cx,
+                        glyphs,
+                        shortcut,
+                        (rect.x + rect.width - 18.0 - shortcut.width()).round(),
+                        (rect.y + (rect.height - shortcut.height()) * 0.5).round(),
+                    );
+                }
+            }
+            draw_text_layout(
+                pixmap,
+                scale_cx,
+                glyphs,
+                hints,
+                geometry.hints_x,
+                geometry.hints_y,
+            );
+        }
         for (header, focused, title, modes, active_slot) in &pane_headers {
             let top = DOCUMENT_VIEWPORT_TOP + header.y;
             // El panel enfocado lleva el mismo verde que la pestaña activa.
@@ -18484,9 +18765,13 @@ impl App {
                     (x + 9.0).round(),
                     (TOOLBAR_Y + (TOOLBAR_HEIGHT - label.height()) * 0.5).round(),
                 );
+                // El chevron va a 4 px del texto, no pegado al borde: así no se
+                // encima ni se separa según el ancho de cada etiqueta.
                 draw_menu_chevron(
                     pixmap,
-                    x + width - 15.0,
+                    (x + 9.0 + label.width() + 4.0)
+                        .min(x + width - 10.0)
+                        .round(),
                     TOOLBAR_Y + TOOLBAR_HEIGHT * 0.5 - 2.0,
                     icon_color,
                 );
@@ -18662,11 +18947,9 @@ impl App {
 
         if let Some(layout) = toast_layout {
             // Centrado en el área del documento, a 24 px de su borde inferior.
-            let toast_width = (layout.width() + 40.0).min(document_area.width - MARGIN * 2.0);
-            let toast_height = layout.height() + 18.0;
-            let toast_x = (document_area.x + (document_area.width - toast_width) * 0.5).round();
-            let toast_y =
-                DOCUMENT_VIEWPORT_TOP + document_area.height - toast_height - TOAST_BOTTOM_GAP;
+            let toast = toast_rect(layout.width(), layout.height(), document_area);
+            let (toast_x, toast_y, toast_width, toast_height) =
+                (toast.x, toast.y, toast.width, toast.height);
             draw_floating_surface(
                 pixmap,
                 toast_x,
@@ -20633,6 +20916,8 @@ mod pruebas {
     #[test]
     fn un_documento_nuevo_se_llama_como_su_primer_titulo_y_avisa_que_no_esta_guardado() {
         let mut app = App::for_tests(NIGHT);
+        // «Nuevo apunte» de la bienvenida: ya es un documento nuevo, vacío.
+        app.document.welcome = false;
         // Vacío: sin título y sin marca (no hay nada que perder).
         assert!(app.document.is_untitled());
         assert_eq!(app.document.display_name(), titulo::UNTITLED_NAME);
@@ -21786,6 +22071,79 @@ agregado por otro programa
             varios,
             "2 documentos recuperados: 1 en su archivo y 1 aparte, sin guardar"
         );
+    }
+
+    #[test]
+    fn sin_archivo_la_pestana_inicial_es_la_bienvenida_hasta_que_alguien_escribe() {
+        let mut app = App::for_tests(NIGHT);
+        assert!(app.document.is_welcome());
+        assert_eq!(app.document.display_name(), "Bienvenida");
+        app.draw_for_test(1100, 720);
+        assert!(app.welcome_geometry().is_some(), "los botones existen");
+        // Escribir la convierte en un documento nuevo, y no vuelve aunque se deshaga.
+        app.edit_source(|editor, source| editor.insert(source, "hola"));
+        assert!(!app.document.is_welcome());
+        assert!(app.welcome_geometry().is_none());
+        app.edit_source(|editor, source| editor.undo(source));
+        assert!(app.document.source.is_empty());
+        assert!(!app.document.is_welcome(), "ya se escribió en ella");
+    }
+
+    #[test]
+    fn los_botones_de_la_bienvenida_son_objetivos_y_nuevo_apunte_la_cierra() {
+        let mut app = App::for_tests(NIGHT);
+        app.draw_for_test(1100, 720);
+        let geometria = app.welcome_geometry().expect("se muestra");
+        for (indice, rect) in geometria.buttons.iter().enumerate() {
+            assert_eq!(
+                app.ui_target_at(rect.x + rect.width * 0.5, rect.y + rect.height * 0.5),
+                Some(UiTarget::Welcome(indice))
+            );
+        }
+        app.press_welcome_button(2);
+        assert!(!app.document.is_welcome());
+        assert!(
+            app.document.is_untitled(),
+            "sigue siendo el mismo documento nuevo"
+        );
+        assert_eq!(app.tab_order.len(), 1, "no se abrió otra pestaña");
+    }
+
+    #[test]
+    fn abrir_un_documento_cierra_la_bienvenida() {
+        let mut app = App::for_tests(NIGHT);
+        let ruta = std::env::temp_dir().join(format!("visor-bienvenida-{}.md", std::process::id()));
+        fs::write(&ruta, "# Hola\n").unwrap();
+        let opened = open_explicit_primary(&ruta, 1 << 20).unwrap();
+        let mut documento = recovered_document(opened.source.clone()).unwrap();
+        documento.path = ruta.to_string_lossy().into_owned();
+        documento.source_editor = SourceEditor::new();
+        app.open_document_in_tab(documento);
+        assert!(!app.document.is_welcome());
+        let _ = fs::remove_file(ruta);
+    }
+
+    #[test]
+    fn el_aviso_de_privacidad_abre_los_detalles_con_un_clic_y_otro_aviso_lo_reemplaza() {
+        let mut app = App::for_tests(NIGHT);
+        app.draw_for_test(1100, 720);
+        app.set_notice("Tus cambios sin guardar se protegen en este equipo · Más detalles");
+        app.privacy_toast = true;
+        app.notice_visible_until = Some(Instant::now() + PRIVACY_TOAST_DURATION);
+        // Fuera del aviso no pasa nada.
+        assert!(!app.press_privacy_toast(5.0, 5.0));
+        assert!(app.dialog.is_none());
+        // Sobre el aviso, centrado y a 24 px del borde inferior del documento.
+        let y = DOCUMENT_VIEWPORT_TOP + document_viewport_height(720.0) - TOAST_BOTTOM_GAP - 14.0;
+        assert!(app.press_privacy_toast(550.0, y));
+        assert!(app.dialog.is_some(), "se abre la explicación completa");
+        // Un aviso común no invita a nada.
+        let mut otra = App::for_tests(NIGHT);
+        otra.draw_for_test(1100, 720);
+        otra.privacy_toast = true;
+        otra.set_notice("Guardado");
+        assert!(!otra.privacy_toast);
+        assert!(!otra.press_privacy_toast(550.0, y));
     }
 
     #[test]

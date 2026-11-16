@@ -56,7 +56,7 @@ index 7a6b87f..8a9dbab 100644
 @@ -13347,7 +13353,7 @@ impl App {
          let Some(path) = self
              .file_dialog()
-             .set_title("Elegir carpeta de trabajo")
+             .set_title("Elegir carpeta de apuntes")
 -            .pick_folder()
 +            .eval_pick()
          else {

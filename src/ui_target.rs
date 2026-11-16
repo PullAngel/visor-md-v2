@@ -32,6 +32,8 @@ pub(crate) enum UiTarget {
     ListRow(usize),
     /// Borde arrastrable entre dos paneles, por orden de visita en el árbol.
     PaneDivider(usize),
+    /// Botón grande de la pantalla de bienvenida.
+    Welcome(usize),
 }
 
 /// Objetivo del cromo de la ventana (controles, barras y pestañas) bajo el
@@ -111,6 +113,11 @@ impl App {
             if !is_heading {
                 return Some(UiTarget::ListRow(index));
             }
+        }
+        if let Some(geometry) = self.welcome_geometry()
+            && let Some(index) = crate::bienvenida::button_at(&geometry, x, y)
+        {
+            return Some(UiTarget::Welcome(index));
         }
         if let Some((block, preview)) = self.code_copy_at(x, y) {
             return Some(UiTarget::CodeCopy { block, preview });

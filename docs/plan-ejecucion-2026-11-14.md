@@ -594,31 +594,44 @@ prueba. Con la herramienta, los clics solo llegan a la build de evaluación
 
 ### Fase 7 · Lenguaje, avisos y primer arranque
 
-- [ ] **7.1** Inventario de textos. El resultado va a
-  `docs/evaluaciones/2026-11-14/inventario-textos.md`.
+- [x] **7.1** Inventario de textos. El resultado está en
+  `docs/evaluaciones/2026-11-14/inventario-textos.md` (etiquetas, diálogos y
+  los 200 y pico avisos, con lo que cambió).
 
   ```bash
   rg -n '"[^"]*[a-záéíóúñ][^"]*"' src/main.rs src/dialog.rs | rg -v 'log.push|\[medicion\]|assert'
   ```
 
-- [ ] **7.2** Aplicar D-25 a todos los textos. Si `ux-copy` está disponible,
-  pasarle el inventario y el glosario.
-- [ ] **7.3** D-26: avisos.
-- [ ] **7.4** Prueba de lenguaje. Recorre `APP_ACTIONS` (`label`) y las
-  constantes de texto de los diálogos, y falla si encuentra un término
-  prohibido.
-- [ ] **7.5** D-27: bienvenida y aviso de recuperación.
-- [ ] **7.6** D-03: botón sol/luna en `PRIMARY_TOOLBAR_ACTIONS`. «Exportar a
-  PDF» va en un menú del botón Guardar (Guardar, Guardar como, Exportar a PDF).
-- [ ] **7.7** Íconos en `draw_toolbar_icon`:
-  - marcador (resaltar);
-  - `</>` (código en línea);
-  - carpeta abierta (Abrir carpeta);
-  - carpeta con lupa (Buscar en carpeta);
-  - triángulo (plegar);
-  - botón «Título» (H1) en la barra de Editar.
-- [ ] **7.8** Chevrons de los menús rotulados a 4 px del texto. Corrige el
-  chevron encimado a 1100 px.
+- [x] **7.2** D-25 aplicado a etiquetas, diálogos, avisos, títulos de panel y
+  textos de los diálogos de archivo. No se pasó por `ux-copy`: las frases se
+  corrigieron aplicando el glosario y el voseo sin reescribirlas.
+- [x] **7.3** D-26: los avisos de abrir y cerrar paneles se quitaron (el pie del
+  panel ya dice «Esc para cerrar»); el aviso va centrado en el área del documento
+  a 24 px de su borde inferior. **Desviación:** dura 2,4 s solo si es corto; los
+  largos suman 35 ms por letra pasadas las 40, hasta 6 s, porque 2,4 s no alcanza
+  para leer una frase larga.
+- [x] **7.4** Prueba de lenguaje en `src/lenguaje.rs`: recorre `APP_ACTIONS`, las
+  etiquetas del menú contextual, los diálogos y todos los literales de la
+  interfaz (no los registros), y falla con un término retirado o un imperativo de
+  tuteo al empezar una frase.
+- [x] **7.5** D-27: pestaña inicial «Bienvenida» con tres botones y dos líneas
+  (`src/bienvenida.rs`); se cierra al escribir o al abrir un documento. El aviso
+  de privacidad de la recuperación es un aviso de 6 s, «Más detalles» abre el
+  diálogo. **Desviación:** la bienvenida queda en modo Editar (no en Leer) para
+  que escribir funcione al instante.
+- [x] **7.6** Ya estaba hecha por la 10.2 (botón día/noche como control de
+  ventana) y por el menú Archivo, que agrupa Guardar, Guardar como y Exportar a
+  PDF.
+- [x] **7.7** Íconos: carpeta abierta (Abrir carpeta de apuntes), carpeta con
+  lupa (Buscar en carpeta) y triángulo (plegar). El marcador, `</>` y «Título»
+  ya existían.
+- [x] **7.8** Chevron de los menús rotulados a 4 px del texto de cada etiqueta.
+
+**Cierre de la fase 7 (16 de noviembre).** Las pruebas de imagen cubren la
+bienvenida; en vivo se vieron la bienvenida y el aviso de privacidad con el
+ejecutable real. No se probaron en vivo los clics sobre los botones de
+bienvenida (la herramienta no los registra en la versión normal; sí hay pruebas
+que fijan su geometría y su efecto).
 
 ### Fase 8 · Hover, pulsación y lectura
 
@@ -934,7 +947,7 @@ asociación.
 | 5 | Hecho | 5.1 a 5.4 y 5.8; la 5.5 a 5.7 pasaron a la fase 11 |
 | 11 | Hecho | 11.1 a 11.8; tooltip de «Quitar del mosaico» a la fase 8 |
 | 6 | Hecha | 6.1 a 6.8 y 13.3 a 13.6 |
-| 7 | Pendiente | — |
+| 7 | Hecha | 7.1 a 7.8 |
 | 8 | En curso | Hecho el hover y destello de Copiar (8.2 parcial). Pendientes el resto de 8 |
 | 12 | Pendiente | Ventanas (un proceso por ventana) y asociación de archivos |
 | 9 | Pendiente | — |

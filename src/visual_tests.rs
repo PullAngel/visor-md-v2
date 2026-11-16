@@ -329,7 +329,14 @@ fn dialogo_con_el_puntero_sobre_un_boton(app: &mut App) {
     abrir_dialogo_de_cierre(app);
 }
 
-const ESCENAS: [Escena; 24] = [
+/// La pestaña inicial sin archivo: la bienvenida, con el editor vacío debajo.
+fn bienvenida(app: &mut App) {
+    app.document.source = TextBuffer::new();
+    app.document.blocks = Vec::new();
+    app.laid_for_width = -1.0;
+}
+
+const ESCENAS: [Escena; 25] = [
     Escena {
         nombre: "lectura",
         modo: DocumentMode::Reading,
@@ -449,6 +456,11 @@ const ESCENAS: [Escena; 24] = [
         nombre: "dialogo-sin-tooltip",
         modo: DocumentMode::SourceEditing,
         preparar: dialogo_con_el_puntero_sobre_un_boton,
+    },
+    Escena {
+        nombre: "bienvenida",
+        modo: DocumentMode::SourceEditing,
+        preparar: bienvenida,
     },
 ];
 
