@@ -6864,6 +6864,10 @@ struct DocumentState {
     pending_recovery: Option<PendingRecovery>,
 }
 
+/// Documento, revisión, generación de la carpeta y cantidad de bloques para los
+/// que se calcularon los enlaces rotos.
+type BrokenLinksKey = (u64, u64, u64, u64);
+
 /// Qué se está arrastrando en el mosaico.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MosaicSource {
@@ -7698,7 +7702,7 @@ struct App {
     /// Enlace que se sigue cuando termina de indexarse la carpeta.
     pending_wikilink_after_index: Option<String>,
     /// Enlaces a notas que no existen en el documento actual, con su clave.
-    broken_links_cache: Option<((u64, u64, u64, u64), Vec<(usize, usize)>)>,
+    broken_links_cache: Option<(BrokenLinksKey, Vec<(usize, usize)>)>,
     /// Conserva el resultado fatal para devolver un codigo de salida distinto
     /// de cero despues de cerrar ordenadamente el event loop.
     fatal_error: bool,
