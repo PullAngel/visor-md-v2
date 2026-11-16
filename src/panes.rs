@@ -230,6 +230,18 @@ impl DocumentPaneTree {
         adjacent_id: u64,
         axis: DocumentPaneAxis,
     ) -> Option<u64> {
+        self.split_pane_side(pane_id, adjacent_id, axis, false)
+    }
+
+    /// Como `split_pane`, pero el documento nuevo puede quedar antes (a la
+    /// izquierda o arriba) del que ya estaba.
+    pub(crate) fn split_pane_side(
+        &mut self,
+        pane_id: u64,
+        adjacent_id: u64,
+        axis: DocumentPaneAxis,
+        adjacent_first: bool,
+    ) -> Option<u64> {
         if self.pane_count() >= MAX_DOCUMENT_PANES || self.pane_for_document(adjacent_id).is_some()
         {
             return None;
@@ -242,22 +254,65 @@ impl DocumentPaneTree {
             } if *current_pane == pane_id => {
                 let adjacent = Self::new_leaf(adjacent_id);
                 let adjacent_pane_id = adjacent.first_pane_id();
+                let existing = Self::Leaf {
+                    pane_id,
+                    document_id: *current_document,
+                    scroll: *scroll,
+                };
+                let (first, second) = if adjacent_first {
+                    (adjacent, existing)
+                } else {
+                    (existing, adjacent)
+                };
                 *self = Self::Split {
                     axis,
                     fraction: 0.5,
-                    first: Box::new(Self::Leaf {
-                        pane_id,
-                        document_id: *current_document,
-                        scroll: *scroll,
-                    }),
-                    second: Box::new(adjacent),
+                    first: Box::new(first),
+                    second: Box::new(second),
                 };
                 Some(adjacent_pane_id)
             }
             Self::Leaf { .. } => None,
             Self::Split { first, second, .. } => first
-                .split_pane(pane_id, adjacent_id, axis)
-                .or_else(|| second.split_pane(pane_id, adjacent_id, axis)),
+                .split_pane_side(pane_id, adjacent_id, axis, adjacent_first)
+                .or_else(|| second.split_pane_side(pane_id, adjacent_id, axis, adjacent_first)),
+        }
+    }
+
+    /// Intercambia de lugar dos hojas con su documento, su posición de lectura
+    /// y su identidad de vista: las cachés por panel siguen a su documento.
+    pub(crate) fn swap_panes(&mut self, a: u64, b: u64) -> bool {
+        if a == b || !self.contains_pane(a) || !self.contains_pane(b) {
+            return false;
+        }
+        const PLACEHOLDER: u64 = u64::MAX;
+        let placeholder = Self::Leaf {
+            pane_id: PLACEHOLDER,
+            document_id: 0,
+            scroll: 0.0,
+        };
+        let Some(leaf_a) = self.replace_leaf(a, placeholder) else {
+            return false;
+        };
+        let Some(leaf_b) = self.replace_leaf(b, leaf_a) else {
+            return false;
+        };
+        self.replace_leaf(PLACEHOLDER, leaf_b);
+        true
+    }
+
+    fn replace_leaf(&mut self, pane_id: u64, leaf: Self) -> Option<Self> {
+        match self {
+            Self::Leaf {
+                pane_id: current, ..
+            } => (*current == pane_id).then(|| std::mem::replace(self, leaf)),
+            Self::Split { first, second, .. } => {
+                if first.contains_pane(pane_id) {
+                    first.replace_leaf(pane_id, leaf)
+                } else {
+                    second.replace_leaf(pane_id, leaf)
+                }
+            }
         }
     }
 
@@ -574,6 +629,49 @@ pub(crate) fn divider_fraction_for_pointer(divider: PaneDivider, x: f32, y: f32)
         return 0.5;
     }
     (offset / extent).clamp(minimum, maximum)
+}
+
+/// Dónde cae un punto dentro de un panel al soltar algo encima: el centro
+/// reemplaza el documento y el cuarto exterior de cada lado divide.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum DropZone {
+    Center,
+    Left,
+    Right,
+    Top,
+    Bottom,
+}
+
+/// Parte exterior de cada lado que cuenta como borde.
+pub(crate) const DROP_EDGE_FRACTION: f32 = 0.25;
+
+pub(crate) fn drop_zone(rect: PaneGeometry, x: f32, y: f32) -> DropZone {
+    if rect.width <= 0.0 || rect.height <= 0.0 {
+        return DropZone::Center;
+    }
+    let fx = ((x - rect.x) / rect.width).clamp(0.0, 1.0);
+    let fy = ((y - rect.y) / rect.height).clamp(0.0, 1.0);
+    let distances = [
+        (fx, DropZone::Left),
+        (1.0 - fx, DropZone::Right),
+        (fy, DropZone::Top),
+        (1.0 - fy, DropZone::Bottom),
+    ];
+    let (distance, zone) =
+        distances
+            .into_iter()
+            .fold((f32::MAX, DropZone::Center), |best, candidate| {
+                if candidate.0 < best.0 {
+                    candidate
+                } else {
+                    best
+                }
+            });
+    if distance < DROP_EDGE_FRACTION {
+        zone
+    } else {
+        DropZone::Center
+    }
 }
 
 /// El divisor bajo un punto, si lo hay.

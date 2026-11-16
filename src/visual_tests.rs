@@ -100,6 +100,56 @@ fn division_arrastrando(app: &mut App) {
     app.divider_drag = Some(0);
 }
 
+/// Parte el mosaico hasta tener `paneles` paneles, cada uno con su documento.
+fn dividir_hasta(app: &mut App, paneles: usize) {
+    while app.document_panes.pane_count() < paneles {
+        app.perform_action(AppAction::NewDocument);
+        let nuevo = app.document.id;
+        app.document.source = TextBuffer::from_text(&format!(
+            "# Nota {nuevo}
+"
+        ));
+        app.open_document_pane_picker(DocumentPaneAxis::Vertical);
+        let candidato = app
+            .pane_split_candidates
+            .iter()
+            .position(|id| {
+                *id != SPLIT_NEW_DOCUMENT
+                    && *id != SPLIT_OPEN_FILE
+                    && *id != nuevo
+                    && app.document_panes.pane_for_document(*id).is_none()
+            })
+            .expect("queda una pestaña para dividir");
+        app.choose_document_pane_split(candidato);
+    }
+}
+
+/// Cuatro documentos en el mosaico.
+fn mosaico_cuatro(app: &mut App) {
+    dividir_hasta(app, 4);
+}
+
+/// Una pestaña de la tira arrastrada hacia el borde izquierdo de un panel: la
+/// zona de soltado y el fantasma con su nombre.
+fn mosaico_soltar(app: &mut App) {
+    dividir_hasta(app, 2);
+    app.perform_action(AppAction::NewDocument);
+    let en_la_tira = app.document.id;
+    app.document.source = TextBuffer::from_text(
+        "# Borrador del viaje
+",
+    );
+    // La pestaña nueva ocupó el panel enfocado; se devuelve a la tira.
+    app.draw_for_test(1_100, 720);
+    let otra = app.visible_tab_ids().first().copied().unwrap_or(en_la_tira);
+    app.mosaic_drag = Some(MosaicDrag {
+        source: MosaicSource::Tab(otra),
+        origin: (300.0, 60.0),
+        active: true,
+    });
+    app.pointer = Some((60.0, DOCUMENT_VIEWPORT_TOP + 250.0));
+}
+
 fn abrir_dialogo_de_cierre(app: &mut App) {
     let id = app.document.id;
     app.open_dialog(Dialog::close_tab("apuntes.md", true), Some(id));
@@ -189,7 +239,7 @@ fn dialogo_con_el_puntero_sobre_un_boton(app: &mut App) {
     abrir_dialogo_de_cierre(app);
 }
 
-const ESCENAS: [Escena; 18] = [
+const ESCENAS: [Escena; 20] = [
     Escena {
         nombre: "lectura",
         modo: DocumentMode::Reading,
@@ -251,6 +301,16 @@ const ESCENAS: [Escena; 18] = [
         preparar: division_arrastrando,
     },
     Escena {
+        nombre: "mosaico-4",
+        modo: DocumentMode::Reading,
+        preparar: mosaico_cuatro,
+    },
+    Escena {
+        nombre: "mosaico-soltar",
+        modo: DocumentMode::Reading,
+        preparar: mosaico_soltar,
+    },
+    Escena {
         nombre: "dialogo-cierre",
         modo: DocumentMode::SourceEditing,
         preparar: abrir_dialogo_de_cierre,
@@ -290,7 +350,14 @@ fn dibujar(escena: &Escena, palette: Palette, ancho: u32, alto: u32) -> Pixmap {
     let mut app = App::for_tests(palette);
     app.load_for_test(DOCUMENTO, escena.modo);
     (escena.preparar)(&mut app);
-    if escena.nombre == "division" || escena.nombre == "division-arrastrando" {
+    if [
+        "division",
+        "division-arrastrando",
+        "mosaico-4",
+        "mosaico-soltar",
+    ]
+    .contains(&escena.nombre)
+    {
         // Las cabeceras de panel necesitan el tamaño del cuadro anterior.
         app.draw_for_test(ancho, alto);
     }

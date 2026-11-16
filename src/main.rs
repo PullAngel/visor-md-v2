@@ -6849,6 +6849,43 @@ struct DocumentState {
     pending_recovery: Option<PendingRecovery>,
 }
 
+/// Qué se está arrastrando en el mosaico.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MosaicSource {
+    /// La cabecera de un panel (por su identidad de vista).
+    Pane(u64),
+    /// Una pestaña de la tira (por su documento).
+    Tab(u64),
+}
+
+#[derive(Clone, Copy, Debug)]
+struct MosaicDrag {
+    source: MosaicSource,
+    origin: (f32, f32),
+    /// Pasó el umbral: antes de eso es un clic y no un arrastre.
+    active: bool,
+}
+
+/// Qué pasaría si se soltara ahora.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum DropTarget {
+    /// Intercambiar de lugar dos paneles.
+    Swap(u64),
+    /// La pestaña reemplaza el documento del panel.
+    Replace(u64),
+    /// La pestaña abre un panel nuevo junto a este.
+    Split {
+        pane: u64,
+        axis: DocumentPaneAxis,
+        adjacent_first: bool,
+    },
+    /// Sacar el panel del mosaico: su pestaña vuelve a la tira.
+    RemoveFromMosaic,
+}
+
+/// Cuánto hay que mover el puntero para que un clic sea un arrastre.
+const DRAG_START_DISTANCE: f32 = 6.0;
+
 /// Ruta con la que nace un documento nuevo, mientras no se guarda.
 const UNTITLED_PATH: &str = "sin título.md";
 
@@ -7535,6 +7572,8 @@ struct App {
     /// el doble clic que lo devuelve al 50 %.
     divider_drag: Option<usize>,
     last_divider_click: Option<(usize, Instant)>,
+    /// Arrastre de una cabecera de panel o de una pestaña sobre el mosaico.
+    mosaic_drag: Option<MosaicDrag>,
     /// Desplazamiento de la lista abierta en un panel o menú.
     panel_scroll: list_view::ListScroll,
     /// Borde izquierdo del botón que abrió el menú, para anclarlo debajo.
@@ -7833,6 +7872,7 @@ impl App {
             tooltip: ui_motion::TooltipTimer::default(),
             divider_drag: None,
             last_divider_click: None,
+            mosaic_drag: None,
             panel_scroll: list_view::ListScroll::default(),
             panel_anchor: None,
             ime_preedit: None,
@@ -8795,10 +8835,32 @@ impl ApplicationHandler<AppEvent> for App {
                         if move_tab_order(&mut self.tab_order, document_id, target) {
                             window.request_redraw();
                         }
+                    } else if position.y as f32 > TAB_STRIP_Y + TAB_STRIP_HEIGHT {
+                        // Al salir de la tira hacia el documento, la pestaña se
+                        // puede soltar sobre un panel.
+                        self.tab_drag_id = None;
+                        self.mosaic_drag = Some(MosaicDrag {
+                            source: MosaicSource::Tab(document_id),
+                            origin: (position.x as f32, position.y as f32),
+                            active: true,
+                        });
+                        window.request_redraw();
                     }
                 }
                 if let Some(index) = self.divider_drag {
                     self.drag_divider_to(index, position.x as f32, position.y as f32);
+                }
+                if let Some(drag) = &mut self.mosaic_drag {
+                    let (ox, oy) = drag.origin;
+                    let moved = (position.x as f32 - ox).hypot(position.y as f32 - oy);
+                    if moved >= DRAG_START_DISTANCE {
+                        drag.active = true;
+                    }
+                    if drag.active
+                        && let Some(window) = &self.window
+                    {
+                        window.request_redraw();
+                    }
                 }
                 let ui_target = self.ui_target_at(position.x as f32, position.y as f32);
                 if self
@@ -8905,6 +8967,7 @@ impl ApplicationHandler<AppEvent> for App {
                 self.selecting = false;
                 self.tab_drag_id = None;
                 self.divider_drag = None;
+                self.mosaic_drag = None;
                 self.ime_preedit = None;
                 self.modifiers = ModifiersState::empty();
             }
@@ -9224,6 +9287,7 @@ impl ApplicationHandler<AppEvent> for App {
                     self.selecting = false;
                     self.tab_drag_id = None;
                     self.divider_drag = None;
+                    self.finish_mosaic_drag();
                 }
             },
             WindowEvent::MouseInput {
@@ -9417,6 +9481,21 @@ impl ApplicationHandler<AppEvent> for App {
             }
             WindowEvent::KeyboardInput { event, .. } if self.link_diagnostics.is_some() => {
                 self.handle_link_diagnostics_key(&event);
+            }
+            // Esc cancela un arrastre del mosaico sin tocar nada.
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::Escape),
+                        state: ElementState::Pressed,
+                        ..
+                    },
+                ..
+            } if self.mosaic_drag.is_some() => {
+                self.mosaic_drag = None;
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
             }
             // Alt+Shift+flechas: mueve el borde del panel enfocado en pasos de 5 %.
             WindowEvent::KeyboardInput {
@@ -10871,6 +10950,7 @@ impl App {
             return;
         };
         self.inactive_pane_caches.remove(&new_pane);
+        self.open_in_reading_if_comparing(document_id);
         self.clear_pane_split_picker();
         self.set_notice(&format!(
             "panel dividido {} · el nuevo documento se enfoca con un clic",
@@ -11471,7 +11551,15 @@ impl App {
         match hit {
             PaneHeaderHit::Mode(target) => self.select_mode(target),
             PaneHeaderHit::Close => self.close_focused_document_pane(),
-            PaneHeaderHit::Title => {}
+            PaneHeaderHit::Title => {
+                // Un clic enfoca; si el puntero se mueve, es el arrastre que
+                // intercambia este panel con otro.
+                self.mosaic_drag = Some(MosaicDrag {
+                    source: MosaicSource::Pane(layout.pane_id),
+                    origin: (x, y),
+                    active: false,
+                });
+            }
         }
         if let Some(window) = &self.window {
             window.request_redraw();
@@ -11511,6 +11599,178 @@ impl App {
             height,
             self.workspace_column_is_open(),
         ))
+    }
+
+    /// Rectángulo de un panel con su cabecera, en coordenadas del área
+    /// documental.
+    fn pane_full_rect(&self, layout: &DocumentPaneLayout) -> PaneGeometry {
+        if self.document_panes.pane_count() < 2 {
+            return layout.geometry;
+        }
+        let header = pane_header_rect(layout.geometry);
+        PaneGeometry {
+            height: header.height + layout.geometry.height,
+            ..header
+        }
+    }
+
+    /// Qué haría soltar `drag` en `(x, y)` (coordenadas de ventana).
+    fn mosaic_drop_target(&self, drag: MosaicDrag, x: f32, y: f32) -> Option<DropTarget> {
+        let local_y = y - DOCUMENT_VIEWPORT_TOP;
+        let layouts = self.visible_document_pane_layouts();
+        match drag.source {
+            MosaicSource::Pane(source) => {
+                if tab_strip_contains_y(y) && self.document_panes.pane_count() >= 2 {
+                    return Some(DropTarget::RemoveFromMosaic);
+                }
+                layouts
+                    .iter()
+                    .find(|layout| {
+                        layout.pane_id != source && self.pane_full_rect(layout).contains(x, local_y)
+                    })
+                    .map(|layout| DropTarget::Swap(layout.pane_id))
+            }
+            MosaicSource::Tab(document_id) => {
+                // Un documento que ya está en un panel no se suelta otra vez.
+                if self.document_panes.pane_for_document(document_id).is_some() {
+                    return None;
+                }
+                let layout = layouts
+                    .iter()
+                    .find(|layout| self.pane_full_rect(layout).contains(x, local_y))?;
+                let rect = self.pane_full_rect(layout);
+                let (axis, adjacent_first) = match drop_zone(rect, x, local_y) {
+                    DropZone::Center => return Some(DropTarget::Replace(layout.pane_id)),
+                    DropZone::Left => (DocumentPaneAxis::Vertical, true),
+                    DropZone::Right => (DocumentPaneAxis::Vertical, false),
+                    DropZone::Top => (DocumentPaneAxis::Horizontal, true),
+                    DropZone::Bottom => (DocumentPaneAxis::Horizontal, false),
+                };
+                (self.document_panes.pane_count() < MAX_DOCUMENT_PANES).then_some(
+                    DropTarget::Split {
+                        pane: layout.pane_id,
+                        axis,
+                        adjacent_first,
+                    },
+                )
+            }
+        }
+    }
+
+    /// La zona que se resalta para `target`, en coordenadas de ventana.
+    fn drop_target_rect(&self, target: DropTarget) -> Option<PaneGeometry> {
+        let window = |rect: PaneGeometry| PaneGeometry {
+            y: rect.y + DOCUMENT_VIEWPORT_TOP,
+            ..rect
+        };
+        let layouts = self.visible_document_pane_layouts();
+        let full = |pane: u64| {
+            layouts
+                .iter()
+                .find(|layout| layout.pane_id == pane)
+                .map(|layout| window(self.pane_full_rect(layout)))
+        };
+        match target {
+            DropTarget::Swap(pane) | DropTarget::Replace(pane) => full(pane),
+            DropTarget::Split {
+                pane,
+                axis,
+                adjacent_first,
+            } => full(pane).map(|rect| match (axis, adjacent_first) {
+                (DocumentPaneAxis::Vertical, true) => PaneGeometry {
+                    width: rect.width * 0.5,
+                    ..rect
+                },
+                (DocumentPaneAxis::Vertical, false) => PaneGeometry {
+                    x: rect.x + rect.width * 0.5,
+                    width: rect.width * 0.5,
+                    ..rect
+                },
+                (DocumentPaneAxis::Horizontal, true) => PaneGeometry {
+                    height: rect.height * 0.5,
+                    ..rect
+                },
+                (DocumentPaneAxis::Horizontal, false) => PaneGeometry {
+                    y: rect.y + rect.height * 0.5,
+                    height: rect.height * 0.5,
+                    ..rect
+                },
+            }),
+            DropTarget::RemoveFromMosaic => Some(PaneGeometry {
+                x: 0.0,
+                y: TAB_STRIP_Y,
+                width: self.view_size()?.0,
+                height: TAB_STRIP_HEIGHT,
+            }),
+        }
+    }
+
+    /// Enfoca un panel por su identidad de vista.
+    fn focus_pane_by_id(&mut self, pane_id: u64) {
+        if let Some(layout) = self
+            .visible_document_pane_layouts()
+            .into_iter()
+            .find(|layout| layout.pane_id == pane_id)
+        {
+            self.focus_document_pane(layout);
+        }
+    }
+
+    /// Termina un arrastre: si pasó el umbral y cae sobre algo, lo aplica.
+    fn finish_mosaic_drag(&mut self) {
+        let Some(drag) = self.mosaic_drag.take() else {
+            return;
+        };
+        let Some((x, y)) = self.pointer.filter(|_| drag.active) else {
+            return;
+        };
+        let Some(target) = self.mosaic_drop_target(drag, x, y) else {
+            return;
+        };
+        match (drag.source, target) {
+            (MosaicSource::Pane(source), DropTarget::Swap(other)) => {
+                if self.document_panes.swap_panes(source, other) {
+                    self.invalidate_all_document_pane_layouts();
+                    self.set_notice("paneles intercambiados");
+                }
+            }
+            (MosaicSource::Pane(source), DropTarget::RemoveFromMosaic) => {
+                self.focus_pane_by_id(source);
+                self.close_focused_document_pane();
+            }
+            (MosaicSource::Tab(document_id), DropTarget::Replace(pane)) => {
+                self.focus_pane_by_id(pane);
+                self.activate_document_tab(document_id);
+            }
+            (
+                MosaicSource::Tab(document_id),
+                DropTarget::Split {
+                    pane,
+                    axis,
+                    adjacent_first,
+                },
+            ) => {
+                self.focus_pane_by_id(pane);
+                self.save_focused_pane_scroll();
+                match self.document_panes.split_pane_side(
+                    self.focused_document_pane,
+                    document_id,
+                    axis,
+                    adjacent_first,
+                ) {
+                    Some(new_pane) => {
+                        self.inactive_pane_caches.remove(&new_pane);
+                        self.open_in_reading_if_comparing(document_id);
+                        self.set_notice(&format!("panel dividido {}", axis.label()));
+                    }
+                    None => self.set_notice("no se pudo crear un panel sin repetir documentos"),
+                }
+            }
+            _ => {}
+        }
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
     }
 
     /// Mueve un divisor a donde está el puntero.
@@ -11762,6 +12022,40 @@ impl App {
         self.finish_close_active_document_tab();
     }
 
+    /// El mosaico tal como queda si el panel de `closing_id` pasa a mostrar la
+    /// primera pestaña de la tira, y ese documento. `None` si no hay mosaico o
+    /// no queda ninguna pestaña fuera de los paneles. Se llama con la pestaña
+    /// ya fuera de `tab_order`.
+    fn keep_division_after_close(&self, closing_id: u64) -> Option<(DocumentPaneTree, u64)> {
+        if self.document_panes.pane_count() < 2 {
+            return None;
+        }
+        let pane = self.document_panes.pane_for_document(closing_id)?;
+        let mut in_panes = Vec::new();
+        self.document_panes.document_ids(&mut in_panes);
+        let candidate = self
+            .tab_order
+            .iter()
+            .copied()
+            .find(|id| *id != closing_id && !in_panes.contains(id))?;
+        let mut tree = self.document_panes.clone();
+        tree.replace_pane_document(pane, candidate, 0.0)
+            .then_some((tree, candidate))
+    }
+
+    /// Un documento que llega a un panel nuevo desde Comparar no hereda ese
+    /// modo: en medio ancho abre en Leer.
+    fn open_in_reading_if_comparing(&mut self, document_id: u64) {
+        if let Some(tab) = self
+            .inactive_documents
+            .iter_mut()
+            .find(|tab| tab.document.id == document_id)
+            && tab.document.mode == DocumentMode::Split
+        {
+            tab.document.mode = DocumentMode::Reading;
+        }
+    }
+
     /// Completa "Guardar" en el diálogo de cierre: solo cierra si la pestaña
     /// sigue activa y quedó sin cambios nuevos tras el guardado.
     fn close_tab_if_saved_for_close(&mut self, document_id: u64) {
@@ -11786,7 +12080,12 @@ impl App {
             .position(|id| *id == self.document.id)
             .unwrap_or(0);
         self.tab_order.retain(|id| *id != self.document.id);
-        let remaining = remaining_document_panes_after_close(&self.document_panes, closing_id);
+        // Cerrar una pestaña que ocupa un panel conserva la división: otra
+        // pestaña de la tira ocupa su lugar. Solo si no queda ninguna, el
+        // panel se cierra con su documento.
+        let remaining = self
+            .keep_division_after_close(closing_id)
+            .or_else(|| remaining_document_panes_after_close(&self.document_panes, closing_id));
         // Si aún queda una hoja visible, su documento debe recibir el foco.
         // Elegir primero por orden de pestañas podría activar una fuente que no
         // aparece en el mosaico y dejar árbol, foco y caché desincronizados.
@@ -16278,6 +16577,40 @@ impl App {
             false,
             None,
         );
+        // Zona de soltado y, salvo con movimiento reducido, un fantasma con el
+        // nombre de lo que se arrastra.
+        let drop_overlay = self.mosaic_drag.filter(|drag| drag.active).map(|drag| {
+            let (px, py) = self.pointer.unwrap_or(drag.origin);
+            let rect = self
+                .mosaic_drop_target(drag, px, py)
+                .and_then(|target| self.drop_target_rect(target));
+            let document_id = match drag.source {
+                MosaicSource::Tab(id) => Some(id),
+                MosaicSource::Pane(pane) => self.document_panes.document_for_pane(pane),
+            };
+            let label = document_id
+                .and_then(|id| document_by_id(&self.document, &self.inactive_documents, id))
+                .map(|document| abbreviated_label(&document.display_name(), 40));
+            (rect, label.filter(|_| !self.reduce_motion), (px, py))
+        });
+        let drop_ghost_layout = drop_overlay
+            .as_ref()
+            .and_then(|(_, label, pointer)| label.as_ref().map(|label| (label, *pointer)))
+            .map(|(label, pointer)| {
+                (
+                    build_ui_text_layout(
+                        label,
+                        &mut self.font_cx,
+                        &mut self.layout_cx,
+                        self.palette.text,
+                        12.0,
+                        false,
+                        None,
+                    ),
+                    pointer,
+                )
+            });
+        let drop_zone_rect = drop_overlay.as_ref().and_then(|(rect, _, _)| *rect);
         let tab_count = tab_strip;
         let tab_hover = self.pointer;
         // El divisor que se arrastra o que está bajo el puntero se resalta.
@@ -17115,8 +17448,9 @@ impl App {
         }
         for (header, focused, title, modes, active_slot) in &pane_headers {
             let top = DOCUMENT_VIEWPORT_TOP + header.y;
+            // El panel enfocado lleva el mismo verde que la pestaña activa.
             let fill = if *focused {
-                palette.surface
+                palette.tab
             } else {
                 palette.elevated
             };
@@ -17125,9 +17459,13 @@ impl App {
             if let Some(rect) = Rect::from_xywh(header.x, top, header.width, header.height) {
                 pixmap.fill_rect(rect, &header_paint, Transform::identity(), None);
             }
-            if let Some(rect) =
-                Rect::from_xywh(header.x, top + header.height - 1.0, header.width, 1.0)
-            {
+            let line_height = if *focused { 2.0 } else { 1.0 };
+            if let Some(rect) = Rect::from_xywh(
+                header.x,
+                top + header.height - line_height,
+                header.width,
+                line_height,
+            ) {
                 let paint = if *focused {
                     &accent_paint
                 } else {
@@ -18242,6 +18580,34 @@ impl App {
             }
         }
 
+        if let Some(rect) = drop_zone_rect {
+            let ac = palette.accent;
+            let mut fill = Paint::default();
+            fill.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 46));
+            let mut edge = Paint::default();
+            edge.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 230));
+            if let Some(area) = Rect::from_xywh(rect.x, rect.y, rect.width, rect.height) {
+                pixmap.fill_rect(area, &fill, Transform::identity(), None);
+            }
+            for (x, y, width, height) in [
+                (rect.x, rect.y, rect.width, 2.0),
+                (rect.x, rect.y + rect.height - 2.0, rect.width, 2.0),
+                (rect.x, rect.y, 2.0, rect.height),
+                (rect.x + rect.width - 2.0, rect.y, 2.0, rect.height),
+            ] {
+                if let Some(line) = Rect::from_xywh(x, y, width, height) {
+                    pixmap.fill_rect(line, &edge, Transform::identity(), None);
+                }
+            }
+        }
+        if let Some((layout, (px, py))) = &drop_ghost_layout {
+            let width = layout.width() + 20.0;
+            let height = layout.height() + 12.0;
+            let x = (px + 14.0).min((w.get() as f32 - width - MARGIN).max(MARGIN));
+            let y = (py + 14.0).min((h.get() as f32 - height - MARGIN).max(MARGIN));
+            draw_floating_surface(pixmap, x, y, width, height, 6.0, *palette);
+            draw_text_layout(pixmap, scale_cx, glyphs, layout, x + 10.0, y + 6.0);
+        }
         if let Some((layout, anchor_x, row_y)) = row_tooltip_layout {
             let tip_width = (layout.width() + 20.0).min(w.get() as f32 - MARGIN * 2.0);
             let tip_height = layout.height() + 12.0;
@@ -19916,6 +20282,206 @@ let x = 1;
             app.nudge_pane_divider(KeyCode::ArrowLeft);
         }
         assert!(app.pane_dividers()[0].fraction >= 240.0 / 1_100.0 - 0.001);
+    }
+
+    #[test]
+    fn intercambiar_paneles_y_dividir_con_un_lado_conservan_documento_y_vista() {
+        let mut tree = DocumentPaneTree::single(1);
+        let a = tree.first_pane_id();
+        let b = tree
+            .split_pane(a, 2, DocumentPaneAxis::Vertical)
+            .expect("divide");
+        tree.set_pane_scroll(a, 40.0);
+        tree.set_pane_scroll(b, 90.0);
+        let area = PaneGeometry {
+            x: 0.0,
+            y: 0.0,
+            width: 1_000.0,
+            height: 600.0,
+        };
+        assert!(tree.swap_panes(a, b));
+        let layouts = document_pane_layouts_in(&tree, area);
+        // Ahora el documento 2 va a la izquierda, con su vista y su posición.
+        assert_eq!(layouts[0].pane_id, b);
+        assert_eq!(layouts[0].document_id, 2);
+        assert_eq!(tree.pane_scroll(b), Some(90.0));
+        assert_eq!(layouts[1].pane_id, a);
+        assert_eq!(tree.pane_scroll(a), Some(40.0));
+        assert!(!tree.swap_panes(a, a));
+        assert!(!tree.swap_panes(a, 9_999));
+
+        // Dividir con el documento nuevo antes del existente.
+        let c = tree
+            .split_pane_side(a, 3, DocumentPaneAxis::Horizontal, true)
+            .expect("divide con el nuevo arriba");
+        let layouts = document_pane_layouts_in(&tree, area);
+        let arriba = layouts.iter().find(|layout| layout.pane_id == c).unwrap();
+        let abajo = layouts.iter().find(|layout| layout.pane_id == a).unwrap();
+        assert!(arriba.geometry.y < abajo.geometry.y);
+        assert_eq!(tree.pane_count(), 3);
+    }
+
+    #[test]
+    fn el_soltado_distingue_centro_y_bordes_de_un_panel() {
+        let rect = PaneGeometry {
+            x: 100.0,
+            y: 50.0,
+            width: 400.0,
+            height: 200.0,
+        };
+        assert_eq!(drop_zone(rect, 300.0, 150.0), DropZone::Center);
+        assert_eq!(drop_zone(rect, 110.0, 150.0), DropZone::Left);
+        assert_eq!(drop_zone(rect, 490.0, 150.0), DropZone::Right);
+        assert_eq!(drop_zone(rect, 300.0, 55.0), DropZone::Top);
+        assert_eq!(drop_zone(rect, 300.0, 245.0), DropZone::Bottom);
+        // En una esquina manda el borde más cercano.
+        assert_eq!(drop_zone(rect, 102.0, 60.0), DropZone::Left);
+        assert_eq!(drop_zone(rect, 300.0, 150.0 + 1_000.0), DropZone::Bottom);
+    }
+
+    /// Dos paneles con dos documentos y una tercera pestaña en la tira.
+    fn mosaico_con_tira() -> (App, u64) {
+        let mut app = App::for_tests(NIGHT);
+        app.load_for_test("uno", DocumentMode::Reading);
+        app.perform_action(AppAction::NewDocument);
+        app.perform_action(AppAction::NewDocument);
+        let en_la_tira = app.document.id;
+        app.open_document_pane_picker(DocumentPaneAxis::Vertical);
+        let candidato = app
+            .pane_split_candidates
+            .iter()
+            .position(|id| *id != SPLIT_NEW_DOCUMENT && *id != SPLIT_OPEN_FILE && *id != en_la_tira)
+            .expect("hay otra pestaña para dividir");
+        app.choose_document_pane_split(candidato);
+        app.draw_for_test(1_100, 720);
+        assert_eq!(app.document_panes.pane_count(), 2);
+        let tira = app.visible_tab_ids();
+        assert_eq!(tira.len(), 1);
+        (app, tira[0])
+    }
+
+    fn arrastrar(app: &mut App, origen: MosaicSource, destino: (f32, f32)) {
+        app.mosaic_drag = Some(MosaicDrag {
+            source: origen,
+            origin: (0.0, 0.0),
+            active: true,
+        });
+        app.pointer = Some(destino);
+        app.finish_mosaic_drag();
+    }
+
+    #[test]
+    fn arrastrar_una_cabecera_sobre_otra_intercambia_los_paneles() {
+        let (mut app, _) = mosaico_con_tira();
+        let antes = app.visible_document_pane_layouts();
+        let y = DOCUMENT_VIEWPORT_TOP + 300.0;
+        arrastrar(&mut app, MosaicSource::Pane(antes[0].pane_id), (825.0, y));
+        let despues = app.visible_document_pane_layouts();
+        assert_eq!(despues[0].document_id, antes[1].document_id);
+        assert_eq!(despues[1].document_id, antes[0].document_id);
+        // Soltar sobre sí mismo o fuera de un panel no cambia nada.
+        arrastrar(&mut app, MosaicSource::Pane(despues[0].pane_id), (275.0, y));
+        assert_eq!(
+            app.visible_document_pane_layouts()[0].document_id,
+            despues[0].document_id
+        );
+    }
+
+    #[test]
+    fn soltar_una_pestana_en_el_centro_reemplaza_y_en_el_borde_divide() {
+        let (mut app, en_la_tira) = mosaico_con_tira();
+        let y = DOCUMENT_VIEWPORT_TOP + 300.0;
+        let reemplazado = app.visible_document_pane_layouts()[1].document_id;
+        arrastrar(&mut app, MosaicSource::Tab(en_la_tira), (825.0, y));
+        let capas = app.visible_document_pane_layouts();
+        assert_eq!(capas.len(), 2);
+        assert!(capas.iter().any(|layout| layout.document_id == en_la_tira));
+        assert_eq!(
+            app.visible_tab_ids(),
+            vec![reemplazado],
+            "el reemplazado vuelve a la tira"
+        );
+
+        // Una pestaña en el borde izquierdo abre un tercer panel.
+        arrastrar(&mut app, MosaicSource::Tab(reemplazado), (20.0, y));
+        assert_eq!(app.document_panes.pane_count(), 3);
+        assert!(app.visible_tab_ids().is_empty());
+    }
+
+    #[test]
+    fn soltar_una_cabecera_sobre_la_tira_quita_el_panel_del_mosaico() {
+        let (mut app, _) = mosaico_con_tira();
+        let capa = app.visible_document_pane_layouts()[0];
+        arrastrar(
+            &mut app,
+            MosaicSource::Pane(capa.pane_id),
+            (300.0, TAB_STRIP_Y + 10.0),
+        );
+        assert_eq!(app.document_panes.pane_count(), 1);
+        // La pestaña sigue abierta.
+        assert!(app.tab_order.contains(&capa.document_id));
+    }
+
+    #[test]
+    fn un_arrastre_corto_o_cancelado_no_cambia_el_mosaico() {
+        let (mut app, en_la_tira) = mosaico_con_tira();
+        let antes = app.visible_document_pane_layouts();
+        let y = DOCUMENT_VIEWPORT_TOP + 300.0;
+        // Sin pasar el umbral es un clic.
+        app.mosaic_drag = Some(MosaicDrag {
+            source: MosaicSource::Pane(antes[0].pane_id),
+            origin: (0.0, 0.0),
+            active: false,
+        });
+        app.pointer = Some((825.0, y));
+        app.finish_mosaic_drag();
+        assert_eq!(
+            app.visible_document_pane_layouts()[0].document_id,
+            antes[0].document_id
+        );
+        // Una pestaña ya mostrada en un panel no se vuelve a soltar.
+        arrastrar(
+            &mut app,
+            MosaicSource::Tab(antes[0].document_id),
+            (825.0, y),
+        );
+        assert_eq!(app.document_panes.pane_count(), 2);
+        assert_eq!(app.visible_tab_ids(), vec![en_la_tira]);
+    }
+
+    #[test]
+    fn cerrar_una_pestana_de_un_panel_conserva_la_division_si_hay_otra_en_la_tira() {
+        let (mut app, en_la_tira) = mosaico_con_tira();
+        let cerrando = app.document.id;
+        assert!(app.document_panes.pane_for_document(cerrando).is_some());
+        app.finish_close_active_document_tab();
+        // Sigue habiendo dos paneles y la pestaña de la tira ocupa el lugar.
+        assert_eq!(app.document_panes.pane_count(), 2);
+        assert!(app.document_panes.pane_for_document(en_la_tira).is_some());
+        assert!(app.document_panes.pane_for_document(cerrando).is_none());
+        assert!(!app.tab_order.contains(&cerrando));
+        assert!(app.visible_tab_ids().is_empty());
+
+        // Sin pestañas en la tira, cerrar colapsa el panel.
+        app.finish_close_active_document_tab();
+        assert_eq!(app.document_panes.pane_count(), 1);
+    }
+
+    #[test]
+    fn un_panel_nuevo_no_hereda_comparar() {
+        let mut app = App::for_tests(NIGHT);
+        app.load_for_test("uno", DocumentMode::Reading);
+        app.perform_action(AppAction::NewDocument);
+        let comparando = app.document.id;
+        app.document.mode = DocumentMode::Split;
+        app.activate_document_tab(app.tab_order[0]);
+        app.open_in_reading_if_comparing(comparando);
+        let tab = app
+            .inactive_documents
+            .iter()
+            .find(|tab| tab.document.id == comparando)
+            .expect("la pestaña está inactiva");
+        assert_eq!(tab.document.mode, DocumentMode::Reading);
     }
 
     #[test]
