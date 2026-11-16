@@ -701,13 +701,20 @@ iba a ampliar, y el texto de la fase 7 se escribe ya sobre ellos.
     la fila 1 como en la 2;
   - el buscador de acciones usa el ícono `>_` en lugar de «···»;
   - «Comparar» no queda pegado al borde del selector (padding de 6 px).
-- [~] **10.10** Cierre de fase. Hechas `design-critique` y `/code-review`
+- [x] **10.10** Cierre de fase. Hechas `design-critique` y `/code-review`
   (corregidos: avisos al abrir menús y encabezados como objetivo; aparcados con
   motivo: caché del ancho de menú y del recorte, F10 con un panel abierto y
-  menú abierto al achicar la ventana). Falta la prueba en vivo con la build de
-  evaluación. Alcance original: referencias `barra-640`, `barra-1100`,
-  `menu-archivo`, `menu-vista`, `menu-parrafo`; `design-critique`;
-  `/code-review`; ejecutable nuevo.
+  menú abierto al achicar la ventana). Prueba en vivo del 15 de noviembre con
+  la build de evaluación (`scripts/evaluacion/`, sin mover el mouse ni usar el
+  portapapeles; el parche tuvo que ajustarse a mano en «Guardar como» y debe
+  regenerarse): Archivo, Editar, Vista y Carpeta se abren bajo su botón y
+  cambian con el puntero; el buscador filtra y muestra la categoría; el botón
+  sol/luna cambia el tema; a 640 px quedan «≡», el tema y los controles; un
+  documento nuevo toma el nombre de su primera línea y muestra «•» y «sin
+  guardar». Defecto hallado y corregido: los menús se cortaban en 14 filas y
+  «Vista» (15) se desplazaba con lugar de sobra (`MAX_MENU_ROWS = 20`). Límites
+  de la herramienta, no de la app: `type` no escribe «#» y Ctrl+N no llega.
+  Capturas en `C:\Devrchivo\eval-10-10\qa\capturas\`.
 
 ### Pedidos sueltos del propietario
 
@@ -836,7 +843,7 @@ asociación.
 | 4 | Hecho | c441983, c3b3a76, 1c6f87a, 98f6793 y el ajuste de bloques |
 | 2 | Hecho | 01bacf8, 898665a, e127b66, 9d1a167, 5888201 y la capa de tooltip |
 | 3 | Casi hecha | Hechas 3.1 a 3.8, 3.9b, 3.10 a 3.12. Pendientes: 3.9 (caja de búsqueda con borde y barra anclada); la 3.13 pasa a la 10.7 |
-| 10 | En curso | Hechas 10.1 a 10.9 y 10.11. Siguiente: la prueba en vivo (10.10) |
+| 10 | Hecho | 10.1 a 10.11; prueba en vivo del 15 de noviembre |
 | 5 | En curso | Hecha 5.1 (verde propio de la pestaña). Pendientes 5.2 a 5.4 y 5.8; la 5.5 a 5.7 pasan a la fase 11 |
 | 11 | Pendiente | Mosaico: cabecera como pestaña, divisor, intercambio, soltado |
 | 6 | Pendiente | — |

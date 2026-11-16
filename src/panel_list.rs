@@ -10,6 +10,10 @@ use crate::list_view::{ListKey, ListNav, navigate};
 /// que ocupa toda la ventana deja de ser un menú.
 const MAX_FLOATING_ROWS: usize = 14;
 
+/// Tope de un menú de la barra, que lleva encabezados de grupo y no debe
+/// desplazarse si la ventana tiene lugar: «Vista» tiene 15 filas.
+const MAX_MENU_ROWS: usize = 20;
+
 /// Filas que caben en un panel flotante según el alto de la ventana.
 pub(crate) fn floating_capacity(window_height: f32, compact: bool) -> usize {
     let title_and_footer = if compact {
@@ -21,7 +25,11 @@ pub(crate) fn floating_capacity(window_height: f32, compact: bool) -> usize {
     let rows = ((window_height - overhead) / PANEL_ROW_HEIGHT)
         .floor()
         .max(1.0) as usize;
-    rows.min(MAX_FLOATING_ROWS)
+    rows.min(if compact {
+        MAX_MENU_ROWS
+    } else {
+        MAX_FLOATING_ROWS
+    })
 }
 
 /// Filas que muestra un panel flotante con `total` elementos.
@@ -167,6 +175,14 @@ mod pruebas {
             floating_rows(69, 720.0, false),
             floating_capacity(720.0, false)
         );
+    }
+
+    #[test]
+    fn un_menu_de_la_barra_con_lugar_no_se_desplaza() {
+        // «Vista» tiene 4 encabezados y 11 acciones.
+        assert!(floating_capacity(720.0, true) >= 15);
+        assert_eq!(floating_capacity(1_400.0, true), MAX_MENU_ROWS);
+        assert_eq!(floating_rows(15, 720.0, true), 15);
     }
 
     #[test]
