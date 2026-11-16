@@ -714,7 +714,7 @@ iba a ampliar, y el texto de la fase 7 se escribe ya sobre ellos.
   guardar». Defecto hallado y corregido: los menús se cortaban en 14 filas y
   «Vista» (15) se desplazaba con lugar de sobra (`MAX_MENU_ROWS = 20`). Límites
   de la herramienta, no de la app: `type` no escribe «#» y Ctrl+N no llega.
-  Capturas en `C:\Devrchivo\eval-10-10\qa\capturas\`.
+  Capturas en `C:\Dev\archivo\eval-10-10\qa\capturas\`.
 
 ### Pedidos sueltos del propietario
 
