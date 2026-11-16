@@ -748,14 +748,14 @@ iba a ampliar, y el texto de la fase 7 se escribe ya sobre ellos.
 
 Absorbe las tareas 5.5, 5.6 y 5.7. Va después de la 5.
 
-- [ ] **11.1** D-31: la cabecera de panel es la pestaña del archivo (nombre,
+- [x] **11.1** D-31 (la tira filtra con `visible_tab_ids`; selector de modo a 10,5 px y «Quitar del mosaico» con un panel y un signo menos; la ✕ de verdad ya no aparece en las cabeceras): la cabecera de panel es la pestaña del archivo (nombre,
   cambios, selector de modo a escala 0,85 y «Quitar del mosaico» con ícono
   propio); la tira filtra los documentos que están en un panel. Con un solo
   panel, todo como hoy. Absorbe la 5.7.
-- [ ] **11.2** D-32 divisor: `normalized_pane_fraction` 0,15–0,85,
+- [x] **11.2** D-32 divisor (`PaneDivider`, `divider_at`, `divider_fraction_for_pointer`; resaltado en acento y cursor de redimensionar): `normalized_pane_fraction` 0,15–0,85,
   `set_fraction_at`, objetivo `UiTarget::PaneDivider`, cursor de redimensionar,
   arrastre, doble clic a 50 % y mínimo de 240 px. Pruebas en `panes.rs`.
-- [ ] **11.3** Teclado Alt+Shift+flechas (pasos de 5 %).
+- [x] **11.3** Teclado Alt+Shift+flechas (pasos de 5 %, la división más cercana en ese sentido; respeta el mínimo útil).
 - [ ] **11.4** `swap_panes` y arrastre de cabecera sobre cabecera, con fantasma y
   resalte del destino (sin fantasma con movimiento reducido).
 - [ ] **11.5** Soltar una pestaña de la tira sobre un panel (centro reemplaza,

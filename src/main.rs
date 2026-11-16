@@ -7531,6 +7531,10 @@ struct App {
     ui_motion: ui_motion::UiMotion,
     /// Cuándo se muestra la ayuda del botón bajo el puntero.
     tooltip: ui_motion::TooltipTimer,
+    /// Divisor que se está arrastrando y el último clic sobre un divisor, para
+    /// el doble clic que lo devuelve al 50 %.
+    divider_drag: Option<usize>,
+    last_divider_click: Option<(usize, Instant)>,
     /// Desplazamiento de la lista abierta en un panel o menú.
     panel_scroll: list_view::ListScroll,
     /// Borde izquierdo del botón que abrió el menú, para anclarlo debajo.
@@ -7827,6 +7831,8 @@ impl App {
             pointer: None,
             ui_motion: ui_motion::UiMotion::default(),
             tooltip: ui_motion::TooltipTimer::default(),
+            divider_drag: None,
+            last_divider_click: None,
             panel_scroll: list_view::ListScroll::default(),
             panel_anchor: None,
             ime_preedit: None,
@@ -8791,6 +8797,9 @@ impl ApplicationHandler<AppEvent> for App {
                         }
                     }
                 }
+                if let Some(index) = self.divider_drag {
+                    self.drag_divider_to(index, position.x as f32, position.y as f32);
+                }
                 let ui_target = self.ui_target_at(position.x as f32, position.y as f32);
                 if self
                     .ui_motion
@@ -8849,8 +8858,21 @@ impl ApplicationHandler<AppEvent> for App {
                 }
                 self.text_cursor_hover = text_cursor_hover;
                 if let Some(w) = &self.window {
+                    let divider_axis = match (self.divider_drag, ui_target) {
+                        (Some(index), _) | (None, Some(UiTarget::PaneDivider(index))) => self
+                            .pane_dividers()
+                            .into_iter()
+                            .find(|divider| divider.index == index)
+                            .map(|divider| divider.axis),
+                        _ => None,
+                    };
                     w.set_cursor(if let Some(direction) = resize_direction {
                         direction.into()
+                    } else if let Some(axis) = divider_axis {
+                        match axis {
+                            DocumentPaneAxis::Vertical => CursorIcon::ColResize,
+                            DocumentPaneAxis::Horizontal => CursorIcon::RowResize,
+                        }
                     } else if ui_target.is_some() || self.hover_destination.is_some() {
                         CursorIcon::Pointer
                     } else if text_cursor_hover {
@@ -8882,6 +8904,7 @@ impl ApplicationHandler<AppEvent> for App {
                 self.flush_recoveries_now();
                 self.selecting = false;
                 self.tab_drag_id = None;
+                self.divider_drag = None;
                 self.ime_preedit = None;
                 self.modifiers = ModifiersState::empty();
             }
@@ -9101,6 +9124,25 @@ impl ApplicationHandler<AppEvent> for App {
                             return;
                         }
                     }
+                    if let Some(UiTarget::PaneDivider(index)) =
+                        self.pointer.and_then(|(x, y)| self.ui_target_at(x, y))
+                    {
+                        // Doble clic: vuelve al reparto a partes iguales.
+                        let now = Instant::now();
+                        let double = self.last_divider_click.is_some_and(|(last, at)| {
+                            last == index && now.duration_since(at) < Duration::from_millis(450)
+                        });
+                        if double {
+                            self.last_divider_click = None;
+                            self.divider_drag = None;
+                            self.set_divider_fraction(index, 0.5);
+                        } else {
+                            self.last_divider_click = Some((index, now));
+                            self.divider_drag = Some(index);
+                        }
+                        self.selecting = false;
+                        return;
+                    }
                     if let Some((x, y)) = self.pointer
                         && self.floating_outline_click(x, y)
                     {
@@ -9181,6 +9223,7 @@ impl ApplicationHandler<AppEvent> for App {
                 ElementState::Released => {
                     self.selecting = false;
                     self.tab_drag_id = None;
+                    self.divider_drag = None;
                 }
             },
             WindowEvent::MouseInput {
@@ -9374,6 +9417,28 @@ impl ApplicationHandler<AppEvent> for App {
             }
             WindowEvent::KeyboardInput { event, .. } if self.link_diagnostics.is_some() => {
                 self.handle_link_diagnostics_key(&event);
+            }
+            // Alt+Shift+flechas: mueve el borde del panel enfocado en pasos de 5 %.
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key:
+                            PhysicalKey::Code(
+                                key @ (KeyCode::ArrowLeft
+                                | KeyCode::ArrowRight
+                                | KeyCode::ArrowUp
+                                | KeyCode::ArrowDown),
+                            ),
+                        state: ElementState::Pressed,
+                        ..
+                    },
+                ..
+            } if self.dialog.is_none()
+                && self.modifiers.alt_key()
+                && self.modifiers.shift_key()
+                && self.document_panes.pane_count() >= 2 =>
+            {
+                self.nudge_pane_divider(key);
             }
             WindowEvent::KeyboardInput { event, .. } if self.outline_headings.is_some() => {
                 self.handle_outline_key(&event);
@@ -11430,6 +11495,81 @@ impl App {
             self.activate_document_tab(layout.document_id);
         }
         true
+    }
+
+    /// Los bordes arrastrables entre paneles, en coordenadas del área
+    /// documental. Vacío con un solo panel.
+    fn pane_dividers(&self) -> Vec<PaneDivider> {
+        if self.document_panes.pane_count() < 2 {
+            return Vec::new();
+        }
+        let Some((width, height)) = self.view_size() else {
+            return Vec::new();
+        };
+        self.document_panes.dividers(document_area_geometry(
+            width,
+            height,
+            self.workspace_column_is_open(),
+        ))
+    }
+
+    /// Mueve un divisor a donde está el puntero.
+    fn drag_divider_to(&mut self, index: usize, x: f32, y: f32) {
+        let Some(divider) = self
+            .pane_dividers()
+            .into_iter()
+            .find(|divider| divider.index == index)
+        else {
+            return;
+        };
+        let fraction = divider_fraction_for_pointer(divider, x, y - DOCUMENT_VIEWPORT_TOP);
+        self.set_divider_fraction(index, fraction);
+    }
+
+    /// Mueve en pasos de 5 % el borde del panel enfocado hacia donde apunta la
+    /// flecha. Con varias divisiones usa la más cercana en ese sentido.
+    fn nudge_pane_divider(&mut self, key: KeyCode) {
+        let (axis, step) = match key {
+            KeyCode::ArrowLeft => (DocumentPaneAxis::Vertical, -DIVIDER_KEY_STEP),
+            KeyCode::ArrowRight => (DocumentPaneAxis::Vertical, DIVIDER_KEY_STEP),
+            KeyCode::ArrowUp => (DocumentPaneAxis::Horizontal, -DIVIDER_KEY_STEP),
+            _ => (DocumentPaneAxis::Horizontal, DIVIDER_KEY_STEP),
+        };
+        let Some((index, fraction)) = self
+            .document_panes
+            .nearest_split_of(self.focused_document_pane, axis)
+        else {
+            return;
+        };
+        // Respeta el mínimo útil de cada panel igual que el arrastre.
+        let target = fraction + step;
+        let clamped = self
+            .pane_dividers()
+            .into_iter()
+            .find(|divider| divider.index == index)
+            .map_or(target, |divider| {
+                let extent = match divider.axis {
+                    DocumentPaneAxis::Vertical => divider.region.width,
+                    DocumentPaneAxis::Horizontal => divider.region.height,
+                };
+                let minimum = (MIN_PANE_EXTENT / extent.max(1.0)).max(0.15);
+                let maximum = (1.0 - MIN_PANE_EXTENT / extent.max(1.0)).min(0.85);
+                if minimum > maximum {
+                    fraction
+                } else {
+                    target.clamp(minimum, maximum)
+                }
+            });
+        self.set_divider_fraction(index, clamped);
+    }
+
+    fn set_divider_fraction(&mut self, index: usize, fraction: f32) {
+        if self.document_panes.set_split_fraction(index, fraction) {
+            self.invalidate_all_document_pane_layouts();
+            if let Some(window) = &self.window {
+                window.request_redraw();
+            }
+        }
     }
 
     /// Las pestañas que lista la tira, en orden. Con dos o más paneles, cada
@@ -16140,6 +16280,18 @@ impl App {
         );
         let tab_count = tab_strip;
         let tab_hover = self.pointer;
+        // El divisor que se arrastra o que está bajo el puntero se resalta.
+        let divider_highlight = self
+            .divider_drag
+            .or_else(|| match self.ui_motion.hover_since() {
+                Some((UiTarget::PaneDivider(index), _)) => Some(index),
+                _ => None,
+            })
+            .and_then(|index| {
+                self.pane_dividers()
+                    .into_iter()
+                    .find(|divider| divider.index == index)
+            });
         let link_peek_layout = self
             .hover_destination
             .as_deref()
@@ -17034,6 +17186,32 @@ impl App {
                     Transform::identity(),
                     None,
                 );
+            }
+        }
+
+        if let Some(divider) = divider_highlight {
+            let mut paint = Paint {
+                anti_alias: false,
+                ..Default::default()
+            };
+            let ac = palette.accent;
+            paint.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 200));
+            let rect = match divider.axis {
+                DocumentPaneAxis::Vertical => Rect::from_xywh(
+                    divider.rect.x + DIVIDER_THICKNESS * 0.5 - 1.0,
+                    DOCUMENT_VIEWPORT_TOP + divider.rect.y,
+                    2.0,
+                    divider.rect.height,
+                ),
+                DocumentPaneAxis::Horizontal => Rect::from_xywh(
+                    divider.rect.x,
+                    DOCUMENT_VIEWPORT_TOP + divider.rect.y + DIVIDER_THICKNESS * 0.5 - 1.0,
+                    divider.rect.width,
+                    2.0,
+                ),
+            };
+            if let Some(rect) = rect {
+                pixmap.fill_rect(rect, &paint, Transform::identity(), None);
             }
         }
 
@@ -19635,6 +19813,112 @@ let x = 1;
     }
 
     #[test]
+    fn los_divisores_siguen_al_arbol_y_respetan_los_limites() {
+        let area = PaneGeometry {
+            x: 0.0,
+            y: 0.0,
+            width: 1_000.0,
+            height: 600.0,
+        };
+        let mut tree = DocumentPaneTree::single(1);
+        let primero = tree.first_pane_id();
+        let segundo = tree
+            .split_pane(primero, 2, DocumentPaneAxis::Vertical)
+            .expect("divide a la derecha");
+        let tercero = tree
+            .split_pane(segundo, 3, DocumentPaneAxis::Horizontal)
+            .expect("divide la hoja derecha hacia abajo");
+
+        let divisores = tree.dividers(area);
+        assert_eq!(divisores.len(), 2);
+        // La raíz (vertical) va primero y su franja está centrada en el borde.
+        assert_eq!(divisores[0].axis, DocumentPaneAxis::Vertical);
+        assert!((divisores[0].rect.x + DIVIDER_THICKNESS * 0.5 - 500.0).abs() < 0.01);
+        assert_eq!(divisores[0].rect.height, 600.0);
+        // La anidada reparte solo la mitad derecha.
+        assert_eq!(divisores[1].axis, DocumentPaneAxis::Horizontal);
+        assert_eq!(divisores[1].region.x, 500.0);
+        assert_eq!(divisores[1].region.width, 500.0);
+        assert_eq!(
+            divider_at(&divisores, 500.0, 100.0).map(|d| d.index),
+            Some(0)
+        );
+        assert_eq!(
+            divider_at(&divisores, 700.0, 300.0).map(|d| d.index),
+            Some(1)
+        );
+        assert_eq!(divider_at(&divisores, 250.0, 100.0), None);
+
+        // El arrastre respeta 15–85 % y el mínimo útil de 240 px.
+        assert_eq!(divider_fraction_for_pointer(divisores[0], 0.0, 0.0), 0.24);
+        assert_eq!(divider_fraction_for_pointer(divisores[0], 999.0, 0.0), 0.76);
+        assert_eq!(divider_fraction_for_pointer(divisores[0], 400.0, 0.0), 0.4);
+        // Una región que no admite dos mínimos vuelve al centro.
+        let angosta = PaneDivider {
+            region: PaneGeometry {
+                width: 400.0,
+                ..area
+            },
+            ..divisores[0]
+        };
+        assert_eq!(divider_fraction_for_pointer(angosta, 50.0, 0.0), 0.5);
+
+        assert!(tree.set_split_fraction(0, 0.7));
+        assert!(!tree.set_split_fraction(5, 0.7));
+        assert_eq!(tree.dividers(area)[0].fraction, 0.7);
+        assert_eq!(normalized_pane_fraction(0.01), 0.15);
+        assert_eq!(normalized_pane_fraction(0.99), 0.85);
+        assert_eq!(normalized_pane_fraction(f32::NAN), 0.5);
+
+        // El teclado elige la división más cercana en el sentido de la flecha.
+        assert_eq!(
+            tree.nearest_split_of(tercero, DocumentPaneAxis::Horizontal)
+                .map(|(index, _)| index),
+            Some(1)
+        );
+        assert_eq!(
+            tree.nearest_split_of(tercero, DocumentPaneAxis::Vertical)
+                .map(|(index, _)| index),
+            Some(0)
+        );
+        assert_eq!(
+            tree.nearest_split_of(primero, DocumentPaneAxis::Horizontal),
+            None
+        );
+    }
+
+    #[test]
+    fn el_divisor_es_un_objetivo_se_arrastra_y_el_teclado_lo_mueve_por_pasos() {
+        let mut app = App::for_tests(NIGHT);
+        app.load_for_test("uno", DocumentMode::Reading);
+        app.perform_action(AppAction::NewDocument);
+        app.open_document_pane_picker(DocumentPaneAxis::Vertical);
+        app.choose_document_pane_split(2);
+        app.draw_for_test(1_100, 720);
+
+        let y = DOCUMENT_VIEWPORT_TOP + 300.0;
+        assert_eq!(app.ui_target_at(550.0, y), Some(UiTarget::PaneDivider(0)));
+        assert_ne!(app.ui_target_at(300.0, y), Some(UiTarget::PaneDivider(0)));
+
+        app.drag_divider_to(0, 660.0, y);
+        let fraccion = app.pane_dividers()[0].fraction;
+        assert!((fraccion - 0.6).abs() < 0.001, "{fraccion}");
+        // El divisor se movió con él.
+        assert_eq!(app.ui_target_at(660.0, y), Some(UiTarget::PaneDivider(0)));
+
+        app.nudge_pane_divider(KeyCode::ArrowLeft);
+        assert!((app.pane_dividers()[0].fraction - 0.55).abs() < 0.001);
+        // Una flecha de otro sentido no mueve un divisor vertical.
+        app.nudge_pane_divider(KeyCode::ArrowDown);
+        assert!((app.pane_dividers()[0].fraction - 0.55).abs() < 0.001);
+        // Nunca cruza el mínimo útil: 240 px de 1100 son 21,8 %.
+        for _ in 0..20 {
+            app.nudge_pane_divider(KeyCode::ArrowLeft);
+        }
+        assert!(app.pane_dividers()[0].fraction >= 240.0 / 1_100.0 - 0.001);
+    }
+
+    #[test]
     fn con_dos_paneles_la_tira_no_repite_los_documentos_del_mosaico() {
         let mut app = App::for_tests(NIGHT);
         app.load_for_test("uno", DocumentMode::Reading);
@@ -20990,8 +21274,8 @@ let x = 1;
         }));
         assert_eq!(split_pane_extent(0.0, 0.5), 0.0);
         assert_eq!(split_pane_extent(1.0, 0.5), 1.0);
-        assert_eq!(split_pane_extent(10.0, -9.0), 3.0);
-        assert_eq!(split_pane_extent(10.0, 9.0), 8.0);
+        assert_eq!(split_pane_extent(10.0, -9.0), 2.0);
+        assert_eq!(split_pane_extent(10.0, 9.0), 9.0);
     }
 
     #[test]

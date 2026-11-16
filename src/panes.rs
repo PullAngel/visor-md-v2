@@ -18,6 +18,27 @@ use crate::{
     PANE_HEADER_MODE_MIN_WIDTH, PANE_HEADER_MODE_SLOT,
 };
 
+/// Ancho del borde arrastrable entre dos paneles.
+pub(crate) const DIVIDER_THICKNESS: f32 = 6.0;
+/// Ningún panel baja de este tamaño útil al arrastrar un divisor.
+pub(crate) const MIN_PANE_EXTENT: f32 = 240.0;
+/// Cuánto mueve un paso de teclado.
+pub(crate) const DIVIDER_KEY_STEP: f32 = 0.05;
+
+/// Un divisor entre los dos hijos de una división. `index` es el orden en que
+/// el árbol visita las divisiones (primero la raíz): identifica al divisor
+/// mientras no cambie la estructura.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct PaneDivider {
+    pub(crate) index: usize,
+    pub(crate) axis: DocumentPaneAxis,
+    /// Todo el espacio que reparte esta división.
+    pub(crate) region: PaneGeometry,
+    /// La franja arrastrable, centrada en el borde.
+    pub(crate) rect: PaneGeometry,
+    pub(crate) fraction: f32,
+}
+
 /// Dirección de una división entre documentos. Es distinta de la comparación
 /// fuente/vista: cada hoja del árbol referencia una vista de un documento de
 /// sesión, nunca una copia de su buffer.
@@ -293,6 +314,161 @@ impl DocumentPaneTree {
         }
     }
 
+    /// Los divisores del árbol dentro de `available`, en el orden de visita.
+    pub(crate) fn dividers(&self, available: PaneGeometry) -> Vec<PaneDivider> {
+        let mut output = Vec::new();
+        self.collect_dividers(available, &mut 0, &mut output);
+        output
+    }
+
+    fn collect_dividers(
+        &self,
+        available: PaneGeometry,
+        next: &mut usize,
+        output: &mut Vec<PaneDivider>,
+    ) {
+        let Self::Split {
+            axis,
+            fraction,
+            first,
+            second,
+        } = self
+        else {
+            return;
+        };
+        let index = *next;
+        *next += 1;
+        let fraction = normalized_pane_fraction(*fraction);
+        let (first_geometry, second_geometry, rect) = match axis {
+            DocumentPaneAxis::Vertical => {
+                let first_width = split_pane_extent(available.width, fraction);
+                (
+                    PaneGeometry {
+                        width: first_width,
+                        ..available
+                    },
+                    PaneGeometry {
+                        x: available.x + first_width,
+                        width: available.width - first_width,
+                        ..available
+                    },
+                    PaneGeometry {
+                        x: available.x + first_width - DIVIDER_THICKNESS * 0.5,
+                        width: DIVIDER_THICKNESS,
+                        ..available
+                    },
+                )
+            }
+            DocumentPaneAxis::Horizontal => {
+                let first_height = split_pane_extent(available.height, fraction);
+                (
+                    PaneGeometry {
+                        height: first_height,
+                        ..available
+                    },
+                    PaneGeometry {
+                        y: available.y + first_height,
+                        height: available.height - first_height,
+                        ..available
+                    },
+                    PaneGeometry {
+                        y: available.y + first_height - DIVIDER_THICKNESS * 0.5,
+                        height: DIVIDER_THICKNESS,
+                        ..available
+                    },
+                )
+            }
+        };
+        output.push(PaneDivider {
+            index,
+            axis: *axis,
+            region: available,
+            rect,
+            fraction,
+        });
+        first.collect_dividers(first_geometry, next, output);
+        second.collect_dividers(second_geometry, next, output);
+    }
+
+    /// Fija la proporción de la división número `index` (orden de visita).
+    pub(crate) fn set_split_fraction(&mut self, index: usize, new_fraction: f32) -> bool {
+        self.set_split_fraction_from(&mut 0, index, new_fraction)
+    }
+
+    fn set_split_fraction_from(
+        &mut self,
+        next: &mut usize,
+        index: usize,
+        new_fraction: f32,
+    ) -> bool {
+        let Self::Split {
+            fraction,
+            first,
+            second,
+            ..
+        } = self
+        else {
+            return false;
+        };
+        if *next == index {
+            *fraction = normalized_pane_fraction(new_fraction);
+            return true;
+        }
+        *next += 1;
+        first.set_split_fraction_from(next, index, new_fraction)
+            || second.set_split_fraction_from(next, index, new_fraction)
+    }
+
+    /// La división más cercana a la hoja `pane_id` que reparte en el sentido
+    /// `axis`: su índice y su proporción actual. Sirve al teclado: «izquierda» y
+    /// «derecha» mueven un divisor vertical, «arriba» y «abajo» uno horizontal.
+    pub(crate) fn nearest_split_of(
+        &self,
+        pane_id: u64,
+        axis: DocumentPaneAxis,
+    ) -> Option<(usize, f32)> {
+        self.nearest_split_from(&mut 0, pane_id, axis)
+    }
+
+    fn nearest_split_from(
+        &self,
+        next: &mut usize,
+        pane_id: u64,
+        wanted: DocumentPaneAxis,
+    ) -> Option<(usize, f32)> {
+        let Self::Split {
+            axis,
+            fraction,
+            first,
+            second,
+        } = self
+        else {
+            return None;
+        };
+        let index = *next;
+        *next += 1;
+        let in_first = first.contains_pane(pane_id);
+        let in_second = second.contains_pane(pane_id);
+        if in_first && let Some(found) = first.nearest_split_from(next, pane_id, wanted) {
+            return Some(found);
+        }
+        if in_first {
+            *next += second.split_count();
+        }
+        if in_second && let Some(found) = second.nearest_split_from(next, pane_id, wanted) {
+            return Some(found);
+        }
+        ((in_first || in_second) && *axis == wanted)
+            .then_some((index, normalized_pane_fraction(*fraction)))
+    }
+
+    fn split_count(&self) -> usize {
+        match self {
+            Self::Leaf { .. } => 0,
+            Self::Split { first, second, .. } => 1 + first.split_count() + second.split_count(),
+        }
+    }
+
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn layout(&self, available: PaneGeometry, output: &mut Vec<DocumentPaneLayout>) {
         match self {
@@ -374,10 +550,38 @@ pub(crate) fn split_pane_extent(total: f32, fraction: f32) -> f32 {
 
 pub(crate) fn normalized_pane_fraction(fraction: f32) -> f32 {
     if fraction.is_finite() {
-        fraction.clamp(0.25, 0.75)
+        fraction.clamp(0.15, 0.85)
     } else {
         0.5
     }
+}
+
+/// La proporción que corresponde a un puntero en `(x, y)` (coordenadas del área
+/// documental) al arrastrar `divider`. Respeta el mínimo útil por panel y los
+/// límites de `normalized_pane_fraction`; si la región es demasiado chica para
+/// ambos mínimos, vuelve al centro.
+pub(crate) fn divider_fraction_for_pointer(divider: PaneDivider, x: f32, y: f32) -> f32 {
+    let (offset, extent) = match divider.axis {
+        DocumentPaneAxis::Vertical => (x - divider.region.x, divider.region.width),
+        DocumentPaneAxis::Horizontal => (y - divider.region.y, divider.region.height),
+    };
+    if extent <= 0.0 {
+        return 0.5;
+    }
+    let minimum = (MIN_PANE_EXTENT / extent).max(0.15);
+    let maximum = (1.0 - MIN_PANE_EXTENT / extent).min(0.85);
+    if minimum > maximum {
+        return 0.5;
+    }
+    (offset / extent).clamp(minimum, maximum)
+}
+
+/// El divisor bajo un punto, si lo hay.
+pub(crate) fn divider_at(dividers: &[PaneDivider], x: f32, y: f32) -> Option<PaneDivider> {
+    dividers
+        .iter()
+        .copied()
+        .find(|divider| divider.rect.contains(x, y))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

@@ -30,6 +30,8 @@ pub(crate) enum UiTarget {
     /// Fila de la lista abierta (paleta, índice, notas…), por posición
     /// absoluta en la lista.
     ListRow(usize),
+    /// Borde arrastrable entre dos paneles, por orden de visita en el árbol.
+    PaneDivider(usize),
 }
 
 /// Objetivo del cromo de la ventana (controles, barras y pestañas) bajo el
@@ -93,6 +95,9 @@ impl App {
             chrome_target_at(x, y, width, height, self.document.mode, self.tab_strip())
         {
             return Some(target);
+        }
+        if let Some(divider) = divider_at(&self.pane_dividers(), x, y - DOCUMENT_VIEWPORT_TOP) {
+            return Some(UiTarget::PaneDivider(divider.index));
         }
         if let Some(list) = self.open_list()
             && let Some(index) = self.list_item_at(x, y, list.total, list.selected)

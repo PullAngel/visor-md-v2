@@ -92,6 +92,14 @@ fn division(app: &mut App) {
     app.choose_document_pane_split(2);
 }
 
+/// El divisor entre paneles en pleno arrastre, con el reparto desplazado.
+fn division_arrastrando(app: &mut App) {
+    division(app);
+    app.draw_for_test(1_100, 720);
+    app.set_divider_fraction(0, 0.4);
+    app.divider_drag = Some(0);
+}
+
 fn abrir_dialogo_de_cierre(app: &mut App) {
     let id = app.document.id;
     app.open_dialog(Dialog::close_tab("apuntes.md", true), Some(id));
@@ -181,7 +189,7 @@ fn dialogo_con_el_puntero_sobre_un_boton(app: &mut App) {
     abrir_dialogo_de_cierre(app);
 }
 
-const ESCENAS: [Escena; 17] = [
+const ESCENAS: [Escena; 18] = [
     Escena {
         nombre: "lectura",
         modo: DocumentMode::Reading,
@@ -238,6 +246,11 @@ const ESCENAS: [Escena; 17] = [
         preparar: division,
     },
     Escena {
+        nombre: "division-arrastrando",
+        modo: DocumentMode::Reading,
+        preparar: division_arrastrando,
+    },
+    Escena {
         nombre: "dialogo-cierre",
         modo: DocumentMode::SourceEditing,
         preparar: abrir_dialogo_de_cierre,
@@ -277,7 +290,7 @@ fn dibujar(escena: &Escena, palette: Palette, ancho: u32, alto: u32) -> Pixmap {
     let mut app = App::for_tests(palette);
     app.load_for_test(DOCUMENTO, escena.modo);
     (escena.preparar)(&mut app);
-    if escena.nombre == "division" {
+    if escena.nombre == "division" || escena.nombre == "division-arrastrando" {
         // Las cabeceras de panel necesitan el tamaño del cuadro anterior.
         app.draw_for_test(ancho, alto);
     }
