@@ -234,6 +234,12 @@ fn recuperaciones(app: &mut App) {
     app.recovery_list_match = 1;
 }
 
+/// Cerrar la ventana con tres documentos sin guardar.
+fn dialogo_cierre_de_ventana(app: &mut App) {
+    let nombres = ["Apuntes de biología", "Plan de viaje", "Lista de compras"].map(String::from);
+    app.open_dialog(Dialog::close_window(&nombres, true), None);
+}
+
 fn abrir_dialogo_de_cierre(app: &mut App) {
     let id = app.document.id;
     app.open_dialog(Dialog::close_tab("apuntes.md", true), Some(id));
@@ -323,7 +329,7 @@ fn dialogo_con_el_puntero_sobre_un_boton(app: &mut App) {
     abrir_dialogo_de_cierre(app);
 }
 
-const ESCENAS: [Escena; 23] = [
+const ESCENAS: [Escena; 24] = [
     Escena {
         nombre: "lectura",
         modo: DocumentMode::Reading,
@@ -408,6 +414,11 @@ const ESCENAS: [Escena; 23] = [
         nombre: "recuperaciones",
         modo: DocumentMode::Reading,
         preparar: recuperaciones,
+    },
+    Escena {
+        nombre: "dialogo-cierre-ventana",
+        modo: DocumentMode::Reading,
+        preparar: dialogo_cierre_de_ventana,
     },
     Escena {
         nombre: "dialogo-cierre",

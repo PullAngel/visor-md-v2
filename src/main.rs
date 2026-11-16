@@ -7095,6 +7095,17 @@ fn earliest_recovery_deadline<'a>(
         .min()
 }
 
+/// Cómo debe esperar el bucle de eventos. El control de flujo de `winit`
+/// persiste entre iteraciones: si solo se fijaba cuando había un plazo
+/// futuro, después de vencer el último (un aviso, una animación) quedaba
+/// apuntando a un instante pasado y el bucle giraba al 100 % de CPU sin parar.
+fn control_flow_for(next: Option<Instant>, now: Instant) -> ControlFlow {
+    match next.filter(|next| *next > now) {
+        Some(next) => ControlFlow::WaitUntil(next),
+        None => ControlFlow::Wait,
+    }
+}
+
 fn unix_now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::SystemTime::UNIX_EPOCH)
@@ -7790,6 +7801,8 @@ struct App {
     pending_folder_link: Option<(PathBuf, String)>,
     /// Enlace que se sigue cuando termina de indexarse la carpeta.
     pending_wikilink_after_index: Option<String>,
+    /// Documentos que «Guardar todo» está guardando antes de cerrar la ventana.
+    close_window_after_save: Option<HashSet<u64>>,
     /// Copias que quedaron de la sesión anterior, mientras la lista está abierta.
     recovery_list: Option<Vec<recovery::Orphan>>,
     recovery_list_match: usize,
@@ -8058,6 +8071,7 @@ impl App {
             pending_new_note: None,
             pending_folder_link: None,
             pending_wikilink_after_index: None,
+            close_window_after_save: None,
             recovery_list: None,
             recovery_list_match: 0,
             pending_recovery_discard: Vec::new(),
@@ -8220,9 +8234,7 @@ impl ApplicationHandler<AppEvent> for App {
         .into_iter()
         .flatten()
         .min();
-        if let Some(next) = next.filter(|next| *next > now) {
-            event_loop.set_control_flow(ControlFlow::WaitUntil(next));
-        }
+        event_loop.set_control_flow(control_flow_for(next, now));
     }
 
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: AppEvent) {
@@ -8528,6 +8540,7 @@ impl ApplicationHandler<AppEvent> for App {
                         self.set_notice("documento guardado de forma atómica");
                         self.reindex_after_save(document_id);
                         self.close_tab_if_saved_for_close(document_id);
+                        self.window_close_progress(document_id, true);
                     } else {
                         if let Some(tab) = self
                             .inactive_documents
@@ -8542,6 +8555,7 @@ impl ApplicationHandler<AppEvent> for App {
                         self.set_notice("otra pestaña terminó de guardarse");
                     }
                 } else if saved_current == Some(false) {
+                    self.window_close_progress(document_id, false);
                     self.set_notice(if active {
                         "se guardó una versión anterior; hay cambios nuevos"
                     } else {
@@ -8561,6 +8575,9 @@ impl ApplicationHandler<AppEvent> for App {
                 self.saves_in_flight.remove(&document_id);
                 if self.close_tab_after_save == Some(document_id) {
                     self.close_tab_after_save = None;
+                }
+                if self.close_window_after_save.is_some() {
+                    self.window_close_progress(document_id, false);
                 }
                 self.log.push(format!("[error] {error}"));
                 if document_id != self.document.id {
@@ -8616,6 +8633,7 @@ impl ApplicationHandler<AppEvent> for App {
                         self.set_notice("documento creado y guardado de forma atómica");
                         self.reindex_after_save(document_id);
                         self.close_tab_if_saved_for_close(document_id);
+                        self.window_close_progress(document_id, true);
                     } else {
                         if let Some(tab) = self
                             .inactive_documents
@@ -8630,6 +8648,7 @@ impl ApplicationHandler<AppEvent> for App {
                         self.set_notice("otra pestaña terminó de guardarse");
                     }
                 } else if saved_current == Some(false) {
+                    self.window_close_progress(document_id, false);
                     self.set_notice(if active {
                         "se creó una versión anterior; hay cambios nuevos"
                     } else {
@@ -13415,6 +13434,7 @@ impl App {
                 }
             }
             DialogChoice::SkipUseFolder => self.pending_folder_link = None,
+            DialogChoice::SaveAllAndClose => self.save_all_then_close(),
             DialogChoice::DiscardRecovery => self.discard_pending_recoveries(),
             DialogChoice::KeepRecoveryEntry => self.pending_recovery_discard.clear(),
         }
@@ -13507,14 +13527,68 @@ impl App {
             self.set_notice("no se cerró: no se pudieron conservar todas las recuperaciones");
             return false;
         }
+        let names = std::iter::once(&self.document)
+            .chain(self.inactive_documents.iter().map(|tab| &tab.document))
+            .filter(|document| document.is_dirty())
+            .map(DocumentState::display_name)
+            .collect::<Vec<_>>();
         self.open_dialog(
-            Dialog::close_window(
-                dirty_count,
-                self.recovery_enabled && self.recovery.is_some(),
-            ),
+            Dialog::close_window(&names, self.recovery_enabled && self.recovery.is_some()),
             None,
         );
         false
+    }
+
+    /// «Guardar todo» del diálogo de cierre: guarda cada documento con cambios
+    /// (los nuevos piden su destino) y cierra solo cuando todos terminaron.
+    /// Si alguno no se guarda, el cierre se detiene y nada se pierde.
+    fn save_all_then_close(&mut self) {
+        let ids = self
+            .tab_order
+            .iter()
+            .copied()
+            .filter(|id| {
+                document_by_id(&self.document, &self.inactive_documents, *id)
+                    .is_some_and(DocumentState::is_dirty)
+            })
+            .collect::<Vec<_>>();
+        let mut pending = HashSet::new();
+        for id in ids {
+            self.activate_document_tab(id);
+            self.save_current_document();
+            if self.saves_in_flight.contains(&id) {
+                pending.insert(id);
+            } else if self.document.is_dirty() {
+                let name = self.document.display_name();
+                self.set_notice(&format!(
+                    "El cierre se detuvo: «{name}» no se guardó y sigue abierto"
+                ));
+                return;
+            }
+        }
+        if pending.is_empty() {
+            self.exit_requested = true;
+        } else {
+            self.close_window_after_save = Some(pending);
+        }
+    }
+
+    /// Un guardado de «Guardar todo» terminó. Con el último, la ventana se
+    /// cierra; si alguno falló o quedó con cambios nuevos, el cierre se cancela.
+    fn window_close_progress(&mut self, document_id: u64, saved: bool) {
+        let Some(pending) = self.close_window_after_save.as_mut() else {
+            return;
+        };
+        if !saved {
+            self.close_window_after_save = None;
+            self.set_notice("El cierre se detuvo: un documento no se guardó y sigue abierto");
+            return;
+        }
+        pending.remove(&document_id);
+        if pending.is_empty() {
+            self.close_window_after_save = None;
+            self.exit_requested = true;
+        }
     }
 
     fn create_new_document(&mut self) {
@@ -21357,6 +21431,21 @@ La idea sale de [[Destino]] y sigue {larga}
     }
 
     #[test]
+    fn sin_plazos_futuros_el_bucle_espera_eventos_en_lugar_de_girar() {
+        let ahora = Instant::now();
+        assert_eq!(control_flow_for(None, ahora), ControlFlow::Wait);
+        // Un plazo ya vencido no puede dejar el bucle en una espera pasada.
+        let pasado = ahora - Duration::from_secs(1);
+        assert_eq!(control_flow_for(Some(pasado), ahora), ControlFlow::Wait);
+        assert_eq!(control_flow_for(Some(ahora), ahora), ControlFlow::Wait);
+        let futuro = ahora + Duration::from_secs(2);
+        assert_eq!(
+            control_flow_for(Some(futuro), ahora),
+            ControlFlow::WaitUntil(futuro)
+        );
+    }
+
+    #[test]
     fn la_antiguedad_de_una_copia_se_dice_con_palabras() {
         assert_eq!(age_label(5), "hace un momento");
         assert_eq!(age_label(60), "hace 1 min");
@@ -21496,6 +21585,47 @@ reservar hotel
         assert!(app.recovery_list.is_none());
         let _ = fs::remove_dir_all(carpeta_a);
         let _ = fs::remove_dir_all(carpeta_b);
+    }
+
+    #[test]
+    fn guardar_todo_cierra_solo_cuando_termina_el_ultimo_y_se_detiene_si_uno_falla() {
+        let mut app = App::for_tests(NIGHT);
+        app.close_window_after_save = Some(HashSet::from([1, 2]));
+        app.window_close_progress(1, true);
+        assert!(!app.exit_requested, "falta el segundo");
+        app.window_close_progress(2, true);
+        assert!(app.exit_requested);
+        assert!(app.close_window_after_save.is_none());
+
+        let mut app = App::for_tests(NIGHT);
+        app.close_window_after_save = Some(HashSet::from([1, 2]));
+        app.window_close_progress(1, true);
+        app.window_close_progress(2, false);
+        assert!(!app.exit_requested, "un fallo cancela el cierre");
+        assert!(app.close_window_after_save.is_none());
+        // Sin «Guardar todo» en curso no hace nada.
+        app.window_close_progress(3, true);
+        assert!(!app.exit_requested);
+    }
+
+    #[test]
+    fn el_cierre_con_cambios_nombra_los_documentos_de_todas_las_pestanas() {
+        let mut app = App::for_tests(NIGHT);
+        app.load_for_test(
+            "# Primero
+",
+            DocumentMode::SourceEditing,
+        );
+        app.perform_action(AppAction::NewDocument);
+        app.document.source = TextBuffer::from_text(
+            "# Segundo
+",
+        );
+        app.document.source_editor.mark_recovered();
+        assert!(!app.request_close_all());
+        let dialogo = app.dialog.as_ref().expect("pregunta antes de cerrar");
+        assert!(dialogo.body.contains("• Segundo"), "{}", dialogo.body);
+        assert_eq!(dialogo.focused_choice(), DialogChoice::SaveAllAndClose);
     }
 
     #[test]

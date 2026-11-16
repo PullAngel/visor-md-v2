@@ -577,9 +577,20 @@ Es independiente de las fases 2 y 3. Toca solo `editor.rs` y las funciones
 - [x] **6.7** Lista de recuperaciones con título, origen y antigüedad; Enter
   restaura, Ctrl+Enter restaura todo, Supr descarta (Mayús+Supr, todo), con
   confirmación. Aviso al arrancar si quedaron documentos (con 13.6).
-- [ ] **6.8** `Dialog::close_window` lista los documentos y ofrece «Guardar
-  todo», «Cerrar sin guardar» y «Cancelar»; Esc elige Cancelar. Pruebas en
-  `dialog.rs`.
+- [x] **6.8** `Dialog::close_window` lista los documentos (hasta 6 y «… y N
+  más») y ofrece «Guardar todo», «Cerrar sin guardar» y «Cancelar»; Esc elige
+  Cancelar. «Guardar todo» guarda cada documento (los nuevos piden destino) y
+  cierra cuando termina el último; si uno falla, el cierre se detiene. Pruebas
+  en `dialog.rs` y `main.rs`.
+
+**Cierre de la fase 6 (16 de noviembre).** Prueba en vivo con la herramienta de
+evaluación: escribir, matar el proceso a la fuerza, reabrir, abrir la lista de
+recuperaciones por teclado (F10) y restaurar funciona; la copia pasa a la sesión
+nueva. La prueba halló un defecto anterior, no de esta fase: pasado el último
+plazo (un aviso, una animación) el bucle de eventos quedaba en una espera ya
+vencida y giraba al 100 % de CPU. Se corrigió con `control_flow_for` y una
+prueba. Con la herramienta, los clics solo llegan a la build de evaluación
+(lleva el parche del puntero); con la build normal sirven las teclas.
 
 ### Fase 7 · Lenguaje, avisos y primer arranque
 
@@ -917,9 +928,9 @@ asociación.
 | 10 | Hecho | 10.1 a 10.11; prueba en vivo del 15 de noviembre |
 | 5 | Hecho | 5.1 a 5.4 y 5.8; la 5.5 a 5.7 pasaron a la fase 11 |
 | 11 | Hecho | 11.1 a 11.8; tooltip de «Quitar del mosaico» a la fase 8 |
-| 6 | Pendiente | — |
+| 6 | Hecha | 6.1 a 6.8 y 13.3 a 13.5; la 13.6 queda a medias (ligar la copia al archivo original) |
 | 7 | Pendiente | — |
 | 8 | En curso | Hecho el hover y destello de Copiar (8.2 parcial). Pendientes el resto de 8 |
 | 12 | Pendiente | Ventanas (un proceso por ventana) y asociación de archivos |
 | 9 | Pendiente | — |
-| 13 | Diseñada | Servicio de recuperación (P-02): D-38 a D-43; 13.1 y 13.2 van antes de la fase 5 |
+| 13 | En curso | Hechas 13.1 a 13.5. Pendientes: 13.6 (ligar al original y Comparar), 13.7 (gancho de pánico y traspaso entre ventanas), 13.8 (documentación) y la opcional 13.9 |

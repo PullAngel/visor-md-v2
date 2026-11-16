@@ -23,6 +23,7 @@ pub(crate) enum DialogChoice {
     SkipImage,
     CreateNote,
     SkipCreateNote,
+    SaveAllAndClose,
     DiscardRecovery,
     KeepRecoveryEntry,
     UseDocumentFolder,
@@ -219,29 +220,38 @@ impl Dialog {
         )
     }
 
-    pub(crate) fn close_window(dirty_count: usize, recovery_preserved: bool) -> Self {
-        let documents = if dirty_count == 1 {
-            "Hay 1 documento con cambios sin guardar.".to_string()
-        } else {
-            format!("Hay {dirty_count} documentos con cambios sin guardar.")
-        };
+    /// Cerrar la ventana con documentos sin guardar: los nombra, y ofrece
+    /// guardarlos todos, cerrar igual o cancelar. Escape cancela.
+    pub(crate) fn close_window(names: &[String], recovery_preserved: bool) -> Self {
+        const SHOWN: usize = 6;
+        let mut list = names
+            .iter()
+            .take(SHOWN)
+            .map(|name| format!("• {name}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        if names.len() > SHOWN {
+            list.push_str(&format!("\n… y {} más", names.len() - SHOWN));
+        }
+        let intro = "Tenés cambios sin guardar en:";
         let consequence = if recovery_preserved {
-            " Si cerrás, quedan en recuperaciones locales que podés restaurar al volver."
+            "Si cerrás sin guardar, quedan en recuperaciones que podés abrir al volver."
         } else {
-            " La recuperación local está desactivada: si cerrás, esos cambios se pierden."
+            "La recuperación está desactivada: si cerrás sin guardar, esos cambios se pierden."
         };
         Self::new(
             "¿Cerrar Visor MD?",
-            documents + consequence,
+            format!("{intro}\n{list}\n\n{consequence}"),
             vec![
                 button(
-                    "Cerrar de todos modos",
+                    "Cerrar sin guardar",
                     DialogChoice::CloseWindow,
                     ButtonTone::Destructive,
                 ),
+                button("Cancelar", DialogChoice::KeepEditing, ButtonTone::Neutral),
                 button(
-                    "Seguir editando",
-                    DialogChoice::KeepEditing,
+                    "Guardar todo",
+                    DialogChoice::SaveAllAndClose,
                     ButtonTone::Primary,
                 ),
             ],
@@ -471,7 +481,7 @@ mod tests {
             Dialog::external_unavailable(),
             Dialog::save_conflict(),
             Dialog::close_tab("nota.md", true),
-            Dialog::close_window(2, false),
+            Dialog::close_window(&["Una".to_string(), "Otra".to_string()], false),
             Dialog::local_image(),
             Dialog::create_note("Biología"),
             Dialog::use_document_folder("apuntes"),
@@ -493,6 +503,29 @@ mod tests {
             assert_eq!(dialog.buttons[dialog.focused].tone, ButtonTone::Primary);
             assert_ne!(dialog.focused_choice(), DialogChoice::DiscardAndCloseTab);
         }
+    }
+
+    #[test]
+    fn cerrar_con_cambios_nombra_los_documentos_y_ofrece_guardar_todo() {
+        let nombres = ["Apuntes", "Plan de viaje"].map(String::from);
+        let dialogo = Dialog::close_window(&nombres, true);
+        assert!(dialogo.body.contains("• Apuntes"));
+        assert!(dialogo.body.contains("• Plan de viaje"));
+        assert_eq!(dialogo.focused_choice(), DialogChoice::SaveAllAndClose);
+        assert_eq!(dialogo.safe_choice, DialogChoice::KeepEditing);
+        let etiquetas: Vec<_> = dialogo.buttons.iter().map(|b| b.label).collect();
+        assert_eq!(
+            etiquetas,
+            ["Cerrar sin guardar", "Cancelar", "Guardar todo"]
+        );
+
+        // Con muchos documentos la lista se corta y dice cuántos faltan.
+        let muchos: Vec<String> = (1..=9).map(|n| format!("Nota {n}")).collect();
+        let dialogo = Dialog::close_window(&muchos, false);
+        assert!(dialogo.body.contains("• Nota 6"));
+        assert!(!dialogo.body.contains("• Nota 7"));
+        assert!(dialogo.body.contains("… y 3 más"));
+        assert!(dialogo.body.contains("desactivada"));
     }
 
     #[test]
