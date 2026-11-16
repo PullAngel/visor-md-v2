@@ -341,7 +341,23 @@ fn barra_de_desplazamiento(app: &mut App) {
     app.scroll_bar_until = Some(Instant::now() + std::time::Duration::from_secs(3600));
 }
 
-const ESCENAS: [Escena; 26] = [
+/// «Copiado» con el ✓ ya trazado.
+fn codigo_copiado(app: &mut App) {
+    let bloque = app
+        .document
+        .blocks
+        .iter()
+        .position(|b| matches!(b.kind, Kind::Code))
+        .expect("el documento de prueba tiene código");
+    app.code_copied = Some((
+        app.document.id,
+        bloque,
+        false,
+        Instant::now() - std::time::Duration::from_millis(400),
+    ));
+}
+
+const ESCENAS: [Escena; 27] = [
     Escena {
         nombre: "lectura",
         modo: DocumentMode::Reading,
@@ -466,6 +482,11 @@ const ESCENAS: [Escena; 26] = [
         nombre: "barra-desplazamiento",
         modo: DocumentMode::Reading,
         preparar: barra_de_desplazamiento,
+    },
+    Escena {
+        nombre: "codigo-copiado",
+        modo: DocumentMode::Reading,
+        preparar: codigo_copiado,
     },
     Escena {
         nombre: "bienvenida",

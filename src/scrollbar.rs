@@ -12,6 +12,9 @@ pub(crate) const WIDTH: f32 = 6.0;
 pub(crate) const HOT_ZONE: f32 = 12.0;
 /// Cuánto sigue visible después de desplazar.
 pub(crate) const VISIBLE_AFTER_SCROLL: Duration = Duration::from_secs(1);
+/// Opacidad del tirador en reposo: da al menos 3:1 contra el documento en los dos
+/// temas (WCAG 1.4.11), lo que vigila la prueba de `theme.rs`.
+pub(crate) const THUMB_ALPHA: u8 = 180;
 const EDGE_GAP: f32 = 3.0;
 const VERTICAL_GAP: f32 = 2.0;
 const MIN_THUMB_HEIGHT: f32 = 28.0;

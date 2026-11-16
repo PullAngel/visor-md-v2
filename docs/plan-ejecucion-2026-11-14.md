@@ -641,13 +641,10 @@ que fijan su geometría y su efecto).
   botones de diálogo. El hover entra en 120 ms, sale en 80 y la pulsación deja un
   velo de acento de 160 ms; con movimiento reducido es inmediato. Los fondos de
   barra tienen radio de 6 px. Verificado en vivo con el hover del botón «+».
-- [~] **8.2** Copiar (hecho: botón redondeado, hover y destello con
-  programación de cuadros solo mientras anima; falta el ícono de dos hojas y el ✓
-  trazado en 160 ms):
-  - botón redondeado con un ícono de dos hojas;
-  - al pulsar, fondo de acento con alfa 76 y un ✓ que se traza en 160 ms;
-  - a los 1,6 s vuelve en 200 ms;
-  - se quita el aviso adicional.
+- [x] **8.2** Copiar: botón redondeado con ícono de dos hojas; al pulsar, fondo
+  de acento con alfa 76 y un ✓ que se traza en 160 ms; a los 1,6 s vuelve en
+  200 ms; ya no hay aviso adicional. El botón se ensanchó a 86 px para el texto
+  «Copiado».
 - [x] **8.3** Chincheta rellena y en acento cuando está activa, con ayuda
   «Fijada · clic para soltar»; ícono de restaurar y ayuda «Restaurar» cuando la
   ventana está maximizada. Además, «Quitar del mosaico» tiene ayuda propia
@@ -676,10 +673,11 @@ que fijan su geometría y su efecto).
   o un cambio de estilo repetía el párrafo entero por cada tramo. Una prueba
   extrae los fragmentos de `export_pdf_bytes` y los compara con el texto de los
   bloques.
-- [ ] **8.10** Cierre de fase:
-  - las referencias de todas las escenas, actualizadas (hecho);
-  - `design-critique` y `accessibility-review` (pendientes);
-  - ejecutable nuevo (hecho).
+- [x] **8.10** Cierre de fase: referencias de todas las escenas actualizadas,
+  revisión de accesibilidad y de diseño en
+  [`revision-cierre-fase-8.md`](evaluaciones/2026-11-14/revision-cierre-fase-8.md)
+  (corrigió el contraste del tirador de la barra; deja abierto el árbol de
+  accesibilidad) y ejecutable nuevo.
 
 **Pendiente de la fase 11 que sigue abierto:** el recuadro vacío de la tira de
 pestañas cuando todos los documentos están en paneles y el resalte del divisor
@@ -971,7 +969,7 @@ asociación.
 | 11 | Hecho | 11.1 a 11.8; tooltip de «Quitar del mosaico» a la fase 8 |
 | 6 | Hecha | 6.1 a 6.8 y 13.3 a 13.6 |
 | 7 | Hecha | 7.1 a 7.8 |
-| 8 | En curso | Hechas todas salvo 8.2 (ícono y ✓) y las críticas de 8.10 |
+| 8 | Hecha | 8.1 a 8.10; quedan dos retoques de la fase 11 y el árbol de accesibilidad |
 | 12 | Pendiente | Ventanas (un proceso por ventana) y asociación de archivos |
 | 9 | Pendiente | — |
 | 13 | En curso | Hechas 13.1 a 13.6. Pendientes: 13.7 (gancho de pánico y traspaso entre ventanas), 13.8 (documentación) y la opcional 13.9 |

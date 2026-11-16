@@ -155,6 +155,23 @@ mod tests {
         }
     }
 
+    /// WCAG 1.4.11: el tirador de la barra de desplazamiento, mezclado con su
+    /// opacidad sobre el documento, se distingue con al menos 3:1.
+    #[test]
+    fn el_tirador_de_la_barra_se_distingue_del_documento() {
+        for palette in [DAY, NIGHT] {
+            let alpha = f64::from(crate::scrollbar::THUMB_ALPHA) / 255.0;
+            let mezcla =
+                |a: u8, b: u8| (f64::from(a) * alpha + f64::from(b) * (1.0 - alpha)).round() as u8;
+            let tirador = (
+                mezcla(palette.dim.0, palette.surface.0),
+                mezcla(palette.dim.1, palette.surface.1),
+                mezcla(palette.dim.2, palette.surface.2),
+            );
+            assert!(contrast(tirador, palette.surface) >= 3.0);
+        }
+    }
+
     /// D-24: el tema de día sube sus mínimos para texto tenue y enlaces
     /// externos, que eran lo más justo.
     #[test]

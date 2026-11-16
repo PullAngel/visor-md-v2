@@ -104,7 +104,7 @@ const SELECTION_SCROLL_MAX_STEP: f32 = 18.0;
 const CONTEXT_MENU_WIDTH: f32 = 224.0;
 const CONTEXT_MENU_ROW_HEIGHT: f32 = 34.0;
 const CONTEXT_MENU_PADDING: f32 = 8.0;
-const CODE_COPY_WIDTH: f32 = 74.0;
+const CODE_COPY_WIDTH: f32 = 86.0;
 const CODE_COPY_HEIGHT: f32 = 22.0;
 const MAX_SEARCH_QUERY_CHARS: usize = 256;
 const MAX_OVERLAY_LABEL_CHARS: usize = 180;
@@ -1643,15 +1643,139 @@ fn draw_feedback_fill(
     }
 }
 
+/// Marca del copiado de código en el registro; ese copiado no genera aviso.
+const CODE_COPIED_KIND: &str = "código copiado al portapapeles";
+
+/// Estado de «Copiado» de un botón: cuánto del ✓ está trazado (160 ms) y cuánto
+/// queda del estado (1,6 s lleno y 200 ms de regreso).
+#[derive(Clone, Copy)]
+struct CopiedLook {
+    trace: f32,
+    fade: f32,
+}
+
+const COPIED_TRACE: Duration = Duration::from_millis(160);
+const COPIED_HOLD: Duration = Duration::from_millis(1_600);
+const COPIED_FADE: Duration = Duration::from_millis(200);
+
+/// Cómo se ve «Copiado» `elapsed` después de copiar, o `None` si ya terminó.
+fn copied_look(elapsed: Duration, reduce_motion: bool) -> Option<CopiedLook> {
+    if elapsed >= COPIED_HOLD + COPIED_FADE {
+        return None;
+    }
+    let trace = if reduce_motion {
+        1.0
+    } else {
+        (elapsed.as_secs_f32() / COPIED_TRACE.as_secs_f32()).min(1.0)
+    };
+    let fade = if elapsed <= COPIED_HOLD || reduce_motion {
+        1.0
+    } else {
+        1.0 - (elapsed - COPIED_HOLD).as_secs_f32() / COPIED_FADE.as_secs_f32()
+    };
+    Some(CopiedLook { trace, fade })
+}
+
+fn draw_traced_check(
+    pixmap: &mut Pixmap,
+    x: f32,
+    y: f32,
+    size: f32,
+    progress: f32,
+    color: (u8, u8, u8),
+) {
+    let points = [
+        (x + size * 0.12, y + size * 0.55),
+        (x + size * 0.40, y + size * 0.85),
+        (x + size * 0.90, y + size * 0.18),
+    ];
+    let first = ((points[1].0 - points[0].0).hypot(points[1].1 - points[0].1)).max(0.01);
+    let second = ((points[2].0 - points[1].0).hypot(points[2].1 - points[1].1)).max(0.01);
+    let reach = progress.clamp(0.0, 1.0) * (first + second);
+    let mut path = tiny_skia::PathBuilder::new();
+    path.move_to(points[0].0, points[0].1);
+    if reach <= first {
+        let t = reach / first;
+        path.line_to(
+            points[0].0 + (points[1].0 - points[0].0) * t,
+            points[0].1 + (points[1].1 - points[0].1) * t,
+        );
+    } else {
+        path.line_to(points[1].0, points[1].1);
+        let t = (reach - first) / second;
+        path.line_to(
+            points[1].0 + (points[2].0 - points[1].0) * t,
+            points[1].1 + (points[2].1 - points[1].1) * t,
+        );
+    }
+    let mut paint = Paint {
+        anti_alias: true,
+        ..Default::default()
+    };
+    paint.set_color(Color::from_rgba8(color.0, color.1, color.2, 255));
+    if let Some(path) = path.finish() {
+        pixmap.stroke_path(
+            &path,
+            &paint,
+            &tiny_skia::Stroke {
+                width: 1.6,
+                line_cap: tiny_skia::LineCap::Round,
+                line_join: tiny_skia::LineJoin::Round,
+                ..Default::default()
+            },
+            Transform::identity(),
+            None,
+        );
+    }
+}
+
+/// Ícono de dos hojas, a la izquierda del botón de copiar.
+fn draw_copy_icon(pixmap: &mut Pixmap, x: f32, y: f32, size: f32, color: (u8, u8, u8)) {
+    let mut path = tiny_skia::PathBuilder::new();
+    let unit = size / 12.0;
+    // Hoja de atrás: solo asoman su arriba y su derecha.
+    path.move_to(x + 3.0 * unit, y + 2.5 * unit);
+    path.line_to(x + 3.0 * unit, y + 0.5 * unit);
+    path.line_to(x + 11.0 * unit, y + 0.5 * unit);
+    path.line_to(x + 11.0 * unit, y + 8.0 * unit);
+    path.line_to(x + 9.0 * unit, y + 8.0 * unit);
+    // Hoja de adelante.
+    path.move_to(x + 1.0 * unit, y + 3.0 * unit);
+    path.line_to(x + 9.0 * unit, y + 3.0 * unit);
+    path.line_to(x + 9.0 * unit, y + 11.5 * unit);
+    path.line_to(x + 1.0 * unit, y + 11.5 * unit);
+    path.close();
+    let mut paint = Paint {
+        anti_alias: true,
+        ..Default::default()
+    };
+    paint.set_color(Color::from_rgba8(color.0, color.1, color.2, 235));
+    if let Some(path) = path.finish() {
+        pixmap.stroke_path(
+            &path,
+            &paint,
+            &tiny_skia::Stroke {
+                width: 1.2,
+                ..Default::default()
+            },
+            Transform::identity(),
+            None,
+        );
+    }
+}
+
 fn draw_copy_button(
     pixmap: &mut Pixmap,
     (x, y, width, height): (f32, f32, f32, f32),
     accent: (u8, u8, u8),
+    ink: (u8, u8, u8),
     hover: f32,
     press: f32,
-    copied: bool,
+    copied: Option<CopiedLook>,
 ) {
-    let alpha = 42.0 + 38.0 * hover + 70.0 * press + if copied { 56.0 } else { 0.0 };
+    let copied_fade = copied.map_or(0.0, |look| look.fade);
+    // Copiado: fondo de acento con alfa 76.
+    let alpha = 42.0 + 38.0 * hover + 70.0 * press + (76.0 - 42.0) * copied_fade;
     let mut paint = Paint {
         anti_alias: true,
         ..Default::default()
@@ -1663,6 +1787,13 @@ fn draw_copy_button(
         alpha.min(230.0) as u8,
     ));
     fill_rounded_rect(pixmap, x, y, width, height, 5.0, &paint);
+    let (icon_x, icon_y, icon_size) = (x + 7.0, y + (height - 12.0) * 0.5, 12.0);
+    match copied {
+        Some(look) if look.fade > 0.5 => {
+            draw_traced_check(pixmap, icon_x, icon_y, icon_size, look.trace, ink);
+        }
+        _ => draw_copy_icon(pixmap, icon_x, icon_y, icon_size, ink),
+    }
 }
 
 /// Borde izquierdo del botón de la barra que dispara `action`.
@@ -8060,7 +8191,7 @@ struct App {
     notice_visible_until: Option<Instant>,
     /// Bloque de código cuya copia se confirma en su propio botón mientras el
     /// aviso sigue visible.
-    code_copied: Option<(u64, usize, bool)>,
+    code_copied: Option<(u64, usize, bool, Instant)>,
     /// Scroll de la vista previa del último cuadro, para el hit testing.
     preview_scroll: f32,
     /// Pide al próximo cuadro llevar el cursor de la fuente a la vista.
@@ -8514,6 +8645,14 @@ impl ApplicationHandler<AppEvent> for App {
                 Some(until)
             }
         });
+        let copy_deadline = self.code_copied.and_then(|(_, _, _, at)| {
+            copied_look(now.saturating_duration_since(at), self.reduce_motion).map(|_| {
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+                now + THEME_TRANSITION_FRAME
+            })
+        });
         let scroll_bar_deadline = self.scroll_bar_until.and_then(|until| {
             if until <= now {
                 self.scroll_bar_until = None;
@@ -8532,6 +8671,7 @@ impl ApplicationHandler<AppEvent> for App {
             tooltip_deadline,
             toast_deadline,
             scroll_bar_deadline,
+            copy_deadline,
             self.next_recovery_deadline(),
         ]
         .into_iter()
@@ -14667,6 +14807,7 @@ impl App {
 
     /// Copiar es siempre una acción explícita. El valor booleano permite que
     /// `Cortar` conserve la fuente si el sistema no aceptó el portapapeles.
+    /// Copiar un bloque de código no avisa: el propio botón lo cuenta con su ✓.
     fn write_text_to_clipboard(&mut self, text: String, kind: &str) -> bool {
         let clipboard = match self.clipboard.as_mut() {
             Some(clipboard) => clipboard,
@@ -14703,7 +14844,9 @@ impl App {
             return false;
         }
         self.log.push(format!("[portapapeles] {kind}"));
-        self.set_notice(kind);
+        if kind != CODE_COPIED_KIND {
+            self.set_notice(kind);
+        }
         true
     }
 
@@ -16080,8 +16223,11 @@ impl App {
             return;
         };
         let content = code_copy_text(&source, fence_indent);
-        if self.write_text_to_clipboard(content, "código copiado al portapapeles") {
-            self.code_copied = Some((self.document.id, block, preview));
+        if self.write_text_to_clipboard(content, CODE_COPIED_KIND) {
+            self.code_copied = Some((self.document.id, block, preview, Instant::now()));
+            if let Some(window) = &self.window {
+                window.request_redraw();
+            }
         }
     }
 
@@ -17190,17 +17336,27 @@ impl App {
         );
         let copied = self
             .code_copied
-            .filter(|(document_id, _, _)| *document_id == self.document.id)
-            .filter(|_| {
-                self.notice_visible_until
-                    .is_some_and(|until| until > Instant::now())
+            .filter(|(document_id, _, _, _)| *document_id == self.document.id)
+            .and_then(|(_, block, preview, at)| {
+                copied_look(motion_now.saturating_duration_since(at), motion_reduced)
+                    .map(|look| (block, preview, look))
             });
         let copied_code_block = copied
-            .filter(|(_, _, preview)| !preview)
-            .map(|(_, block, _)| block);
+            .filter(|(_, preview, _)| !preview)
+            .map(|(block, _, look)| (block, look));
         let copied_preview_block = copied
-            .filter(|(_, _, preview)| *preview)
-            .map(|(_, block, _)| block);
+            .filter(|(_, preview, _)| *preview)
+            .map(|(block, _, look)| (block, look));
+        let copied_code_look = |index: usize| {
+            copied_code_block
+                .filter(|(block, _)| *block == index)
+                .map(|(_, look)| look)
+        };
+        let copied_preview_look = |index: usize| {
+            copied_preview_block
+                .filter(|(block, _)| *block == index)
+                .map(|(_, look)| look)
+        };
         let contextual_toolbar_actions = contextual_toolbar_actions(self.document.mode);
         let contextual_toolbar_label_layouts = contextual_toolbar_actions
             .iter()
@@ -18239,9 +18395,10 @@ impl App {
                                 pixmap,
                                 (x, y, width, height),
                                 palette.accent,
+                                palette.text,
                                 motion.hover_amount(target, motion_now, motion_reduced),
                                 motion.press_amount(target, motion_now, motion_reduced),
-                                copied_code_block == Some(i),
+                                copied_code_look(i),
                             );
                             if let Some(language) = blocks[i]
                                 .code_info
@@ -18258,7 +18415,7 @@ impl App {
                                     y + 4.0,
                                 );
                             }
-                            let label = if copied_code_block == Some(i) {
+                            let label = if copied_code_look(i).is_some_and(|look| look.fade > 0.5) {
                                 &code_copied_layout
                             } else {
                                 &code_copy_layout
@@ -18266,13 +18423,13 @@ impl App {
                             for line in label.lines() {
                                 for entry in line.items() {
                                     if let PositionedLayoutItem::GlyphRun(run) = entry {
-                                        draw_run_background(pixmap, &run, x + 8.0, y + 4.0);
+                                        draw_run_background(pixmap, &run, x + 24.0, y + 4.0);
                                         draw_glyph_run(
                                             pixmap,
                                             scale_cx,
                                             glyphs,
                                             &run,
-                                            x + 8.0,
+                                            x + 24.0,
                                             y + 4.0,
                                         );
                                     }
@@ -18619,9 +18776,10 @@ impl App {
                                     pixmap,
                                     (bx, by, bw, bh),
                                     palette.accent,
+                                    palette.text,
                                     motion.hover_amount(target, motion_now, motion_reduced),
                                     motion.press_amount(target, motion_now, motion_reduced),
-                                    copied_preview_block == Some(index),
+                                    copied_preview_look(index),
                                 );
                                 if let Some(language) = document.rendered_blocks[index]
                                     .code_info
@@ -18638,7 +18796,9 @@ impl App {
                                         by + 4.0,
                                     );
                                 }
-                                let label = if copied_preview_block == Some(index) {
+                                let label = if copied_preview_look(index)
+                                    .is_some_and(|look| look.fade > 0.5)
+                                {
                                     &code_copied_layout
                                 } else {
                                     &code_copy_layout
@@ -18648,7 +18808,7 @@ impl App {
                                     scale_cx,
                                     glyphs,
                                     label,
-                                    bx + 8.0,
+                                    bx + 24.0,
                                     by + 4.0,
                                 );
                             }
@@ -18827,7 +18987,7 @@ impl App {
                 dim.0,
                 dim.1,
                 dim.2,
-                if active { 210 } else { 120 },
+                if active { 230 } else { scrollbar::THUMB_ALPHA },
             ));
             fill_rounded_rect(
                 pixmap,
@@ -22890,6 +23050,33 @@ agregado por otro programa
         );
         assert!(app.tooltip.is_shown());
         app.draw_for_test(1100, 720);
+    }
+
+    #[test]
+    fn el_estado_copiado_traza_el_check_en_160_ms_y_vuelve_a_los_1_6_s() {
+        let ms = Duration::from_millis;
+        assert_eq!(copied_look(ms(0), false).unwrap().trace, 0.0);
+        let mitad = copied_look(ms(80), false).unwrap();
+        assert!((mitad.trace - 0.5).abs() < 0.01 && mitad.fade == 1.0);
+        assert_eq!(copied_look(ms(200), false).unwrap().trace, 1.0);
+        assert_eq!(copied_look(ms(1_500), false).unwrap().fade, 1.0);
+        let volviendo = copied_look(ms(1_700), false).unwrap();
+        assert!((volviendo.fade - 0.5).abs() < 0.01);
+        assert!(copied_look(ms(1_800), false).is_none());
+        // Sin movimiento: el ✓ aparece entero y se queda hasta el final.
+        let quieto = copied_look(ms(10), true).unwrap();
+        assert_eq!((quieto.trace, quieto.fade), (1.0, 1.0));
+    }
+
+    #[test]
+    fn copiar_codigo_no_agrega_un_aviso() {
+        let mut app = App::for_tests(NIGHT);
+        app.notice = None;
+        // El portapapeles del sistema puede no existir en el entorno de pruebas:
+        // si copia, no hay aviso; si no, el aviso es el del error.
+        if app.write_text_to_clipboard("x".into(), CODE_COPIED_KIND) {
+            assert!(app.notice.is_none());
+        }
     }
 
     #[test]
