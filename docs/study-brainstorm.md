@@ -187,7 +187,7 @@ Se cambia por documento, en los dos sentidos, sin pérdida.
 
 | Idea | Por qué |
 | --- | --- |
-| Modo foco que oculta todo | No te convenció, y coincido: el Pomodoro da el beneficio sin esconder la interfaz |
+| Modo foco que oculta todo | No te convenció, y coincido: el Pomodoro da el beneficio sin esconder la interfaz. El «modo limpio» del 15 de noviembre (X-01 del plan) es otra cosa: las barras se esconden pero reaparecen al llevar el cursor al borde |
 | Estructura de outliner | Modelo de escritura distinto, no una función |
 | Motores de diagramas remotos | Mandan la fuente del diagrama a un servicio externo |
 

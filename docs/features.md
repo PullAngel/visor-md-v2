@@ -137,6 +137,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Lista de conceptos | Parcial | Inserta una estructura Markdown o prepara desde una selección una pestaña editable con plantilla y fuente literal. Conserva EOL, es reutilizable en Obsidian, Git y otros lectores, y no extrae conceptos automáticamente. Falta exportación dedicada. |
 | Repaso espaciado simple | Planificado tardío | Estado separado y sincronización segura |
 | Pomodoro | Futuro | Solo si no distrae ni infla producto |
+| Modo limpio (barras ocultables) | Futuro, extra posterior a la versión final | Las barras se ocultan y reaparecen al llevar el cursor al borde; ver X-01 del plan |
 
 ## Contenido enriquecido
 

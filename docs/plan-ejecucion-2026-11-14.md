@@ -398,6 +398,10 @@ Diseño completo, inventario de las 69 acciones y riesgos en
   un dato mostrado, nunca un destino; el registro no contiene rutas ni
   contenido. Cifrado con DPAPI y `WM_ENDSESSION` fuera de la v1 (13.9, opcional,
   en un módulo aislado y revisado a mano porque exigen `unsafe`).
+- **D-44. Modo limpio (extra posterior a la versión final).** Las barras
+  (ventana, pestañas, contextual y de estado) se pueden ocultar y queda solo el
+  marco del texto. No es el «modo foco que oculta todo» que se descartó: las
+  barras siguen a un gesto de distancia. Detalle en el extra X-01.
 
 ## Fases y tareas
 
@@ -829,6 +833,40 @@ hacen con la fase 6 (comparten la 6.7); la 13.7 y la 13.8 con la fase 12.
 - [ ] **13.9** *Opcional.* Módulo aislado de integración con el sistema operativo
   para `WM_ENDSESSION` y evaluar DPAPI; solo si 13.1 a 13.8 no bastan. Exige
   levantar `forbid(unsafe_code)` en ese módulo y revisión manual.
+
+## Extras posteriores a la versión final
+
+Van después de la fase 9, del instalador de Windows y del paquete de Linux. No
+entran en el alcance de la versión final.
+
+- [ ] **X-01** (pedido del 15 de noviembre) **Modo limpio: barras ocultables.**
+  Un interruptor oculta las barras superiores y deja un recuadro de texto muy
+  limpio. Al llevar el cursor al borde de arriba, la barra aparece; al
+  alejarlo, se esconde. Diseño previo, para validar al llegar:
+  - **Qué se oculta:** fila de ventana y menús, tira de pestañas, barra
+    contextual y barra de estado. Se pueden elegir por separado (arriba y
+    abajo) en una segunda versión.
+  - **Cómo aparecen:** una zona sensible de unos 6 px en el borde superior (y
+    otra, opcional, en el inferior). La barra baja tras 150 ms de puntero
+    quieto y se esconde 600 ms después de que el puntero sale de ella. Con
+    movimiento reducido (`reduce_motion`) aparece y desaparece sin animación.
+  - **Superpuestas, no empujan:** las barras flotan sobre el texto; el texto no
+    se mueve ni se reordena al mostrarlas.
+  - **Nunca se ocultan** mientras haya un menú, un diálogo, la búsqueda, un
+    panel o un arrastre abierto, ni mientras el puntero esté sobre ellas.
+  - **Teclado:** F6 y F10 las muestran y Esc las vuelve a ocultar; el
+    interruptor tiene un atajo con Ctrl y vive en el menú Vista. Sin barras,
+    sigue habiendo una forma de mover, maximizar y cerrar la ventana (la zona
+    sensible muestra también los controles).
+  - **Una pista mínima:** un filo de acento de 2 px arriba, para que se sepa
+    que hay una barra escondida. Se puede apagar.
+  - **Se recuerda** en la configuración, apagado por defecto.
+  - **Depende de:** la fase 8 (animación y movimiento reducido), `UiTarget`
+    (la zona sensible es un objetivo más), el orden de foco F6 y la pila de
+    capas del tooltip.
+  - **Pruebas:** zona sensible sin solapes de 640 a 2000 px, tiempos con un
+    reloj simulado, escenas visuales con las barras ocultas y reveladas, y que
+    nada se oculte con un diálogo abierto.
 
 ## Secuencia
 

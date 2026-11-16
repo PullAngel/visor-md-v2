@@ -114,7 +114,7 @@ competir con la lectura cuando no se necesitan.
 Desde el 14 de noviembre de 2026, el frente activo es el plan definitivo de
 [`evaluacion-usabilidad-2026-11-14.md`](evaluacion-usabilidad-2026-11-14.md#plan-definitivo-de-cambios),
 en nueve fases. Ese plan absorbe la revisión de interfaz de la misma fecha. Después vienen el instalador de Windows, el paquete de Linux y
-el Pomodoro.
+el Pomodoro; como extra posterior, el modo limpio con barras ocultables (X-01 del plan).
 
 Desde el 13 de noviembre de 2026 el orden vigente es el de
 [`revision-2026-11-13.md`](revision-2026-11-13.md#orden-de-trabajo-para-continuar):

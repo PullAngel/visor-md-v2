@@ -121,7 +121,7 @@ sigue el plan definitivo de
 Las tareas concretas y su estado están en
 [`plan-ejecucion-2026-11-14.md`](plan-ejecucion-2026-11-14.md).
 
-Después vienen el instalador de Windows, el paquete de Linux y el Pomodoro.
+Después vienen el instalador de Windows, el paquete de Linux y el Pomodoro, y como extra el modo limpio con barras ocultables (X-01).
 Referencia histórica:
 
 El orden detallado vive en
