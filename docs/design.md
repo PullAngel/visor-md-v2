@@ -192,7 +192,7 @@ pasar a Neutro suizo (Archivo + Literata), tu opción B.
 | Rol | Tamaño / interlínea |
 | --- | --- |
 | H1 | 31 / 1.2 |
-| H2 | 25 / 1.3 |
+| H2 | 26 / 1.3 |
 | H3 | 20 / 1.35 |
 | Cuerpo | 16 / 1.65 |
 | Código | 13.5 / 1.7 |

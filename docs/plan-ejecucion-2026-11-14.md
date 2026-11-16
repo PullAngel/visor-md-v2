@@ -657,18 +657,16 @@ que fijan su geometría y su efecto).
   derecho, y se arrastra (`UiTarget::ScrollThumb`). Verificada en vivo con la
   versión de evaluación: aparece al pasar el puntero y arrastrarla desplaza el
   documento.
-- [ ] **8.5** Recuadro: la etiqueta va dentro del bloque, en la primera línea,
-  con un ícono, a 12 px del filete. **No hecha:** la etiqueta hoy es un marcador
-  fuera del bloque; meterla dentro cambia el alto del bloque y toca selección,
-  búsqueda y PDF. Pide decidir si va en una línea propia o a la izquierda del
-  texto.
+- [x] **8.5** Recuadro: el rótulo va dentro del bloque, en la primera línea, a
+  12 px del filete y con un punto de acento; el texto arranca en una sangría fija
+  de 108 px (`CALLOUT_INDENT`), igual para todos los recuadros. El rótulo es el
+  control de plegado. Decisión de la persona: sangría fija.
 - [x] **8.6** Código: 12 px entre cercas contiguas (las líneas de una misma
   cerca siguen pegadas) y el lenguaje, en tono tenue, junto a «Copiar» (lectura
   y vista previa de Comparar).
-- [ ] **8.7** Escala H2 y H3 más separada (H3 = 0,85 × H2, tenue). Columna de
-  lectura centrada cuando sobran más de 200 px. **No hecha:** el texto de la
-  escala se contradice (0,85 × H2 acerca H3 a H2, hoy está en 0,8) y centrar la
-  columna choca con el índice flotante, que usa justo ese espacio sobrante.
+- [x] **8.7** Escala: H2 sube a 26 px (H1 31, H3 20, H4 17), así H2 y H3 quedan
+  más separados. No se hizo H3 tenue (bajaría su contraste) ni se centró la
+  columna (chocaba con el índice flotante). Criterio delegado a Claude.
 - [x] **8.8** D-24: aplicado (`dim` de día a `#5A5043`, `external_link` a
   `#1A5AAE`, mínimos de día subidos a 5,5 en la prueba de `theme.rs`). Las cifras
   están en [`design.md`](design.md), calculadas con la fórmula de WCAG; la
@@ -973,7 +971,7 @@ asociación.
 | 11 | Hecho | 11.1 a 11.8; tooltip de «Quitar del mosaico» a la fase 8 |
 | 6 | Hecha | 6.1 a 6.8 y 13.3 a 13.6 |
 | 7 | Hecha | 7.1 a 7.8 |
-| 8 | En curso | Hechas 8.1, 8.3, 8.4, 8.6, 8.8 y 8.9. Pendientes 8.2 (ícono y ✓), 8.5 y 8.7 (piden decisión) y las críticas de 8.10 |
+| 8 | En curso | Hechas todas salvo 8.2 (ícono y ✓) y las críticas de 8.10 |
 | 12 | Pendiente | Ventanas (un proceso por ventana) y asociación de archivos |
 | 9 | Pendiente | — |
 | 13 | En curso | Hechas 13.1 a 13.6. Pendientes: 13.7 (gancho de pánico y traspaso entre ventanas), 13.8 (documentación) y la opcional 13.9 |

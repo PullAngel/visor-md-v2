@@ -3237,13 +3237,52 @@ impl Block {
     }
 }
 
+/// Sangría fija de un recuadro: el filete, 12 px de aire, el rótulo con su
+/// punto y el texto. Es fija para que el texto de todos los recuadros arranque
+/// en la misma columna, sea cual sea la etiqueta.
+const CALLOUT_INDENT: f32 = 108.0;
+/// Distancia del filete al punto de acento que acompaña al rótulo.
+const CALLOUT_DOT_X: f32 = 15.0;
+/// Distancia del filete al comienzo del rótulo.
+const CALLOUT_LABEL_X: f32 = 27.0;
+
+/// Borde izquierdo de un marcador de texto: en un recuadro, dentro del bloque
+/// y a 12 px del filete; en una lista, en el margen, a la izquierda del texto.
+fn text_marker_x(kind: Kind, slot_x: f32, marker_width: f32) -> f32 {
+    if matches!(kind, Kind::Callout) {
+        slot_x - CALLOUT_INDENT + CALLOUT_LABEL_X
+    } else {
+        slot_x - marker_width - 8.0
+    }
+}
+
+/// Punto de acento que precede al rótulo de un recuadro.
+fn draw_callout_dot(pixmap: &mut Pixmap, slot_x: f32, center_y: f32, accent: (u8, u8, u8)) {
+    let mut paint = Paint {
+        anti_alias: true,
+        ..Default::default()
+    };
+    paint.set_color(Color::from_rgba8(accent.0, accent.1, accent.2, 255));
+    let mut path = tiny_skia::PathBuilder::new();
+    path.push_circle(slot_x - CALLOUT_INDENT + CALLOUT_DOT_X + 3.0, center_y, 3.0);
+    if let Some(path) = path.finish() {
+        pixmap.fill_path(
+            &path,
+            &paint,
+            tiny_skia::FillRule::Winding,
+            Transform::identity(),
+            None,
+        );
+    }
+}
+
 impl Kind {
     /// (tamano, peso, rol de color, monoespaciada)
     fn style(self) -> (f32, f32, Role, bool) {
         match self {
             // Escala tipografica de docs/design.md.
             Kind::Heading(1) => (31.0, 700.0, Role::Text, false),
-            Kind::Heading(2) => (25.0, 700.0, Role::Text, false),
+            Kind::Heading(2) => (26.0, 700.0, Role::Text, false),
             Kind::Heading(3) => (20.0, 600.0, Role::Text, false),
             Kind::Heading(_) => (17.0, 600.0, Role::Text, false),
             Kind::Para | Kind::Item(_) => (16.0, 400.0, Role::Text, false),
@@ -3286,7 +3325,8 @@ impl Kind {
     fn indent(self) -> f32 {
         match self {
             Kind::Item(d) => 22.0 * d.min(MAX_INDENT_DEPTH) as f32,
-            Kind::Quote | Kind::Callout => 20.0,
+            Kind::Quote => 20.0,
+            Kind::Callout => CALLOUT_INDENT,
             _ => 0.0,
         }
     }
@@ -6699,16 +6739,19 @@ fn draw_cached_blocks_in_pane(
             }
             Kind::Callout => {
                 if let Some(rect) = Rect::from_xywh(
-                    pane.x + slot.x - 20.0,
+                    pane.x + slot.x - CALLOUT_INDENT,
                     top - 4.0,
                     text_width + 20.0,
                     slot.height + 8.0,
                 ) {
                     pixmap.fill_rect(rect, &elevated, Transform::identity(), None);
                 }
-                if let Some(rect) =
-                    Rect::from_xywh(pane.x + slot.x - 20.0, top - 4.0, 3.0, slot.height + 8.0)
-                {
+                if let Some(rect) = Rect::from_xywh(
+                    pane.x + slot.x - CALLOUT_INDENT,
+                    top - 4.0,
+                    3.0,
+                    slot.height + 8.0,
+                ) {
                     pixmap.fill_rect(rect, &accent, Transform::identity(), None);
                 }
             }
@@ -6725,10 +6768,18 @@ fn draw_cached_blocks_in_pane(
             match marker {
                 CachedMarker::Text(marker) => {
                     let marker_width = marker.width();
+                    if matches!(slot.kind, Kind::Callout) {
+                        draw_callout_dot(
+                            pixmap,
+                            pane.x + slot.x,
+                            top + marker.height() * 0.5,
+                            palette.accent,
+                        );
+                    }
                     for line in marker.lines() {
                         for entry in line.items() {
                             if let PositionedLayoutItem::GlyphRun(run) = entry {
-                                let x = pane.x + slot.x - marker_width - 8.0;
+                                let x = pane.x + text_marker_x(slot.kind, slot.x, marker_width);
                                 draw_run_background(pixmap, &run, x, top);
                                 draw_glyph_run(pixmap, scale_cx, glyphs, &run, x, top);
                             }
@@ -15737,7 +15788,9 @@ impl App {
                 return None;
             }
             let top = pane_screen_y(slot.y, self.scroll, panes.source);
-            let left = panes.source.x + slot.x - 24.0 * self.scale_factor;
+            // El rótulo del recuadro, que ahora vive dentro del bloque, es el
+            // control de plegado.
+            let left = panes.source.x + slot.x - CALLOUT_INDENT;
             ((top..=top + slot.height).contains(&y) && (left..panes.source.x + slot.x).contains(&x))
                 .then_some(index)
         })
@@ -18240,7 +18293,7 @@ impl App {
                     // estado interactivo.
                     Kind::Callout => {
                         if let Some(rect) = Rect::from_xywh(
-                            panes.source.x + slot.x - 20.0,
+                            panes.source.x + slot.x - CALLOUT_INDENT,
                             top - 4.0,
                             ancho_texto + 20.0,
                             slot.height + 8.0,
@@ -18248,7 +18301,7 @@ impl App {
                             pixmap.fill_rect(rect, &elevated_paint, Transform::identity(), None);
                         }
                         if let Some(rect) = Rect::from_xywh(
-                            panes.source.x + slot.x - 20.0,
+                            panes.source.x + slot.x - CALLOUT_INDENT,
                             top - 4.0,
                             3.0,
                             slot.height + 8.0,
@@ -18274,22 +18327,22 @@ impl App {
                     match marker {
                         CachedMarker::Text(marker) => {
                             let ancho_marca = marker.width();
+                            let marca_x =
+                                panes.source.x + text_marker_x(slot.kind, slot.x, ancho_marca);
+                            if matches!(slot.kind, Kind::Callout) {
+                                draw_callout_dot(
+                                    pixmap,
+                                    panes.source.x + slot.x,
+                                    top + marker.height() * 0.5,
+                                    palette.accent,
+                                );
+                            }
                             for line in marker.lines() {
                                 for entry in line.items() {
                                     if let PositionedLayoutItem::GlyphRun(run) = entry {
-                                        draw_run_background(
-                                            pixmap,
-                                            &run,
-                                            panes.source.x + slot.x - ancho_marca - 8.0,
-                                            top,
-                                        );
+                                        draw_run_background(pixmap, &run, marca_x, top);
                                         draw_glyph_run(
-                                            pixmap,
-                                            scale_cx,
-                                            glyphs,
-                                            &run,
-                                            panes.source.x + slot.x - ancho_marca - 8.0,
-                                            top,
+                                            pixmap, scale_cx, glyphs, &run, marca_x, top,
                                         );
                                     }
                                 }
@@ -18602,7 +18655,7 @@ impl App {
                         }
                         Kind::Callout => {
                             if let Some(rect) = Rect::from_xywh(
-                                x - 12.0,
+                                x - CALLOUT_INDENT + 8.0,
                                 top - 2.0,
                                 preview_ancho_texto + 24.0,
                                 slot.height + 4.0,
@@ -18631,7 +18684,17 @@ impl App {
                     if let Some(marker) = marker {
                         match marker {
                             CachedMarker::Text(marker) => {
-                                let marker_x = x - marker.width() - 8.0;
+                                let marker_x = if matches!(slot.kind, Kind::Callout) {
+                                    draw_callout_dot(
+                                        pixmap,
+                                        x + 8.0,
+                                        top + marker.height() * 0.5,
+                                        palette.accent,
+                                    );
+                                    text_marker_x(slot.kind, x + 8.0, marker.width())
+                                } else {
+                                    x - marker.width() - 8.0
+                                };
                                 for line in marker.lines() {
                                     for entry in line.items() {
                                         if let PositionedLayoutItem::GlyphRun(run) = entry {
@@ -20857,14 +20920,14 @@ fn export_pdf_bytes(
                 ),
                 Kind::Callout => {
                     out.fill_rect(
-                        to_x(x - 20.0),
+                        to_x(x - CALLOUT_INDENT),
                         to_y(y),
                         (text_width + 20.0) * k,
                         line_height * k,
                         palette.elevated,
                     );
                     out.fill_rect(
-                        to_x(x - 20.0),
+                        to_x(x - CALLOUT_INDENT),
                         to_y(y),
                         3.0 * k,
                         line_height * k,
@@ -20875,7 +20938,7 @@ fn export_pdf_bytes(
             }
             if line_index == 0 {
                 if let Some(marker) = &marker_layout {
-                    let marker_x = x - marker.width() - 8.0;
+                    let marker_x = text_marker_x(block.kind, x, marker.width());
                     let marker_text = match &block.marker {
                         Some(Marker::Text(text)) => text.as_str(),
                         _ => "",
