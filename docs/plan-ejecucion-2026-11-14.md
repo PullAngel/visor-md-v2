@@ -531,17 +531,25 @@ Es independiente de las fases 2 y 3. Toca solo `editor.rs` y las funciones
 ### Fase 5 · Pestañas y paneles
 
 - [x] **5.1** D-23 roles y prueba de contraste.
-- [ ] **5.2** Hover en las pestañas, ✕ al pasar el puntero y tooltip con el
-  nombre completo (usa D-15).
-- [ ] **5.3** La pestaña fijada va al inicio de `tab_order`, compacta (solo
-  nombre y chincheta) y sin ✕.
-- [ ] **5.4** Abrir un archivo reemplaza la pestaña inicial si no tiene
-  identidad, está vacía y no está sucia.
+- [x] **5.2** Hover en las pestañas y ✕ al pasar el puntero (ya estaban);
+  tooltip de D-15 con nombre completo, estado y ruta, y «Cerrar pestaña · Ctrl+W»
+  sobre la ✕ (escena `pestana-tooltip`).
+- [x] **5.3** La pestaña fijada va al inicio de `tab_order`, compacta (144 px,
+  nombre y chincheta dibujada en acento) y sin ✕. `TabStrip` reparte el ancho;
+  arrastrar no cruza el borde del grupo fijado; fijar o soltar mueve la pestaña
+  al borde del grupo. La chincheta de texto «• » se retiró porque chocaba con
+  la marca de sin guardar.
+- [x] **5.4** Abrir un archivo reemplaza la pestaña activa si no tiene
+  identidad, está vacía, no está sucia, no está fijada ni ocupada y el mosaico
+  tiene un solo panel; la pestaña nueva ocupa su lugar.
 - [~] **5.5** Pasa a la 11.7 (mosaico).
 - [~] **5.6** Pasa a la 11.7 (mosaico).
 - [~] **5.7** Pasa a la 11.1 (mosaico).
-- [ ] **5.8** Cierre de fase: referencias `dos-pestanas`, `pestana-fijada` y
-  `division`; `design-critique`.
+- [x] **5.8** Cierre de fase: referencias `dos-pestanas`, `pestana-fijada`,
+  `pestana-tooltip` y `division`; `design-critique` del 15 de noviembre (la
+  fijada se ensanchó de 128 a 144 px; el resto, a las fases 7 y 11). Las
+  cabeceras de panel faltaban en las escenas sin ventana: ahora
+  `visible_document_pane_layouts` usa el tamaño del último cuadro.
 
 ### Fase 6 · Enlaces, carpeta de apuntes y recuperación
 
@@ -848,7 +856,7 @@ asociación.
 | 2 | Hecho | 01bacf8, 898665a, e127b66, 9d1a167, 5888201 y la capa de tooltip |
 | 3 | Casi hecha | Hechas 3.1 a 3.8, 3.9b, 3.10 a 3.12. Pendientes: 3.9 (caja de búsqueda con borde y barra anclada); la 3.13 pasa a la 10.7 |
 | 10 | Hecho | 10.1 a 10.11; prueba en vivo del 15 de noviembre |
-| 5 | En curso | Hecha 5.1 (verde propio de la pestaña). Pendientes 5.2 a 5.4 y 5.8; la 5.5 a 5.7 pasan a la fase 11 |
+| 5 | Hecho | 5.1 a 5.4 y 5.8; la 5.5 a 5.7 pasaron a la fase 11 |
 | 11 | Pendiente | Mosaico: cabecera como pestaña, divisor, intercambio, soltado |
 | 6 | Pendiente | — |
 | 7 | Pendiente | — |

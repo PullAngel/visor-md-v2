@@ -783,12 +783,82 @@ fn titlebar_drag_at(x: f32, y: f32, window_width: f32, mode: DocumentMode) -> bo
         && mode_target_at(x, y).is_none()
 }
 
-fn tab_width(window_width: f32, tab_count: usize) -> f32 {
-    if tab_count == 0 {
+/// Las pestañas fijadas, siempre las primeras, son compactas: nombre y
+/// chincheta, sin ✕.
+const PINNED_TAB_WIDTH: f32 = 144.0;
+
+/// Cuántas pestañas hay y cuántas de ellas (las primeras) están fijadas.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct TabStrip {
+    count: usize,
+    pinned: usize,
+}
+
+impl TabStrip {
+    fn new(count: usize, pinned: usize) -> Self {
+        Self {
+            count,
+            pinned: pinned.min(count),
+        }
+    }
+
+    fn regular(self) -> usize {
+        self.count - self.pinned
+    }
+}
+
+impl From<usize> for TabStrip {
+    fn from(count: usize) -> Self {
+        Self::new(count, 0)
+    }
+}
+
+fn pinned_tab_width(window_width: f32, strip: TabStrip) -> f32 {
+    if strip.pinned == 0 {
         return 0.0;
     }
-    let available = window_width - TAB_STRIP_X * 2.0 - NEW_TAB_BUTTON_WIDTH;
-    (available.max(0.0) / tab_count as f32).min(MAX_TAB_WIDTH)
+    let available = (window_width - TAB_STRIP_X * 2.0 - NEW_TAB_BUTTON_WIDTH).max(0.0);
+    PINNED_TAB_WIDTH.min(available / strip.count as f32)
+}
+
+/// Ancho de una pestaña no fijada.
+fn tab_width(window_width: f32, strip: impl Into<TabStrip>) -> f32 {
+    let strip = strip.into();
+    if strip.regular() == 0 {
+        return 0.0;
+    }
+    let available = window_width
+        - TAB_STRIP_X * 2.0
+        - NEW_TAB_BUTTON_WIDTH
+        - pinned_tab_width(window_width, strip) * strip.pinned as f32;
+    (available.max(0.0) / strip.regular() as f32).min(MAX_TAB_WIDTH)
+}
+
+/// Posición izquierda y ancho de una pestaña.
+fn tab_span(window_width: f32, strip: impl Into<TabStrip>, index: usize) -> (f32, f32) {
+    let strip = strip.into();
+    let pinned_width = pinned_tab_width(window_width, strip);
+    if index < strip.pinned {
+        (TAB_STRIP_X + index as f32 * pinned_width, pinned_width)
+    } else {
+        let width = tab_width(window_width, strip);
+        (
+            TAB_STRIP_X
+                + strip.pinned as f32 * pinned_width
+                + (index - strip.pinned) as f32 * width,
+            width,
+        )
+    }
+}
+
+/// Dónde puede soltarse una pestaña arrastrada: las fijadas se reordenan entre
+/// ellas y las demás después de ellas.
+fn clamp_tab_target(strip: TabStrip, dragged_is_pinned: bool, target: usize) -> usize {
+    if dragged_is_pinned {
+        target.min(strip.pinned.saturating_sub(1))
+    } else {
+        target.max(strip.pinned)
+    }
 }
 
 fn tab_strip_contains_y(y: f32) -> bool {
@@ -796,11 +866,16 @@ fn tab_strip_contains_y(y: f32) -> bool {
 }
 
 /// El botón `+` sigue a la última pestaña y crea un documento nuevo.
-fn new_tab_button_x(window_width: f32, tab_count: usize) -> f32 {
-    TAB_STRIP_X + tab_width(window_width, tab_count) * tab_count as f32 + 2.0
+fn new_tab_button_x(window_width: f32, tab_count: impl Into<TabStrip>) -> f32 {
+    let strip = tab_count.into();
+    let (last_x, last_width) = match strip.count {
+        0 => (TAB_STRIP_X, 0.0),
+        count => tab_span(window_width, strip, count - 1),
+    };
+    last_x + last_width + 2.0
 }
 
-fn new_tab_button_at(x: f32, y: f32, window_width: f32, tab_count: usize) -> bool {
+fn new_tab_button_at(x: f32, y: f32, window_width: f32, tab_count: impl Into<TabStrip>) -> bool {
     let start = new_tab_button_x(window_width, tab_count);
     tab_strip_contains_y(y) && (start..start + NEW_TAB_BUTTON_WIDTH).contains(&x)
 }
@@ -810,28 +885,42 @@ fn tab_index_at(
     y: f32,
     window_width: f32,
     window_height: f32,
-    count: usize,
+    count: impl Into<TabStrip>,
 ) -> Option<usize> {
     let _ = window_height;
-    if count == 0 || !tab_strip_contains_y(y) || x < TAB_STRIP_X {
+    let strip = count.into();
+    if strip.count == 0 || !tab_strip_contains_y(y) || x < TAB_STRIP_X {
         return None;
     }
-    let width = tab_width(window_width, count);
-    let index = ((x - TAB_STRIP_X) / width) as usize;
-    (index < count).then_some(index)
+    let pinned_width = pinned_tab_width(window_width, strip);
+    let offset = x - TAB_STRIP_X;
+    let index = if offset < pinned_width * strip.pinned as f32 {
+        (offset / pinned_width) as usize
+    } else {
+        let width = tab_width(window_width, strip);
+        if width <= 0.0 {
+            return None;
+        }
+        strip.pinned + ((offset - pinned_width * strip.pinned as f32) / width) as usize
+    };
+    (index < strip.count).then_some(index)
 }
 
+/// La ✕ de una pestaña. Las fijadas no la tienen.
 fn tab_close_index_at(
     x: f32,
     y: f32,
     window_width: f32,
     window_height: f32,
-    count: usize,
+    count: impl Into<TabStrip>,
 ) -> Option<usize> {
-    let index = tab_index_at(x, y, window_width, window_height, count)?;
-    let width = tab_width(window_width, count);
-    let local_x = x - TAB_STRIP_X - index as f32 * width;
-    (local_x >= (width - 26.0).max(0.0)).then_some(index)
+    let strip = count.into();
+    let index = tab_index_at(x, y, window_width, window_height, strip)?;
+    if index < strip.pinned {
+        return None;
+    }
+    let (left, width) = tab_span(window_width, strip, index);
+    ((x - left) >= (width - 26.0).max(0.0)).then_some(index)
 }
 
 /// Reordena solo la sesión visible. Las pestañas conservan su identidad y sus
@@ -1431,20 +1520,15 @@ fn document_display_name(path: &str) -> String {
     )
 }
 
-/// Etiqueta de pestaña de un documento: su nombre, la chincheta si está fijado
-/// y la marca de sin guardar.
+/// Etiqueta de pestaña de un documento: su nombre y la marca de sin guardar.
+/// La chincheta de una pestaña fijada se dibuja, no se escribe.
 fn tab_label_for(document: &DocumentState, max_chars: usize) -> String {
-    tab_title(
-        &document.display_name(),
-        document.is_unsaved(),
-        document.pinned,
-        max_chars,
-    )
+    tab_title(&document.display_name(), document.is_unsaved(), max_chars)
 }
 
-fn tab_title(name: &str, unsaved: bool, pinned: bool, max_chars: usize) -> String {
+fn tab_title(name: &str, unsaved: bool, max_chars: usize) -> String {
     let max_chars = max_chars.max(4);
-    let prefix = if pinned { "• " } else { "" };
+    let prefix = "";
     let suffix = if unsaved {
         format!(" {}", titulo::UNSAVED_MARK)
     } else {
@@ -7902,6 +7986,8 @@ impl ApplicationHandler<AppEvent> for App {
                         | UiTarget::ModeSegment(_)
                         | UiTarget::WindowControl(_)
                         | UiTarget::ListRow(_)
+                        | UiTarget::Tab(_)
+                        | UiTarget::TabClose(_)
                 )
             })
             .map(|(_, since)| since);
@@ -8686,10 +8772,16 @@ impl ApplicationHandler<AppEvent> for App {
                         position.y as f32,
                         size.width as f32,
                         size.height as f32,
-                        self.tab_order.len(),
-                    ) && move_tab_order(&mut self.tab_order, document_id, target)
-                    {
-                        window.request_redraw();
+                        self.tab_strip(),
+                    ) {
+                        let strip = self.tab_strip();
+                        let dragged_pinned =
+                            document_by_id(&self.document, &self.inactive_documents, document_id)
+                                .is_some_and(|document| document.pinned);
+                        let target = clamp_tab_target(strip, dragged_pinned, target);
+                        if move_tab_order(&mut self.tab_order, document_id, target) {
+                            window.request_redraw();
+                        }
                     }
                 }
                 let ui_target = self.ui_target_at(position.x as f32, position.y as f32);
@@ -8959,7 +9051,7 @@ impl ApplicationHandler<AppEvent> for App {
                             self.selecting = false;
                             return;
                         }
-                        if new_tab_button_at(x, y, size.width as f32, self.tab_order.len()) {
+                        if new_tab_button_at(x, y, size.width as f32, self.tab_strip()) {
                             self.perform_action(AppAction::NewDocument);
                             self.selecting = false;
                             return;
@@ -8969,7 +9061,7 @@ impl ApplicationHandler<AppEvent> for App {
                             y,
                             size.width as f32,
                             size.height as f32,
-                            self.tab_order.len(),
+                            self.tab_strip(),
                         ) && let Some(document_id) = self.tab_order.get(index).copied()
                         {
                             self.activate_document_tab(document_id);
@@ -8984,7 +9076,7 @@ impl ApplicationHandler<AppEvent> for App {
                             y,
                             size.width as f32,
                             size.height as f32,
-                            self.tab_order.len(),
+                            self.tab_strip(),
                         ) && let Some(document_id) = self.tab_order.get(index).copied()
                         {
                             self.activate_document_tab(document_id);
@@ -9099,7 +9191,7 @@ impl ApplicationHandler<AppEvent> for App {
                         y,
                         size.width as f32,
                         size.height as f32,
-                        self.tab_order.len(),
+                        self.tab_strip(),
                     ) && let Some(document_id) = self.tab_order.get(index).copied()
                     {
                         self.activate_document_tab(document_id);
@@ -11247,17 +11339,13 @@ impl App {
     }
 
     fn visible_document_pane_layouts(&self) -> Vec<DocumentPaneLayout> {
-        let Some(window) = &self.window else {
+        // Sin ventana (pruebas) vale el tamaño del último cuadro dibujado.
+        let Some((width, height)) = self.view_size() else {
             return Vec::new();
         };
-        let size = window.inner_size();
         document_pane_layouts_in(
             &self.document_panes,
-            document_area_geometry(
-                size.width as f32,
-                size.height as f32,
-                self.workspace_column_is_open(),
-            ),
+            document_area_geometry(width, height, self.workspace_column_is_open()),
         )
     }
 
@@ -11335,6 +11423,19 @@ impl App {
             self.activate_document_tab(layout.document_id);
         }
         true
+    }
+
+    /// Cuántas pestañas hay y cuántas están fijadas (las primeras).
+    fn tab_strip(&self) -> TabStrip {
+        let pinned = self
+            .tab_order
+            .iter()
+            .filter(|id| {
+                document_by_id(&self.document, &self.inactive_documents, **id)
+                    .is_some_and(|document| document.pinned)
+            })
+            .count();
+        TabStrip::new(self.tab_order.len(), pinned)
     }
 
     fn document_busy(&self, document_id: u64) -> bool {
@@ -11568,6 +11669,19 @@ impl App {
 
     fn toggle_active_tab_pin(&mut self) {
         self.document.pinned = !self.document.pinned;
+        // Las fijadas van primero: la que se fija o se suelta queda en el
+        // borde del grupo.
+        let id = self.document.id;
+        let others_pinned = self
+            .tab_order
+            .iter()
+            .filter(|other| {
+                **other != id
+                    && document_by_id(&self.document, &self.inactive_documents, **other)
+                        .is_some_and(|document| document.pinned)
+            })
+            .count();
+        move_tab_order(&mut self.tab_order, id, others_pinned);
         self.set_notice(if self.document.pinned {
             "pestaña fijada para esta sesión"
         } else {
@@ -12952,9 +13066,48 @@ impl App {
         let mut pending = DocumentState::untitled();
         pending.path = path.to_string_lossy().into_owned();
         pending.mode = DocumentMode::Reading;
+        let replaced = self.pristine_active_tab();
         self.open_document_in_tab(pending);
+        if let Some((old_id, old_index)) = replaced {
+            self.discard_pristine_tab(old_id, old_index);
+        }
         self.start_open_request(path);
         true
+    }
+
+    /// La pestaña activa es un documento nuevo que nadie tocó: sin archivo,
+    /// vacío, sin cambios, sin fijar y sin operaciones en curso. Devuelve su
+    /// identidad y su posición. Con el mosaico dividido no se reemplaza.
+    fn pristine_active_tab(&self) -> Option<(u64, usize)> {
+        let document = &self.document;
+        let pristine = document.is_untitled()
+            && document.source.is_empty()
+            && !document.is_dirty()
+            && !document.pinned
+            && !self.document_busy(document.id)
+            && self.document_panes.pane_count() == 1;
+        pristine
+            .then(|| self.tab_order.iter().position(|id| *id == document.id))
+            .flatten()
+            .map(|index| (document.id, index))
+    }
+
+    /// Quita la pestaña vacía que acaba de quedar inactiva y deja la nueva en
+    /// su lugar, para que abrir un archivo no deje una pestaña vacía al lado.
+    fn discard_pristine_tab(&mut self, old_id: u64, old_index: usize) {
+        let new_id = self.document.id;
+        if let Some(position) = self
+            .inactive_documents
+            .iter()
+            .position(|tab| tab.document.id == old_id)
+        {
+            let removed = self.inactive_documents.remove(position);
+            if let Some(recovery) = &removed.recovery {
+                let _ = recovery.clear();
+            }
+        }
+        self.tab_order.retain(|id| *id != old_id);
+        move_tab_order(&mut self.tab_order, new_id, old_index);
     }
 
     /// Lee el archivo del documento activo fuera del hilo de interfaz. El
@@ -15452,6 +15605,36 @@ impl App {
                 geometry.items_y + item as f32 * PANEL_ROW_HEIGHT,
             ))
         });
+        // Una pestaña enseña su nombre completo y, si es un archivo, dónde está.
+        let tab_tooltip = menu_pointer
+            .filter(|_| !overlay_open && self.tooltip.is_shown())
+            .and_then(|(x, y)| {
+                let window_width = w.get() as f32;
+                let window_height = h.get() as f32;
+                let strip = self.tab_strip();
+                let anchor_y = TAB_STRIP_Y + TAB_STRIP_HEIGHT - PANEL_ROW_HEIGHT;
+                if let Some(index) = tab_close_index_at(x, y, window_width, window_height, strip) {
+                    let (left, _) = tab_span(window_width, strip, index);
+                    return Some(("Cerrar pestaña · Ctrl+W".to_string(), left, anchor_y));
+                }
+                let index = tab_index_at(x, y, window_width, window_height, strip)?;
+                let id = *self.tab_order.get(index)?;
+                let document = document_by_id(&self.document, &self.inactive_documents, id)?;
+                let mut text = document.display_name();
+                if document.is_unsaved() {
+                    text.push_str(" · sin guardar");
+                }
+                if document.pinned {
+                    text.push_str(" · fijada");
+                }
+                if !document.is_untitled() {
+                    text.push('\n');
+                    text.push_str(&document.path);
+                }
+                let (left, _) = tab_span(window_width, strip, index);
+                Some((text, left, anchor_y))
+            });
+        let row_tooltip = row_tooltip.or(tab_tooltip);
         let row_tooltip_layout = row_tooltip.as_ref().map(|(label, x, y)| {
             let max_width = (w.get() as f32 - MARGIN * 2.0 - 20.0).min(420.0);
             let layout = build_ui_text_layout(
@@ -15840,8 +16023,11 @@ impl App {
             "carpeta activa" => " · carpeta activa",
             _ => "",
         };
-        let tab_width = tab_width(w.get() as f32, self.tab_order.len());
+        let tab_strip = self.tab_strip();
+        let tab_width = tab_width(w.get() as f32, tab_strip);
+        let pinned_width = pinned_tab_width(w.get() as f32, tab_strip);
         let tab_label_chars = ((tab_width - 32.0).max(30.0) / 7.5).floor().max(4.0) as usize;
+        let pinned_label_chars = ((pinned_width - 40.0).max(30.0) / 7.5).floor().max(4.0) as usize;
         let tab_descriptors = self
             .tab_order
             .iter()
@@ -15849,13 +16035,21 @@ impl App {
                 let document = document_by_id(&self.document, &self.inactive_documents, *id)?;
                 Some((
                     document.id == self.document.id,
-                    tab_label_for(document, tab_label_chars),
+                    document.pinned,
+                    tab_label_for(
+                        document,
+                        if document.pinned {
+                            pinned_label_chars
+                        } else {
+                            tab_label_chars
+                        },
+                    ),
                 ))
             })
             .collect::<Vec<_>>();
         let tab_layouts = tab_descriptors
             .iter()
-            .map(|(active, label)| {
+            .map(|(active, _, label)| {
                 build_ui_text_layout(
                     label,
                     &mut self.font_cx,
@@ -15921,7 +16115,7 @@ impl App {
             false,
             None,
         );
-        let tab_count = self.tab_order.len();
+        let tab_count = tab_strip;
         let tab_hover = self.pointer;
         let link_peek_layout = self
             .hover_destination
@@ -17354,10 +17548,10 @@ impl App {
         tab_hover_paint.set_color(Color::from_rgba8(idle.0, idle.1, idle.2, 255));
         let hovered_tab = tab_hover
             .and_then(|(x, y)| tab_index_at(x, y, window_width, h.get() as f32, tab_count));
-        for (index, ((active, _), layout)) in
+        for (index, ((active, pinned, _), layout)) in
             tab_descriptors.iter().zip(tab_layouts.iter()).enumerate()
         {
-            let x = TAB_STRIP_X + index as f32 * tab_width;
+            let (x, tab_width) = tab_span(window_width, tab_strip, index);
             let top = TAB_STRIP_Y + 5.0;
             let height = TAB_STRIP_HEIGHT - 5.0;
             let hovered = hovered_tab == Some(index);
@@ -17391,10 +17585,36 @@ impl App {
                 scale_cx,
                 glyphs,
                 layout,
-                x + 14.0,
+                x + if *pinned { 25.0 } else { 14.0 },
                 (top + (height - layout.height()) * 0.5).round(),
             );
-            if *active || hovered {
+            if *pinned {
+                // Chincheta: cabeza y punta, en el color de acento.
+                let pin_x = x + 15.0;
+                let pin_y = top + height * 0.5;
+                let mut pin = tiny_skia::PathBuilder::new();
+                pin.push_circle(pin_x, pin_y - 2.5, 3.0);
+                if let Some(pin) = pin.finish() {
+                    pixmap.fill_path(
+                        &pin,
+                        &accent_paint,
+                        tiny_skia::FillRule::Winding,
+                        Transform::identity(),
+                        None,
+                    );
+                }
+                let mut tip = tiny_skia::PathBuilder::new();
+                tip.move_to(pin_x, pin_y + 0.5);
+                tip.line_to(pin_x, pin_y + 5.0);
+                if let Some(tip) = tip.finish() {
+                    let stroke = tiny_skia::Stroke {
+                        width: 1.4,
+                        ..Default::default()
+                    };
+                    pixmap.stroke_path(&tip, &accent_paint, &stroke, Transform::identity(), None);
+                }
+            }
+            if (*active || hovered) && !*pinned {
                 let close_x = x + tab_width - 16.0;
                 let close_y = top + height * 0.5;
                 let mut close_path = tiny_skia::PathBuilder::new();
@@ -19347,6 +19567,111 @@ let x = 1;
     }
 
     #[test]
+    fn las_pestanas_fijadas_son_compactas_van_primero_y_no_tienen_cierre() {
+        let y = TAB_STRIP_Y + TAB_STRIP_HEIGHT * 0.5;
+        let strip = TabStrip::new(4, 2);
+        let ancho = 900.0;
+        let fijada = pinned_tab_width(ancho, strip);
+        assert!(fijada <= PINNED_TAB_WIDTH);
+        assert!(fijada < tab_width(ancho, strip));
+        // Las dos primeras son fijadas y las demás siguen sin huecos ni solapes.
+        let mut fin = TAB_STRIP_X;
+        for index in 0..4 {
+            let (izquierda, ancho_pestana) = tab_span(ancho, strip, index);
+            assert!(
+                (izquierda - fin).abs() < 0.01,
+                "la pestaña {index} deja un hueco"
+            );
+            assert_eq!(
+                tab_index_at(izquierda + ancho_pestana * 0.5, y, ancho, 600.0, strip),
+                Some(index)
+            );
+            fin = izquierda + ancho_pestana;
+        }
+        assert!((new_tab_button_x(ancho, strip) - (fin + 2.0)).abs() < 0.01);
+        // La ✕ solo está en las no fijadas.
+        let (izquierda, ancho_pestana) = tab_span(ancho, strip, 0);
+        assert_eq!(
+            tab_close_index_at(izquierda + ancho_pestana - 8.0, y, ancho, 600.0, strip),
+            None
+        );
+        let (izquierda, ancho_pestana) = tab_span(ancho, strip, 2);
+        assert_eq!(
+            tab_close_index_at(izquierda + ancho_pestana - 8.0, y, ancho, 600.0, strip),
+            Some(2)
+        );
+        // Con todas fijadas no queda pestaña normal que medir.
+        assert_eq!(tab_width(ancho, TabStrip::new(2, 2)), 0.0);
+        assert_eq!(
+            tab_index_at(2000.0, y, ancho, 600.0, TabStrip::new(2, 2)),
+            None
+        );
+    }
+
+    #[test]
+    fn arrastrar_una_pestana_no_cruza_el_borde_de_las_fijadas() {
+        let strip = TabStrip::new(5, 2);
+        assert_eq!(clamp_tab_target(strip, true, 4), 1);
+        assert_eq!(clamp_tab_target(strip, true, 0), 0);
+        assert_eq!(clamp_tab_target(strip, false, 0), 2);
+        assert_eq!(clamp_tab_target(strip, false, 4), 4);
+        assert_eq!(clamp_tab_target(TabStrip::new(3, 0), false, 1), 1);
+    }
+
+    #[test]
+    fn fijar_una_pestana_la_lleva_al_inicio_y_soltarla_la_deja_tras_las_fijadas() {
+        let mut app = App::for_tests(NIGHT);
+        app.load_for_test("uno", DocumentMode::Reading);
+        let primero = app.document.id;
+        app.open_document_in_tab(DocumentState::untitled());
+        app.open_document_in_tab(DocumentState::untitled());
+        let tercero = app.document.id;
+        assert_eq!(app.tab_order.len(), 3);
+        assert_eq!(app.tab_strip(), TabStrip::new(3, 0));
+
+        // Fijar la última: pasa al inicio.
+        app.toggle_active_tab_pin();
+        assert_eq!(app.tab_order[0], tercero);
+        assert_eq!(app.tab_strip(), TabStrip::new(3, 1));
+
+        // Fijar otra: queda tras la ya fijada, no delante.
+        app.activate_document_tab(primero);
+        app.toggle_active_tab_pin();
+        assert_eq!(app.tab_order[..2], [tercero, primero]);
+        assert_eq!(app.tab_strip(), TabStrip::new(3, 2));
+
+        // Soltar la primera fijada: queda en el borde del grupo.
+        app.activate_document_tab(tercero);
+        app.toggle_active_tab_pin();
+        assert_eq!(app.tab_order[0], primero);
+        assert_eq!(app.tab_order[1], tercero);
+        assert_eq!(app.tab_strip(), TabStrip::new(3, 1));
+    }
+
+    #[test]
+    fn abrir_un_archivo_reemplaza_la_pestana_inicial_vacia_y_nada_mas() {
+        let mut app = App::for_tests(NIGHT);
+        let inicial = app.document.id;
+        let (id, indice) = app
+            .pristine_active_tab()
+            .expect("una pestaña nueva y vacía se puede reemplazar");
+        assert_eq!((id, indice), (inicial, 0));
+
+        app.open_document_in_tab(DocumentState::untitled());
+        let nueva = app.document.id;
+        app.discard_pristine_tab(id, indice);
+        assert_eq!(app.tab_order, vec![nueva]);
+        assert!(app.inactive_documents.is_empty());
+
+        // Con texto, con cambios o fijada, no se reemplaza.
+        app.load_for_test("hay texto", DocumentMode::Reading);
+        assert_eq!(app.pristine_active_tab(), None);
+        let mut otra = App::for_tests(NIGHT);
+        otra.document.pinned = true;
+        assert_eq!(otra.pristine_active_tab(), None);
+    }
+
+    #[test]
     fn arrastrar_una_pestana_reordena_solo_la_sesion() {
         let mut order = vec![11, 22, 33];
         assert!(move_tab_order(&mut order, 11, 2));
@@ -20048,10 +20373,9 @@ let x = 1;
 
     #[test]
     fn la_etiqueta_de_pestana_conserva_unicode_y_marca_cambios() {
-        let label = tab_title("日本語 y ciberseguridad.md", true, true, 18);
+        let label = tab_title("日本語 y ciberseguridad.md", true, 18);
 
         assert!(label.ends_with(titulo::UNSAVED_MARK));
-        assert!(label.starts_with("• "));
         assert!(label.chars().count() <= 18);
         assert!(label.is_char_boundary(label.len()));
         assert!(APP_ACTIONS.contains(&AppAction::TogglePinTab));

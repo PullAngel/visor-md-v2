@@ -41,7 +41,7 @@ pub(crate) fn chrome_target_at(
     window_width: f32,
     window_height: f32,
     mode: DocumentMode,
-    tab_count: usize,
+    tab_count: TabStrip,
 ) -> Option<UiTarget> {
     if let Some(control) = window_control_at(x, y, window_width) {
         return Some(UiTarget::WindowControl(control));
@@ -89,14 +89,9 @@ impl App {
                 .map(UiTarget::MenuRow);
         }
         let (width, height) = self.view_size()?;
-        if let Some(target) = chrome_target_at(
-            x,
-            y,
-            width,
-            height,
-            self.document.mode,
-            self.tab_order.len(),
-        ) {
+        if let Some(target) =
+            chrome_target_at(x, y, width, height, self.document.mode, self.tab_strip())
+        {
             return Some(target);
         }
         if let Some(list) = self.open_list()
@@ -137,7 +132,7 @@ mod pruebas {
         modo: DocumentMode,
         pestanas: usize,
     ) -> Option<UiTarget> {
-        chrome_target_at(x, y, ancho, ALTO, modo, pestanas)
+        chrome_target_at(x, y, ancho, ALTO, modo, pestanas.into())
     }
 
     #[test]

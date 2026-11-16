@@ -48,6 +48,50 @@ fn abrir_segunda_pestana(app: &mut App) {
     app.perform_action(AppAction::NewDocument);
 }
 
+/// Primera pestaña fijada (compacta, con chincheta y sin ✕) y una segunda con
+/// un borrador sin guardar.
+fn pestana_fijada(app: &mut App) {
+    let primera = app.document.id;
+    app.perform_action(AppAction::NewDocument);
+    let segunda = app.document.id;
+    app.document.source = TextBuffer::from_text(
+        "# Borrador del viaje
+",
+    );
+    app.activate_document_tab(primera);
+    app.perform_action(AppAction::TogglePinTab);
+    app.activate_document_tab(segunda);
+}
+
+/// Puntero quieto sobre la pestaña fijada: su ayuda dice el nombre entero.
+fn tooltip_de_pestana(app: &mut App) {
+    pestana_fijada(app);
+    let strip = app.tab_strip();
+    let (izquierda, ancho) = tab_span(1_100.0, strip, 0);
+    app.pointer = Some((
+        izquierda + ancho * 0.5,
+        TAB_STRIP_Y + TAB_STRIP_HEIGHT * 0.5,
+    ));
+    let ahora = Instant::now();
+    let desde = ahora
+        .checked_sub(std::time::Duration::from_secs(2))
+        .expect("el reloj permite restar dos segundos");
+    app.ui_motion
+        .set_hover(Some(UiTarget::Tab(0)), desde, app.reduce_motion);
+    app.tooltip.poll(Some(desde), ahora);
+}
+
+/// Dos documentos en el mosaico: cada panel lleva su cabecera con el nombre.
+fn division(app: &mut App) {
+    app.perform_action(AppAction::NewDocument);
+    app.document.source = TextBuffer::from_text(
+        "# Borrador del viaje
+",
+    );
+    app.open_document_pane_picker(DocumentPaneAxis::Vertical);
+    app.choose_document_pane_split(2);
+}
+
 fn abrir_dialogo_de_cierre(app: &mut App) {
     let id = app.document.id;
     app.open_dialog(Dialog::close_tab("apuntes.md", true), Some(id));
@@ -137,7 +181,7 @@ fn dialogo_con_el_puntero_sobre_un_boton(app: &mut App) {
     abrir_dialogo_de_cierre(app);
 }
 
-const ESCENAS: [Escena; 14] = [
+const ESCENAS: [Escena; 17] = [
     Escena {
         nombre: "lectura",
         modo: DocumentMode::Reading,
@@ -179,6 +223,21 @@ const ESCENAS: [Escena; 14] = [
         preparar: abrir_segunda_pestana,
     },
     Escena {
+        nombre: "pestana-fijada",
+        modo: DocumentMode::Reading,
+        preparar: pestana_fijada,
+    },
+    Escena {
+        nombre: "pestana-tooltip",
+        modo: DocumentMode::Reading,
+        preparar: tooltip_de_pestana,
+    },
+    Escena {
+        nombre: "division",
+        modo: DocumentMode::Reading,
+        preparar: division,
+    },
+    Escena {
         nombre: "dialogo-cierre",
         modo: DocumentMode::SourceEditing,
         preparar: abrir_dialogo_de_cierre,
@@ -218,6 +277,10 @@ fn dibujar(escena: &Escena, palette: Palette, ancho: u32, alto: u32) -> Pixmap {
     let mut app = App::for_tests(palette);
     app.load_for_test(DOCUMENTO, escena.modo);
     (escena.preparar)(&mut app);
+    if escena.nombre == "division" {
+        // Las cabeceras de panel necesitan el tamaño del cuadro anterior.
+        app.draw_for_test(ancho, alto);
+    }
     if escena.nombre == "aviso" {
         // El aviso debe verse completo sin depender del reloj de la prueba.
         app.notice_visible_until = Some(Instant::now() + std::time::Duration::from_secs(3600));
