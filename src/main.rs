@@ -7143,6 +7143,84 @@ fn recovery_row_label(orphan: &recovery::Orphan, now: u64) -> String {
     )
 }
 
+/// Estado del archivo de origen de una copia, al restaurarla.
+enum RecoveryOrigin {
+    /// El documento nació nuevo: no hay archivo de origen.
+    NewDocument,
+    /// El archivo está igual que cuando se empezó a editar.
+    Unchanged(Box<files::OpenedText>),
+    /// El archivo cambió en disco desde entonces.
+    Changed,
+    Missing,
+    /// Otra pestaña ya tiene ese archivo abierto.
+    AlreadyOpen,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Detached {
+    New,
+    Changed,
+    Missing,
+    AlreadyOpen,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RestoreOutcome {
+    Failed,
+    /// Quedó ligada a su archivo de origen.
+    Bound,
+    /// Se abrió aparte, sin guardar.
+    Detached(Detached),
+}
+
+/// El aviso tras restaurar una o varias copias, o nada si ninguna se abrió.
+fn restore_notice(outcomes: &[(String, RestoreOutcome)]) -> Option<String> {
+    match outcomes {
+        [] => None,
+        [(title, outcome)] => {
+            let name = if title.is_empty() {
+                "El documento".to_string()
+            } else {
+                format!("«{title}»")
+            };
+            Some(match outcome {
+                RestoreOutcome::Bound => {
+                    format!("{name} recuperado en su archivo: guardalo para conservar los cambios")
+                }
+                RestoreOutcome::Detached(Detached::Changed) => format!(
+                    "{name} cambió en disco desde que lo editabas: la copia se abrió aparte, sin guardar. Abrí el archivo para comparar antes de guardar"
+                ),
+                RestoreOutcome::Detached(Detached::Missing) => format!(
+                    "{name} ya no está en su lugar: la copia se abrió sin guardar, usá Guardar como"
+                ),
+                RestoreOutcome::Detached(Detached::AlreadyOpen) => format!(
+                    "{name} ya está abierto: la copia se abrió aparte, sin guardar. Compará los dos antes de guardar"
+                ),
+                RestoreOutcome::Detached(Detached::New) | RestoreOutcome::Failed => format!(
+                    "{name} recuperado: está sin guardar, usá Guardar como para elegir dónde"
+                ),
+            })
+        }
+        many => {
+            let bound = many
+                .iter()
+                .filter(|(_, outcome)| *outcome == RestoreOutcome::Bound)
+                .count();
+            let rest = many.len() - bound;
+            Some(if rest == 0 {
+                format!("{} documentos recuperados en sus archivos", many.len())
+            } else if bound == 0 {
+                format!("{} documentos recuperados: están sin guardar", many.len())
+            } else {
+                format!(
+                    "{} documentos recuperados: {bound} en su archivo y {rest} aparte, sin guardar",
+                    many.len()
+                )
+            })
+        }
+    }
+}
+
 fn recovered_document(source: String) -> Result<DocumentState, &'static str> {
     let index = SourceIndex::new(&source);
     let blocks = safe_source_blocks(&source, &index)?;
@@ -13734,10 +13812,36 @@ impl App {
         }
     }
 
-    /// Restaura una copia como una pestaña nueva, sin tocar ningún archivo: la
-    /// pestaña queda sin guardar, con el título del texto, y la copia pasa a ser
-    /// de esta sesión. Devuelve si pudo abrirla.
-    fn restore_recovery(&mut self, orphan: &recovery::Orphan) -> bool {
+    /// Qué pasó con el archivo de origen de una copia al restaurarla.
+    fn recovery_origin(&self, orphan: &recovery::Orphan) -> RecoveryOrigin {
+        let origin = orphan.meta.origin_path.as_str();
+        if origin.is_empty() || orphan.meta.base.is_empty() {
+            return RecoveryOrigin::NewDocument;
+        }
+        let path = std::path::Path::new(origin);
+        let open_already =
+            paths_refer_to_same_file(std::path::Path::new(&self.document.path), path)
+                || self.inactive_documents.iter().any(|tab| {
+                    paths_refer_to_same_file(std::path::Path::new(&tab.document.path), path)
+                });
+        if open_already {
+            return RecoveryOrigin::AlreadyOpen;
+        }
+        match open_explicit_primary(path, DEFAULT_DOCUMENT_LIMIT_BYTES) {
+            Ok(opened) if opened.identity.fingerprint() == orphan.meta.base => {
+                RecoveryOrigin::Unchanged(Box::new(opened))
+            }
+            Ok(_) => RecoveryOrigin::Changed,
+            Err(_) => RecoveryOrigin::Missing,
+        }
+    }
+
+    /// Restaura una copia como una pestaña. Si el archivo de origen sigue como
+    /// estaba, la pestaña queda ligada a él (Guardar lo sobrescribe, con las
+    /// comprobaciones de siempre); si cambió, falta o ya está abierto, la copia
+    /// se abre aparte, sin guardar, y nunca se toca el archivo. La copia pasa a
+    /// ser de esta sesión.
+    fn restore_recovery(&mut self, orphan: &recovery::Orphan) -> RestoreOutcome {
         let name = if orphan.meta.title.is_empty() {
             "documento sin título".to_string()
         } else {
@@ -13747,15 +13851,29 @@ impl App {
             Ok(source) => source,
             Err(reason) => {
                 self.set_notice(&format!("No se pudo recuperar «{name}»: {reason}"));
-                return false;
+                return RestoreOutcome::Failed;
             }
         };
-        let recovered = match recovered_document(source) {
+        let mut recovered = match recovered_document(source) {
             Ok(recovered) => recovered,
             Err(error) => {
                 self.set_notice(&format!("No se pudo mostrar «{name}»: {error}"));
-                return false;
+                return RestoreOutcome::Failed;
             }
+        };
+        let outcome = match self.recovery_origin(orphan) {
+            RecoveryOrigin::Unchanged(opened) => {
+                recovered.path = orphan.meta.origin_path.clone();
+                recovered.content_kind =
+                    DocumentContentKind::for_path(std::path::Path::new(&orphan.meta.origin_path));
+                recovered.source_metadata = opened.metadata;
+                replace_file_baseline(&mut recovered, opened.identity, opened.baseline_bytes);
+                RestoreOutcome::Bound
+            }
+            RecoveryOrigin::NewDocument => RestoreOutcome::Detached(Detached::New),
+            RecoveryOrigin::Changed => RestoreOutcome::Detached(Detached::Changed),
+            RecoveryOrigin::Missing => RestoreOutcome::Detached(Detached::Missing),
+            RecoveryOrigin::AlreadyOpen => RestoreOutcome::Detached(Detached::AlreadyOpen),
         };
         self.open_document_in_tab(recovered);
         // La copia sigue siendo la misma, ahora de esta pestaña. Si la
@@ -13776,7 +13894,7 @@ impl App {
             }
         }
         self.schedule_recovery();
-        true
+        outcome
     }
 
     /// Enter restaura la fila elegida; con `all`, todas.
@@ -13786,21 +13904,19 @@ impl App {
         };
         let selected = self.recovery_list_match % rows.len().max(1);
         let mut remaining = Vec::new();
-        let mut restored = 0;
+        let mut outcomes = Vec::new();
         for (index, orphan) in rows.iter().enumerate() {
-            if (all || index == selected) && self.restore_recovery(orphan) {
-                restored += 1;
+            if all || index == selected {
+                match self.restore_recovery(orphan) {
+                    RestoreOutcome::Failed => remaining.push(orphan.clone()),
+                    outcome => outcomes.push((orphan.meta.title.clone(), outcome)),
+                }
             } else {
                 remaining.push(orphan.clone());
             }
         }
-        if restored > 0 {
-            self.set_notice(&if restored == 1 {
-                "Documento recuperado: está sin guardar, usá Guardar como para elegir dónde"
-                    .to_string()
-            } else {
-                format!("{restored} documentos recuperados: están sin guardar")
-            });
+        if let Some(message) = restore_notice(&outcomes) {
+            self.set_notice(&message);
         }
         if !remaining.is_empty() {
             self.recovery_list_match = selected.min(remaining.len() - 1);
@@ -21506,13 +21622,175 @@ reservar hotel
         let mut app = App::for_tests(NIGHT);
         app.load_for_test("otro", DocumentMode::Reading);
         let pestanas = app.tab_order.len();
-        assert!(app.restore_recovery(&orphan));
+        assert_eq!(
+            app.restore_recovery(&orphan),
+            RestoreOutcome::Detached(Detached::New)
+        );
         assert_eq!(app.tab_order.len(), pestanas + 1);
         assert!(app.document.is_untitled());
         assert!(app.document.is_unsaved(), "queda marcada como sin guardar");
         assert_eq!(app.document.display_name(), "Plan de viaje");
         assert!(app.document.source.to_string().contains("reservar hotel"));
         let _ = fs::remove_dir_all(carpeta);
+    }
+
+    /// Como `copia_huerfana`, pero con la huella del archivo de origen.
+    fn copia_de_archivo(
+        titulo: &str,
+        origen: &Path,
+        base: &str,
+        texto: &str,
+    ) -> (recovery::Orphan, PathBuf) {
+        let carpeta = std::env::temp_dir().join(format!(
+            "visor-md-huerfana-{}-{}",
+            std::process::id(),
+            NEXT_DOCUMENT_ID.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(&carpeta).unwrap();
+        let meta = recovery::EntryMeta {
+            title: titulo.into(),
+            origin_path: origen.to_string_lossy().into_owned(),
+            base: base.into(),
+            saved_at: unix_now().saturating_sub(300),
+        };
+        let ruta = carpeta.join("abc123.vmdr");
+        fs::write(&ruta, recovery::encode_for_tests(&meta, texto)).unwrap();
+        let orphan = recovery::Orphan::for_tests(ruta, meta, texto.len() as u64);
+        (orphan, carpeta)
+    }
+
+    fn archivo_de_apuntes(texto: &str) -> (PathBuf, PathBuf, String) {
+        let carpeta = std::env::temp_dir().join(format!(
+            "visor-md-origen-{}-{}",
+            std::process::id(),
+            NEXT_DOCUMENT_ID.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(&carpeta).unwrap();
+        let ruta = carpeta.join("apuntes.md");
+        fs::write(&ruta, texto).unwrap();
+        let huella = open_explicit_primary(&ruta, 1 << 20)
+            .unwrap()
+            .identity
+            .fingerprint();
+        (carpeta, ruta, huella)
+    }
+
+    #[test]
+    fn restaurar_con_el_original_sin_cambios_lo_liga_a_su_archivo() {
+        let (carpeta_origen, ruta, huella) = archivo_de_apuntes(
+            "# Apuntes
+
+viejo
+",
+        );
+        let (orphan, carpeta) = copia_de_archivo(
+            "Apuntes",
+            &ruta,
+            &huella,
+            "# Apuntes
+
+viejo y nuevo
+",
+        );
+        let mut app = App::for_tests(NIGHT);
+        assert_eq!(app.restore_recovery(&orphan), RestoreOutcome::Bound);
+        assert!(!app.document.is_untitled());
+        assert_eq!(app.document.path, ruta.to_string_lossy());
+        assert!(app.document.source_identity.is_some());
+        assert!(app.document.source_baseline_bytes.is_some());
+        assert!(
+            app.document.is_dirty(),
+            "el texto recuperado está sin guardar"
+        );
+        assert!(app.document.source.to_string().contains("viejo y nuevo"));
+        // El archivo en disco no se tocó al restaurar.
+        assert_eq!(
+            fs::read_to_string(&ruta).unwrap(),
+            "# Apuntes
+
+viejo
+"
+        );
+        let _ = fs::remove_dir_all(carpeta);
+        let _ = fs::remove_dir_all(carpeta_origen);
+    }
+
+    #[test]
+    fn restaurar_con_el_original_cambiado_o_ausente_abre_la_copia_aparte() {
+        let (carpeta_origen, ruta, huella) = archivo_de_apuntes(
+            "# Apuntes
+",
+        );
+        // Otro programa lo cambió después de la copia.
+        fs::write(
+            &ruta,
+            "# Apuntes
+
+agregado por otro programa
+",
+        )
+        .unwrap();
+        let (orphan, carpeta) = copia_de_archivo(
+            "Apuntes",
+            &ruta,
+            &huella,
+            "# Apuntes
+
+mío
+",
+        );
+        let mut app = App::for_tests(NIGHT);
+        assert_eq!(
+            app.restore_recovery(&orphan),
+            RestoreOutcome::Detached(Detached::Changed)
+        );
+        assert!(
+            app.document.is_untitled(),
+            "no se liga a un archivo que cambió"
+        );
+        assert!(app.document.source_identity.is_none());
+        assert_eq!(
+            fs::read_to_string(&ruta).unwrap(),
+            "# Apuntes
+
+agregado por otro programa
+"
+        );
+
+        let _ = fs::remove_file(&ruta);
+        let (ausente, otra) = copia_de_archivo(
+            "Apuntes",
+            &ruta,
+            &huella,
+            "# Apuntes
+",
+        );
+        assert_eq!(
+            app.restore_recovery(&ausente),
+            RestoreOutcome::Detached(Detached::Missing)
+        );
+        let _ = fs::remove_dir_all(carpeta);
+        let _ = fs::remove_dir_all(otra);
+        let _ = fs::remove_dir_all(carpeta_origen);
+    }
+
+    #[test]
+    fn el_aviso_de_restaurar_dice_donde_quedo_cada_copia() {
+        let uno = |outcome| restore_notice(&[("Notas".to_string(), outcome)]).unwrap();
+        assert!(uno(RestoreOutcome::Bound).contains("recuperado en su archivo"));
+        assert!(uno(RestoreOutcome::Detached(Detached::Changed)).contains("cambió en disco"));
+        assert!(uno(RestoreOutcome::Detached(Detached::Missing)).contains("Guardar como"));
+        assert!(uno(RestoreOutcome::Detached(Detached::New)).contains("sin guardar"));
+        assert_eq!(restore_notice(&[]), None);
+        let varios = restore_notice(&[
+            ("A".into(), RestoreOutcome::Bound),
+            ("B".into(), RestoreOutcome::Detached(Detached::New)),
+        ])
+        .unwrap();
+        assert_eq!(
+            varios,
+            "2 documentos recuperados: 1 en su archivo y 1 aparte, sin guardar"
+        );
     }
 
     #[test]
@@ -21524,7 +21802,7 @@ reservar hotel
         fs::write(orphan.path(), bytes).unwrap();
         let mut app = App::for_tests(NIGHT);
         let pestanas = app.tab_order.len();
-        assert!(!app.restore_recovery(&orphan));
+        assert_eq!(app.restore_recovery(&orphan), RestoreOutcome::Failed);
         assert_eq!(app.tab_order.len(), pestanas);
         assert_eq!(
             app.notice.as_deref(),

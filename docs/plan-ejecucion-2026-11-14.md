@@ -853,10 +853,15 @@ hacen con la fase 6 (comparten la 6.7); la 13.7 y la 13.8 con la fase 12.
   interfaz (`write`, `submit`, `clear`) y suma `set_meta` (título y origen
   viajan en la cabecera), `adopt` y `recovery::orphans()`. Las copias de
   formato anterior (`session-*.md`) se listan y se descartan tras abrirlas.
-- [~] **13.6** Aviso al arrancar y lista de recuperaciones hechos, con «restaurar
-  todo» y «descartar todo». De las cuatro situaciones de D-41 solo está la de
-  abrir como pestaña nueva y sin guardar; falta ligar la copia al archivo
-  original cuando no cambió en disco y ofrecer Comparar si cambió.
+- [x] **13.6** Aviso al arrancar y lista de recuperaciones, con «restaurar todo»
+  y «descartar todo». Las cuatro situaciones de D-41 están: sin origen abre
+  pestaña nueva; origen sin cambios (misma huella que la base) queda **ligada al
+  archivo original**, modificada, y Guardar usa la comprobación de conflicto de
+  siempre; origen cambiado, ausente o ya abierto abre la copia aparte, sin
+  guardar, y el aviso lo dice. Restaurar nunca escribe en el original.
+  Desviación: la oferta de Comparar quedó como texto del aviso («abrí el
+  archivo para comparar»), no como botón; un botón que abra el original en un
+  panel junto a la copia queda para la fase 8.
 - [ ] **13.7** Gancho de pánico con el registro compartido (D-42) y traspaso de
   una pestaña entre ventanas por adopción (con la 12.3 y la 12.4).
 - [ ] **13.8** Documentación: `docs/security.md`, `docs/threat-model.md`,
@@ -928,9 +933,9 @@ asociación.
 | 10 | Hecho | 10.1 a 10.11; prueba en vivo del 15 de noviembre |
 | 5 | Hecho | 5.1 a 5.4 y 5.8; la 5.5 a 5.7 pasaron a la fase 11 |
 | 11 | Hecho | 11.1 a 11.8; tooltip de «Quitar del mosaico» a la fase 8 |
-| 6 | Hecha | 6.1 a 6.8 y 13.3 a 13.5; la 13.6 queda a medias (ligar la copia al archivo original) |
+| 6 | Hecha | 6.1 a 6.8 y 13.3 a 13.6 |
 | 7 | Pendiente | — |
 | 8 | En curso | Hecho el hover y destello de Copiar (8.2 parcial). Pendientes el resto de 8 |
 | 12 | Pendiente | Ventanas (un proceso por ventana) y asociación de archivos |
 | 9 | Pendiente | — |
-| 13 | En curso | Hechas 13.1 a 13.5. Pendientes: 13.6 (ligar al original y Comparar), 13.7 (gancho de pánico y traspaso entre ventanas), 13.8 (documentación) y la opcional 13.9 |
+| 13 | En curso | Hechas 13.1 a 13.6. Pendientes: 13.7 (gancho de pánico y traspaso entre ventanas), 13.8 (documentación) y la opcional 13.9 |

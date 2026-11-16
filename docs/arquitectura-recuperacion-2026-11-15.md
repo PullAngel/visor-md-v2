@@ -229,7 +229,7 @@ y un tope de 30 s para que la escritura no compita con la edición.
 | --- | --- |
 | Sin origen (documento nuevo) | Pestaña nueva; el nombre sale del título (P-01) |
 | Origen sin cambios desde la base | Pestaña ligada al archivo original, marcada como modificada; Guardar usa la comprobación de conflicto de siempre |
-| **Origen cambió en disco** | Pestaña **separada**, sin ruta, con el aviso «el archivo cambió desde tu copia» y la opción de abrir Comparar; nunca se pisa nada |
+| **Origen cambió en disco** | Pestaña **separada**, sin ruta, con el aviso «cambió en disco desde que lo editabas… abrí el archivo para comparar»; nunca se pisa nada (implementado como aviso; el botón de Comparar queda para la fase 8) |
 | Origen ya no existe | Pestaña nueva con el nombre sugerido |
 
 ### 4.9 Barrido (contra la basura)
