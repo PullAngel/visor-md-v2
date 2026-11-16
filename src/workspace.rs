@@ -107,6 +107,26 @@ pub(crate) struct WorkspaceNote {
     source_modified: Option<SystemTime>,
 }
 
+impl WorkspaceNote {
+    /// La primera línea del fragmento guardado que menciona `[[destino`.
+    fn mention_line(&self, destination: &str) -> Option<String> {
+        const MAX_CHARS: usize = 80;
+        let needle = format!("[[{}", destination.trim().to_lowercase());
+        let line = self
+            .search_text
+            .lines()
+            .find(|line| line.to_lowercase().contains(&needle))?
+            .trim();
+        let mut chars = line.chars();
+        let head: String = chars.by_ref().take(MAX_CHARS).collect();
+        Some(if chars.next().is_some() {
+            format!("{}…", head.trim_end())
+        } else {
+            head
+        })
+    }
+}
+
 /// Las búsquedas ignoran mayúsculas y tildes («napoleon» encuentra «Napoleón»).
 trait SearchFold {
     fn search_fold(&self) -> String;
@@ -270,6 +290,33 @@ impl WorkspaceIndex {
                             if resolved.relative_path == target.relative_path
                     )
                 })
+            })
+            .collect()
+    }
+
+    /// Los backlinks con la línea donde cada nota menciona el destino, acotada
+    /// a 80 caracteres. Sale del fragmento que el índice ya guarda: no se
+    /// relee ningún archivo. Vacía si la mención está fuera del fragmento.
+    pub(crate) fn backlinks_with_context(
+        &self,
+        target: &WorkspaceNote,
+    ) -> Vec<(&WorkspaceNote, String)> {
+        self.backlinks_to(target)
+            .into_iter()
+            .map(|note| {
+                let context = note
+                    .wikilinks
+                    .iter()
+                    .filter(|link| {
+                        matches!(
+                            self.resolve_wikilink(&link.note),
+                            WikiResolution::Found(resolved)
+                                if resolved.relative_path == target.relative_path
+                        )
+                    })
+                    .find_map(|link| note.mention_line(&link.note))
+                    .unwrap_or_default();
+                (note, context)
             })
             .collect()
     }

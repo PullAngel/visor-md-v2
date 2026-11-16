@@ -1152,6 +1152,11 @@ struct NavigationPanelRows {
     items: Vec<(bool, String)>,
     /// Atajo de cada fila, alineado a la derecha. Vacío si el panel no tiene.
     shortcuts: Vec<Option<&'static str>>,
+    /// Sangría de cada fila en píxeles (el árbol de notas). Vacío si no hay.
+    offsets: Vec<f32>,
+    /// Chevron de cada fila: `Some(true)` cerrada, `Some(false)` abierta. Se
+    /// dibuja porque la fuente de la interfaz no trae «▸» ni «▾».
+    chevrons: Vec<Option<bool>>,
     /// Filas que son encabezados de grupo: no se resaltan ni se pulsan. Vacío
     /// si el panel no tiene.
     headings: Vec<bool>,
@@ -1192,6 +1197,18 @@ struct WorkspaceTreeRow {
     collapsed: bool,
 }
 
+/// Una ruta relativa a la carpeta de apuntes con « › » entre sus partes, igual
+/// en todas las listas y en cualquier sistema: «biologia › celula.md».
+fn breadcrumb(path: &std::path::Path) -> String {
+    path.components()
+        .filter_map(|component| match component {
+            std::path::Component::Normal(name) => Some(name.to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join(" › ")
+}
+
 impl WorkspaceTreeRow {
     fn label(&self) -> String {
         let name = self
@@ -1199,13 +1216,18 @@ impl WorkspaceTreeRow {
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or("?");
-        let indent = "  ".repeat(self.depth.min(12));
-        match self.kind {
-            WorkspaceTreeKind::Directory => {
-                format!("{indent}{} {name}/", if self.collapsed { "+" } else { "-" })
-            }
-            WorkspaceTreeKind::Note => format!("{indent}{name}"),
-        }
+        name.to_string()
+    }
+
+    /// Sangría en píxeles: una carpeta lleva su chevron en el margen y las
+    /// notas dejan ese hueco para que los nombres queden alineados.
+    fn indent_px(&self) -> f32 {
+        self.depth.min(12) as f32 * 14.0 + 16.0
+    }
+
+    /// `Some(cerrada)` para una carpeta; las notas no llevan chevron.
+    fn chevron(&self) -> Option<bool> {
+        matches!(self.kind, WorkspaceTreeKind::Directory).then_some(self.collapsed)
     }
 
     fn note_path(&self) -> Option<&std::path::Path> {
@@ -1226,7 +1248,7 @@ impl WorkspaceSearchResult {
             "{} · {} · {}",
             self.title,
             self.context,
-            self.relative_path.display()
+            breadcrumb(&self.relative_path)
         )
     }
 }
@@ -1319,6 +1341,16 @@ fn workspace_panel_title(root: Option<&Path>, note_count: usize) -> String {
 /// Cantidad con su sustantivo concordado: «1 resultado», «2 resultados».
 fn count_noun(count: usize, singular: &str, plural: &str) -> String {
     format!("{count} {}", if count == 1 { singular } else { plural })
+}
+
+/// Una fila de «notas que enlazan aquí»: la ruta con « › » y, si se sabe, la
+/// línea donde está la mención.
+fn backlink_label(path: &std::path::Path, context: &str) -> String {
+    if context.is_empty() {
+        breadcrumb(path)
+    } else {
+        format!("{} · {context}", breadcrumb(path))
+    }
 }
 
 fn backlinks_panel_title(count: usize) -> String {
@@ -7633,6 +7665,8 @@ struct App {
     /// Backlinks del documento actual obtenidos del índice ya autorizado. No
     /// se persisten ni se resuelven contra el disco hasta pulsar Enter.
     backlink_paths: Option<Vec<PathBuf>>,
+    /// Línea donde cada nota de `backlink_paths` menciona la actual.
+    backlink_contexts: Vec<String>,
     backlink_match: usize,
     /// Diagnóstico efímero de wikilinks del documento abierto. No consulta
     /// disco y se descarta al cerrar el panel o cambiar de documento.
@@ -7701,6 +7735,11 @@ struct App {
     pending_folder_link: Option<(PathBuf, String)>,
     /// Enlace que se sigue cuando termina de indexarse la carpeta.
     pending_wikilink_after_index: Option<String>,
+    /// Solicitud de índice que no avisa al terminar (el reindexado tras guardar).
+    silent_workspace_request: Option<u64>,
+    /// Solicitud de índice tras la cual se muestra el árbol de notas: la
+    /// persona acaba de elegir la carpeta.
+    show_tree_after_request: Option<u64>,
     /// Enlaces a notas que no existen en el documento actual, con su clave.
     broken_links_cache: Option<(BrokenLinksKey, Vec<(usize, usize)>)>,
     /// Conserva el resultado fatal para devolver un codigo de salida distinto
@@ -7923,6 +7962,7 @@ impl App {
             workspace_path_match: 0,
             collapsed_workspace_dirs: HashSet::new(),
             backlink_paths: None,
+            backlink_contexts: Vec::new(),
             backlink_match: 0,
             link_diagnostics: None,
             link_diagnostic_match: 0,
@@ -7958,6 +7998,8 @@ impl App {
             pending_new_note: None,
             pending_folder_link: None,
             pending_wikilink_after_index: None,
+            silent_workspace_request: None,
+            show_tree_after_request: None,
             broken_links_cache: None,
             fatal_error: false,
         }
@@ -8421,6 +8463,7 @@ impl ApplicationHandler<AppEvent> for App {
                             let _ = recovery.clear();
                         }
                         self.set_notice("documento guardado de forma atómica");
+                        self.reindex_after_save(document_id);
                         self.close_tab_if_saved_for_close(document_id);
                     } else {
                         if let Some(tab) = self
@@ -8508,6 +8551,7 @@ impl ApplicationHandler<AppEvent> for App {
                             let _ = recovery.clear();
                         }
                         self.set_notice("documento creado y guardado de forma atómica");
+                        self.reindex_after_save(document_id);
                         self.close_tab_if_saved_for_close(document_id);
                     } else {
                         if let Some(tab) = self
@@ -8564,12 +8608,18 @@ impl ApplicationHandler<AppEvent> for App {
                     (false, true, false) => "; búsqueda limitada por presupuesto de memoria",
                     (false, false, false) => "",
                 };
-                self.set_notice(&format!(
-                    "workspace {}: {}, {}{suffix}",
-                    if refreshed { "actualizado" } else { "indexado" },
-                    count_noun(note_count, "nota", "notas"),
-                    count_noun(skipped, "omitida", "omitidas")
-                ));
+                if self.silent_workspace_request != Some(request) {
+                    self.set_notice(&format!(
+                        "workspace {}: {}, {}{suffix}",
+                        if refreshed { "actualizado" } else { "indexado" },
+                        count_noun(note_count, "nota", "notas"),
+                        count_noun(skipped, "omitida", "omitidas")
+                    ));
+                }
+                // Al elegir la carpeta, el árbol aparece de inmediato.
+                if self.show_tree_after_request.take() == Some(request) {
+                    self.show_workspace_files();
+                }
                 // Un enlace que esperaba la carpeta se sigue ahora.
                 if let Some(destination) = self.pending_wikilink_after_index.take() {
                     self.open_workspace_wikilink(&destination);
@@ -13414,6 +13464,7 @@ impl App {
             return;
         };
         self.start_workspace_index(path, "indexando carpeta de trabajo", None);
+        self.show_tree_after_request = Some(self.workspace_request);
     }
 
     /// Volver a recorrer una carpeta ya concedida es una acción explícita. No
@@ -13446,7 +13497,10 @@ impl App {
         let cancel = Arc::new(AtomicBool::new(false));
         self.workspace_cancel = Some(cancel.clone());
         let proxy = self.proxy.clone();
-        self.set_notice(notice);
+        self.silent_workspace_request = None;
+        if !notice.is_empty() {
+            self.set_notice(notice);
+        }
         thread::spawn(move || {
             let event = match WorkspaceRoot::open(path) {
                 Ok(root) => {
@@ -14318,11 +14372,12 @@ impl App {
             self.set_notice("el documento abierto no está indexado como una nota Markdown");
             return;
         };
-        let paths = index
-            .backlinks_to(note)
+        let (paths, contexts): (Vec<_>, Vec<_>) = index
+            .backlinks_with_context(note)
             .into_iter()
-            .map(|backlink| backlink.relative_path.clone())
-            .collect::<Vec<_>>();
+            .map(|(backlink, context)| (backlink.relative_path.clone(), context))
+            .unzip();
+        self.backlink_contexts = contexts;
         self.search_query = None;
         self.workspace_search_query = None;
         self.workspace_paths = None;
@@ -14580,15 +14635,53 @@ impl App {
         self.workspace_search_query = None;
         self.backlink_paths = None;
         self.outline_headings = None;
-        self.workspace_path_match = 0;
-        self.workspace_paths = Some(visible_workspace_tree_rows(
-            &paths,
-            &self.collapsed_workspace_dirs,
-        ));
+        // La nota abierta queda elegida, y sus carpetas, abiertas.
+        let current = self.current_note_relative_path();
+        if let Some(current) = &current {
+            let mut parent = current.parent();
+            while let Some(directory) = parent {
+                self.collapsed_workspace_dirs.remove(directory);
+                parent = directory.parent();
+            }
+        }
+        let rows = visible_workspace_tree_rows(&paths, &self.collapsed_workspace_dirs);
+        self.workspace_path_match = current
+            .as_deref()
+            .and_then(|current| rows.iter().position(|row| row.note_path() == Some(current)))
+            .unwrap_or(0);
+        self.workspace_paths = Some(rows);
         self.set_notice("árbol de notas · flechas eligen, Enter abre una nota, Escape cierra");
         if let Some(window) = &self.window {
             window.request_redraw();
         }
+    }
+
+    /// La ruta del documento actual relativa a la carpeta de apuntes, si está
+    /// dentro de ella.
+    fn current_note_relative_path(&self) -> Option<PathBuf> {
+        let (root, _) = self.workspace.as_ref()?;
+        let current = fs::canonicalize(&self.document.path).ok()?;
+        current.strip_prefix(root.root()).ok().map(PathBuf::from)
+    }
+
+    /// Si el archivo recién guardado está en la carpeta de apuntes, vuelve a
+    /// indexarla sin avisos, para que enlaces y notas nuevas se vean al instante.
+    fn reindex_after_save(&mut self, document_id: u64) {
+        let Some((root, index)) = self.workspace.as_ref() else {
+            return;
+        };
+        let Some(document) = document_by_id(&self.document, &self.inactive_documents, document_id)
+        else {
+            return;
+        };
+        let inside =
+            fs::canonicalize(&document.path).is_ok_and(|path| path.starts_with(root.root()));
+        if !inside {
+            return;
+        }
+        let (path, previous) = (root.root().to_path_buf(), index.clone());
+        self.start_workspace_index(path, "", Some(previous));
+        self.silent_workspace_request = Some(self.workspace_request);
     }
 
     fn open_workspace_path_match(&mut self) {
@@ -15816,6 +15909,8 @@ impl App {
                 .sync(panel_key, matches.len(), selected, floating_cap);
             Some(NavigationPanelRows {
                 shortcuts: Vec::new(),
+                offsets: Vec::new(),
+                chevrons: Vec::new(),
                 headings: Vec::new(),
                 title: if self.symbol_query.is_empty() {
                     "Símbolos y emojis · escribí para filtrar".to_string()
@@ -15847,6 +15942,8 @@ impl App {
                 .sync(panel_key, candidates.len(), selected, floating_cap);
             Some(NavigationPanelRows {
                 shortcuts: Vec::new(),
+                offsets: Vec::new(),
+                chevrons: Vec::new(),
                 headings: Vec::new(),
                 title: format!("Dividir {} · ¿qué mostrar en el panel nuevo?", axis.label()),
                 items: range
@@ -15892,6 +15989,8 @@ impl App {
                 )
             };
             Some(NavigationPanelRows {
+                offsets: Vec::new(),
+                chevrons: Vec::new(),
                 title: abbreviated_label(&title, 48),
                 items: range
                     .clone()
@@ -15944,6 +16043,8 @@ impl App {
             };
             Some(NavigationPanelRows {
                 shortcuts: Vec::new(),
+                offsets: Vec::new(),
+                chevrons: Vec::new(),
                 headings: Vec::new(),
                 title: abbreviated_label(&title, 48),
                 items: range
@@ -15969,6 +16070,11 @@ impl App {
                 .unwrap_or((None, 0));
             Some(NavigationPanelRows {
                 shortcuts: Vec::new(),
+                offsets: range
+                    .clone()
+                    .map(|index| paths[index].indent_px())
+                    .collect(),
+                chevrons: range.clone().map(|index| paths[index].chevron()).collect(),
                 headings: Vec::new(),
                 title: workspace_panel_title(workspace_root, note_count),
                 items: range
@@ -15989,6 +16095,8 @@ impl App {
                     .sync(panel_key, paths.len(), selected, workspace_panel_capacity);
             Some(NavigationPanelRows {
                 shortcuts: Vec::new(),
+                offsets: Vec::new(),
+                chevrons: Vec::new(),
                 headings: Vec::new(),
                 title: backlinks_panel_title(paths.len()),
                 items: range
@@ -15997,7 +16105,10 @@ impl App {
                         (
                             index == selected,
                             abbreviated_label(
-                                &paths[index].display().to_string(),
+                                &backlink_label(
+                                    &paths[index],
+                                    self.backlink_contexts.get(index).map_or("", String::as_str),
+                                ),
                                 MAX_OVERLAY_LABEL_CHARS,
                             ),
                         )
@@ -16012,6 +16123,8 @@ impl App {
                     .sync(panel_key, rows.len(), selected, workspace_panel_capacity);
             Some(NavigationPanelRows {
                 shortcuts: Vec::new(),
+                offsets: Vec::new(),
+                chevrons: Vec::new(),
                 headings: Vec::new(),
                 title: format!("Enlaces de bóveda · {}", rows.len()),
                 items: range
@@ -16035,6 +16148,8 @@ impl App {
             );
             Some(NavigationPanelRows {
                 shortcuts: Vec::new(),
+                offsets: Vec::new(),
+                chevrons: Vec::new(),
                 headings: Vec::new(),
                 title: format!("Índice · {} encabezados", headings.len()),
                 items: range
@@ -16108,12 +16223,17 @@ impl App {
                         .filter(|item| *item < item_count)
                         .and_then(|item| navigation_shortcut_layouts.as_ref()?.get(item)?.as_ref())
                         .map_or(0.0, |shortcut| shortcut.width() + 16.0);
+                    let indent = row
+                        .checked_sub(1)
+                        .and_then(|item| rows.offsets.get(item))
+                        .copied()
+                        .unwrap_or(0.0);
                     fit_menu_layout(
                         label,
                         &mut self.font_cx,
                         &mut self.layout_cx,
                         self.palette,
-                        navigation_text_width - shortcut_width,
+                        navigation_text_width - shortcut_width - indent,
                     )
                 })
                 .collect::<Vec<_>>()
@@ -18690,19 +18810,50 @@ impl App {
                         &row_paint,
                     );
                 }
+                let indent = if is_item {
+                    rows.offsets.get(row - 1).copied().unwrap_or(0.0)
+                } else {
+                    0.0
+                };
                 for line in layout.lines() {
                     for entry in line.items() {
                         if let PositionedLayoutItem::GlyphRun(run) = entry {
-                            draw_run_background(pixmap, &run, geometry.x + 12.0, y + 7.0);
+                            draw_run_background(pixmap, &run, geometry.x + 12.0 + indent, y + 7.0);
                             draw_glyph_run(
                                 pixmap,
                                 scale_cx,
                                 glyphs,
                                 &run,
-                                geometry.x + 12.0,
+                                geometry.x + 12.0 + indent,
                                 y + 7.0,
                             );
                         }
+                    }
+                }
+                if is_item && let Some(Some(collapsed)) = rows.chevrons.get(row - 1).copied() {
+                    let cx = geometry.x + 12.0 + indent - 11.0;
+                    let cy = y + PANEL_ROW_HEIGHT * 0.5;
+                    let mut chevron = tiny_skia::PathBuilder::new();
+                    if collapsed {
+                        chevron.move_to(cx - 1.5, cy - 3.5);
+                        chevron.line_to(cx + 2.0, cy);
+                        chevron.line_to(cx - 1.5, cy + 3.5);
+                    } else {
+                        chevron.move_to(cx - 3.5, cy - 1.5);
+                        chevron.line_to(cx, cy + 2.0);
+                        chevron.line_to(cx + 3.5, cy - 1.5);
+                    }
+                    if let Some(chevron) = chevron.finish() {
+                        pixmap.stroke_path(
+                            &chevron,
+                            &dim_paint,
+                            &tiny_skia::Stroke {
+                                width: 1.5,
+                                ..Default::default()
+                            },
+                            Transform::identity(),
+                            None,
+                        );
                     }
                 }
                 if is_item
@@ -20823,6 +20974,113 @@ let x = 1;
     }
 
     #[test]
+    fn las_rutas_se_muestran_con_separador_y_los_backlinks_con_su_mencion() {
+        assert_eq!(
+            breadcrumb(std::path::Path::new("biologia/celula.md")),
+            "biologia › celula.md"
+        );
+        assert_eq!(breadcrumb(std::path::Path::new("inicio.md")), "inicio.md");
+        assert_eq!(
+            backlink_label(std::path::Path::new("a/b.md"), "ver [[c]] aquí"),
+            "a › b.md · ver [[c]] aquí"
+        );
+        assert_eq!(
+            backlink_label(std::path::Path::new("a/b.md"), ""),
+            "a › b.md"
+        );
+    }
+
+    #[test]
+    fn un_backlink_trae_la_linea_de_la_mencion_acotada() {
+        let carpeta = std::env::temp_dir().join(format!(
+            "visor-md-backlinks-{}-{}",
+            std::process::id(),
+            NEXT_DOCUMENT_ID.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(&carpeta).expect("se crea la carpeta");
+        fs::write(
+            carpeta.join("destino.md"),
+            "# Destino
+",
+        )
+        .unwrap();
+        let larga = "palabra ".repeat(30);
+        fs::write(
+            carpeta.join("origen.md"),
+            format!(
+                "# Origen
+
+intro
+La idea sale de [[Destino]] y sigue {larga}
+"
+            ),
+        )
+        .unwrap();
+        let root = WorkspaceRoot::open(&carpeta).expect("la carpeta es válida");
+        let index = workspace::index_workspace(&root, WorkspaceLimits::default());
+        let destino = index
+            .note_at_relative(std::path::Path::new("destino.md"))
+            .expect("la nota está indexada");
+        let filas = index.backlinks_with_context(destino);
+        assert_eq!(filas.len(), 1);
+        assert!(filas[0].0.relative_path.ends_with("origen.md"));
+        assert!(
+            filas[0].1.starts_with("La idea sale de [[Destino]]"),
+            "{}",
+            filas[0].1
+        );
+        assert!(filas[0].1.chars().count() <= 81);
+        assert!(filas[0].1.ends_with('…'));
+        let _ = fs::remove_dir_all(carpeta);
+    }
+
+    #[test]
+    fn el_arbol_abre_con_la_nota_actual_elegida_y_sus_carpetas_abiertas() {
+        let carpeta = std::env::temp_dir().join(format!(
+            "visor-md-arbol-{}-{}",
+            std::process::id(),
+            NEXT_DOCUMENT_ID.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(carpeta.join("biologia")).expect("se crea la carpeta");
+        fs::write(
+            carpeta.join("inicio.md"),
+            "# Inicio
+",
+        )
+        .unwrap();
+        fs::write(
+            carpeta.join("biologia").join("celula.md"),
+            "# Célula
+",
+        )
+        .unwrap();
+        let root = WorkspaceRoot::open(&carpeta).expect("la carpeta es válida");
+        let index = workspace::index_workspace(&root, WorkspaceLimits::default());
+        let mut app = App::for_tests(NIGHT);
+        app.workspace = Some((root, index));
+        app.document.path = carpeta
+            .join("biologia")
+            .join("celula.md")
+            .to_string_lossy()
+            .into_owned();
+        // La carpeta de la nota estaba cerrada: al mostrar el árbol se abre.
+        app.collapsed_workspace_dirs
+            .insert(PathBuf::from("biologia"));
+        app.show_workspace_files();
+        let filas = app.workspace_paths.clone().expect("el árbol está abierto");
+        let elegida = &filas[app.workspace_path_match];
+        assert_eq!(
+            elegida.note_path(),
+            Some(std::path::Path::new("biologia/celula.md"))
+        );
+        assert!(
+            !app.collapsed_workspace_dirs
+                .contains(std::path::Path::new("biologia"))
+        );
+        let _ = fs::remove_dir_all(carpeta);
+    }
+
+    #[test]
     fn con_dos_paneles_la_tira_no_repite_los_documentos_del_mosaico() {
         let mut app = App::for_tests(NIGHT);
         app.load_for_test("uno", DocumentMode::Reading);
@@ -21557,20 +21815,23 @@ let x = 1;
 
         assert_eq!(rows.len(), 5);
         assert_eq!(rows[0].note_path(), Some(std::path::Path::new("raiz.md")));
-        assert_eq!(rows[1].label(), "- universidad/");
+        assert_eq!(rows[1].label(), "universidad");
+        assert_eq!(rows[1].chevron(), Some(false));
         assert!(rows[1].note_path().is_none());
-        assert_eq!(rows[2].label(), "  - redes/");
-        assert_eq!(rows[3].label(), "    uno.md");
+        assert_eq!(rows[2].label(), "redes");
+        assert!(rows[2].indent_px() > rows[1].indent_px());
+        assert_eq!(rows[3].label(), "uno.md");
+        assert_eq!(rows[3].chevron(), None);
         assert_eq!(
             rows[3].note_path(),
             Some(std::path::Path::new("universidad/redes/uno.md"))
         );
-        assert_eq!(rows[4].label(), "  seguridad.md");
+        assert_eq!(rows[4].label(), "seguridad.md");
 
         let collapsed = HashSet::from([PathBuf::from("universidad/redes")]);
         let visible = visible_workspace_tree_rows(&paths, &collapsed);
         assert_eq!(visible.len(), 4);
-        assert_eq!(visible[2].label(), "  + redes/");
+        assert_eq!(visible[2].chevron(), Some(true));
         assert!(
             visible
                 .iter()
@@ -21600,7 +21861,7 @@ let x = 1;
         };
         assert_eq!(
             result.label(),
-            "Redes y seguridad · encabezado: Modelo OSI · universidad/redes.md"
+            "Redes y seguridad · encabezado: Modelo OSI · universidad › redes.md"
         );
     }
 

@@ -156,8 +156,7 @@ fn mosaico_soltar(app: &mut App) {
 /// Un enlace web (con ↗), una nota que existe y otra que no (subrayado
 /// punteado), con una carpeta de apuntes que solo tiene la primera.
 fn enlaces(app: &mut App) {
-    let carpeta =
-        std::env::temp_dir().join(format!("visor-md-escena-enlaces-{}", std::process::id()));
+    let carpeta = std::env::temp_dir().join("visor-md-escena-enlaces");
     std::fs::create_dir_all(&carpeta).expect("se crea la carpeta");
     std::fs::write(
         carpeta.join("existe.md"),
@@ -175,6 +174,37 @@ La guía está en [la documentación](https://www.ejemplo.org/guia), sigue en [[
 ",
         DocumentMode::Reading,
     );
+    let _ = std::fs::remove_dir_all(&carpeta);
+}
+
+/// El árbol de notas de una carpeta con subcarpetas, una de ellas cerrada, y la
+/// nota abierta elegida.
+fn arbol_de_notas(app: &mut App) {
+    let carpeta = std::env::temp_dir().join("visor-md-escena-arbol");
+    for relativa in [
+        "biologia/celula.md",
+        "biologia/fotosintesis.md",
+        "historia/roma.md",
+        "inicio.md",
+    ] {
+        let ruta = carpeta.join(relativa);
+        std::fs::create_dir_all(ruta.parent().expect("tiene carpeta")).expect("se crea");
+        std::fs::write(
+            &ruta, "# Nota
+",
+        )
+        .expect("se crea la nota");
+    }
+    let root = WorkspaceRoot::open(&carpeta).expect("la carpeta es válida");
+    let index = workspace::index_workspace(&root, WorkspaceLimits::default());
+    app.workspace = Some((root, index));
+    app.document.path = carpeta
+        .join("biologia/celula.md")
+        .to_string_lossy()
+        .into_owned();
+    app.collapsed_workspace_dirs
+        .insert(std::path::PathBuf::from("historia"));
+    app.show_workspace_files();
     let _ = std::fs::remove_dir_all(&carpeta);
 }
 
@@ -267,7 +297,7 @@ fn dialogo_con_el_puntero_sobre_un_boton(app: &mut App) {
     abrir_dialogo_de_cierre(app);
 }
 
-const ESCENAS: [Escena; 21] = [
+const ESCENAS: [Escena; 22] = [
     Escena {
         nombre: "lectura",
         modo: DocumentMode::Reading,
@@ -342,6 +372,11 @@ const ESCENAS: [Escena; 21] = [
         nombre: "enlaces",
         modo: DocumentMode::Reading,
         preparar: enlaces,
+    },
+    Escena {
+        nombre: "arbol-de-notas",
+        modo: DocumentMode::Reading,
+        preparar: arbol_de_notas,
     },
     Escena {
         nombre: "dialogo-cierre",

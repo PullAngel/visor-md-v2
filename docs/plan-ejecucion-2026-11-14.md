@@ -567,13 +567,13 @@ Es independiente de las fases 2 y 3. Toca solo `editor.rs` y las funciones
   como carpeta de apuntes» (ejecuta `choose_workspace` con la carpeta del
   documento) o «Cancelar».
 - [x] **6.4** Una nota abierta desde un enlace abre en Leer (`open_mode_override`; una nota recién creada abre en Editar).
-- [ ] **6.5** Al elegir la carpeta se muestra el árbol. Además:
+- [x] **6.5** Al elegir la carpeta se muestra el árbol (los chevrones se dibujan, porque la fuente de la interfaz no trae «▸» ni «▾»; reindexado silencioso tras guardar). Además:
   - se reindexa después de cada Guardar o Guardar como dentro de la carpeta;
   - la nota abierta se resalta;
   - las carpetas llevan chevron;
   - las rutas se muestran con « › ».
-- [ ] **6.6** Notas que enlazan aquí, con un extracto de la línea (hasta 80
-  caracteres).
+- [x] **6.6** Notas que enlazan aquí, con un extracto de la línea (hasta 80
+  caracteres), sacado del fragmento que el índice ya guarda (`backlinks_with_context`).
 - [ ] **6.7** Lista de recuperaciones (`ListView`) con origen, fecha y primera
   línea; Enter restaura y Supr descarta, con confirmación.
 - [ ] **6.8** `Dialog::close_window` lista los documentos y ofrece «Guardar
