@@ -574,8 +574,9 @@ Es independiente de las fases 2 y 3. Toca solo `editor.rs` y las funciones
   - las rutas se muestran con « › ».
 - [x] **6.6** Notas que enlazan aquí, con un extracto de la línea (hasta 80
   caracteres), sacado del fragmento que el índice ya guarda (`backlinks_with_context`).
-- [ ] **6.7** Lista de recuperaciones (`ListView`) con origen, fecha y primera
-  línea; Enter restaura y Supr descarta, con confirmación.
+- [x] **6.7** Lista de recuperaciones con título, origen y antigüedad; Enter
+  restaura, Ctrl+Enter restaura todo, Supr descarta (Mayús+Supr, todo), con
+  confirmación. Aviso al arrancar si quedaron documentos (con 13.6).
 - [ ] **6.8** `Dialog::close_window` lista los documentos y ofrece «Guardar
   todo», «Cerrar sin guardar» y «Cancelar»; Esc elige Cancelar. Pruebas en
   `dialog.rs`.
@@ -828,17 +829,23 @@ hacen con la fase 6 (comparten la 6.7); la 13.7 y la 13.8 con la fase 12.
 - [x] **13.2** Un solo hilo escritor con buzón «el último gana» (en lugar de un
   hilo por escritura) y omitir la escritura si el contenido no cambió (hash de
   la biblioteca estándar, sin dependencia nueva).
-- [ ] **13.3** `src/recuperacion/formato.rs` y `politica.rs` (puros), con todas
-  las pruebas de la sección 7 del diseño.
-- [ ] **13.4** `src/recuperacion/almacen.rs`: sesión con cerrojo, carpeta por
-  sesión, una copia por `doc_key`, listado de huérfanas por cabecera, adopción
-  por renombrado, barrido y cuota. Prueba de muerte real del proceso con
-  `Child::kill` y prueba de adopción con dos hilos.
-- [ ] **13.5** Migrar `main.rs` a la interfaz nueva (`iniciar`, `instantanea`,
-  `descartar`, `forzar_todo`, `huerfanas`, `adoptar`, `estado`); quitar
-  `RecoverySession` por pestaña; `doc_key` viaja con la pestaña.
-- [ ] **13.6** Aviso al arrancar y lista de recuperaciones (con la 6.7) con las
-  cuatro situaciones de D-41; «Restaurar todo» y «Descartar todo».
+- [x] **13.3** `src/recovery/formato.rs` (puro: cabecera, `body_len`, CRC-32,
+  límites) con las pruebas de la sección 7 del diseño. La política de disparo
+  quedó en `main.rs` (`queue_recovery`, `RECOVERY_MAX_WAIT`) porque ya estaba
+  probada ahí.
+- [x] **13.4** `src/recovery/almacen.rs`: sesión con cerrojo (`share_mode(0)`),
+  carpeta por sesión, una copia por documento, listado de huérfanas por
+  cabecera, adopción por renombrado con archivo de reclamo (en Windows el
+  renombrado por manija dejaba ganar a dos hilos), barrido y cuota. Prueba de
+  muerte real del proceso con `Child::kill` y de adopción con dos hilos.
+- [x] **13.5** `main.rs` usa el almacén nuevo: `RecoverySession` conserva su
+  interfaz (`write`, `submit`, `clear`) y suma `set_meta` (título y origen
+  viajan en la cabecera), `adopt` y `recovery::orphans()`. Las copias de
+  formato anterior (`session-*.md`) se listan y se descartan tras abrirlas.
+- [~] **13.6** Aviso al arrancar y lista de recuperaciones hechos, con «restaurar
+  todo» y «descartar todo». De las cuatro situaciones de D-41 solo está la de
+  abrir como pestaña nueva y sin guardar; falta ligar la copia al archivo
+  original cuando no cambió en disco y ofrecer Comparar si cambió.
 - [ ] **13.7** Gancho de pánico con el registro compartido (D-42) y traspaso de
   una pestaña entre ventanas por adopción (con la 12.3 y la 12.4).
 - [ ] **13.8** Documentación: `docs/security.md`, `docs/threat-model.md`,

@@ -53,6 +53,16 @@ impl FileIdentity {
         }
     }
 
+    /// Huella de texto (`largo:fecha`) para comparar sin guardar el valor
+    /// completo: la recuperación la usa para saber si el archivo cambió.
+    pub(crate) fn fingerprint(&self) -> String {
+        let nanos = self
+            .modified
+            .and_then(|modified| modified.duration_since(SystemTime::UNIX_EPOCH).ok())
+            .map_or(0, |duration| duration.as_nanos());
+        format!("{}:{nanos}", self.byte_len)
+    }
+
     #[cfg(test)]
     fn still_matches(&self, path: impl AsRef<Path>) -> Result<bool, std::io::Error> {
         let metadata = std::fs::metadata(path)?;

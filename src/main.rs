@@ -6941,6 +6941,24 @@ const DRAG_START_DISTANCE: f32 = 6.0;
 const UNTITLED_PATH: &str = "sin título.md";
 
 impl DocumentState {
+    /// Lo que la copia de recuperación sabe del documento además de su texto.
+    fn recovery_meta(&self) -> recovery::EntryMeta {
+        recovery::EntryMeta {
+            origin_path: if self.is_untitled() {
+                String::new()
+            } else {
+                self.path.clone()
+            },
+            base: self
+                .source_identity
+                .as_ref()
+                .map(FileIdentity::fingerprint)
+                .unwrap_or_default(),
+            title: self.display_name(),
+            saved_at: 0,
+        }
+    }
+
     /// Documento que nunca se guardó ni se abrió desde un archivo.
     fn is_untitled(&self) -> bool {
         self.source_identity.is_none() && self.path == UNTITLED_PATH
@@ -7077,11 +7095,48 @@ fn earliest_recovery_deadline<'a>(
         .min()
 }
 
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_secs())
+}
+
+/// Hace cuánto se escribió una copia, en palabras: «hace 5 min».
+fn age_label(seconds: u64) -> String {
+    match seconds {
+        0..=59 => "hace un momento".to_string(),
+        60..=3_599 => format!("hace {} min", seconds / 60),
+        3_600..=86_399 => format!("hace {} h", seconds / 3_600),
+        _ => {
+            let days = seconds / 86_400;
+            format!("hace {days} {}", if days == 1 { "día" } else { "días" })
+        }
+    }
+}
+
+/// Una fila de la lista de recuperaciones: título, de dónde venía y hace cuánto.
+fn recovery_row_label(orphan: &recovery::Orphan, now: u64) -> String {
+    let title = if orphan.meta.title.is_empty() {
+        "Sin título"
+    } else {
+        orphan.meta.title.as_str()
+    };
+    let origin = std::path::Path::new(&orphan.meta.origin_path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|_| !orphan.meta.origin_path.is_empty())
+        .unwrap_or("documento nuevo");
+    format!(
+        "{title} · {origin} · {}",
+        age_label(now.saturating_sub(orphan.meta.saved_at))
+    )
+}
+
 fn recovered_document(source: String) -> Result<DocumentState, &'static str> {
     let index = SourceIndex::new(&source);
     let blocks = safe_source_blocks(&source, &index)?;
     let mut recovered = DocumentState::untitled();
-    recovered.path = "recuperación sin guardar.md".to_string();
+    recovered.path = UNTITLED_PATH.to_string();
     recovered.source = TextBuffer::from_text(&source);
     recovered.source_editor.mark_recovered();
     recovered.blocks = blocks;
@@ -7735,6 +7790,11 @@ struct App {
     pending_folder_link: Option<(PathBuf, String)>,
     /// Enlace que se sigue cuando termina de indexarse la carpeta.
     pending_wikilink_after_index: Option<String>,
+    /// Copias que quedaron de la sesión anterior, mientras la lista está abierta.
+    recovery_list: Option<Vec<recovery::Orphan>>,
+    recovery_list_match: usize,
+    /// Copias que el diálogo de confirmación va a descartar.
+    pending_recovery_discard: Vec<recovery::Orphan>,
     /// Solicitud de índice que no avisa al terminar (el reindexado tras guardar).
     silent_workspace_request: Option<u64>,
     /// Solicitud de índice tras la cual se muestra el árbol de notas: la
@@ -7998,6 +8058,9 @@ impl App {
             pending_new_note: None,
             pending_folder_link: None,
             pending_wikilink_after_index: None,
+            recovery_list: None,
+            recovery_list_match: 0,
+            pending_recovery_discard: Vec::new(),
             silent_workspace_request: None,
             show_tree_after_request: None,
             broken_links_cache: None,
@@ -8866,6 +8929,14 @@ impl ApplicationHandler<AppEvent> for App {
             self.set_notice(
                 "La recuperación de cambios no está disponible en esta cuenta: guardá seguido",
             );
+        } else if self.recovery_enabled {
+            let count = recovery::orphans().len();
+            if count > 0 {
+                self.set_notice(&format!(
+                    "Quedaron {} sin guardar de la última sesión: abrilos con Ctrl+Shift+R",
+                    count_noun(count, "documento", "documentos")
+                ));
+            }
         }
     }
 
@@ -9576,6 +9647,9 @@ impl ApplicationHandler<AppEvent> for App {
             }
             WindowEvent::KeyboardInput { event, .. } if self.backlink_paths.is_some() => {
                 self.handle_backlink_key(&event);
+            }
+            WindowEvent::KeyboardInput { event, .. } if self.recovery_list.is_some() => {
+                self.handle_recovery_list_key(&event);
             }
             WindowEvent::KeyboardInput { event, .. } if self.link_diagnostics.is_some() => {
                 self.handle_link_diagnostics_key(&event);
@@ -10336,7 +10410,7 @@ impl App {
             AppAction::WorkspaceHub => self.open_workspace_hub(),
             AppAction::Backlinks => self.show_backlinks(),
             AppAction::WikiLinkDiagnostics => self.show_wikilink_diagnostics(),
-            AppAction::RestoreRecovery => self.restore_latest_recovery(),
+            AppAction::RestoreRecovery => self.show_recovery_list(),
             AppAction::ToggleRecovery => self.toggle_recovery(),
             AppAction::CommandPalette => self.open_command_palette(),
             AppAction::MenuFile => self.open_menu_scope(CommandPaletteScope::File),
@@ -10616,7 +10690,20 @@ impl App {
 
     /// Con `Some(now)`, solo lo vencido; con `None`, todo lo pendiente. Las
     /// copias van al hilo escritor, que no bloquea la interfaz.
+    /// Pasa a cada copia el título y el origen actuales de su documento.
+    fn refresh_recovery_meta(&self) {
+        if let Some(recovery) = &self.recovery {
+            recovery.set_meta(self.document.recovery_meta());
+        }
+        for tab in &self.inactive_documents {
+            if let Some(recovery) = &tab.recovery {
+                recovery.set_meta(tab.document.recovery_meta());
+            }
+        }
+    }
+
     fn flush_recoveries(&mut self, due: Option<Instant>) {
+        self.refresh_recovery_meta();
         let take = |document: &mut DocumentState| match due {
             Some(now) => document.take_due_recovery(now),
             None => document.take_pending_recovery(),
@@ -11229,6 +11316,7 @@ impl App {
 
     fn navigation_panel_is_open(&self) -> bool {
         self.pane_split_picker.is_some()
+            || self.recovery_list.is_some()
             || self.symbol_picker.is_some()
             || self.command_palette.is_some()
             || self.workspace_search_query.is_some()
@@ -11323,6 +11411,7 @@ impl App {
         self.workspace_paths = None;
         self.backlink_paths = None;
         self.link_diagnostics = None;
+        self.recovery_list = None;
         self.outline_headings = None;
         self.command_palette = None;
         self.command_palette_query.clear();
@@ -11393,6 +11482,13 @@ impl App {
             if let Some(index) = self.list_item_at(x, y, paths.len(), selected) {
                 self.backlink_match = index;
                 self.open_backlink_match();
+                return true;
+            }
+        } else if let Some(rows) = &self.recovery_list {
+            let selected = self.recovery_list_match;
+            if let Some(index) = self.list_item_at(x, y, rows.len(), selected) {
+                self.recovery_list_match = index;
+                self.restore_recovery_selected(false);
                 return true;
             }
         } else if let Some(rows) = &self.link_diagnostics {
@@ -13155,6 +13251,7 @@ impl App {
     /// Recarga la versión del disco. Si hay cambios locales, primero los deja
     /// en una recuperación; si eso falla, no recarga.
     fn reload_external_preserving_local(&mut self) {
+        self.refresh_recovery_meta();
         if self.document.source_editor.is_dirty() {
             let Some(recovery) = &self.recovery else {
                 self.set_notice(
@@ -13318,6 +13415,8 @@ impl App {
                 }
             }
             DialogChoice::SkipUseFolder => self.pending_folder_link = None,
+            DialogChoice::DiscardRecovery => self.discard_pending_recoveries(),
+            DialogChoice::KeepRecoveryEntry => self.pending_recovery_discard.clear(),
         }
     }
 
@@ -13325,6 +13424,7 @@ impl App {
     /// Si hay cambios, primero se conserva una recuperación y después se
     /// pregunta con un diálogo propio. Devuelve `true` solo si puede cerrar ya.
     fn request_close_current(&mut self) -> bool {
+        self.refresh_recovery_meta();
         if !self.document.source_editor.is_dirty() {
             self.document.cancel_pending_recovery();
             if let Some(recovery) = &self.recovery {
@@ -13545,25 +13645,172 @@ impl App {
         self.set_notice("actualización de carpeta cancelada; se conserva el índice anterior");
     }
 
-    fn restore_latest_recovery(&mut self) {
-        match RecoverySession::latest_pending(DEFAULT_DOCUMENT_LIMIT_BYTES) {
-            Ok(Some(source)) => {
-                let recovered = match recovered_document(source) {
-                    Ok(recovered) => recovered,
-                    Err(error) => {
-                        self.set_notice(&format!("no se pudo mostrar la recuperación: {error}"));
-                        return;
-                    }
-                };
-                self.open_document_in_tab(recovered);
-                self.set_notice("recuperación abierta como documento sin guardar");
+    /// Abre la lista de lo que quedó sin guardar de sesiones anteriores.
+    fn show_recovery_list(&mut self) {
+        let orphans = recovery::orphans();
+        if orphans.is_empty() {
+            self.set_notice("No hay documentos sin guardar para recuperar");
+            return;
+        }
+        self.dismiss_navigation_panel();
+        self.recovery_list_match = 0;
+        self.recovery_list = Some(orphans);
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    /// Restaura una copia como una pestaña nueva, sin tocar ningún archivo: la
+    /// pestaña queda sin guardar, con el título del texto, y la copia pasa a ser
+    /// de esta sesión. Devuelve si pudo abrirla.
+    fn restore_recovery(&mut self, orphan: &recovery::Orphan) -> bool {
+        let name = if orphan.meta.title.is_empty() {
+            "documento sin título".to_string()
+        } else {
+            orphan.meta.title.clone()
+        };
+        let source = match recovery::read_orphan(orphan, DEFAULT_DOCUMENT_LIMIT_BYTES) {
+            Ok(source) => source,
+            Err(reason) => {
+                self.set_notice(&format!("No se pudo recuperar «{name}»: {reason}"));
+                return false;
             }
-            Ok(None) => self.set_notice("no hay recuperaciones locales disponibles"),
+        };
+        let recovered = match recovered_document(source) {
+            Ok(recovered) => recovered,
             Err(error) => {
-                self.log.push(format!("[recuperación] {error}"));
-                self.set_notice("no se pudo leer la recuperación local");
+                self.set_notice(&format!("No se pudo mostrar «{name}»: {error}"));
+                return false;
+            }
+        };
+        self.open_document_in_tab(recovered);
+        // La copia sigue siendo la misma, ahora de esta pestaña. Si la
+        // recuperación está desactivada o la copia es del formato anterior, se
+        // descarta: el texto ya está abierto.
+        let adopted = if self.recovery_enabled && !orphan.legacy {
+            RecoverySession::adopt(orphan).ok()
+        } else {
+            None
+        };
+        match adopted {
+            Some(session) => {
+                session.set_meta(self.document.recovery_meta());
+                self.recovery = Some(session);
+            }
+            None => {
+                let _ = recovery::discard_orphan(orphan);
             }
         }
+        self.schedule_recovery();
+        true
+    }
+
+    /// Enter restaura la fila elegida; con `all`, todas.
+    fn restore_recovery_selected(&mut self, all: bool) {
+        let Some(rows) = self.recovery_list.take() else {
+            return;
+        };
+        let selected = self.recovery_list_match % rows.len().max(1);
+        let mut remaining = Vec::new();
+        let mut restored = 0;
+        for (index, orphan) in rows.iter().enumerate() {
+            if (all || index == selected) && self.restore_recovery(orphan) {
+                restored += 1;
+            } else {
+                remaining.push(orphan.clone());
+            }
+        }
+        if restored > 0 {
+            self.set_notice(&if restored == 1 {
+                "Documento recuperado: está sin guardar, usá Guardar como para elegir dónde"
+                    .to_string()
+            } else {
+                format!("{restored} documentos recuperados: están sin guardar")
+            });
+        }
+        if !remaining.is_empty() {
+            self.recovery_list_match = selected.min(remaining.len() - 1);
+            self.recovery_list = Some(remaining);
+        }
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    fn handle_recovery_list_key(&mut self, event: &KeyEvent) {
+        if event.state != ElementState::Pressed {
+            return;
+        }
+        let count = self.recovery_list.as_ref().map_or(0, Vec::len);
+        match event.physical_key {
+            PhysicalKey::Code(KeyCode::Escape) if !event.repeat => {
+                self.recovery_list = None;
+            }
+            PhysicalKey::Code(KeyCode::ArrowDown) if count > 0 => {
+                self.recovery_list_match = (self.recovery_list_match + 1) % count;
+            }
+            PhysicalKey::Code(KeyCode::ArrowUp) if count > 0 => {
+                self.recovery_list_match = (self.recovery_list_match + count - 1) % count;
+            }
+            PhysicalKey::Code(KeyCode::Enter) if !event.repeat && count > 0 => {
+                let all = self.modifiers.control_key();
+                self.restore_recovery_selected(all);
+            }
+            PhysicalKey::Code(KeyCode::Delete) if !event.repeat && count > 0 => {
+                let all = self.modifiers.shift_key();
+                self.confirm_discard_recovery(all);
+            }
+            _ => return,
+        }
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    /// Pide confirmación antes de borrar: descartar no se puede deshacer.
+    fn confirm_discard_recovery(&mut self, all: bool) {
+        let Some(rows) = &self.recovery_list else {
+            return;
+        };
+        let selected = self.recovery_list_match % rows.len().max(1);
+        let (chosen, summary): (Vec<_>, String) = if all {
+            (
+                rows.clone(),
+                format!("Son {}.", count_noun(rows.len(), "copia", "copias")),
+            )
+        } else {
+            let orphan = rows[selected].clone();
+            let name = if orphan.meta.title.is_empty() {
+                "documento sin título".to_string()
+            } else {
+                orphan.meta.title.clone()
+            };
+            (vec![orphan], format!("Es la copia de «{name}»."))
+        };
+        self.pending_recovery_discard = chosen;
+        self.open_dialog(Dialog::discard_recovery(&summary), None);
+    }
+
+    fn discard_pending_recoveries(&mut self) {
+        let discarded = std::mem::take(&mut self.pending_recovery_discard);
+        for orphan in &discarded {
+            if let Err(error) = recovery::discard_orphan(orphan) {
+                self.log.push(format!("[recuperación] {error}"));
+            }
+        }
+        if let Some(rows) = self.recovery_list.as_mut() {
+            rows.retain(|row| !discarded.iter().any(|gone| gone.path == row.path));
+            if rows.is_empty() {
+                self.recovery_list = None;
+            } else {
+                self.recovery_list_match = self.recovery_list_match.min(rows.len() - 1);
+            }
+        }
+        self.set_notice(&format!(
+            "{} descartado{}",
+            count_noun(discarded.len(), "documento", "documentos"),
+            if discarded.len() == 1 { "" } else { "s" }
+        ));
     }
 
     /// Recarga la pestaña actual sin abrir una segunda copia. Conserva la
@@ -16115,6 +16362,35 @@ impl App {
                     })
                     .collect(),
                 footer: panel_footer(paths.len(), range),
+            })
+        } else if let Some(rows) = self.recovery_list.as_ref() {
+            let selected = self.recovery_list_match % rows.len().max(1);
+            let range =
+                self.panel_scroll
+                    .sync(panel_key, rows.len(), selected, workspace_panel_capacity);
+            let now = unix_now();
+            Some(NavigationPanelRows {
+                shortcuts: Vec::new(),
+                offsets: Vec::new(),
+                chevrons: Vec::new(),
+                headings: Vec::new(),
+                title: format!(
+                    "Recuperaciones · {}",
+                    count_noun(rows.len(), "documento", "documentos")
+                ),
+                items: range
+                    .clone()
+                    .map(|index| {
+                        (
+                            index == selected,
+                            abbreviated_label(
+                                &recovery_row_label(&rows[index], now),
+                                MAX_OVERLAY_LABEL_CHARS,
+                            ),
+                        )
+                    })
+                    .collect(),
+                footer: "Enter restaura · Supr descarta · Esc cierra".to_string(),
             })
         } else if let Some(rows) = self.link_diagnostics.as_ref() {
             let selected = self.link_diagnostic_match % rows.len().max(1);
@@ -21081,6 +21357,148 @@ La idea sale de [[Destino]] y sigue {larga}
     }
 
     #[test]
+    fn la_antiguedad_de_una_copia_se_dice_con_palabras() {
+        assert_eq!(age_label(5), "hace un momento");
+        assert_eq!(age_label(60), "hace 1 min");
+        assert_eq!(age_label(59 * 60), "hace 59 min");
+        assert_eq!(age_label(3_600), "hace 1 h");
+        assert_eq!(age_label(86_400), "hace 1 día");
+        assert_eq!(age_label(3 * 86_400), "hace 3 días");
+    }
+
+    /// Una copia que quedó de otra sesión: un archivo válido en una carpeta de
+    /// pruebas, descrito como lo describiría el almacén.
+    fn copia_huerfana(titulo: &str, origen: &str, texto: &str) -> (recovery::Orphan, PathBuf) {
+        let carpeta = std::env::temp_dir().join(format!(
+            "visor-md-huerfana-{}-{}",
+            std::process::id(),
+            NEXT_DOCUMENT_ID.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(&carpeta).unwrap();
+        let meta = recovery::EntryMeta {
+            title: titulo.into(),
+            origin_path: origen.into(),
+            saved_at: unix_now().saturating_sub(300),
+            ..recovery::EntryMeta::default()
+        };
+        let ruta = carpeta.join("abc123.vmdr");
+        fs::write(&ruta, recovery::encode_for_tests(&meta, texto)).unwrap();
+        let orphan = recovery::Orphan::for_tests(ruta, meta, texto.len() as u64);
+        (orphan, carpeta)
+    }
+
+    #[test]
+    fn una_fila_de_recuperacion_dice_titulo_origen_y_antiguedad() {
+        let (con_origen, carpeta) = copia_huerfana("Biología", "C:/notas/bio.md", "# Bio");
+        let ahora = unix_now();
+        assert_eq!(
+            recovery_row_label(&con_origen, ahora),
+            "Biología · bio.md · hace 5 min"
+        );
+        let (nueva, otra) = copia_huerfana("", "", "texto");
+        assert_eq!(
+            recovery_row_label(&nueva, ahora),
+            "Sin título · documento nuevo · hace 5 min"
+        );
+        let _ = fs::remove_dir_all(carpeta);
+        let _ = fs::remove_dir_all(otra);
+    }
+
+    #[test]
+    fn restaurar_abre_una_pestana_sin_guardar_con_el_titulo_del_texto() {
+        let (orphan, carpeta) = copia_huerfana(
+            "Plan de viaje",
+            "",
+            "# Plan de viaje
+
+reservar hotel
+",
+        );
+        let mut app = App::for_tests(NIGHT);
+        app.load_for_test("otro", DocumentMode::Reading);
+        let pestanas = app.tab_order.len();
+        assert!(app.restore_recovery(&orphan));
+        assert_eq!(app.tab_order.len(), pestanas + 1);
+        assert!(app.document.is_untitled());
+        assert!(app.document.is_unsaved(), "queda marcada como sin guardar");
+        assert_eq!(app.document.display_name(), "Plan de viaje");
+        assert!(app.document.source.to_string().contains("reservar hotel"));
+        let _ = fs::remove_dir_all(carpeta);
+    }
+
+    #[test]
+    fn una_copia_danada_no_se_abre_y_avisa() {
+        let (orphan, carpeta) = copia_huerfana("Rota", "", "contenido");
+        let mut bytes = fs::read(orphan.path()).unwrap();
+        let ultimo = bytes.len() - 1;
+        bytes[ultimo] ^= 0xFF;
+        fs::write(orphan.path(), bytes).unwrap();
+        let mut app = App::for_tests(NIGHT);
+        let pestanas = app.tab_order.len();
+        assert!(!app.restore_recovery(&orphan));
+        assert_eq!(app.tab_order.len(), pestanas);
+        assert_eq!(
+            app.notice.as_deref(),
+            Some("No se pudo recuperar «Rota»: la copia está dañada")
+        );
+        let _ = fs::remove_dir_all(carpeta);
+    }
+
+    #[test]
+    fn la_lista_restaura_con_enter_y_descarta_con_confirmacion() {
+        let (primera, carpeta_a) = copia_huerfana("Primera", "", "uno");
+        let (segunda, carpeta_b) = copia_huerfana("Segunda", "", "dos");
+        let mut app = App::for_tests(NIGHT);
+        app.recovery_list = Some(vec![primera.clone(), segunda.clone()]);
+        app.recovery_list_match = 1;
+
+        // Supr pide confirmación y no borra todavía.
+        app.confirm_discard_recovery(false);
+        let dialogo = app.dialog.as_ref().expect("pide confirmar");
+        assert_eq!(dialogo.safe_choice, DialogChoice::KeepRecoveryEntry);
+        assert!(segunda.path().exists());
+        // Conservar no cambia nada.
+        app.finish_dialog(DialogChoice::KeepRecoveryEntry);
+        assert!(segunda.path().exists());
+        assert_eq!(app.recovery_list.as_ref().map(Vec::len), Some(2));
+
+        // Confirmar descarta solo la elegida y la saca de la lista.
+        app.confirm_discard_recovery(false);
+        app.finish_dialog(DialogChoice::DiscardRecovery);
+        assert!(!segunda.path().exists());
+        assert!(primera.path().exists());
+        assert_eq!(app.recovery_list.as_ref().map(Vec::len), Some(1));
+
+        // Restaurar la que queda vacía la lista y la cierra.
+        app.recovery_list_match = 0;
+        app.restore_recovery_selected(false);
+        assert!(app.recovery_list.is_none());
+        assert_eq!(app.document.display_name(), "uno");
+        let _ = fs::remove_dir_all(carpeta_a);
+        let _ = fs::remove_dir_all(carpeta_b);
+    }
+
+    #[test]
+    fn restaurar_todo_abre_cada_copia_en_su_pestana() {
+        let (a, carpeta_a) = copia_huerfana(
+            "A", "", "# Alfa
+",
+        );
+        let (b, carpeta_b) = copia_huerfana(
+            "B", "", "# Beta
+",
+        );
+        let mut app = App::for_tests(NIGHT);
+        let antes = app.tab_order.len();
+        app.recovery_list = Some(vec![a, b]);
+        app.restore_recovery_selected(true);
+        assert_eq!(app.tab_order.len(), antes + 2);
+        assert!(app.recovery_list.is_none());
+        let _ = fs::remove_dir_all(carpeta_a);
+        let _ = fs::remove_dir_all(carpeta_b);
+    }
+
+    #[test]
     fn con_dos_paneles_la_tira_no_repite_los_documentos_del_mosaico() {
         let mut app = App::for_tests(NIGHT);
         app.load_for_test("uno", DocumentMode::Reading);
@@ -22741,7 +23159,8 @@ La idea sale de [[Destino]] y sigue {larga}
     fn una_recuperacion_se_prepara_como_documento_nuevo_y_modificado() {
         let recovered = recovered_document("# recuperado\n\ntexto".to_string()).unwrap();
 
-        assert_eq!(recovered.path, "recuperación sin guardar.md");
+        assert!(recovered.is_untitled());
+        assert_eq!(recovered.display_name(), "recuperado");
         assert!(recovered.is_dirty());
         assert_eq!(recovered.mode, DocumentMode::SourceEditing);
         assert!(!recovered.blocks.is_empty());

@@ -1,46 +1,133 @@
 //! Recuperación local de cambios no guardados.
 //!
-//! Las copias viven fuera del documento y no sustituyen Guardar. Contienen
-//! texto sin cifrar bajo el perfil del usuario, por lo que solo se crean para
-//! una edición activa y se eliminan después de un guardado confirmado.
+//! Las copias viven fuera del documento y no sustituyen Guardar. Cada documento
+//! sin guardar tiene a lo sumo una copia, escrita de forma atómica en la
+//! carpeta de la sesión de este proceso. Si el proceso muere, la sesión queda
+//! huérfana y sus copias se ofrecen al abrir de nuevo. El diseño completo está
+//! en `docs/arquitectura-recuperacion-2026-11-15.md`.
+//!
+//! Contienen texto sin cifrar bajo el perfil del usuario, por lo que solo se
+//! crean para una edición activa y se eliminan después de un guardado
+//! confirmado.
+
+mod almacen;
+mod formato;
 
 use atomicwrites::{AllowOverwrite, AtomicFile};
 use std::collections::HashMap;
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::io::{ErrorKind, Write};
-use std::path::{Path, PathBuf};
+#[cfg(test)]
+use std::path::Path;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, SystemTime};
 
-const RETENTION: Duration = Duration::from_secs(14 * 24 * 60 * 60);
-/// Un temporal de `atomicwrites` que sigue ahí pasada esta edad es de un
-/// proceso que murió a mitad de una escritura.
-const STALE_TEMP: Duration = Duration::from_secs(60 * 60);
-const TEMP_DIR_PREFIX: &str = ".atomicwrite";
+pub(crate) use almacen::Orphan;
+use almacen::{ENTRY_EXTENSION, Session, Store, random_hex};
+pub(crate) use formato::EntryMeta;
+
+/// Cuánto vive una copia del formato anterior sin que nadie la abra.
+pub(super) const LEGACY_RETENTION: Duration = Duration::from_secs(14 * 24 * 60 * 60);
 const PRIVACY_NOTICE_FILE: &str = "privacy-notice-v1";
+
+/// El almacén y la sesión de este proceso: se crean una vez, al primer uso.
+struct Process {
+    store: Store,
+    session: Session,
+}
+
+fn process() -> Option<&'static Process> {
+    static PROCESS: OnceLock<Option<Process>> = OnceLock::new();
+    PROCESS
+        .get_or_init(|| {
+            let root = ensure_root().ok()?;
+            let store = Store::at(root);
+            // Limpiar antes de crear la sesión propia: nunca toca una viva.
+            let _ = store.sweep(SystemTime::now());
+            let session = store.begin_session().ok()?;
+            Some(Process { store, session })
+        })
+        .as_ref()
+}
+
+/// Una copia como la escribe el almacén, para pruebas de la interfaz.
+#[cfg(test)]
+pub(crate) fn encode_for_tests(meta: &EntryMeta, body: &str) -> Vec<u8> {
+    formato::encode(meta, body)
+}
+
+/// Las copias que dejó una sesión que ya no existe, de la más nueva a la más
+/// vieja.
+pub(crate) fn orphans() -> Vec<Orphan> {
+    process().map(|p| p.store.orphans()).unwrap_or_default()
+}
+
+/// Lee el texto de una copia huérfana, verificando su integridad.
+pub(crate) fn read_orphan(orphan: &Orphan, limit: u64) -> Result<String, &'static str> {
+    use formato::DecodeError;
+    let process = process().ok_or("la recuperación no está disponible")?;
+    process
+        .store
+        .read(orphan, limit)
+        .map_err(|error| match error {
+            DecodeError::TooLarge => "la copia es más grande de lo que se puede abrir",
+            DecodeError::UnsupportedVersion(_) => "la copia es de una versión más nueva",
+            _ => "la copia está dañada",
+        })
+}
+
+pub(crate) fn discard_orphan(orphan: &Orphan) -> Result<(), std::io::Error> {
+    match process() {
+        Some(process) => process.store.discard(orphan),
+        None => Ok(()),
+    }
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct RecoverySession {
     path: PathBuf,
     latest_request: Arc<AtomicU64>,
     write_lock: Arc<Mutex<()>>,
-    /// Hash del contenido que ya está en disco; 0 si no hay copia. Evita
-    /// reescribir lo que no cambió.
+    /// Hash de lo que ya está en disco; 0 si no hay copia. Evita reescribir
+    /// lo que no cambió.
     last_hash: Arc<AtomicU64>,
     /// La última escritura falló y todavía no se avisó a la persona.
     failure_pending: Arc<AtomicBool>,
     /// La última escritura falló (se mantiene hasta que una tenga éxito).
     failed: Arc<AtomicBool>,
+    /// Lo que se sabe del documento (título, origen), que viaja en la cabecera.
+    meta: Arc<Mutex<EntryMeta>>,
 }
 
 impl RecoverySession {
+    /// Una copia nueva en la sesión de este proceso. Su archivo no existe
+    /// hasta la primera escritura.
     pub(crate) fn start() -> Result<Self, std::io::Error> {
-        let root = ensure_root()?;
-        let _ = cleanup_stale(&root, SystemTime::now());
-        let id = format!("session-{}-{}.md", std::process::id(), unique_suffix());
-        Ok(Self::at_path(root.join(id)))
+        let process = process().ok_or_else(|| {
+            std::io::Error::new(
+                ErrorKind::NotFound,
+                "no hay una carpeta de perfil para la recuperación",
+            )
+        })?;
+        let name = format!("{}.{ENTRY_EXTENSION}", random_hex());
+        Ok(Self::at_path(process.session.dir.join(name)))
+    }
+
+    /// Toma una copia huérfana como propia: sigue siendo la misma, ahora de
+    /// una pestaña de esta sesión.
+    pub(crate) fn adopt(orphan: &Orphan) -> Result<Self, std::io::Error> {
+        let process = process().ok_or_else(|| {
+            std::io::Error::new(ErrorKind::NotFound, "la recuperación no está disponible")
+        })?;
+        let path = process.store.adopt(orphan, &process.session)?;
+        let session = Self::at_path(path);
+        if let Ok(mut meta) = session.meta.lock() {
+            *meta = orphan.meta.clone();
+        }
+        Ok(session)
     }
 
     fn at_path(path: PathBuf) -> Self {
@@ -51,6 +138,15 @@ impl RecoverySession {
             last_hash: Arc::new(AtomicU64::new(0)),
             failure_pending: Arc::new(AtomicBool::new(false)),
             failed: Arc::new(AtomicBool::new(false)),
+            meta: Arc::new(Mutex::new(EntryMeta::default())),
+        }
+    }
+
+    /// Actualiza lo que viaja en la cabecera (título, origen, huella). Se
+    /// guarda en la próxima escritura.
+    pub(crate) fn set_meta(&self, meta: EntryMeta) {
+        if let Ok(mut current) = self.meta.lock() {
+            *current = meta;
         }
     }
 
@@ -98,14 +194,23 @@ impl RecoverySession {
     }
 
     fn write_unlocked(&self, source: &str) -> Result<(), std::io::Error> {
-        let hash = content_hash(source);
+        let mut meta = self
+            .meta
+            .lock()
+            .map(|meta| meta.clone())
+            .unwrap_or_default();
+        let hash = content_hash(source, &meta);
         if self.last_hash.load(Ordering::Acquire) == hash && self.path.is_file() {
             // Lo que está en disco ya es esto: no se reescribe.
             return Ok(());
         }
+        meta.saved_at = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map_or(0, |duration| duration.as_secs());
+        let bytes = formato::encode(&meta, source);
         let result = AtomicFile::new(&self.path, AllowOverwrite)
             .write(|file| {
-                file.write_all(source.as_bytes())?;
+                file.write_all(&bytes)?;
                 file.sync_all()
             })
             .map_err(std::io::Error::from);
@@ -141,32 +246,8 @@ impl RecoverySession {
             .map_err(|_| std::io::Error::other("el lock de recuperación quedó invalidado"))
     }
 
-    /// Lee una recuperación anterior solo tras una acción explícita. Ignora
-    /// archivos que superen el mismo límite de documento que la apertura normal.
-    pub(crate) fn latest_pending(limit: u64) -> Result<Option<String>, std::io::Error> {
-        let Some(root) = recovery_root() else {
-            return Ok(None);
-        };
-        let Ok(entries) = fs::read_dir(root) else {
-            return Ok(None);
-        };
-        let candidate = entries
-            .flatten()
-            .filter_map(|entry| {
-                let metadata = entry.metadata().ok()?;
-                let name = entry.file_name();
-                let is_session = is_session_file_name(name.to_string_lossy().as_ref());
-                (metadata.is_file() && is_session && metadata.len() <= limit)
-                    .then_some((metadata.modified().ok(), entry.path()))
-            })
-            .max_by_key(|(modified, _)| *modified)
-            .map(|(_, path)| path);
-        candidate.map(fs::read_to_string).transpose()
-    }
-
     /// Devuelve `true` solo en la primera sesión que pudo registrar el aviso.
-    /// El marcador no contiene contenido del documento y se excluye de las
-    /// recuperaciones restaurables.
+    /// El marcador no contiene contenido del documento.
     pub(crate) fn privacy_notice_needed() -> Result<bool, std::io::Error> {
         let root = ensure_root()?;
         match fs::OpenOptions::new()
@@ -186,9 +267,14 @@ impl RecoverySession {
     }
 }
 
-fn content_hash(source: &str) -> u64 {
+/// Hash del texto y de lo que va en la cabecera: un cambio de título también
+/// pide reescribir.
+fn content_hash(source: &str, meta: &EntryMeta) -> u64 {
     let mut hasher = std::hash::DefaultHasher::new();
     source.hash(&mut hasher);
+    meta.title.hash(&mut hasher);
+    meta.origin_path.hash(&mut hasher);
+    meta.base.hash(&mut hasher);
     // 0 significa «sin copia»: un contenido nunca puede valer eso.
     hasher.finish().max(1)
 }
@@ -197,17 +283,32 @@ fn content_hash(source: &str) -> u64 {
 /// carpeta temporal del sistema: en Linux es `/tmp`, compartida y con nombres
 /// predecibles. Sin perfil, la recuperación no está disponible.
 fn recovery_root() -> Option<PathBuf> {
-    let base = std::env::var_os("LOCALAPPDATA")
-        .or_else(|| std::env::var_os("XDG_STATE_HOME"))
-        .map(PathBuf::from)
-        .filter(|path| path.is_absolute())
-        .or_else(|| {
-            std::env::var_os("HOME")
-                .map(PathBuf::from)
-                .filter(|path| path.is_absolute())
-                .map(|home| home.join(".local").join("state"))
-        })?;
-    Some(base.join("VisorMD").join("recovery"))
+    // Las pruebas nunca tocan la carpeta real de la persona.
+    #[cfg(test)]
+    return Some(
+        std::env::var_os("VISOR_TEST_RECOVERY_ROOT")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                std::env::temp_dir().join(format!(
+                    "visor-md-recuperacion-prueba-{}",
+                    std::process::id()
+                ))
+            }),
+    );
+    #[cfg(not(test))]
+    {
+        let base = std::env::var_os("LOCALAPPDATA")
+            .or_else(|| std::env::var_os("XDG_STATE_HOME"))
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .or_else(|| {
+                std::env::var_os("HOME")
+                    .map(PathBuf::from)
+                    .filter(|path| path.is_absolute())
+                    .map(|home| home.join(".local").join("state"))
+            })?;
+        Some(base.join("VisorMD").join("recovery"))
+    }
 }
 
 /// La carpeta, creada y, en sistemas Unix, visible solo para su dueño.
@@ -293,78 +394,51 @@ impl Writer {
     }
 }
 
-/// Elimina únicamente snapshots antiguos creados por Visor MD. No toca enlaces
-/// simbólicos ni archivos ajenos aunque estén dentro del directorio de perfil.
-fn cleanup_stale(root: &Path, now: SystemTime) -> Result<usize, std::io::Error> {
-    let mut removed = 0;
-    for entry in fs::read_dir(root)? {
-        let Ok(entry) = entry else {
-            continue;
-        };
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        let is_session = is_session_file_name(name.as_ref());
-        let is_temp = name.starts_with(TEMP_DIR_PREFIX);
-        let Ok(file_type) = entry.file_type() else {
-            continue;
-        };
-        if file_type.is_symlink() {
-            continue;
-        }
-        // Una copia son archivos; un temporal huérfano de `atomicwrites` es
-        // una carpeta con su archivo adentro.
-        let (matches, limit) = if is_session && file_type.is_file() {
-            (true, RETENTION)
-        } else if is_temp && file_type.is_dir() {
-            (true, STALE_TEMP)
-        } else {
-            (false, RETENTION)
-        };
-        if !matches {
-            continue;
-        }
-        let Ok(modified) = entry.metadata().and_then(|metadata| metadata.modified()) else {
-            continue;
-        };
-        if now.duration_since(modified).is_ok_and(|age| age > limit) {
-            if file_type.is_dir() {
-                fs::remove_dir_all(entry.path())?;
-            } else {
-                fs::remove_file(entry.path())?;
-            }
-            removed += 1;
-        }
-    }
-    Ok(removed)
-}
-
-fn is_session_file_name(name: &str) -> bool {
-    name.starts_with("session-") && name.ends_with(".md")
-}
-
-fn unique_suffix() -> u128 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_nanos())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn temporal() -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "visor-md-recovery-{}-{}",
+            std::process::id(),
+            random_hex()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn texto_de(path: &Path) -> String {
+        formato::decode(&fs::read(path).unwrap(), 1 << 20)
+            .expect("la copia es válida")
+            .1
+    }
+
     #[test]
-    fn una_recuperacion_se_escribe_y_se_elimina_sin_tocar_el_documento() {
-        let path = std::env::temp_dir().join(format!("visor-md-recovery-{}.md", unique_suffix()));
+    fn una_recuperacion_se_escribe_con_cabecera_y_se_elimina_sin_tocar_el_documento() {
+        let dir = temporal();
+        let path = dir.join("copia.vmdr");
         let recovery = RecoverySession::at(&path);
+        recovery.set_meta(EntryMeta {
+            title: "Mi nota".into(),
+            origin_path: "C:/notas/mi-nota.md".into(),
+            ..EntryMeta::default()
+        });
         recovery.write("cambios sin guardar").unwrap();
-        assert_eq!(fs::read_to_string(&path).unwrap(), "cambios sin guardar");
+        let (meta, texto) = formato::decode(&fs::read(&path).unwrap(), 1 << 20).unwrap();
+        assert_eq!(texto, "cambios sin guardar");
+        assert_eq!(meta.title, "Mi nota");
+        assert_eq!(meta.origin_path, "C:/notas/mi-nota.md");
+        assert!(meta.saved_at > 0);
         recovery.clear().unwrap();
         assert!(!path.exists());
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
     fn una_tarea_antigua_no_reemplaza_la_recuperacion_mas_nueva() {
-        let path = std::env::temp_dir().join(format!("visor-md-recovery-{}.md", unique_suffix()));
+        let dir = temporal();
+        let path = dir.join("copia.vmdr");
         let recovery = RecoverySession::at(&path);
         let old = recovery.next_write_request();
         let current = recovery.next_write_request();
@@ -375,13 +449,15 @@ mod tests {
                 .write_if_current("versión vigente", current)
                 .unwrap()
         );
-        assert_eq!(fs::read_to_string(&path).unwrap(), "versión vigente");
+        assert_eq!(texto_de(&path), "versión vigente");
         recovery.clear().unwrap();
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
     fn limpiar_invalida_una_escritura_pendiente() {
-        let path = std::env::temp_dir().join(format!("visor-md-recovery-{}.md", unique_suffix()));
+        let dir = temporal();
+        let path = dir.join("copia.vmdr");
         let recovery = RecoverySession::at(&path);
         let pending = recovery.next_write_request();
 
@@ -393,55 +469,13 @@ mod tests {
                 .unwrap()
         );
         assert!(!path.exists());
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
-    fn la_limpieza_solo_elimina_sessions_antiguas_normales() {
-        let root = std::env::temp_dir().join(format!("visor-md-recovery-root-{}", unique_suffix()));
-        fs::create_dir_all(&root).unwrap();
-        let old = root.join("session-old.md");
-        let marker = root.join(PRIVACY_NOTICE_FILE);
-        fs::write(&old, "viejo").unwrap();
-        fs::write(&marker, "").unwrap();
-        let removed = cleanup_stale(
-            &root,
-            SystemTime::now() + RETENTION + Duration::from_secs(1),
-        )
-        .unwrap();
-
-        assert_eq!(removed, 1);
-        assert!(!old.exists());
-        assert!(marker.exists());
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn la_limpieza_borra_temporales_huerfanos_viejos_y_respeta_los_recientes() {
-        let root = std::env::temp_dir().join(format!("visor-md-recovery-tmp-{}", unique_suffix()));
-        let viejo = root.join(format!("{TEMP_DIR_PREFIX}abc"));
-        let ajeno = root.join("notas-del-usuario");
-        fs::create_dir_all(&viejo).unwrap();
-        fs::create_dir_all(&ajeno).unwrap();
-        fs::write(viejo.join("tmpfile.tmp"), "a medias").unwrap();
-
-        // Recién creado: no se toca (puede ser una escritura en curso).
-        assert_eq!(cleanup_stale(&root, SystemTime::now()).unwrap(), 0);
-        assert!(viejo.exists());
-
-        let removed = cleanup_stale(
-            &root,
-            SystemTime::now() + STALE_TEMP + Duration::from_secs(1),
-        )
-        .unwrap();
-        assert_eq!(removed, 1);
-        assert!(!viejo.exists());
-        assert!(ajeno.exists(), "lo que no es nuestro no se toca");
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn no_se_reescribe_un_contenido_que_no_cambio() {
-        let path = std::env::temp_dir().join(format!("visor-md-recovery-{}.md", unique_suffix()));
+    fn no_se_reescribe_un_contenido_que_no_cambio_pero_si_un_titulo_nuevo() {
+        let dir = temporal();
+        let path = dir.join("copia.vmdr");
         let recovery = RecoverySession::at(&path);
         recovery.write("uno").unwrap();
         let antes = fs::metadata(&path).unwrap().modified().unwrap();
@@ -450,19 +484,28 @@ mod tests {
         assert_eq!(fs::metadata(&path).unwrap().modified().unwrap(), antes);
         recovery.write("dos").unwrap();
         assert_ne!(fs::metadata(&path).unwrap().modified().unwrap(), antes);
-        assert_eq!(fs::read_to_string(&path).unwrap(), "dos");
+        assert_eq!(texto_de(&path), "dos");
+        // Un título nuevo con el mismo texto sí reescribe la cabecera.
+        recovery.set_meta(EntryMeta {
+            title: "Nuevo título".into(),
+            ..EntryMeta::default()
+        });
+        recovery.write("dos").unwrap();
+        let (meta, _) = formato::decode(&fs::read(&path).unwrap(), 1 << 20).unwrap();
+        assert_eq!(meta.title, "Nuevo título");
         // Si el archivo desapareció, se vuelve a escribir aunque el texto sea igual.
         fs::remove_file(&path).unwrap();
         recovery.write("dos").unwrap();
         assert!(path.exists());
         recovery.clear().unwrap();
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
     fn un_fallo_de_escritura_se_avisa_una_vez_y_se_limpia_al_tener_exito() {
-        let dir = std::env::temp_dir().join(format!("visor-md-recovery-fail-{}", unique_suffix()));
+        let dir = temporal();
         // La carpeta de destino no existe: la escritura falla.
-        let recovery = RecoverySession::at(dir.join("no-existe").join("copia.md"));
+        let recovery = RecoverySession::at(dir.join("no-existe").join("copia.vmdr"));
         assert!(recovery.write("texto").is_err());
         assert!(recovery.is_failing());
         assert!(recovery.take_new_failure());
@@ -484,7 +527,8 @@ mod tests {
 
     #[test]
     fn el_hilo_escritor_conserva_solo_la_ultima_version_pendiente() {
-        let path = std::env::temp_dir().join(format!("visor-md-recovery-{}.md", unique_suffix()));
+        let dir = temporal();
+        let path = dir.join("copia.vmdr");
         let recovery = RecoverySession::at(&path);
         for version in 1..=50 {
             let request = recovery.next_write_request();
@@ -492,7 +536,14 @@ mod tests {
         }
         // El hilo es asíncrono: se espera a que la última quede en disco.
         let fin = std::time::Instant::now() + Duration::from_secs(5);
-        while fs::read_to_string(&path).ok().as_deref() != Some("versión 50") {
+        loop {
+            let listo = fs::read(&path)
+                .ok()
+                .and_then(|bytes| formato::decode(&bytes, 1 << 20).ok())
+                .is_some_and(|(_, texto)| texto == "versión 50");
+            if listo {
+                break;
+            }
             assert!(
                 std::time::Instant::now() < fin,
                 "la última versión no llegó"
@@ -500,11 +551,134 @@ mod tests {
             std::thread::sleep(Duration::from_millis(10));
         }
         recovery.clear().unwrap();
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    /// El proceso hijo de la prueba de muerte real: abre una sesión, escribe una
+    /// copia y espera sin cerrar nada. Solo corre cuando lo lanza el padre.
+    #[test]
+    #[ignore = "lo lanza morir_el_proceso_deja_la_copia_recuperable"]
+    fn hijo_que_escribe_y_se_cuelga() {
+        let recovery = RecoverySession::start().expect("el hijo tiene almacén");
+        recovery.set_meta(EntryMeta {
+            title: "Escrito por el hijo".into(),
+            origin_path: "C:/notas/hijo.md".into(),
+            ..EntryMeta::default()
+        });
+        recovery.write("texto que no se guardó").expect("escribe");
+        println!("LISTO");
+        loop {
+            std::thread::sleep(Duration::from_secs(1));
+        }
     }
 
     #[test]
-    fn el_marcador_de_privacidad_no_parece_una_recuperacion() {
-        assert!(!is_session_file_name(PRIVACY_NOTICE_FILE));
-        assert!(is_session_file_name("session-42-99.md"));
+    fn morir_el_proceso_deja_la_copia_recuperable_y_la_sesion_huerfana() {
+        let raiz = std::env::temp_dir().join(format!(
+            "visor-md-muerte-{}-{}",
+            std::process::id(),
+            random_hex()
+        ));
+        fs::create_dir_all(&raiz).unwrap();
+        let mut hijo = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "recovery::tests::hijo_que_escribe_y_se_cuelga",
+                "--ignored",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env("VISOR_TEST_RECOVERY_ROOT", &raiz)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("se lanza el proceso hijo");
+
+        // Espera a que el hijo tenga su copia en disco.
+        let almacen = Store::at(&raiz);
+        let fin = std::time::Instant::now() + Duration::from_secs(60);
+        let sesion_viva = loop {
+            let archivos = fs::read_dir(&raiz)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .filter(|entrada| entrada.path().is_dir())
+                .flat_map(|dir| fs::read_dir(dir.path()).into_iter().flatten().flatten())
+                .filter(|entrada| {
+                    entrada
+                        .path()
+                        .extension()
+                        .is_some_and(|ext| ext == ENTRY_EXTENSION)
+                })
+                .count();
+            if archivos > 0 {
+                break true;
+            }
+            assert!(
+                std::time::Instant::now() < fin,
+                "el hijo no escribió su copia"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        };
+        assert!(sesion_viva);
+        // Mientras el hijo vive, su sesión no es huérfana.
+        assert!(almacen.orphans().is_empty(), "una sesión viva no se ofrece");
+
+        // Matar el proceso equivale a `taskkill /F`: no corre ningún cierre.
+        hijo.kill().expect("se mata al hijo");
+        hijo.wait().expect("se espera su fin");
+
+        let huerfanas = almacen.orphans();
+        assert_eq!(huerfanas.len(), 1, "la copia quedó como huérfana");
+        assert_eq!(huerfanas[0].meta.title, "Escrito por el hijo");
+        assert_eq!(huerfanas[0].meta.origin_path, "C:/notas/hijo.md");
+        assert_eq!(
+            almacen.read(&huerfanas[0], 1 << 20).unwrap(),
+            "texto que no se guardó"
+        );
+        let _ = fs::remove_dir_all(raiz);
+    }
+
+    #[test]
+    fn adoptar_una_huerfana_la_hace_propia_y_conserva_su_cabecera() {
+        // Una sesión muerta en la carpeta de las pruebas, con su copia.
+        let raiz = ensure_root().unwrap();
+        let id = random_hex();
+        let dir = raiz.join(format!("s-{id}"));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(raiz.join(format!("s-{id}.lock")), "").unwrap();
+        let meta = EntryMeta {
+            title: "Para adoptar".into(),
+            origin_path: "C:/notas/x.md".into(),
+            saved_at: 5,
+            ..EntryMeta::default()
+        };
+        let clave = random_hex();
+        fs::write(
+            dir.join(format!("{clave}.vmdr")),
+            formato::encode(&meta, "cuerpo"),
+        )
+        .unwrap();
+
+        let huerfana = orphans()
+            .into_iter()
+            .find(|copia| copia.key == clave)
+            .expect("la copia se ofrece");
+        assert_eq!(read_orphan(&huerfana, 1 << 20).unwrap(), "cuerpo");
+        let sesion = RecoverySession::adopt(&huerfana).expect("se adopta");
+        assert!(!huerfana.path.exists());
+        assert!(orphans().iter().all(|copia| copia.key != clave));
+        // Al escribir, la cabecera conserva el origen heredado.
+        sesion.write("cuerpo nuevo").unwrap();
+        let (leida, texto) = formato::decode(&fs::read(&sesion.path).unwrap(), 1 << 20).unwrap();
+        assert_eq!(texto, "cuerpo nuevo");
+        assert_eq!(leida.origin_path, "C:/notas/x.md");
+        sesion.clear().unwrap();
+    }
+
+    #[test]
+    fn el_marcador_de_privacidad_no_es_una_copia() {
+        // No tiene la extensión de una copia, así que ningún listado lo toma.
+        assert!(!PRIVACY_NOTICE_FILE.ends_with(ENTRY_EXTENSION));
     }
 }

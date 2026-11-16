@@ -87,7 +87,7 @@ ganchos de cierre son un refuerzo, no el mecanismo.
    └──────────────────┘        └────────────────────────────────────────────────┘
 ```
 
-### 4.1 Módulos (todos en `src/recuperacion/`, sin `unsafe`)
+### 4.1 Módulos (en `src/recovery/` y `src/recovery.rs`, sin `unsafe`)
 
 | Módulo | Responsabilidad | ¿Puro? |
 | --- | --- | --- |

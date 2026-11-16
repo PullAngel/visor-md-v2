@@ -23,6 +23,8 @@ pub(crate) enum DialogChoice {
     SkipImage,
     CreateNote,
     SkipCreateNote,
+    DiscardRecovery,
+    KeepRecoveryEntry,
     UseDocumentFolder,
     SkipUseFolder,
 }
@@ -283,6 +285,29 @@ impl Dialog {
         )
     }
 
+    /// Descartar una o varias copias recuperables. No se puede deshacer.
+    pub(crate) fn discard_recovery(summary: &str) -> Self {
+        Self::new(
+            "¿Descartar lo recuperado?",
+            format!(
+                "{summary} Si lo descartás, ese texto se borra de esta computadora y no se puede volver a abrir."
+            ),
+            vec![
+                button(
+                    "Descartar",
+                    DialogChoice::DiscardRecovery,
+                    ButtonTone::Destructive,
+                ),
+                button(
+                    "Conservar",
+                    DialogChoice::KeepRecoveryEntry,
+                    ButtonTone::Primary,
+                ),
+            ],
+            DialogChoice::KeepRecoveryEntry,
+        )
+    }
+
     /// Un enlace a otra nota sin carpeta de apuntes elegida.
     pub(crate) fn use_document_folder(folder: &str) -> Self {
         Self::new(
@@ -450,6 +475,7 @@ mod tests {
             Dialog::local_image(),
             Dialog::create_note("Biología"),
             Dialog::use_document_folder("apuntes"),
+            Dialog::discard_recovery("Es una copia de «Mi nota»."),
         ];
         for dialog in dialogs {
             assert!(!dialog.buttons.is_empty());
@@ -460,6 +486,7 @@ mod tests {
                 dialog.safe_choice,
                 DialogChoice::DiscardAndCloseTab
                     | DialogChoice::CloseWindow
+                    | DialogChoice::DiscardRecovery
                     | DialogChoice::DisableRecovery
                     | DialogChoice::ReloadExternal
             ));

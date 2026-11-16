@@ -76,6 +76,8 @@ impl App {
             (paths.len(), self.workspace_path_match)
         } else if let Some(paths) = &self.backlink_paths {
             (paths.len(), self.backlink_match)
+        } else if let Some(rows) = &self.recovery_list {
+            (rows.len(), self.recovery_list_match)
         } else if let Some(rows) = &self.link_diagnostics {
             (rows.len(), self.link_diagnostic_match)
         } else if let Some(headings) = &self.outline_headings {
@@ -100,6 +102,8 @@ impl App {
             self.workspace_path_match = index;
         } else if self.backlink_paths.is_some() {
             self.backlink_match = index;
+        } else if self.recovery_list.is_some() {
+            self.recovery_list_match = index;
         } else if self.link_diagnostics.is_some() {
             self.link_diagnostic_match = index;
         } else if self.outline_headings.is_some() {
@@ -113,6 +117,8 @@ impl App {
             Some(10_001)
         } else if self.symbol_picker.is_some() {
             Some(10_002)
+        } else if self.recovery_list.is_some() {
+            Some(10_003)
         } else {
             self.open_surface().map(|action| action as u32)
         }

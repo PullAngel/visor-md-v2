@@ -208,6 +208,32 @@ fn arbol_de_notas(app: &mut App) {
     let _ = std::fs::remove_dir_all(&carpeta);
 }
 
+/// La lista de lo que quedó sin guardar de la sesión anterior.
+fn recuperaciones(app: &mut App) {
+    let ahora = unix_now();
+    let copias = [
+        ("Apuntes de biología", "C:/notas/biologia.md", 300),
+        ("Plan de viaje", "", 7_200),
+        ("Lista de compras", "", 3 * 86_400),
+    ]
+    .into_iter()
+    .map(|(titulo, origen, hace)| {
+        recovery::Orphan::for_tests(
+            std::path::PathBuf::from("copia.vmdr"),
+            recovery::EntryMeta {
+                title: titulo.into(),
+                origin_path: origen.into(),
+                saved_at: ahora.saturating_sub(hace),
+                ..recovery::EntryMeta::default()
+            },
+            10,
+        )
+    })
+    .collect();
+    app.recovery_list = Some(copias);
+    app.recovery_list_match = 1;
+}
+
 fn abrir_dialogo_de_cierre(app: &mut App) {
     let id = app.document.id;
     app.open_dialog(Dialog::close_tab("apuntes.md", true), Some(id));
@@ -297,7 +323,7 @@ fn dialogo_con_el_puntero_sobre_un_boton(app: &mut App) {
     abrir_dialogo_de_cierre(app);
 }
 
-const ESCENAS: [Escena; 22] = [
+const ESCENAS: [Escena; 23] = [
     Escena {
         nombre: "lectura",
         modo: DocumentMode::Reading,
@@ -377,6 +403,11 @@ const ESCENAS: [Escena; 22] = [
         nombre: "arbol-de-notas",
         modo: DocumentMode::Reading,
         preparar: arbol_de_notas,
+    },
+    Escena {
+        nombre: "recuperaciones",
+        modo: DocumentMode::Reading,
+        preparar: recuperaciones,
     },
     Escena {
         nombre: "dialogo-cierre",
