@@ -88,8 +88,8 @@ impl Dialog {
 
     pub(crate) fn recovery_privacy() -> Self {
         Self::new(
-            "Recuperación local activada",
-            "Visor MD guarda temporalmente los cambios sin guardar en tu perfil local para recuperarlos tras un cierre inesperado. Es texto sin cifrar, no reemplaza a Guardar y nunca se escribe dentro de tu carpeta de notas.",
+            "Recuperación activada",
+            "Visor MD guarda una copia de lo que no guardaste en tu perfil de usuario, para recuperarlo tras un cierre inesperado. La copia es texto sin cifrar, no reemplaza a Guardar y nunca se escribe dentro de tu carpeta de apuntes.",
             vec![button(
                 "Entendido",
                 DialogChoice::AcknowledgeRecovery,
@@ -101,8 +101,8 @@ impl Dialog {
 
     pub(crate) fn disable_recovery() -> Self {
         Self::new(
-            "¿Desactivar la recuperación local?",
-            "La recuperación conserva copias temporales sin cifrar de los documentos modificados. Sin ella, un cierre inesperado puede perder cambios. Al desactivarla se borran las copias de esta sesión.",
+            "¿Desactivar la recuperación?",
+            "La recuperación guarda copias sin cifrar de los documentos con cambios. Sin ella, un cierre inesperado puede perder lo que no guardaste. Al desactivarla se borran las copias de esta sesión.",
             vec![
                 button(
                     "Desactivar",
@@ -121,7 +121,7 @@ impl Dialog {
 
     pub(crate) fn external_change(dirty: bool) -> Self {
         let body = if dirty {
-            "El archivo cambió fuera de Visor MD mientras tenías cambios sin guardar. Si recargás, tu versión queda en una recuperación local antes de reemplazarla."
+            "El archivo cambió fuera de Visor MD mientras tenías cambios sin guardar. Si recargás, tu versión queda en una recuperación antes de reemplazarla."
         } else {
             "El archivo cambió fuera de Visor MD. Podés recargar la versión nueva o seguir con la que ves ahora."
         };
@@ -172,7 +172,7 @@ impl Dialog {
     pub(crate) fn save_conflict() -> Self {
         Self::new(
             "No se guardó: el archivo cambió",
-            "Otro programa modificó el archivo después de que lo abriste, así que no se sobrescribió. Si recargás, tu versión queda antes en una recuperación local.",
+            "Otro programa modificó el archivo después de que lo abriste, así que no se sobrescribió. Si recargás, tu versión queda antes en una recuperación.",
             vec![
                 button(
                     "Recargar la externa",
@@ -196,9 +196,9 @@ impl Dialog {
 
     pub(crate) fn close_tab(name: &str, recovery_preserved: bool) -> Self {
         let body = if recovery_preserved {
-            "Si cerrás sin guardar, los cambios quedan en una recuperación local que podés restaurar después."
+            "Si cerrás sin guardar, los cambios quedan en una recuperación que podés abrir después."
         } else {
-            "La recuperación local está desactivada: si cerrás sin guardar, estos cambios se pierden."
+            "La recuperación está desactivada: si cerrás sin guardar, estos cambios se pierden."
         };
         Self::new(
             format!("¿Guardar los cambios de «{name}»?"),
@@ -262,7 +262,7 @@ impl Dialog {
     pub(crate) fn local_image() -> Self {
         Self::new(
             "¿Mostrar esta imagen local?",
-            "Se leerá una sola imagen PNG dentro de la carpeta de trabajo, con límites de 8 MiB y 16 millones de píxeles. El permiso no se recuerda.",
+            "Se leerá una sola imagen PNG dentro de la carpeta de apuntes, con límites de 8 MiB y 16 millones de píxeles. El permiso no se recuerda.",
             vec![
                 button("No cargar", DialogChoice::SkipImage, ButtonTone::Neutral),
                 button(

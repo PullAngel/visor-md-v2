@@ -18,6 +18,8 @@ pub mod editor;
 mod files;
 mod fonts;
 mod images;
+#[cfg(test)]
+mod lenguaje;
 mod limits;
 mod list_view;
 mod menu;
@@ -1103,7 +1105,7 @@ impl WorkspaceDestination {
             Self::Files => "Archivos",
             Self::Outline => "Índice",
             Self::Search => "Buscar",
-            Self::Backlinks => "Backlinks",
+            Self::Backlinks => "Notas que enlazan aquí",
         }
     }
 
@@ -1355,10 +1357,10 @@ fn backlink_label(path: &std::path::Path, context: &str) -> String {
 
 fn backlinks_panel_title(count: usize) -> String {
     if count == 0 {
-        "Backlinks · ninguna nota apunta aquí".to_string()
+        "Notas que enlazan aquí · ninguna".to_string()
     } else {
         format!(
-            "Backlinks · {}",
+            "Notas que enlazan aquí · {}",
             count_noun(count, "resultado", "resultados")
         )
     }
@@ -1981,8 +1983,8 @@ impl AppAction {
             Self::InsertTable => "Insertar tabla Markdown",
             Self::InsertHorizontalRule => "Insertar regla horizontal",
             Self::FormatHighlight => "Resaltar texto",
-            Self::InsertWikiLink => "Insertar enlace de bóveda",
-            Self::InsertCallout => "Insertar callout de nota",
+            Self::InsertWikiLink => "Insertar enlace a otra nota",
+            Self::InsertCallout => "Insertar recuadro",
             Self::BlockTools => "Párrafo: títulos, listas y citas",
             Self::InsertTools => "Insertar enlaces y bloques",
             Self::StudyTools => "Estudio y notas",
@@ -1998,18 +2000,18 @@ impl AppAction {
             Self::CopyPlatform => "Copiar para Discord o correo",
             Self::ToggleSection => "Plegar o desplegar sección enfocada",
             Self::SearchDocument => "Buscar en documento · Ctrl+F",
-            Self::CopyTableTsv => "Copiar tabla seleccionada como TSV",
+            Self::CopyTableTsv => "Copiar tabla para hoja de cálculo",
             Self::ChooseWorkspace => "Abrir carpeta · Ctrl+Shift+O",
             Self::RefreshWorkspace => "Actualizar índice de carpeta · Ctrl+Shift+I",
             Self::CancelWorkspaceIndex => "Cancelar actualización de carpeta",
             Self::SearchWorkspace => "Buscar en carpeta · Ctrl+Shift+F",
             Self::DocumentOutline => "Índice del documento · Ctrl+Shift+L",
             Self::WorkspaceFiles => "Notas de la carpeta · Ctrl+Shift+T",
-            Self::WorkspaceHub => "Espacio de trabajo",
-            Self::Backlinks => "Backlinks · Ctrl+Shift+B",
-            Self::WikiLinkDiagnostics => "Revisar enlaces de bóveda",
+            Self::WorkspaceHub => "Carpeta de apuntes",
+            Self::Backlinks => "Notas que enlazan aquí · Ctrl+Shift+B",
+            Self::WikiLinkDiagnostics => "Revisar enlaces a otras notas",
             Self::RestoreRecovery => "Abrir recuperación · Ctrl+Shift+R",
-            Self::ToggleRecovery => "Activar o desactivar recuperación local",
+            Self::ToggleRecovery => "Activar o desactivar recuperación",
             Self::CommandPalette => "Buscar una acción · Ctrl+Shift+P",
             Self::MenuFile => "Archivo",
             Self::MenuEdit => "Editar",
@@ -2085,7 +2087,7 @@ impl ContextAction {
             Self::CopyText => "Copiar texto",
             Self::CopyMarkdown => "Copiar Markdown original",
             Self::CopyPlatform => "Copiar para Discord o correo",
-            Self::CopyTableTsv => "Copiar tabla como TSV",
+            Self::CopyTableTsv => "Copiar tabla para hoja de cálculo",
             Self::SplitRight => "Dividir a la derecha",
             Self::SplitBelow => "Dividir abajo",
             Self::PinTab => "Fijar o soltar la pestaña",
@@ -2597,7 +2599,7 @@ fn relative_destination_parts(destination: &str) -> (&str, Option<&str>) {
 
 fn target_label(kind: InlineTargetKind, destination: &str) -> &'static str {
     match kind {
-        InlineTargetKind::WikiLink => "enlace de bóveda",
+        InlineTargetKind::WikiLink => "enlace a otra nota",
         InlineTargetKind::Image => "imagen",
         InlineTargetKind::Link => match classify_link_destination(destination) {
             LinkDestinationKind::Web => "enlace web",
@@ -2649,7 +2651,7 @@ fn wikilink_diagnostics(blocks: &[Block], index: &WorkspaceIndex) -> Vec<String>
                 .split_once('#')
                 .map_or(target.destination.as_str(), |(note, _)| note);
             let state = if note.trim().is_empty() {
-                "encabezado local"
+                "título local"
             } else {
                 match index.resolve_wikilink(note) {
                     WikiResolution::Found(_) => "resuelto",
@@ -4007,9 +4009,13 @@ fn destructive_color(palette: Palette) -> (u8, u8, u8) {
 }
 
 /// Un aviso breve se lee de un vistazo; uno largo necesita algo más de tiempo.
+/// Distancia del aviso al borde inferior del área del documento.
+const TOAST_BOTTOM_GAP: f32 = 24.0;
+
+/// 2,4 s para un aviso corto; los largos suman lo que tarda leerlos, hasta 6 s.
 fn toast_duration(notice: &str) -> Duration {
     let chars = notice.chars().count() as u64;
-    Duration::from_millis((2_200 + chars * 35).min(6_000))
+    Duration::from_millis((2_400 + chars.saturating_sub(40) * 35).min(6_000))
 }
 
 /// El toast muestra la frase con mayúscula inicial y sin superar una línea
@@ -8615,7 +8621,7 @@ impl ApplicationHandler<AppEvent> for App {
                         if let Some(recovery) = &self.recovery {
                             let _ = recovery.clear();
                         }
-                        self.set_notice("documento guardado de forma atómica");
+                        self.set_notice("Guardado");
                         self.reindex_after_save(document_id);
                         self.close_tab_if_saved_for_close(document_id);
                         self.window_close_progress(document_id, true);
@@ -8708,7 +8714,7 @@ impl ApplicationHandler<AppEvent> for App {
                         if let Some(recovery) = &self.recovery {
                             let _ = recovery.clear();
                         }
-                        self.set_notice("documento creado y guardado de forma atómica");
+                        self.set_notice("Guardado");
                         self.reindex_after_save(document_id);
                         self.close_tab_if_saved_for_close(document_id);
                         self.window_close_progress(document_id, true);
@@ -8770,8 +8776,8 @@ impl ApplicationHandler<AppEvent> for App {
                 };
                 if self.silent_workspace_request != Some(request) {
                     self.set_notice(&format!(
-                        "workspace {}: {}, {}{suffix}",
-                        if refreshed { "actualizado" } else { "indexado" },
+                        "Carpeta de apuntes {}: {}, {}{suffix}",
+                        if refreshed { "actualizada" } else { "indexada" },
                         count_noun(note_count, "nota", "notas"),
                         count_noun(skipped, "omitida", "omitidas")
                     ));
@@ -8793,7 +8799,7 @@ impl ApplicationHandler<AppEvent> for App {
                 }
                 self.workspace_cancel = None;
                 self.log.push(format!("[workspace] {error}"));
-                self.set_notice("no se pudo abrir la carpeta de trabajo");
+                self.set_notice("No se pudo abrir la carpeta de apuntes");
             }
             AppEvent::WorkspaceChangeChecked {
                 request,
@@ -8809,7 +8815,7 @@ impl ApplicationHandler<AppEvent> for App {
                 if changed && !self.workspace_stale {
                     self.workspace_stale = true;
                     self.set_notice(
-                        "la carpeta de trabajo cambió; Ctrl+Shift+I actualiza el índice",
+                        "La carpeta de apuntes cambió: Ctrl+Shift+I actualiza el índice",
                     );
                 } else if truncated {
                     self.log.push(
@@ -9252,7 +9258,6 @@ impl ApplicationHandler<AppEvent> for App {
                     }
                     self.tooltip.suppress();
                     if self.image_preview.take().is_some() {
-                        self.set_notice("vista previa de imagen cerrada");
                         if let Some(window) = &self.window {
                             window.request_redraw();
                         }
@@ -9623,7 +9628,7 @@ impl ApplicationHandler<AppEvent> for App {
                         .is_some_and(|panes| panes.preview.contains(x, y - DOCUMENT_VIEWPORT_TOP))
                 {
                     self.set_notice(
-                        "la vista previa es de lectura; edita la fuente en el otro panel",
+                        "La vista previa es de lectura: editá la fuente en el otro panel",
                     );
                     return;
                 }
@@ -10111,7 +10116,6 @@ impl ApplicationHandler<AppEvent> for App {
                 ..
             } => {
                 if self.image_preview.take().is_some() {
-                    self.set_notice("vista previa de imagen cerrada");
                     if let Some(window) = &self.window {
                         window.request_redraw();
                     }
@@ -10838,7 +10842,7 @@ impl App {
         if failed {
             self.log
                 .push("[recuperación] no se pudo escribir una copia".into());
-            self.set_notice("No se pudo guardar la copia de seguridad: guardá el documento");
+            self.set_notice("No se pudo guardar la copia de recuperación: guardá el documento");
         }
     }
 
@@ -10859,7 +10863,7 @@ impl App {
             }
             self.recovery_privacy_notice_pending =
                 RecoverySession::privacy_notice_needed().unwrap_or(false);
-            self.set_notice("recuperación local activada");
+            self.set_notice("Recuperación activada");
         } else {
             self.document.cancel_pending_recovery();
             if let Some(recovery) = self.recovery.take() {
@@ -10872,7 +10876,7 @@ impl App {
                 }
             }
             self.recovery_privacy_notice_pending = false;
-            self.set_notice("recuperación local desactivada");
+            self.set_notice("Recuperación desactivada");
         }
         self.settings.recovery_enabled = self.recovery_enabled;
         if self.settings.store().is_err() {
@@ -11349,7 +11353,6 @@ impl App {
         match event.physical_key {
             PhysicalKey::Code(KeyCode::Escape) => {
                 self.symbol_picker = None;
-                self.set_notice("selector de símbolos cerrado");
             }
             PhysicalKey::Code(KeyCode::ArrowDown | KeyCode::Tab) => {
                 self.symbol_picker = Some((selected + 1) % count);
@@ -12304,7 +12307,7 @@ impl App {
             return;
         }
         if self.document_busy(self.document.id) {
-            self.set_notice("espera a que termine la operación de esta pestaña antes de cerrarla");
+            self.set_notice("Esperá a que termine la operación de esta pestaña antes de cerrarla");
             return;
         }
         if !self.request_close_current() {
@@ -12550,7 +12553,7 @@ impl App {
 
     fn apply_markdown_surround(&mut self, prefix: &str, suffix: &str, placeholder: &str) {
         if !self.document.mode.is_editable() {
-            self.set_notice("activa edición para aplicar formato al Markdown");
+            self.set_notice("Activá Editar para aplicar formato al Markdown");
             return;
         }
         self.edit_source(|editor, source| editor.surround(source, prefix, suffix, placeholder));
@@ -12558,7 +12561,7 @@ impl App {
 
     fn insert_markdown_link(&mut self) {
         if !self.document.mode.is_editable() {
-            self.set_notice("activa edición para insertar un enlace en el Markdown");
+            self.set_notice("Activá Editar para insertar un enlace en el Markdown");
             return;
         }
         self.edit_source(|editor, source| editor.insert_link(source));
@@ -12566,7 +12569,7 @@ impl App {
 
     fn prefix_markdown_line(&mut self, kind: LinePrefix) {
         if !self.document.mode.is_editable() {
-            self.set_notice("activa edición para cambiar la estructura del Markdown");
+            self.set_notice("Activá Editar para cambiar la estructura del Markdown");
             return;
         }
         let eol = self.document_line_ending();
@@ -12575,7 +12578,7 @@ impl App {
 
     fn set_markdown_heading_level(&mut self, level: u8) {
         if !self.document.mode.is_editable() {
-            self.set_notice("activa edición para cambiar el nivel del encabezado");
+            self.set_notice("Activá Editar para cambiar el nivel del título");
             return;
         }
         self.edit_source(|editor, source| editor.set_heading_level(source, level));
@@ -12590,7 +12593,7 @@ impl App {
 
     fn insert_code_block(&mut self) {
         if !self.document.mode.is_editable() {
-            self.set_notice("activa edición para insertar un bloque de código");
+            self.set_notice("Activá Editar para insertar un bloque de código");
             return;
         }
         let eol = self.document_line_ending();
@@ -12599,7 +12602,7 @@ impl App {
 
     fn insert_table(&mut self) {
         if !self.document.mode.is_editable() {
-            self.set_notice("activa edición para insertar una tabla");
+            self.set_notice("Activá Editar para insertar una tabla");
             return;
         }
         let eol = self.document_line_ending();
@@ -12609,7 +12612,7 @@ impl App {
 
     fn insert_horizontal_rule(&mut self) {
         if !self.document.mode.is_editable() {
-            self.set_notice("activa edición para insertar una regla horizontal");
+            self.set_notice("Activá Editar para insertar una regla horizontal");
             return;
         }
         let eol = self.document_line_ending();
@@ -12618,7 +12621,7 @@ impl App {
 
     fn insert_callout(&mut self) {
         if !self.document.mode.is_editable() {
-            self.set_notice("activa edición para insertar un callout");
+            self.set_notice("Activá Editar para insertar un recuadro");
             return;
         }
         let eol = self.document_line_ending();
@@ -12631,7 +12634,7 @@ impl App {
 
     fn insert_study_question(&mut self) {
         if !self.document.mode.is_editable() {
-            self.set_notice("activa edición para insertar una pregunta de estudio");
+            self.set_notice("Activá Editar para insertar una pregunta de estudio");
             return;
         }
         let eol = self.document_line_ending();
@@ -12641,7 +12644,7 @@ impl App {
 
     fn insert_study_summary(&mut self) {
         if !self.document.mode.is_editable() {
-            self.set_notice("activa edición para insertar un resumen de estudio");
+            self.set_notice("Activá Editar para insertar un resumen de estudio");
             return;
         }
         let eol = self.document_line_ending();
@@ -12651,7 +12654,7 @@ impl App {
 
     fn insert_study_concept_list(&mut self) {
         if !self.document.mode.is_editable() {
-            self.set_notice("activa edición para insertar una lista de conceptos");
+            self.set_notice("Activá Editar para insertar una lista de conceptos");
             return;
         }
         let eol = self.document_line_ending();
@@ -12717,7 +12720,7 @@ impl App {
             {
                 Ok(Some(text)) => Some(text),
                 Ok(None) => {
-                    self.set_notice("selecciona texto antes de preparar una nota de estudio");
+                    self.set_notice("Seleccioná texto antes de preparar una nota de estudio");
                     None
                 }
                 Err(error) => {
@@ -12735,7 +12738,7 @@ impl App {
             {
                 Some(text) => Some(text),
                 None => {
-                    self.set_notice("selecciona texto antes de preparar una nota de estudio");
+                    self.set_notice("Seleccioná texto antes de preparar una nota de estudio");
                     None
                 }
             }
@@ -12767,7 +12770,7 @@ impl App {
 
     fn insert_study_state(&mut self, state: StudyState) {
         if !self.document.mode.is_editable() {
-            self.set_notice("activa edición para marcar el estado de estudio");
+            self.set_notice("Activá Editar para marcar el estado de estudio");
             return;
         }
         let eol = self.document_line_ending();
@@ -13167,7 +13170,7 @@ impl App {
 
     fn save_current_document(&mut self) {
         if self.open_requests.contains_key(&self.document.id) {
-            self.set_notice("espera a que termine la recarga antes de guardar");
+            self.set_notice("Esperá a que termine la recarga antes de guardar");
             return;
         }
         let (Some(identity), Some(baseline_bytes)) = (
@@ -13192,7 +13195,7 @@ impl App {
             return;
         }
         invalidate_external_baseline(&mut self.document);
-        self.set_notice("guardando de forma atómica");
+        self.set_notice("Guardando");
         thread::spawn(move || {
             let event =
                 match save_explicit_primary(&path, &source, metadata, &identity, &baseline_bytes) {
@@ -13214,7 +13217,7 @@ impl App {
 
     fn save_as_current_document(&mut self) {
         if self.open_requests.contains_key(&self.document.id) {
-            self.set_notice("espera a que termine la recarga antes de guardar una copia");
+            self.set_notice("Esperá a que termine la recarga antes de guardar una copia");
             return;
         }
         let Some(path) = self
@@ -13236,7 +13239,7 @@ impl App {
             return;
         }
         invalidate_external_baseline(&mut self.document);
-        self.set_notice("creando documento de forma atómica");
+        self.set_notice("Guardando");
         thread::spawn(move || {
             let event = match save_new_primary(&path, &source, metadata) {
                 Ok(saved) => AppEvent::SaveAsReady {
@@ -13352,7 +13355,7 @@ impl App {
         if self.document.source_editor.is_dirty() {
             let Some(recovery) = &self.recovery else {
                 self.set_notice(
-                    "no se pudo recargar: la recuperación local no está disponible; guarda una copia",
+                    "No se pudo recargar: la recuperación no está disponible, guardá una copia",
                 );
                 return;
             };
@@ -13470,9 +13473,9 @@ impl App {
         }
         match choice {
             DialogChoice::AcknowledgeRecovery => {
-                self.set_notice("recuperación local temporal activada");
+                self.set_notice("Recuperación activada");
             }
-            DialogChoice::KeepRecovery => self.set_notice("la recuperación local sigue activa"),
+            DialogChoice::KeepRecovery => self.set_notice("La recuperación sigue activa"),
             DialogChoice::DisableRecovery => self.apply_recovery_toggle(),
             DialogChoice::ReloadExternal => self.reload_external_preserving_local(),
             DialogChoice::SaveCopy => self.save_as_current_document(),
@@ -13537,7 +13540,7 @@ impl App {
         {
             if let Err(error) = recovery.write(&self.document.source.to_string()) {
                 self.log.push(format!("[recuperación] {error}"));
-                self.set_notice("no se cerró: no se pudo conservar la recuperación local");
+                self.set_notice("No se cerró: no se pudo guardar la copia de recuperación");
                 return false;
             }
             self.document.cancel_pending_recovery();
@@ -13560,7 +13563,7 @@ impl App {
             || !self.view_requests.is_empty()
             || !self.saves_in_flight.is_empty()
         {
-            self.set_notice("espera a que termine la operación actual antes de cerrar");
+            self.set_notice("Esperá a que termine la operación actual antes de cerrar");
             return false;
         }
         let dirty_inactive = self
@@ -13709,13 +13712,13 @@ impl App {
     fn choose_workspace(&mut self) {
         let Some(path) = self
             .file_dialog()
-            .set_title("Elegir carpeta de trabajo")
+            .set_title("Elegir carpeta de apuntes")
             .pick_folder()
         else {
             self.set_notice("abrir carpeta cancelado");
             return;
         };
-        self.start_workspace_index(path, "indexando carpeta de trabajo", None);
+        self.start_workspace_index(path, "indexando la carpeta de apuntes", None);
         self.show_tree_after_request = Some(self.workspace_request);
     }
 
@@ -13724,12 +13727,12 @@ impl App {
     /// active lecturas nuevas fuera de la raíz elegida.
     fn reindex_workspace(&mut self) {
         let Some((root, index)) = &self.workspace else {
-            self.set_notice("elige primero una carpeta de trabajo con Ctrl+Shift+O");
+            self.set_notice("Elegí primero una carpeta de apuntes con Ctrl+Shift+O");
             return;
         };
         self.start_workspace_index(
             root.root().to_path_buf(),
-            "actualizando carpeta de trabajo",
+            "actualizando la carpeta de apuntes",
             Some(index.clone()),
         );
     }
@@ -14062,7 +14065,7 @@ impl App {
 
     fn open_document_path(&mut self, path: PathBuf) -> bool {
         if paths_refer_to_same_file(std::path::Path::new(&self.document.path), &path) {
-            self.set_notice("el documento ya está abierto en la pestaña activa");
+            self.set_notice("El documento ya está abierto en esta pestaña");
             return true;
         }
         if let Some(document_id) = self
@@ -14249,7 +14252,7 @@ impl App {
                 .map(|markdown| platform_ready_markdown(&markdown))
         });
         let Some(text) = text else {
-            self.set_notice("selecciona contenido antes de preparar una copia");
+            self.set_notice("Seleccioná contenido antes de preparar una copia");
             return;
         };
         self.copy_text_to_clipboard(text, "copia preparada para Discord o correo");
@@ -14278,10 +14281,10 @@ impl App {
                     .map(|cursor| cursor.block)
             });
         let Some(text) = block.and_then(|block| table_tsv_at(&self.document.blocks, block)) else {
-            self.set_notice("selecciona una celda de tabla antes de copiar como TSV");
+            self.set_notice("Seleccioná una celda de la tabla antes de copiar");
             return;
         };
-        self.copy_text_to_clipboard(text, "tabla copiada como TSV");
+        self.copy_text_to_clipboard(text, "Tabla copiada para hoja de cálculo");
     }
 
     /// Copiar es siempre una acción explícita. El valor booleano permite que
@@ -14361,7 +14364,7 @@ impl App {
         }
         let selection = self.document.source_editor.selection();
         if selection.is_empty() {
-            self.set_notice("selecciona texto para cortar");
+            self.set_notice("Seleccioná texto para cortar");
             return;
         }
         let text = match self.document.source.slice_bytes(selection) {
@@ -14462,7 +14465,7 @@ impl App {
 
     fn open_focused_link(&mut self) {
         let Some((block_index, target_index)) = self.focused_link else {
-            self.set_notice("enfoca un enlace con Tab antes de abrirlo");
+            self.set_notice("Enfocá un enlace con Tab antes de abrirlo");
             return;
         };
         let Some(destination) = self
@@ -14516,9 +14519,9 @@ impl App {
                             "el enlace local fue bloqueado por la política de archivos",
                         );
                     }
-                    None => self.set_notice(
-                        "abre una carpeta de trabajo para seguir enlaces locales de forma segura",
-                    ),
+                    None => {
+                        self.set_notice("Abrí una carpeta de apuntes para seguir enlaces locales")
+                    }
                 }
             }
             LinkDestinationKind::Blocked => {
@@ -14561,12 +14564,12 @@ impl App {
             return;
         }
         let Some((root, _)) = self.workspace.as_ref() else {
-            self.set_notice("abre una carpeta de trabajo antes de cargar una imagen local");
+            self.set_notice("Abrí una carpeta de apuntes antes de cargar una imagen local");
             return;
         };
         if self.document.source_identity.is_none() {
             self.set_notice(
-                "guarda la nota dentro de la carpeta de trabajo antes de cargar recursos",
+                "Guardá la nota dentro de la carpeta de apuntes antes de cargar imágenes",
             );
             return;
         }
@@ -14594,7 +14597,7 @@ impl App {
         thread::spawn(move || {
             let result =
                 if workspace_generation_guard.load(Ordering::Acquire) != workspace_generation {
-                    Err("la carpeta de trabajo cambió antes de abrir la imagen".to_string())
+                    Err("la carpeta de apuntes cambió antes de abrir la imagen".to_string())
                 } else {
                     root.resolve_existing_from(&source_path, &relative_path)
                         .map_err(|error| {
@@ -14643,7 +14646,7 @@ impl App {
             if let Some(heading) = heading {
                 self.scroll_to_heading(&heading);
             } else {
-                self.set_notice("el enlace de bóveda no declara una nota ni un encabezado");
+                self.set_notice("El enlace a otra nota no indica ninguna nota ni título");
             }
             return;
         }
@@ -14662,11 +14665,11 @@ impl App {
                 return;
             }
             WikiResolution::Ambiguous => {
-                self.set_notice("el enlace de bóveda es ambiguo; usa una ruta más precisa");
+                self.set_notice("El enlace a otra nota es ambiguo: usá una ruta más precisa");
                 return;
             }
             WikiResolution::Blocked => {
-                self.set_notice("el enlace de bóveda fue bloqueado por la política de archivos");
+                self.set_notice("El enlace a otra nota fue bloqueado por la política de archivos");
                 return;
             }
         };
@@ -14682,7 +14685,7 @@ impl App {
             }
             Err(error) => {
                 self.log.push(format!("[vfs] {error}"));
-                self.set_notice("el enlace de bóveda fue bloqueado por la política de archivos");
+                self.set_notice("El enlace a otra nota fue bloqueado por la política de archivos");
             }
         }
     }
@@ -14794,15 +14797,15 @@ impl App {
     /// puede usar esta acción para salir de la bóveda.
     fn show_backlinks(&mut self) {
         let Some((root, index)) = self.workspace.as_ref() else {
-            self.set_notice("abre una carpeta de trabajo para consultar backlinks");
+            self.set_notice("Abrí una carpeta de apuntes para ver qué notas enlazan aquí");
             return;
         };
         let Ok(current) = fs::canonicalize(&self.document.path) else {
-            self.set_notice("el documento abierto no se puede asociar al workspace");
+            self.set_notice("El documento abierto no se puede asociar a la carpeta de apuntes");
             return;
         };
         let Ok(relative) = current.strip_prefix(root.root()) else {
-            self.set_notice("el documento abierto no pertenece a la carpeta de trabajo");
+            self.set_notice("El documento abierto no está en la carpeta de apuntes");
             return;
         };
         let Some(note) = index.note_at_relative(relative) else {
@@ -14820,11 +14823,9 @@ impl App {
         self.workspace_paths = None;
         self.backlink_match = 0;
         self.backlink_paths = Some(paths);
-        self.set_notice(if self.backlink_paths.as_ref().is_some_and(Vec::is_empty) {
-            "ninguna nota de la carpeta apunta al documento actual · Escape cierra"
-        } else {
-            "backlinks · flechas eligen, Enter abre, Escape cierra"
-        });
+        if self.backlink_paths.as_ref().is_some_and(Vec::is_empty) {
+            self.set_notice("Ninguna nota de la carpeta enlaza a este documento");
+        }
         if let Some(window) = &self.window {
             window.request_redraw();
         }
@@ -14834,7 +14835,7 @@ impl App {
     /// ni intenta abrir enlaces: es evidencia local para corregir una nota.
     fn show_wikilink_diagnostics(&mut self) {
         let Some((_, index)) = self.workspace.as_ref() else {
-            self.set_notice("abre una carpeta de trabajo para revisar enlaces de bóveda");
+            self.set_notice("Abrí una carpeta de apuntes para revisar los enlaces a otras notas");
             return;
         };
         let rows = wikilink_diagnostics(&self.document.blocks, index);
@@ -14845,7 +14846,7 @@ impl App {
         self.link_diagnostic_match = 0;
         self.link_diagnostics = Some(rows);
         self.set_notice(&format!(
-            "enlaces de bóveda: {found} resueltos, {missing} ausentes, {ambiguous} ambiguos, {blocked} bloqueados · Escape cierra"
+            "Enlaces a otras notas: {found} resueltos, {missing} ausentes, {ambiguous} ambiguos, {blocked} bloqueados"
         ));
     }
 
@@ -14857,7 +14858,6 @@ impl App {
         match event.physical_key {
             PhysicalKey::Code(KeyCode::Escape) => {
                 self.link_diagnostics = None;
-                self.set_notice("diagnóstico de enlaces cerrado");
             }
             PhysicalKey::Code(KeyCode::ArrowDown) if count > 0 => {
                 self.link_diagnostic_match = (self.link_diagnostic_match + 1) % count;
@@ -14881,7 +14881,7 @@ impl App {
             return;
         };
         let Some((root, _)) = &self.workspace else {
-            self.set_notice("la carpeta de trabajo ya no está disponible");
+            self.set_notice("La carpeta de apuntes ya no está disponible");
             return;
         };
         match root.resolve_existing(&relative_path) {
@@ -14891,7 +14891,7 @@ impl App {
             }
             Err(error) => {
                 self.log.push(format!("[vfs] {error}"));
-                self.set_notice("el backlink fue bloqueado por la política de archivos");
+                self.set_notice("La nota fue bloqueada por la política de archivos");
             }
         }
     }
@@ -14904,7 +14904,6 @@ impl App {
         match event.physical_key {
             PhysicalKey::Code(KeyCode::Escape) => {
                 self.backlink_paths = None;
-                self.set_notice("backlinks cerrados");
             }
             PhysicalKey::Code(KeyCode::ArrowDown) if count > 0 => {
                 self.backlink_match = (self.backlink_match + 1) % count;
@@ -14923,7 +14922,7 @@ impl App {
     fn show_document_outline(&mut self) {
         let headings = document_outline(&self.document.blocks);
         if headings.is_empty() {
-            self.set_notice("el documento no contiene encabezados");
+            self.set_notice("El documento no tiene títulos");
             return;
         }
         self.search_query = None;
@@ -14947,7 +14946,6 @@ impl App {
             self.doc_height,
         );
         self.outline_headings = Some(headings);
-        self.set_notice("índice del documento · flechas eligen, Enter enfoca, Escape cierra");
         if let Some(window) = &self.window {
             window.request_redraw();
         }
@@ -14961,7 +14959,6 @@ impl App {
         match event.physical_key {
             PhysicalKey::Code(KeyCode::Escape) => {
                 self.outline_headings = None;
-                self.set_notice("índice del documento cerrado");
             }
             PhysicalKey::Code(KeyCode::ArrowDown) if count > 0 => {
                 self.outline_match = (self.outline_match + 1) % count;
@@ -14995,7 +14992,6 @@ impl App {
             }
         }
         self.outline_headings = None;
-        self.set_notice("encabezado enfocado");
     }
 
     fn scroll_to_heading(&mut self, heading: &str) {
@@ -15003,7 +14999,7 @@ impl App {
         let Some((block_index, _)) = self.document.blocks.iter().enumerate().find(|(_, block)| {
             matches!(block.kind, Kind::Heading(_)) && heading_key(&block.text) == requested
         }) else {
-            self.set_notice("el documento no contiene el encabezado solicitado");
+            self.set_notice("El documento no tiene el título pedido");
             return;
         };
         self.selection = Some(DocumentSelection::collapsed(BlockCursor {
@@ -15011,16 +15007,13 @@ impl App {
             offset: 0,
         }));
         if self.reveal_block(block_index) {
-            self.set_notice("encabezado revelado");
             return;
         }
         let Some(slot) = self.slots.get(block_index) else {
-            self.set_notice("el encabezado se enfocará al terminar el layout");
             self.document.pending_heading = Some(heading.to_owned());
             return;
         };
         self.set_clamped_focused_pane_scroll(slot.y);
-        self.set_notice("encabezado enfocado");
     }
 
     fn open_document_search(&mut self) {
@@ -15030,7 +15023,6 @@ impl App {
         self.outline_headings = None;
         self.search_query = Some(String::new());
         self.search_match = 0;
-        self.set_notice("búsqueda local · escribe texto, Enter recorre resultados, Escape cierra");
         if let Some(window) = &self.window {
             window.request_redraw();
         }
@@ -15038,7 +15030,7 @@ impl App {
 
     fn open_workspace_search(&mut self) {
         if self.workspace.is_none() {
-            self.set_notice("elige primero una carpeta de trabajo con Ctrl+Shift+O");
+            self.set_notice("Elegí primero una carpeta de apuntes con Ctrl+Shift+O");
             return;
         }
         self.search_query = None;
@@ -15047,9 +15039,6 @@ impl App {
         self.outline_headings = None;
         self.workspace_search_query = Some(String::new());
         self.workspace_search_match = 0;
-        self.set_notice(
-            "buscar en carpeta · escribe texto, flechas eligen, Enter abre, Escape cierra",
-        );
         if let Some(window) = &self.window {
             window.request_redraw();
         }
@@ -15060,12 +15049,12 @@ impl App {
     /// resolver contra la raíz concedida al confirmar con Enter.
     fn show_workspace_files(&mut self) {
         let Some((_, index)) = self.workspace.as_ref() else {
-            self.set_notice("elige primero una carpeta de trabajo con Ctrl+Shift+O");
+            self.set_notice("Elegí primero una carpeta de apuntes con Ctrl+Shift+O");
             return;
         };
         let paths = index.note_paths();
         if paths.is_empty() {
-            self.set_notice("la carpeta de trabajo no contiene notas Markdown indexadas");
+            self.set_notice("La carpeta de apuntes no tiene notas Markdown indexadas");
             return;
         }
         self.search_query = None;
@@ -15087,7 +15076,6 @@ impl App {
             .and_then(|current| rows.iter().position(|row| row.note_path() == Some(current)))
             .unwrap_or(0);
         self.workspace_paths = Some(rows);
-        self.set_notice("árbol de notas · flechas eligen, Enter abre una nota, Escape cierra");
         if let Some(window) = &self.window {
             window.request_redraw();
         }
@@ -15150,7 +15138,7 @@ impl App {
             return;
         };
         let Some((root, _)) = &self.workspace else {
-            self.set_notice("la carpeta de trabajo ya no está disponible");
+            self.set_notice("La carpeta de apuntes ya no está disponible");
             return;
         };
         match root.resolve_existing(&relative_path) {
@@ -15173,7 +15161,6 @@ impl App {
         match event.physical_key {
             PhysicalKey::Code(KeyCode::Escape) => {
                 self.workspace_paths = None;
-                self.set_notice("lista de notas cerrada");
             }
             PhysicalKey::Code(KeyCode::ArrowDown) if count > 0 => {
                 self.workspace_path_match = (self.workspace_path_match + 1) % count;
@@ -15253,7 +15240,6 @@ impl App {
         match event.physical_key {
             PhysicalKey::Code(KeyCode::Escape) => {
                 self.workspace_search_query = None;
-                self.set_notice("búsqueda de carpeta cerrada");
             }
             PhysicalKey::Code(KeyCode::Backspace) => {
                 if let Some(query) = &mut self.workspace_search_query {
@@ -15361,7 +15347,6 @@ impl App {
             PhysicalKey::Code(KeyCode::Escape) => {
                 self.search_query = None;
                 self.selection = None;
-                self.set_notice("búsqueda cerrada");
             }
             PhysicalKey::Code(KeyCode::Backspace) => {
                 if let Some(query) = &mut self.search_query {
@@ -15460,7 +15445,7 @@ impl App {
                 })
             });
         let Some(heading) = heading else {
-            self.set_notice("enfoca un encabezado para plegar su sección");
+            self.set_notice("Enfocá un título para plegar su sección");
             return;
         };
         self.toggle_section(heading);
@@ -15744,7 +15729,7 @@ impl App {
 
     fn toggle_selected_task(&mut self) {
         let Some(block) = selected_task_block(&self.document.blocks, self.selection) else {
-            self.set_notice("selecciona una tarea para marcarla con Espacio");
+            self.set_notice("Seleccioná una tarea para marcarla con Espacio");
             return;
         };
         self.toggle_task(block);
@@ -16415,7 +16400,7 @@ impl App {
                     CommandPaletteScope::Menu => "Menú".to_string(),
                     CommandPaletteScope::Blocks => "Párrafo".to_string(),
                     CommandPaletteScope::Insert => "Insertar".to_string(),
-                    CommandPaletteScope::Workspace => "Espacio de trabajo".to_string(),
+                    CommandPaletteScope::Workspace => "Carpeta de apuntes".to_string(),
                     CommandPaletteScope::Study => "Herramientas de estudio".to_string(),
                 }
             } else {
@@ -16592,7 +16577,7 @@ impl App {
                 offsets: Vec::new(),
                 chevrons: Vec::new(),
                 headings: Vec::new(),
-                title: format!("Enlaces de bóveda · {}", rows.len()),
+                title: format!("Enlaces a otras notas · {}", rows.len()),
                 items: range
                     .clone()
                     .map(|index| {
@@ -16617,7 +16602,10 @@ impl App {
                 offsets: Vec::new(),
                 chevrons: Vec::new(),
                 headings: Vec::new(),
-                title: format!("Índice · {} encabezados", headings.len()),
+                title: format!(
+                    "Índice · {}",
+                    count_noun(headings.len(), "título", "títulos")
+                ),
                 items: range
                     .clone()
                     .map(|index| {
@@ -18673,11 +18661,12 @@ impl App {
         }
 
         if let Some(layout) = toast_layout {
-            let window_width = w.get() as f32;
-            let toast_width = (layout.width() + 40.0).min(window_width - MARGIN * 2.0);
+            // Centrado en el área del documento, a 24 px de su borde inferior.
+            let toast_width = (layout.width() + 40.0).min(document_area.width - MARGIN * 2.0);
             let toast_height = layout.height() + 18.0;
-            let toast_x = ((window_width - toast_width) * 0.5).round();
-            let toast_y = h.get() as f32 - STATUS_HEIGHT - toast_height - 18.0;
+            let toast_x = (document_area.x + (document_area.width - toast_width) * 0.5).round();
+            let toast_y =
+                DOCUMENT_VIEWPORT_TOP + document_area.height - toast_height - TOAST_BOTTOM_GAP;
             draw_floating_surface(
                 pixmap,
                 toast_x,
@@ -20870,8 +20859,14 @@ let x = 1;
         assert_eq!(count_noun(0, "resultado", "resultados"), "0 resultados");
         assert_eq!(count_noun(1, "resultado", "resultados"), "1 resultado");
         assert_eq!(count_noun(2, "resultado", "resultados"), "2 resultados");
-        assert_eq!(backlinks_panel_title(1), "Backlinks · 1 resultado");
-        assert_eq!(backlinks_panel_title(2), "Backlinks · 2 resultados");
+        assert_eq!(
+            backlinks_panel_title(1),
+            "Notas que enlazan aquí · 1 resultado"
+        );
+        assert_eq!(
+            backlinks_panel_title(2),
+            "Notas que enlazan aquí · 2 resultados"
+        );
     }
 
     #[test]
@@ -22478,7 +22473,7 @@ agregado por otro programa
             filtered_actions("")[..PRIMERAS_FILAS].contains(&AppAction::ToggleTheme),
             "el cambio de tema debe ser visible sin escribir una búsqueda"
         );
-        assert_eq!(filtered_actions("backlinks"), vec![AppAction::Backlinks]);
+        assert_eq!(filtered_actions("enlazan"), vec![AppAction::Backlinks]);
         assert_eq!(filtered_actions("tema"), vec![AppAction::ToggleTheme]);
         assert!(filtered_actions("GUARDAR").contains(&AppAction::Save));
         assert!(filtered_actions("GUARDAR").contains(&AppAction::SaveAs));
@@ -22492,7 +22487,7 @@ agregado por otro programa
             WORKSPACE_HUB_ACTIONS.to_vec()
         );
         assert_eq!(
-            filtered_actions_from(&WORKSPACE_HUB_ACTIONS, "backlinks"),
+            filtered_actions_from(&WORKSPACE_HUB_ACTIONS, "enlazan"),
             vec![AppAction::Backlinks]
         );
         assert_eq!(
@@ -22693,11 +22688,11 @@ agregado por otro programa
 
     #[test]
     fn los_backlinks_vacios_explican_el_estado_en_el_panel() {
+        assert_eq!(backlinks_panel_title(0), "Notas que enlazan aquí · ninguna");
         assert_eq!(
-            backlinks_panel_title(0),
-            "Backlinks · ninguna nota apunta aquí"
+            backlinks_panel_title(2),
+            "Notas que enlazan aquí · 2 resultados"
         );
-        assert_eq!(backlinks_panel_title(2), "Backlinks · 2 resultados");
     }
 
     #[test]
