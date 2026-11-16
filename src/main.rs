@@ -656,7 +656,7 @@ const MAX_DOCUMENT_PANES: usize = 4;
 /// Franja propia de cada panel cuando hay más de uno: nombre, modo y cierre.
 const PANE_HEADER_HEIGHT: f32 = 30.0;
 const PANE_HEADER_CLOSE_WIDTH: f32 = 28.0;
-const PANE_HEADER_MODE_SLOT: f32 = 62.0;
+const PANE_HEADER_MODE_SLOT: f32 = 53.0;
 /// Por debajo de este ancho la cabecera conserva nombre y cierre; el modo
 /// sigue disponible en la barra superior para el panel enfocado.
 const PANE_HEADER_MODE_MIN_WIDTH: f32 = 330.0;
@@ -8779,6 +8779,13 @@ impl ApplicationHandler<AppEvent> for App {
                             document_by_id(&self.document, &self.inactive_documents, document_id)
                                 .is_some_and(|document| document.pinned);
                         let target = clamp_tab_target(strip, dragged_pinned, target);
+                        // El índice es de la tira; el orden completo incluye
+                        // las pestañas que están en paneles.
+                        let target = self
+                            .visible_tab_ids()
+                            .get(target)
+                            .and_then(|id| self.tab_order.iter().position(|other| other == id))
+                            .unwrap_or(target);
                         if move_tab_order(&mut self.tab_order, document_id, target) {
                             window.request_redraw();
                         }
@@ -9062,7 +9069,7 @@ impl ApplicationHandler<AppEvent> for App {
                             size.width as f32,
                             size.height as f32,
                             self.tab_strip(),
-                        ) && let Some(document_id) = self.tab_order.get(index).copied()
+                        ) && let Some(document_id) = self.visible_tab_ids().get(index).copied()
                         {
                             self.activate_document_tab(document_id);
                             if self.document.id == document_id {
@@ -9077,7 +9084,7 @@ impl ApplicationHandler<AppEvent> for App {
                             size.width as f32,
                             size.height as f32,
                             self.tab_strip(),
-                        ) && let Some(document_id) = self.tab_order.get(index).copied()
+                        ) && let Some(document_id) = self.visible_tab_ids().get(index).copied()
                         {
                             self.activate_document_tab(document_id);
                             self.tab_drag_id = Some(document_id);
@@ -9192,7 +9199,7 @@ impl ApplicationHandler<AppEvent> for App {
                         size.width as f32,
                         size.height as f32,
                         self.tab_strip(),
-                    ) && let Some(document_id) = self.tab_order.get(index).copied()
+                    ) && let Some(document_id) = self.visible_tab_ids().get(index).copied()
                     {
                         self.activate_document_tab(document_id);
                         true
@@ -11425,17 +11432,33 @@ impl App {
         true
     }
 
-    /// Cuántas pestañas hay y cuántas están fijadas (las primeras).
+    /// Las pestañas que lista la tira, en orden. Con dos o más paneles, cada
+    /// documento que ya está en un panel tiene su pestaña en la cabecera de
+    /// ese panel y no se repite arriba (D-31).
+    fn visible_tab_ids(&self) -> Vec<u64> {
+        if self.document_panes.pane_count() < 2 {
+            return self.tab_order.clone();
+        }
+        let mut in_panes = Vec::new();
+        self.document_panes.document_ids(&mut in_panes);
+        self.tab_order
+            .iter()
+            .copied()
+            .filter(|id| !in_panes.contains(id))
+            .collect()
+    }
+
+    /// Cuántas pestañas lista la tira y cuántas están fijadas (las primeras).
     fn tab_strip(&self) -> TabStrip {
-        let pinned = self
-            .tab_order
+        let visible = self.visible_tab_ids();
+        let pinned = visible
             .iter()
             .filter(|id| {
                 document_by_id(&self.document, &self.inactive_documents, **id)
                     .is_some_and(|document| document.pinned)
             })
             .count();
-        TabStrip::new(self.tab_order.len(), pinned)
+        TabStrip::new(visible.len(), pinned)
     }
 
     fn document_busy(&self, document_id: u64) -> bool {
@@ -15618,7 +15641,7 @@ impl App {
                     return Some(("Cerrar pestaña · Ctrl+W".to_string(), left, anchor_y));
                 }
                 let index = tab_index_at(x, y, window_width, window_height, strip)?;
-                let id = *self.tab_order.get(index)?;
+                let id = *self.visible_tab_ids().get(index)?;
                 let document = document_by_id(&self.document, &self.inactive_documents, id)?;
                 let mut text = document.display_name();
                 if document.is_unsaved() {
@@ -15811,7 +15834,7 @@ impl App {
                                 } else {
                                     palette.dim
                                 },
-                                12.0,
+                                10.5,
                                 target == active,
                                 None,
                             )
@@ -16028,8 +16051,8 @@ impl App {
         let pinned_width = pinned_tab_width(w.get() as f32, tab_strip);
         let tab_label_chars = ((tab_width - 32.0).max(30.0) / 7.5).floor().max(4.0) as usize;
         let pinned_label_chars = ((pinned_width - 40.0).max(30.0) / 7.5).floor().max(4.0) as usize;
-        let tab_descriptors = self
-            .tab_order
+        let visible_tabs = self.visible_tab_ids();
+        let tab_descriptors = visible_tabs
             .iter()
             .filter_map(|id| {
                 let document = document_by_id(&self.document, &self.inactive_documents, *id)?;
@@ -16992,17 +17015,20 @@ impl App {
             }
             let close_x = header.x + header.width - PANE_HEADER_CLOSE_WIDTH * 0.5;
             let close_y = top + header.height * 0.5;
-            let mut close_path = tiny_skia::PathBuilder::new();
-            close_path.move_to(close_x - 3.5, close_y - 3.5);
-            close_path.line_to(close_x + 3.5, close_y + 3.5);
-            close_path.move_to(close_x + 3.5, close_y - 3.5);
-            close_path.line_to(close_x - 3.5, close_y + 3.5);
-            if let Some(close_path) = close_path.finish() {
+            // «Quitar del mosaico»: un panel con un signo menos. No es una ✕:
+            // la pestaña sigue abierta, solo deja de verse en el mosaico.
+            let mut remove_path = tiny_skia::PathBuilder::new();
+            if let Some(rect) = Rect::from_xywh(close_x - 5.0, close_y - 4.0, 10.0, 8.0) {
+                remove_path.push_rect(rect);
+            }
+            remove_path.move_to(close_x - 2.5, close_y);
+            remove_path.line_to(close_x + 2.5, close_y);
+            if let Some(remove_path) = remove_path.finish() {
                 pixmap.stroke_path(
-                    &close_path,
+                    &remove_path,
                     &dim_paint,
                     &tiny_skia::Stroke {
-                        width: 1.3,
+                        width: 1.2,
                         ..Default::default()
                     },
                     Transform::identity(),
@@ -19606,6 +19632,34 @@ let x = 1;
             tab_index_at(2000.0, y, ancho, 600.0, TabStrip::new(2, 2)),
             None
         );
+    }
+
+    #[test]
+    fn con_dos_paneles_la_tira_no_repite_los_documentos_del_mosaico() {
+        let mut app = App::for_tests(NIGHT);
+        app.load_for_test("uno", DocumentMode::Reading);
+        app.perform_action(AppAction::NewDocument);
+        app.perform_action(AppAction::NewDocument);
+        assert_eq!(app.tab_order.len(), 3);
+        assert_eq!(
+            app.visible_tab_ids(),
+            app.tab_order,
+            "un panel: todo en la tira"
+        );
+
+        app.open_document_pane_picker(DocumentPaneAxis::Vertical);
+        app.choose_document_pane_split(2);
+        assert_eq!(app.document_panes.pane_count(), 2);
+        let mut en_paneles = Vec::new();
+        app.document_panes.document_ids(&mut en_paneles);
+        let visibles = app.visible_tab_ids();
+        assert_eq!(visibles.len(), 1, "solo la pestaña que no está en un panel");
+        assert!(visibles.iter().all(|id| !en_paneles.contains(id)));
+        assert_eq!(app.tab_strip(), TabStrip::new(1, 0));
+
+        // Al quitar un panel vuelven a listarse todas.
+        app.close_focused_document_pane();
+        assert_eq!(app.visible_tab_ids(), app.tab_order);
     }
 
     #[test]
