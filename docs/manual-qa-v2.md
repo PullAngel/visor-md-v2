@@ -347,3 +347,22 @@ cerrar la prueba sin intentar explotar el fallo.
 | Seguridad adversarial |  |  |
 | Rendimiento y estabilidad |  |  |
 | Accesibilidad y plataformas |  |  |
+
+## Recuperación y ventanas (manual, noviembre de 2026)
+
+1. **Matar el proceso.** Escribir en un documento nuevo y en uno guardado sin
+   guardar los cambios; terminar `visor-md.exe` desde el Administrador de tareas;
+   abrir de nuevo: aparece el aviso de documentos sin guardar y Ctrl+Shift+R
+   lista las copias; Enter restaura (ligada al original si no cambió).
+2. **Reiniciar Windows.** Con cambios sin guardar, `shutdown /r /t 0`; al volver,
+   la lista muestra lo escrito hasta unos segundos antes (no hay captura del
+   cierre de sesión en la versión 1).
+3. **Dos ventanas.** Abrir un `.md` desde el Explorador con Visor MD abierto: se
+   abre en la ventana existente. Archivo > Pestaña > «Mover pestaña a una ventana
+   nueva» con una pestaña guardada y con otra con cambios sin guardar: la
+   ventana nueva la recibe y la de origen la cierra.
+4. **Arrastrar.** Arrastrar una pestaña fuera de la ventana: con otra ventana de
+   Visor MD debajo, va a esa; en el vacío abre una ventana nueva.
+5. **Asociación.** Archivo > Sistema > «Abrir archivos con Visor MD…» > Registrar:
+   Visor MD aparece en «Abrir con» y se abre Configuración; elegirlo como
+   predeterminado. «Quitar» lo retira.

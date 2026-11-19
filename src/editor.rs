@@ -18,6 +18,12 @@ pub struct TextBuffer {
 }
 
 impl TextBuffer {
+    /// Una copia barata del texto (`Rope::clone` es O(1)): sirve para guardar lo
+    /// último escrito en el registro del gancho de pánico.
+    pub fn snapshot(&self) -> Rope {
+        self.rope.clone()
+    }
+
     pub fn new() -> Self {
         Self::default()
     }

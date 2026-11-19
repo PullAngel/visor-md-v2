@@ -435,6 +435,29 @@ proceso no elimina enlaces simbólicos ni archivos ajenos dentro de ese
 directorio. El rediseño completo está en
 [`arquitectura-recuperacion-2026-11-15.md`](arquitectura-recuperacion-2026-11-15.md).
 
+La recuperación guarda una sola copia atómica por documento (`.vmdr`, con
+cabecera acotada, largo del cuerpo y CRC-32: una copia dañada no se restaura) en
+la carpeta de la sesión del proceso, protegida por un cerrojo que se abre solo
+si el proceso murió. Restaurar nunca escribe en el archivo original: si no
+cambió en disco, la pestaña queda ligada a él; si cambió o falta, se abre aparte
+y sin guardar. Los nombres de archivo son siempre hexadecimales aleatorios; la
+ruta de origen es un dato que se muestra, nunca un destino. La cuota es de 50
+copias y 64 MiB, y las huérfanas expiran a los 30 días. Si el programa entra en
+pánico, un gancho vuelca al disco la última versión de cada documento sin
+guardar (un registro compartido de referencias al texto, sin rutas de destino);
+el gancho no espera cerrojos y no toca la interfaz. No cubre el apagado de
+Windows ni el cifrado (tarea 13.9, opcional, que exige `unsafe` en un módulo
+aparte).
+
+Entre ventanas (un proceso por ventana) los mensajes son archivos pequeños en
+`%LOCALAPPDATA%\VisorMD\buzon\<pid>\`, de la misma persona, acotados en
+tamaño y cantidad; las rutas que traen se abren como si vinieran de la línea de
+comandos y un nombre de traspaso solo se acepta con 32 dígitos hexadecimales,
+nunca como ruta. Una pestaña sin guardar viaja como un traspaso con el mismo
+formato y suma de verificación que una copia, en `recovery\traspaso\`; el
+origen la cierra solo cuando la otra ventana confirma que la abrió y siempre que
+no haya cambiado mientras tanto. Los traspasos que nadie recoge caducan al día.
+
 Las preferencias de modo por archivo no almacenan rutas en claro: guardan como
 máximo 128 hashes estables y uno de tres valores de presentación. Ese hash no es
 un control criptográfico y podría probarse por diccionario si un atacante ya

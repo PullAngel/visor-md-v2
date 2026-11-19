@@ -148,6 +148,19 @@ Algunas amenazas aparecen sin explotar un bug:
 Los avisos, presupuestos y permisos deben cubrir también abuso de funciones
 correctas.
 
+## Ventanas y recuperación (noviembre de 2026)
+
+| Amenaza | Defensa |
+| --- | --- |
+| Otro proceso de la misma persona deja un mensaje hostil en el buzón de una ventana | Tamaño y cantidad acotados; un mensaje mal formado se borra sin efecto; las rutas se abren como una apertura explícita más, nunca se ejecutan |
+| Un nombre de traspaso con `..` o `/` para leer o escribir fuera de la carpeta | Solo se aceptan 32 dígitos hexadecimales; el nombre nunca se usa como ruta |
+| Un traspaso dañado o truncado se abre como si fuera el documento | Formato `.vmdr` con largo y CRC-32; si no coincide, no se abre |
+| La ventana de destino muere antes de confirmar | El origen no cierra la pestaña sin confirmación; no se pierde nada |
+| La pestaña cambia mientras se traslada | El origen compara la revisión y, si cambió, la deja abierta y avisa |
+| Restaurar pisa el archivo original | Restaurar nunca escribe; Guardar usa la comprobación de conflicto de siempre |
+| Pánico del programa con texto sin guardar | El gancho vuelca el registro de referencias; no espera cerrojos |
+| Apagado de Windows | Fuera de la versión 1 (13.9); con el tope de 10 s se pierde poco |
+
 ## Riesgos abiertos durante la recuperación
 
 - VFS ya rechaza reparse points secundarios antes de canonicalizar; siguen

@@ -16,6 +16,7 @@ use std::fs;
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// Cada cuánto se renueva el latido.
@@ -33,15 +34,28 @@ const MAX_PATHS_PER_MESSAGE: usize = 32;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct WindowInfo {
     pub(crate) pid: u32,
+    /// Área de contenido de la ventana en la pantalla (x, y, ancho, alto), tal
+    /// como la anotó en su último latido. Sirve para saber sobre qué ventana
+    /// se suelta una pestaña arrastrada.
+    pub(crate) rect: Option<ScreenRect>,
     /// Milisegundos desde 1970 del último latido.
     pub(crate) heartbeat_ms: u64,
 }
+
+/// Área en la pantalla: x, y, ancho y alto.
+pub(crate) type ScreenRect = (i32, i32, u32, u32);
 
 /// Lo que una ventana le pide a otra.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Message {
     /// Abrir estos archivos, cada uno en su pestaña.
     Open(Vec<PathBuf>),
+    /// Recibir una pestaña: el nombre de su traspaso y la ventana que la envía,
+    /// a la que hay que avisar cuando ya está abierta.
+    Adopt { name: String, from: u32 },
+    /// La pestaña de ese traspaso ya está abierta en la ventana de destino: el
+    /// origen puede cerrarla.
+    Adopted { name: String },
 }
 
 pub(crate) fn unix_millis(now: SystemTime) -> u64 {
@@ -54,6 +68,7 @@ pub(crate) fn unix_millis(now: SystemTime) -> u64 {
 pub(crate) struct Registry {
     root: PathBuf,
     pid: u32,
+    rect: Arc<Mutex<Option<ScreenRect>>>,
 }
 
 impl Registry {
@@ -61,12 +76,25 @@ impl Registry {
         Self {
             root: root.into(),
             pid,
+            rect: Arc::new(Mutex::new(None)),
         }
     }
 
     /// La raíz real de la persona, para este proceso. `None` si no hay perfil.
     pub(crate) fn for_this_process() -> Option<Self> {
         Some(Self::at(default_root()?, std::process::id()))
+    }
+
+    pub(crate) fn pid(&self) -> u32 {
+        self.pid
+    }
+
+    /// Dónde está el área de contenido de esta ventana; se anota en el próximo
+    /// latido.
+    pub(crate) fn set_rect(&self, rect: Option<ScreenRect>) {
+        if let Ok(mut current) = self.rect.lock() {
+            *current = rect;
+        }
     }
 
     fn windows_dir(&self) -> PathBuf {
@@ -81,7 +109,10 @@ impl Registry {
     pub(crate) fn heartbeat(&self, now: SystemTime) -> Result<(), std::io::Error> {
         let dir = self.windows_dir();
         fs::create_dir_all(&dir)?;
-        let text = format!("pid={}\nheartbeat={}\n", self.pid, unix_millis(now));
+        let mut text = format!("pid={}\nheartbeat={}\n", self.pid, unix_millis(now));
+        if let Some((x, y, width, height)) = self.rect.lock().ok().and_then(|rect| *rect) {
+            text.push_str(&format!("rect={x},{y},{width},{height}\n"));
+        }
         AtomicFile::new(dir.join(format!("{}.txt", self.pid)), AllowOverwrite)
             .write(|file| file.write_all(text.as_bytes()))
             .map_err(|error| match error {
@@ -130,14 +161,26 @@ impl Registry {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let dir = self.mailbox_dir(target);
         fs::create_dir_all(&dir)?;
-        let Message::Open(paths) = message;
-        if paths.is_empty() || paths.len() > MAX_PATHS_PER_MESSAGE {
+        let mut text = String::new();
+        let paths: &[PathBuf] = match message {
+            Message::Open(paths) => paths,
+            Message::Adopt { name, from } => {
+                text = format!("adopt={name},{from}\n");
+                &[]
+            }
+            Message::Adopted { name } => {
+                text = format!("adopted={name}\n");
+                &[]
+            }
+        };
+        if matches!(message, Message::Open(_))
+            && (paths.is_empty() || paths.len() > MAX_PATHS_PER_MESSAGE)
+        {
             return Err(std::io::Error::new(
                 ErrorKind::InvalidInput,
                 "cantidad de rutas no válida",
             ));
         }
-        let mut text = String::new();
         for path in paths {
             let path = path.to_str().ok_or_else(|| {
                 std::io::Error::new(ErrorKind::InvalidInput, "ruta que no es texto")
@@ -190,7 +233,26 @@ impl Registry {
     }
 }
 
+fn is_hex_name(name: &str) -> bool {
+    name.len() == 32 && name.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
 fn parse_message(text: &str) -> Option<Message> {
+    for line in text.lines() {
+        if let Some(rest) = line.strip_prefix("adopt=") {
+            let (name, from) = rest.split_once(',')?;
+            let from = from.trim().parse().ok()?;
+            return is_hex_name(name).then(|| Message::Adopt {
+                name: name.to_string(),
+                from,
+            });
+        }
+        if let Some(name) = line.strip_prefix("adopted=") {
+            return is_hex_name(name).then(|| Message::Adopted {
+                name: name.to_string(),
+            });
+        }
+    }
     let paths: Vec<PathBuf> = text
         .lines()
         .filter_map(|line| line.strip_prefix("open="))
@@ -209,16 +271,31 @@ fn read_window(path: &Path) -> Option<WindowInfo> {
     let text = fs::read_to_string(path).ok()?;
     let mut pid = None;
     let mut heartbeat_ms = None;
+    let mut rect = None;
     for line in text.lines() {
         match line.split_once('=') {
             Some(("pid", value)) => pid = value.trim().parse().ok(),
             Some(("heartbeat", value)) => heartbeat_ms = value.trim().parse().ok(),
+            Some(("rect", value)) => {
+                let parts: Vec<&str> = value.split(',').collect();
+                if let [x, y, width, height] = parts[..] {
+                    rect = (|| {
+                        Some((
+                            x.trim().parse().ok()?,
+                            y.trim().parse().ok()?,
+                            width.trim().parse().ok()?,
+                            height.trim().parse().ok()?,
+                        ))
+                    })();
+                }
+            }
             _ => {}
         }
     }
     Some(WindowInfo {
         pid: pid?,
         heartbeat_ms: heartbeat_ms?,
+        rect,
     })
 }
 
@@ -347,6 +424,55 @@ mod pruebas {
         // Y no más de 32 rutas por mensaje.
         let muchas = (0..40).map(|i| PathBuf::from(format!("{i}.md"))).collect();
         assert!(a.send(200, &Message::Open(muchas)).is_err());
+        let _ = fs::remove_dir_all(r);
+    }
+
+    #[test]
+    fn los_mensajes_de_traspaso_viajan_y_solo_con_nombres_validos() {
+        let r = raiz("traspaso");
+        let (a, b) = (Registry::at(&r, 100), Registry::at(&r, 200));
+        let nombre = "0123456789abcdef0123456789abcdef".to_string();
+        a.send(
+            200,
+            &Message::Adopt {
+                name: nombre.clone(),
+                from: 100,
+            },
+        )
+        .unwrap();
+        b.send(
+            100,
+            &Message::Adopted {
+                name: nombre.clone(),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            b.take(),
+            vec![Message::Adopt {
+                name: nombre.clone(),
+                from: 100
+            }]
+        );
+        assert_eq!(a.take(), vec![Message::Adopted { name: nombre }]);
+        // Un nombre que no es hexadecimal de 32 dígitos se descarta.
+        let buzon = r.join("buzon").join("200");
+        fs::create_dir_all(&buzon).unwrap();
+        fs::write(buzon.join("0001.msg"), "adopt=../../x,100\n").unwrap();
+        fs::write(buzon.join("0002.msg"), "adopted=corto\n").unwrap();
+        assert!(b.take().is_empty());
+        let _ = fs::remove_dir_all(r);
+    }
+
+    #[test]
+    fn el_latido_lleva_la_posicion_de_la_ventana_para_saber_sobre_cual_se_suelta() {
+        let r = raiz("rect");
+        let (a, b) = (Registry::at(&r, 100), Registry::at(&r, 200));
+        b.heartbeat(en(0)).unwrap();
+        assert_eq!(a.others(en(1))[0].rect, None);
+        b.set_rect(Some((-1200, 40, 1100, 700)));
+        b.heartbeat(en(1)).unwrap();
+        assert_eq!(a.others(en(2))[0].rect, Some((-1200, 40, 1100, 700)));
         let _ = fs::remove_dir_all(r);
     }
 

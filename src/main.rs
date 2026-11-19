@@ -7506,6 +7506,14 @@ fn recovery_row_label(orphan: &recovery::Orphan, now: u64) -> String {
     )
 }
 
+/// Lo que se puede mover de una pestaña a otra ventana.
+enum MovableTab {
+    /// Un archivo guardado y sin cambios: viaja su ruta.
+    Saved(PathBuf),
+    /// Sin guardar o con cambios: viaja un traspaso con el texto.
+    Unsaved,
+}
+
 /// Estado del archivo de origen de una copia, al restaurarla.
 enum RecoveryOrigin {
     /// El documento nació nuevo: no hay archivo de origen.
@@ -8038,6 +8046,13 @@ struct App {
     next_mailbox_poll: Instant,
     /// Archivos de la línea de comandos después del primero.
     startup_extra_paths: Vec<PathBuf>,
+    /// Traspaso recibido por la línea de comandos: nombre y ventana de origen.
+    startup_handoff: Option<(String, u32)>,
+    /// Último clic en el título de una cabecera de panel, para el doble clic.
+    last_header_click: Option<(u64, Instant)>,
+    /// Pestañas enviadas a otra ventana que esperan su confirmación: nombre del
+    /// traspaso, documento y revisión al enviarlo.
+    pending_handoffs: HashMap<String, (u64, u64)>,
     workspace: Option<(WorkspaceRoot, WorkspaceIndex)>,
     /// Cambiar de carpeta cancela cooperativamente el recorrido anterior. El
     /// contador descarta además cualquier resultado tardío del hilo anterior.
@@ -8425,6 +8440,9 @@ impl App {
             next_heartbeat: started,
             next_mailbox_poll: started,
             startup_extra_paths: Vec::new(),
+            startup_handoff: None,
+            last_header_click: None,
+            pending_handoffs: HashMap::new(),
             workspace: None,
             workspace_request: 0,
             workspace_generation: 0,
@@ -9463,6 +9481,9 @@ impl ApplicationHandler<AppEvent> for App {
                 ));
             }
         }
+        if let Some((name, from)) = self.startup_handoff.take() {
+            self.adopt_handoff(&name, from);
+        }
         // Los demás archivos de la línea de comandos, cada uno en su pestaña.
         for path in std::mem::take(&mut self.startup_extra_paths) {
             self.open_document_path(path);
@@ -10021,6 +10042,12 @@ impl ApplicationHandler<AppEvent> for App {
                 }
                 ElementState::Released => {
                     self.selecting = false;
+                    if self.tear_out_if_dropped_outside() {
+                        self.tab_drag_id = None;
+                        self.divider_drag = None;
+                        self.mosaic_drag = None;
+                        return;
+                    }
                     self.tab_drag_id = None;
                     self.divider_drag = None;
                     if self.scroll_thumb_drag.take().is_some()
@@ -12389,6 +12416,17 @@ impl App {
             PaneHeaderHit::Mode(target) => self.select_mode(target),
             PaneHeaderHit::Close => self.close_focused_document_pane(),
             PaneHeaderHit::Title => {
+                // Doble clic: la pestaña de ese panel pasa a una ventana nueva.
+                let now = Instant::now();
+                let double = self.last_header_click.is_some_and(|(pane, at)| {
+                    pane == layout.pane_id && now.duration_since(at) < Duration::from_millis(450)
+                });
+                if double {
+                    self.last_header_click = None;
+                    self.move_tab_to_new_window();
+                    return true;
+                }
+                self.last_header_click = Some((layout.pane_id, now));
                 // Un clic enfoca; si el puntero se mueve, es el arrastre que
                 // intercambia este panel con otro.
                 self.mosaic_drag = Some(MosaicDrag {
@@ -12554,6 +12592,76 @@ impl App {
     }
 
     /// Termina un arrastre: si pasó el umbral y cae sobre algo, lo aplica.
+    /// Área de contenido de esta ventana en la pantalla.
+    fn window_screen_rect(&self) -> Option<(i32, i32, u32, u32)> {
+        let window = self.window.as_ref()?;
+        let position = window.inner_position().ok()?;
+        let size = window.inner_size();
+        Some((position.x, position.y, size.width, size.height))
+    }
+
+    /// Una pestaña que se suelta fuera de la ventana sale de ella: si cae sobre
+    /// otra ventana de Visor MD, va a esa; si no, a una ventana nueva. Devuelve
+    /// `true` si había una pestaña arrastrada y se soltó fuera.
+    fn tear_out_if_dropped_outside(&mut self) -> bool {
+        let dragged = match (self.tab_drag_id, self.mosaic_drag) {
+            (Some(id), _) => Some(id),
+            (None, Some(drag)) if drag.active => match drag.source {
+                MosaicSource::Tab(id) => Some(id),
+                MosaicSource::Pane(pane) => {
+                    self.focus_pane_by_id(pane);
+                    Some(self.document.id)
+                }
+            },
+            _ => None,
+        };
+        let (Some(document_id), Some((x, y)), Some((width, height))) =
+            (dragged, self.pointer, self.view_size())
+        else {
+            return false;
+        };
+        if (0.0..width).contains(&x) && (0.0..height).contains(&y) {
+            return false;
+        }
+        let Some((left, top, _, _)) = self.window_screen_rect() else {
+            return false;
+        };
+        let screen = (left + x as i32, top + y as i32);
+        self.activate_document_tab(document_id);
+        self.tear_out_active_tab(screen);
+        true
+    }
+
+    /// Saca la pestaña activa hacia el punto de la pantalla: sobre otra ventana
+    /// de Visor MD la envía a ella; en el vacío abre una ventana nueva.
+    fn tear_out_active_tab(&mut self, screen: (i32, i32)) {
+        let movable = match self.movable_tab() {
+            Ok(movable) => movable,
+            Err(message) => {
+                self.set_notice(message);
+                return;
+            }
+        };
+        let target = self.windows.clone().and_then(|registry| {
+            registry
+                .others(std::time::SystemTime::now())
+                .into_iter()
+                .find(|info| {
+                    info.rect.is_some_and(|(x, y, width, height)| {
+                        screen.0 >= x
+                            && screen.0 < x + width as i32
+                            && screen.1 >= y
+                            && screen.1 < y + height as i32
+                    })
+                })
+                .map(|info| (registry, info.pid))
+        });
+        match target {
+            Some((registry, pid)) => self.send_tab_to(&registry, pid, movable),
+            None => self.move_tab_to_new_window(),
+        }
+    }
+
     fn finish_mosaic_drag(&mut self) {
         let Some(drag) = self.mosaic_drag.take() else {
             return;
@@ -13336,6 +13444,9 @@ impl App {
             return;
         };
         let request = recovery.next_write_request();
+        // El gancho de pánico ve siempre lo último escrito, aunque la copia
+        // espere su plazo.
+        recovery.publish_live(self.document.source.snapshot());
         self.document.queue_recovery(request, Instant::now());
     }
 
@@ -14264,22 +14375,44 @@ impl App {
         self.open_document_path(path);
     }
 
-    /// La ruta de la pestaña activa si se puede mover a otra ventana: un archivo
-    /// guardado, sin cambios y sin operaciones en curso. Lo sin guardar necesita
-    /// el traspaso por copia de recuperación (13.7); mientras tanto se pide
-    /// guardar antes.
-    fn movable_tab_path(&self) -> Result<PathBuf, &'static str> {
+    /// Qué se puede mover de la pestaña activa: un archivo guardado y sin cambios
+    /// viaja como ruta; lo demás (sin guardar o con cambios) viaja como traspaso,
+    /// con el mismo formato que una copia de recuperación.
+    fn movable_tab(&self) -> Result<MovableTab, &'static str> {
         let document = &self.document;
-        if document.source_identity.is_none() || document.is_untitled() {
-            return Err("Guardá el documento para moverlo a otra ventana");
-        }
-        if document.is_dirty() {
-            return Err("Guardá los cambios para mover la pestaña a otra ventana");
-        }
         if self.document_busy(document.id) {
             return Err("Esperá a que termine la operación de esta pestaña");
         }
-        std::path::absolute(&document.path).map_err(|_| "No se pudo resolver la ruta del documento")
+        if document.is_untitled() && document.source.is_empty() {
+            return Err("Esta pestaña está vacía: no hay nada que mover");
+        }
+        if document.source_identity.is_some() && !document.is_untitled() && !document.is_dirty() {
+            return std::path::absolute(&document.path)
+                .map(MovableTab::Saved)
+                .map_err(|_| "No se pudo resolver la ruta del documento");
+        }
+        Ok(MovableTab::Unsaved)
+    }
+
+    /// Escribe el traspaso de la pestaña activa y lo anota como pendiente hasta
+    /// que la otra ventana confirme que ya lo abrió.
+    fn write_tab_handoff(&mut self) -> Option<String> {
+        let meta = self.document.recovery_meta();
+        let text = self.document.source.to_string();
+        match recovery::write_handoff(&meta, &text) {
+            Ok(name) => {
+                self.pending_handoffs.insert(
+                    name.clone(),
+                    (self.document.id, self.document.source_editor.revision()),
+                );
+                Some(name)
+            }
+            Err(error) => {
+                self.log.push(format!("[ventanas] traspaso: {error}"));
+                self.set_notice("No se pudo preparar el traspaso de la pestaña");
+                None
+            }
+        }
     }
 
     /// La pestaña ya está en la otra ventana: aquí se cierra, y si era la
@@ -14292,32 +14425,113 @@ impl App {
         }
     }
 
+    /// La otra ventana confirmó un traspaso: la pestaña de origen se cierra sin
+    /// preguntar, salvo que haya cambiado mientras tanto.
+    fn finish_handoff(&mut self, name: &str) {
+        let Some((document_id, revision)) = self.pending_handoffs.remove(name) else {
+            return;
+        };
+        let Some(document) = document_by_id(&self.document, &self.inactive_documents, document_id)
+        else {
+            return;
+        };
+        if document.source_editor.revision() != revision {
+            self.set_notice("La pestaña cambió mientras se movía: sigue abierta aquí");
+            return;
+        }
+        self.activate_document_tab(document_id);
+        self.finish_moving_tab();
+    }
+
+    /// Recibe una pestaña de otra ventana: lee el traspaso, la abre y avisa al
+    /// origen para que la cierre.
+    fn adopt_handoff(&mut self, name: &str, from: u32) {
+        let (meta, text) = match recovery::read_handoff(name, DEFAULT_DOCUMENT_LIMIT_BYTES) {
+            Ok(handoff) => handoff,
+            Err(reason) => {
+                self.set_notice(&format!("No se pudo recibir la pestaña: {reason}"));
+                return;
+            }
+        };
+        let replaced = self.pristine_active_tab();
+        let outcome = match self.open_recovered(&meta, text) {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                self.set_notice(&format!("No se pudo mostrar la pestaña recibida: {error}"));
+                return;
+            }
+        };
+        if let Some((old_id, old_index)) = replaced {
+            self.discard_pristine_tab(old_id, old_index);
+        }
+        self.schedule_recovery();
+        recovery::discard_handoff(name);
+        if let Some(registry) = &self.windows {
+            let _ = registry.send(
+                from,
+                &ventanas::Message::Adopted {
+                    name: name.to_string(),
+                },
+            );
+        }
+        self.set_notice(&match outcome {
+            RestoreOutcome::Bound => "Pestaña recibida: sigue ligada a su archivo".to_string(),
+            _ => "Pestaña recibida de otra ventana, sin guardar".to_string(),
+        });
+    }
+
+    /// El número con el que esta ventana figura en el registro.
+    fn own_window_pid(&self) -> u32 {
+        self.windows
+            .as_ref()
+            .map_or_else(std::process::id, ventanas::Registry::pid)
+    }
+
     fn move_tab_to_new_window(&mut self) {
-        let path = match self.movable_tab_path() {
-            Ok(path) => path,
+        let movable = match self.movable_tab() {
+            Ok(movable) => movable,
             Err(message) => {
                 self.set_notice(message);
                 return;
             }
         };
+        let handoff = match &movable {
+            MovableTab::Saved(_) => None,
+            MovableTab::Unsaved => match self.write_tab_handoff() {
+                Some(name) => Some(name),
+                None => return,
+            },
+        };
         let spawned = std::env::current_exe().and_then(|exe| {
-            std::process::Command::new(exe)
-                .arg("--ventana-nueva")
-                .arg(&path)
-                .spawn()
+            let mut command = std::process::Command::new(exe);
+            match (&movable, &handoff) {
+                (MovableTab::Saved(path), _) => command.arg("--ventana-nueva").arg(path),
+                (MovableTab::Unsaved, Some(name)) => {
+                    command.arg(format!("--traspaso={name},{}", self.own_window_pid()))
+                }
+                (MovableTab::Unsaved, None) => &mut command,
+            };
+            command.spawn()
         });
-        match spawned {
-            Ok(_) => self.finish_moving_tab(),
-            Err(error) => {
+        match (spawned, movable) {
+            (Ok(_), MovableTab::Saved(_)) => self.finish_moving_tab(),
+            (Ok(_), MovableTab::Unsaved) => {
+                // Se cierra cuando la ventana nueva confirme que la abrió.
+            }
+            (Err(error), _) => {
                 self.log.push(format!("[ventanas] {error}"));
+                if let Some(name) = handoff {
+                    self.pending_handoffs.remove(&name);
+                    recovery::discard_handoff(&name);
+                }
                 self.set_notice("No se pudo abrir una ventana nueva");
             }
         }
     }
 
     fn move_tab_to_other_window(&mut self) {
-        let path = match self.movable_tab_path() {
-            Ok(path) => path,
+        let movable = match self.movable_tab() {
+            Ok(movable) => movable,
             Err(message) => {
                 self.set_notice(message);
                 return;
@@ -14335,11 +14549,36 @@ impl App {
             self.set_notice("No hay otra ventana abierta: usá «Mover pestaña a una ventana nueva»");
             return;
         };
-        match registry.send(target.pid, &ventanas::Message::Open(vec![path])) {
-            Ok(()) => self.finish_moving_tab(),
-            Err(error) => {
-                self.log.push(format!("[ventanas] {error}"));
-                self.set_notice("No se pudo enviar la pestaña a la otra ventana");
+        self.send_tab_to(&registry, target.pid, movable);
+    }
+
+    /// Envía la pestaña activa a la ventana `target`.
+    fn send_tab_to(&mut self, registry: &ventanas::Registry, target: u32, movable: MovableTab) {
+        match movable {
+            MovableTab::Saved(path) => {
+                match registry.send(target, &ventanas::Message::Open(vec![path])) {
+                    Ok(()) => self.finish_moving_tab(),
+                    Err(error) => {
+                        self.log.push(format!("[ventanas] {error}"));
+                        self.set_notice("No se pudo enviar la pestaña a la otra ventana");
+                    }
+                }
+            }
+            MovableTab::Unsaved => {
+                let Some(name) = self.write_tab_handoff() else {
+                    return;
+                };
+                let message = ventanas::Message::Adopt {
+                    name: name.clone(),
+                    from: registry.pid(),
+                };
+                if let Err(error) = registry.send(target, &message) {
+                    self.log.push(format!("[ventanas] {error}"));
+                    self.pending_handoffs.remove(&name);
+                    recovery::discard_handoff(&name);
+                    self.set_notice("No se pudo enviar la pestaña a la otra ventana");
+                }
+                // Se cierra cuando la otra ventana confirme que la abrió.
             }
         }
     }
@@ -14421,6 +14660,7 @@ impl App {
     fn service_windows(&mut self, now: Instant) -> Option<Instant> {
         let registry = self.windows.clone()?;
         if now >= self.next_heartbeat {
+            registry.set_rect(self.window_screen_rect());
             if let Err(error) = registry.heartbeat(std::time::SystemTime::now()) {
                 self.log.push(format!("[ventanas] latido: {error}"));
             }
@@ -14450,6 +14690,8 @@ impl App {
                         self.open_document_path(path);
                     }
                 }
+                ventanas::Message::Adopt { name, from } => self.adopt_handoff(&name, from),
+                ventanas::Message::Adopted { name } => self.finish_handoff(&name),
             }
         }
         if let Some(window) = &self.window {
@@ -14606,9 +14848,9 @@ impl App {
     }
 
     /// Qué pasó con el archivo de origen de una copia al restaurarla.
-    fn recovery_origin(&self, orphan: &recovery::Orphan) -> RecoveryOrigin {
-        let origin = orphan.meta.origin_path.as_str();
-        if origin.is_empty() || orphan.meta.base.is_empty() {
+    fn recovery_origin(&self, meta: &recovery::EntryMeta) -> RecoveryOrigin {
+        let origin = meta.origin_path.as_str();
+        if origin.is_empty() || meta.base.is_empty() {
             return RecoveryOrigin::NewDocument;
         }
         let path = std::path::Path::new(origin);
@@ -14621,12 +14863,39 @@ impl App {
             return RecoveryOrigin::AlreadyOpen;
         }
         match open_explicit_primary(path, DEFAULT_DOCUMENT_LIMIT_BYTES) {
-            Ok(opened) if opened.identity.fingerprint() == orphan.meta.base => {
+            Ok(opened) if opened.identity.fingerprint() == meta.base => {
                 RecoveryOrigin::Unchanged(Box::new(opened))
             }
             Ok(_) => RecoveryOrigin::Changed,
             Err(_) => RecoveryOrigin::Missing,
         }
+    }
+
+    /// Abre un texto recuperado o traspasado como pestaña. Si el archivo de
+    /// origen sigue como estaba, la pestaña queda ligada a él; si no, se abre
+    /// aparte y sin guardar. No toca ninguna copia de recuperación.
+    fn open_recovered(
+        &mut self,
+        meta: &recovery::EntryMeta,
+        source: String,
+    ) -> Result<RestoreOutcome, &'static str> {
+        let mut recovered = recovered_document(source)?;
+        let outcome = match self.recovery_origin(meta) {
+            RecoveryOrigin::Unchanged(opened) => {
+                recovered.path = meta.origin_path.clone();
+                recovered.content_kind =
+                    DocumentContentKind::for_path(std::path::Path::new(&meta.origin_path));
+                recovered.source_metadata = opened.metadata;
+                replace_file_baseline(&mut recovered, opened.identity, opened.baseline_bytes);
+                RestoreOutcome::Bound
+            }
+            RecoveryOrigin::NewDocument => RestoreOutcome::Detached(Detached::New),
+            RecoveryOrigin::Changed => RestoreOutcome::Detached(Detached::Changed),
+            RecoveryOrigin::Missing => RestoreOutcome::Detached(Detached::Missing),
+            RecoveryOrigin::AlreadyOpen => RestoreOutcome::Detached(Detached::AlreadyOpen),
+        };
+        self.open_document_in_tab(recovered);
+        Ok(outcome)
     }
 
     /// Restaura una copia como una pestaña. Si el archivo de origen sigue como
@@ -14647,28 +14916,13 @@ impl App {
                 return RestoreOutcome::Failed;
             }
         };
-        let mut recovered = match recovered_document(source) {
-            Ok(recovered) => recovered,
+        let outcome = match self.open_recovered(&orphan.meta, source) {
+            Ok(outcome) => outcome,
             Err(error) => {
                 self.set_notice(&format!("No se pudo mostrar «{name}»: {error}"));
                 return RestoreOutcome::Failed;
             }
         };
-        let outcome = match self.recovery_origin(orphan) {
-            RecoveryOrigin::Unchanged(opened) => {
-                recovered.path = orphan.meta.origin_path.clone();
-                recovered.content_kind =
-                    DocumentContentKind::for_path(std::path::Path::new(&orphan.meta.origin_path));
-                recovered.source_metadata = opened.metadata;
-                replace_file_baseline(&mut recovered, opened.identity, opened.baseline_bytes);
-                RestoreOutcome::Bound
-            }
-            RecoveryOrigin::NewDocument => RestoreOutcome::Detached(Detached::New),
-            RecoveryOrigin::Changed => RestoreOutcome::Detached(Detached::Changed),
-            RecoveryOrigin::Missing => RestoreOutcome::Detached(Detached::Missing),
-            RecoveryOrigin::AlreadyOpen => RestoreOutcome::Detached(Detached::AlreadyOpen),
-        };
-        self.open_document_in_tab(recovered);
         // La copia sigue siendo la misma, ahora de esta pestaña. Si la
         // recuperación está desactivada o la copia es del formato anterior, se
         // descarta: el texto ya está abierto.
@@ -21652,6 +21906,7 @@ fn main() {
         t.elapsed().as_secs_f64() * 1000.0
     ));
 
+    recovery::install_panic_hook();
     let settings = Settings::load();
     // Otra ventana abierta recibe los archivos y esta se va (D-33): el proceso
     // nuevo deja el mensaje y sale. Si no hay ninguna o el envío falla, abre
@@ -21707,6 +21962,13 @@ fn main() {
 
     app.windows = windows;
     app.startup_extra_paths = extra_paths;
+    // `--traspaso=<nombre>,<ventana>`: una pestaña que otra ventana mandó a esta
+    // ventana nueva.
+    app.startup_handoff = args
+        .iter()
+        .find_map(|arg| arg.strip_prefix("--traspaso="))
+        .and_then(|value| value.split_once(','))
+        .and_then(|(name, from)| Some((name.to_string(), from.parse().ok()?)));
     if let Some(worker_path) = opening_path {
         thread::spawn(move || {
             let started = Instant::now();
@@ -23550,7 +23812,7 @@ agregado por otro programa
         app.move_tab_to_other_window();
         assert_eq!(
             app.notice.as_deref(),
-            Some("Guardá el documento para moverlo a otra ventana")
+            Some("Esta pestaña está vacía: no hay nada que mover")
         );
         // Con la guardada activa y otra ventana viva, se envía y se cierra aquí.
         let id = app
@@ -23599,14 +23861,127 @@ agregado por otro programa
         abrir_guardado(&mut app, &archivo);
         // Cambios sin guardar: no se mueve.
         app.edit_source(|editor, source| editor.insert(source, "x"));
-        assert!(app.movable_tab_path().is_err());
+        assert!(matches!(app.movable_tab(), Ok(MovableTab::Unsaved)));
         app.edit_source(|editor, source| editor.undo(source));
         assert!(!app.document.is_dirty());
-        assert!(app.movable_tab_path().is_ok());
+        assert!(matches!(app.movable_tab(), Ok(MovableTab::Saved(_))));
         // Si queda una sola pestaña, la ventana se cierra con ella.
         app.tab_order.retain(|id| *id == app.document.id);
         app.finish_moving_tab();
         assert!(app.exit_requested);
+        let _ = fs::remove_dir_all(raiz);
+    }
+
+    #[test]
+    fn una_pestana_sin_guardar_viaja_a_otra_ventana_y_el_origen_la_cierra_al_confirmar() {
+        let raiz = std::env::temp_dir().join(format!("visor-md-traspaso-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&raiz);
+        fs::create_dir_all(&raiz).unwrap();
+        let mut origen = App::for_tests(NIGHT);
+        origen.windows = Some(ventanas::Registry::at(&raiz, 111));
+        let mut destino = App::for_tests(NIGHT);
+        destino.windows = Some(ventanas::Registry::at(&raiz, 222));
+        destino.service_windows(Instant::now());
+
+        // Un documento nuevo con texto, más otra pestaña para que la ventana siga abierta.
+        origen.perform_action(AppAction::NewDocument);
+        origen.edit_source(|editor, source| {
+            editor.insert(
+                source,
+                "# Borrador
+
+sin guardar",
+            )
+        });
+        let id = origen.document.id;
+        let pestanas = origen.tab_order.len();
+        origen.move_tab_to_other_window();
+        assert_eq!(origen.pending_handoffs.len(), 1, "espera la confirmación");
+        assert_eq!(origen.tab_order.len(), pestanas, "todavía no se cierra");
+
+        // El destino la recibe, la abre sin guardar y avisa.
+        let antes = destino.tab_order.len();
+        destino.read_mailbox();
+        assert!(destino.tab_order.len() > antes || destino.tab_order.len() == antes);
+        assert!(destino.document.source.to_string().contains("sin guardar"));
+        assert!(destino.document.is_untitled() && destino.document.is_unsaved());
+
+        // Con la confirmación, el origen cierra la pestaña.
+        origen.read_mailbox();
+        assert!(origen.pending_handoffs.is_empty());
+        assert_eq!(origen.tab_order.len(), pestanas - 1);
+        assert!(!origen.tab_order.contains(&id));
+        let _ = fs::remove_dir_all(raiz);
+    }
+
+    #[test]
+    fn si_la_pestana_cambia_mientras_se_mueve_el_origen_no_la_cierra() {
+        let raiz = std::env::temp_dir().join(format!("visor-md-traspaso2-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&raiz);
+        fs::create_dir_all(&raiz).unwrap();
+        let mut origen = App::for_tests(NIGHT);
+        origen.windows = Some(ventanas::Registry::at(&raiz, 111));
+        let mut destino = App::for_tests(NIGHT);
+        destino.windows = Some(ventanas::Registry::at(&raiz, 222));
+        destino.service_windows(Instant::now());
+        origen.perform_action(AppAction::NewDocument);
+        origen.edit_source(|editor, source| editor.insert(source, "primero"));
+        origen.move_tab_to_other_window();
+        // Se sigue escribiendo antes de que llegue la confirmación.
+        origen.edit_source(|editor, source| editor.insert(source, " y más"));
+        let pestanas = origen.tab_order.len();
+        destino.read_mailbox();
+        origen.read_mailbox();
+        assert_eq!(origen.tab_order.len(), pestanas, "la pestaña sigue aquí");
+        assert_eq!(
+            origen.notice.as_deref(),
+            Some("La pestaña cambió mientras se movía: sigue abierta aquí")
+        );
+        let _ = fs::remove_dir_all(raiz);
+    }
+
+    #[test]
+    fn soltar_una_pestana_fuera_de_la_ventana_la_manda_a_la_ventana_de_debajo() {
+        let raiz = std::env::temp_dir().join(format!("visor-md-sacar-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&raiz);
+        fs::create_dir_all(&raiz).unwrap();
+        let archivo = raiz.join("fuera.md");
+        fs::write(
+            &archivo, "# Fuera
+",
+        )
+        .unwrap();
+        let mut app = App::for_tests(NIGHT);
+        app.windows = Some(ventanas::Registry::at(&raiz, 111));
+        app.draw_for_test(1100, 720);
+        abrir_guardado(&mut app, &archivo);
+        app.perform_action(AppAction::NewDocument);
+        // Otra ventana ocupa un área de la pantalla a la derecha de esta.
+        let otra = ventanas::Registry::at(&raiz, 222);
+        otra.set_rect(Some((1200, 0, 800, 600)));
+        otra.heartbeat(std::time::SystemTime::now()).unwrap();
+        let id = app
+            .inactive_documents
+            .iter()
+            .find(|tab| tab.document.path == archivo.to_string_lossy())
+            .map(|tab| tab.document.id)
+            .unwrap();
+        // Una pestaña arrastrada a un punto fuera de la ventana, sobre la otra.
+        app.tab_drag_id = Some(id);
+        app.pointer = Some((1500.0, 300.0));
+        // Sin posición de pantalla conocida (sin ventana) no hay a dónde soltar.
+        assert!(!app.tear_out_if_dropped_outside() || app.window.is_some());
+        // El destino se decide por el rectángulo anotado en el latido.
+        app.activate_document_tab(id);
+        let pestanas = app.tab_order.len();
+        app.tear_out_active_tab((1500, 300));
+        assert_eq!(app.tab_order.len(), pestanas - 1);
+        assert_eq!(
+            otra.take(),
+            vec![ventanas::Message::Open(vec![
+                std::path::absolute(&archivo).unwrap()
+            ])]
+        );
         let _ = fs::remove_dir_all(raiz);
     }
 

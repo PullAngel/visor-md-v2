@@ -98,3 +98,18 @@ Estados permitidos:
 
 Una fila pasa a `Verificado` solo si enlaza a un test, comando, artifact o
 registro reproducible. Una afirmación verbal o un binario antiguo no alcanza.
+
+## Recuperación y ventanas (noviembre de 2026)
+
+| Comportamiento | Pruebas |
+| --- | --- |
+| Formato `.vmdr`, suma de verificación y copias dañadas | `recovery::formato::pruebas` |
+| Sesiones, cerrojo, adopción sin carreras, barrido y cuota | `recovery::almacen` y `recovery::tests` |
+| Gancho de pánico: vuelca lo publicado y lo retirado no se escribe | `el_gancho_de_panico_vuelca_lo_publicado_y_lo_retirado_no_se_escribe` |
+| Traspaso de una pestaña: formato, nombre válido, daño | `un_traspaso_se_escribe_se_lee_con_su_suma_y_se_descarta`, `un_nombre_de_traspaso_que_no_es_hexadecimal_nunca_llega_a_una_ruta` |
+| Registro de ventanas, latido caduco y buzón | `ventanas::pruebas` |
+| Abrir desde fuera en la ventana abierta | `un_archivo_enviado_por_otra_ventana_se_abre_aqui_y_el_latido_se_renueva` |
+| Mover pestañas (guardadas y sin guardar) entre ventanas | `mover_una_pestana_guardada_a_otra_ventana_la_envia_y_la_cierra_aqui`, `una_pestana_sin_guardar_viaja_a_otra_ventana_y_el_origen_la_cierra_al_confirmar`, `si_la_pestana_cambia_mientras_se_mueve_el_origen_no_la_cierra` |
+| Soltar una pestaña fuera de la ventana | `soltar_una_pestana_fuera_de_la_ventana_la_manda_a_la_ventana_de_debajo` |
+| Restaurar ligado al original o aparte | `restaurar_con_el_original_sin_cambios_lo_liga_a_su_archivo`, `restaurar_con_el_original_cambiado_o_ausente_abre_la_copia_aparte` |
+| Asociación de archivos (clave de prueba) | `asociacion::pruebas` |

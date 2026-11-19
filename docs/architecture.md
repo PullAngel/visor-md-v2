@@ -19,6 +19,9 @@ La separación empezó de forma incremental y con la suite verde:
   límites y offsets públicos en bytes UTF-8;
 - `src/files.rs`: apertura fiel, identidad, conflictos y guardado atómico;
 - `src/limits.rs`: límites defensivos y causas de degradación;
+- `src/ventanas.rs`: registro de ventanas con latido y buzón por proceso (D-33);
+  `src/asociacion.rs`: «Abrir con» en Windows (D-34); `src/scrollbar.rs`,
+  `src/bienvenida.rs` y `src/lenguaje.rs` (prueba de lenguaje).
 - `src/recovery.rs`: recuperaciones locales versionadas y serializadas;
 - `src/settings.rs`: preferencias locales pequeñas y versionadas;
 - `src/theme.rs`: paletas Papel y tinta y roles de color;

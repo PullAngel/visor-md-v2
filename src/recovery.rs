@@ -53,6 +53,119 @@ fn process() -> Option<&'static Process> {
         .as_ref()
 }
 
+/// Lo último que se sabe de un documento sin guardar, para el gancho de pánico:
+/// el texto (una copia barata de la `Rope`) y la copia de recuperación donde
+/// se escribe. No contiene rutas de destino ni nada que no esté ya en la copia.
+struct Live {
+    session: RecoverySession,
+    text: ropey::Rope,
+}
+
+/// El registro compartido que lee el gancho de pánico (D-42).
+fn live_registry() -> &'static Mutex<HashMap<PathBuf, Live>> {
+    static REGISTRY: OnceLock<Mutex<HashMap<PathBuf, Live>>> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Instala el gancho: ante un pánico vuelca al disco lo que el registro tiene
+/// pendiente y sigue con el gancho anterior. No toca la interfaz ni el estado
+/// de la aplicación, solo el registro.
+pub(crate) fn install_panic_hook() {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        flush_live_for_panic();
+        previous(info);
+    }));
+}
+
+/// Escribe todo lo del registro, sin esperar a nadie: si el cerrojo del
+/// registro o el de una copia está tomado, se sigue sin él. Devuelve cuántas
+/// copias se escribieron.
+pub(crate) fn flush_live_for_panic() -> usize {
+    let Ok(registry) = live_registry().try_lock() else {
+        return 0;
+    };
+    registry
+        .values()
+        .filter(|live| live.session.write_without_waiting(&live.text.to_string()))
+        .count()
+}
+
+/// Una pestaña que pasa de una ventana a otra (D-33, D-40): la ventana de origen
+/// deja una copia con el mismo formato y la misma suma de verificación que una
+/// copia de recuperación en `<raíz>/traspaso/<nombre>.vmdr`; la de destino la
+/// lee, la abre y la borra. El mensaje entre ventanas lleva solo el nombre (32
+/// dígitos hexadecimales): nunca una ruta.
+const HANDOFF_DIR: &str = "traspaso";
+const HANDOFF_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
+
+fn is_handoff_name(name: &str) -> bool {
+    name.len() == 32 && name.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn handoff_path(name: &str) -> Option<PathBuf> {
+    is_handoff_name(name).then_some(())?;
+    Some(
+        recovery_root()?
+            .join(HANDOFF_DIR)
+            .join(format!("{name}.{ENTRY_EXTENSION}")),
+    )
+}
+
+/// Escribe el traspaso de una pestaña y devuelve su nombre.
+pub(crate) fn write_handoff(meta: &EntryMeta, text: &str) -> Result<String, std::io::Error> {
+    let root = ensure_root()?;
+    let dir = root.join(HANDOFF_DIR);
+    fs::create_dir_all(&dir)?;
+    // Lo que quedó de traspasos que nadie recogió caduca al día.
+    if let Ok(entries) = fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let old = entry
+                .metadata()
+                .and_then(|metadata| metadata.modified())
+                .ok()
+                .and_then(|modified| SystemTime::now().duration_since(modified).ok())
+                .is_some_and(|age| age > HANDOFF_RETENTION);
+            if old {
+                let _ = fs::remove_file(entry.path());
+            }
+        }
+    }
+    let name = random_hex();
+    let mut meta = meta.clone();
+    meta.saved_at = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_secs());
+    let bytes = formato::encode(&meta, text);
+    AtomicFile::new(
+        dir.join(format!("{name}.{ENTRY_EXTENSION}")),
+        AllowOverwrite,
+    )
+    .write(|file| {
+        file.write_all(&bytes)?;
+        file.sync_all()
+    })
+    .map_err(std::io::Error::from)?;
+    Ok(name)
+}
+
+/// Lee un traspaso verificando su integridad.
+pub(crate) fn read_handoff(name: &str, limit: u64) -> Result<(EntryMeta, String), &'static str> {
+    let path = handoff_path(name).ok_or("el traspaso no es válido")?;
+    let metadata = fs::symlink_metadata(&path).map_err(|_| "el traspaso ya no está")?;
+    if !metadata.is_file() {
+        return Err("el traspaso no es un archivo normal");
+    }
+    let bytes = fs::read(&path).map_err(|_| "no se pudo leer el traspaso")?;
+    formato::decode(&bytes, limit).map_err(|_| "el traspaso está dañado")
+}
+
+pub(crate) fn discard_handoff(name: &str) {
+    if let Some(path) = handoff_path(name) {
+        let _ = fs::remove_file(path);
+    }
+}
+
 /// Una copia como la escribe el almacén, para pruebas de la interfaz.
 #[cfg(test)]
 pub(crate) fn encode_for_tests(meta: &EntryMeta, body: &str) -> Vec<u8> {
@@ -140,6 +253,34 @@ impl RecoverySession {
             failed: Arc::new(AtomicBool::new(false)),
             meta: Arc::new(Mutex::new(EntryMeta::default())),
         }
+    }
+
+    /// Deja la última versión del documento en el registro del gancho de
+    /// pánico. Es una referencia al texto, no una copia del contenido.
+    pub(crate) fn publish_live(&self, text: ropey::Rope) {
+        if let Ok(mut registry) = live_registry().lock() {
+            registry.insert(
+                self.path.clone(),
+                Live {
+                    session: self.clone(),
+                    text,
+                },
+            );
+        }
+    }
+
+    fn unpublish_live(&self) {
+        if let Ok(mut registry) = live_registry().lock() {
+            registry.remove(&self.path);
+        }
+    }
+
+    /// Escritura del gancho de pánico: nunca espera un cerrojo.
+    fn write_without_waiting(&self, source: &str) -> bool {
+        let Ok(_guard) = self.write_lock.try_lock() else {
+            return false;
+        };
+        self.write_unlocked(source).is_ok()
     }
 
     /// Actualiza lo que viaja en la cabecera (título, origen, huella). Se
@@ -230,6 +371,7 @@ impl RecoverySession {
     }
 
     pub(crate) fn clear(&self) -> Result<(), std::io::Error> {
+        self.unpublish_live();
         self.latest_request.fetch_add(1, Ordering::AcqRel);
         let _guard = self.lock_writes()?;
         self.last_hash.store(0, Ordering::Release);
@@ -412,6 +554,74 @@ mod tests {
         formato::decode(&fs::read(path).unwrap(), 1 << 20)
             .expect("la copia es válida")
             .1
+    }
+
+    #[test]
+    fn un_traspaso_se_escribe_se_lee_con_su_suma_y_se_descarta() {
+        let meta = EntryMeta {
+            title: "En tránsito".into(),
+            origin_path: "C:/notas/x.md".into(),
+            ..EntryMeta::default()
+        };
+        let nombre = write_handoff(&meta, "texto sin guardar").unwrap();
+        assert_eq!(nombre.len(), 32);
+        let (leida, texto) = read_handoff(&nombre, 1 << 20).unwrap();
+        assert_eq!(texto, "texto sin guardar");
+        assert_eq!(leida.title, "En tránsito");
+        // Dañado: no se abre.
+        let ruta = handoff_path(&nombre).unwrap();
+        let mut bytes = fs::read(&ruta).unwrap();
+        let ultimo = bytes.len() - 1;
+        bytes[ultimo] ^= 1;
+        fs::write(&ruta, bytes).unwrap();
+        assert_eq!(
+            read_handoff(&nombre, 1 << 20).unwrap_err(),
+            "el traspaso está dañado"
+        );
+        discard_handoff(&nombre);
+        assert_eq!(
+            read_handoff(&nombre, 1 << 20).unwrap_err(),
+            "el traspaso ya no está"
+        );
+    }
+
+    #[test]
+    fn un_nombre_de_traspaso_que_no_es_hexadecimal_nunca_llega_a_una_ruta() {
+        for malo in [
+            "",
+            "../../secreto",
+            "a/b",
+            "g".repeat(32).as_str(),
+            &"a".repeat(31),
+            &"a".repeat(33),
+        ] {
+            assert!(handoff_path(malo).is_none(), "{malo}");
+            assert!(read_handoff(malo, 100).is_err());
+        }
+    }
+
+    #[test]
+    fn el_gancho_de_panico_vuelca_lo_publicado_y_lo_retirado_no_se_escribe() {
+        let dir = temporal();
+        let publicada = RecoverySession::at(dir.join("publicada.vmdr"));
+        let retirada = RecoverySession::at(dir.join("retirada.vmdr"));
+        publicada.set_meta(EntryMeta {
+            title: "En pantalla".into(),
+            ..EntryMeta::default()
+        });
+        publicada.publish_live(ropey::Rope::from_str("lo último que escribí"));
+        retirada.publish_live(ropey::Rope::from_str("esto ya se guardó"));
+        // Guardar o cerrar la pestaña borra su copia y la saca del registro.
+        retirada.clear().unwrap();
+        assert!(!dir.join("publicada.vmdr").exists());
+        flush_live_for_panic();
+        assert_eq!(
+            texto_de(&dir.join("publicada.vmdr")),
+            "lo último que escribí"
+        );
+        assert!(!dir.join("retirada.vmdr").exists());
+        publicada.clear().unwrap();
+        assert_eq!(flush_live_for_panic(), 0, "sin registro no hay escritura");
     }
 
     #[test]

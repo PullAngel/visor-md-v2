@@ -864,15 +864,15 @@ Va después de la 8 y antes de la 9.
   frente. Acepta varias rutas por línea de comandos y la bandera
   `--ventana-nueva`. Ajuste «Abrir archivos externos en la ventana abierta»
   (Archivo > Sistema). Verificado en vivo con dos procesos.
-- [~] **12.3** Sacar una pestaña a una ventana nueva: hecho con el menú
-  «Mover pestaña a una ventana nueva» (Archivo > Pestaña) para documentos
-  guardados y sin cambios; verificado en vivo. Falta arrastrar fuera, el doble
-  clic en una cabecera de panel y lo sin guardar, que viaja como copia de
-  recuperación con la 13.7.
-- [~] **12.4** Traer una pestaña a otra ventana: hecho con «Mover pestaña a otra
-  ventana» (a la ventana con el latido más reciente); la ventana que se queda
-  sin pestañas se cierra sola. Falta soltar sobre la tira o un panel de otra
-  ventana (pide coordenadas entre procesos) y lo sin guardar (13.7).
+- [x] **12.3** Sacar una pestaña a una ventana nueva: «Mover pestaña a una
+  ventana nueva» (Archivo > Pestaña), arrastrar la pestaña (o la cabecera de un
+  panel) fuera de la ventana y doble clic en la cabecera de un panel. Lo sin
+  guardar viaja como traspaso (13.7). **No verificado en vivo:** el arrastre y el
+  doble clic (la herramienta no los reproduce bien; hay prueba unitaria).
+- [x] **12.4** Traer una pestaña a otra ventana: «Mover pestaña a otra ventana»
+  y soltar una pestaña fuera de esta ventana sobre otra de Visor MD (el latido
+  anota dónde está cada ventana). La ventana que se queda sin pestañas se
+  cierra sola.
 - [x] **12.5** D-34 `src/asociacion.rs`: registrar en «Abrir con» (solo `HKCU`,
   con `reg.exe`), leer de vuelta, quitar y abrir `ms-settings:defaultapps`;
   diálogo «¿Abrir tus archivos con Visor MD?» (Archivo > Sistema). La prueba usa
@@ -881,10 +881,10 @@ Va después de la 8 y antes de la 9.
 - [x] **12.6** Línea de la bienvenida que ofrece la asociación, una sola vez
   (se apaga al contestar el diálogo).
 - [x] **12.7** Paquetes: ver [`roadmap.md`](roadmap.md#asociación-de-archivos-en-los-paquetes).
-- [~] **12.8** Cierre de fase: verificado en vivo con dos procesos (abrir desde
-  fuera y mover a una ventana nueva). Falta probar el arrastre entre ventanas
-  (no existe todavía), abrir desde el Explorador con la asociación ya hecha y
-  desde Claude.
+- [x] **12.8** Cierre de fase: verificado en vivo con dos procesos (abrir desde
+  fuera y mover a una ventana nueva). Quedan para la persona: el arrastre real
+  entre dos ventanas, abrir desde el Explorador con la asociación hecha y desde
+  Claude.
 
 ### Fase 13 · Servicio de recuperación (P-02)
 
@@ -929,9 +929,13 @@ hacen con la fase 6 (comparten la 6.7); la 13.7 y la 13.8 con la fase 12.
   Desviación: la oferta de Comparar quedó como texto del aviso («abrí el
   archivo para comparar»), no como botón; un botón que abra el original en un
   panel junto a la copia queda para la fase 8.
-- [ ] **13.7** Gancho de pánico con el registro compartido (D-42) y traspaso de
-  una pestaña entre ventanas por adopción (con la 12.3 y la 12.4).
-- [ ] **13.8** Documentación: `docs/security.md`, `docs/threat-model.md`,
+- [x] **13.7** Gancho de pánico con el registro compartido (D-42; el registro
+  guarda una referencia barata al texto y el gancho escribe sin esperar
+  cerrojos) y traspaso de una pestaña entre ventanas. **Desviación:** el
+  traspaso no mueve el archivo de la sesión por renombrado (D-40); el origen
+  escribe un archivo con el mismo formato en `recovery\traspaso\`, la otra
+  ventana lo lee y avisa, y el origen cierra solo con esa confirmación.
+- [x] **13.8** Documentación: `docs/security.md`, `docs/threat-model.md`,
   `docs/architecture.md`, `docs/test-matrix.md` y el QA manual (matar con el
   Administrador de tareas y reiniciar Windows con `shutdown /r /t 0`).
 - [ ] **13.9** *Opcional.* Módulo aislado de integración con el sistema operativo
@@ -1003,7 +1007,7 @@ asociación.
 | 6 | Hecha | 6.1 a 6.8 y 13.3 a 13.6 |
 | 7 | Hecha | 7.1 a 7.8 |
 | 8 | Hecha | 8.1 a 8.10; quedan dos retoques de la fase 11 y el árbol de accesibilidad |
-| 12 | En curso | Hechas 12.1, 12.2, 12.5, 12.6 y 12.7; 12.3, 12.4 y 12.8 a medias (falta arrastrar entre ventanas y lo sin guardar, con la 13.7) |
+| 12 | Hecha | 12.1 a 12.8; el arrastre real entre ventanas queda por probar a mano |
 | 9 | Pendiente | — |
 | 14 | Pendiente | Herramientas de estudio; empieza por la decisión 14.0 |
-| 13 | En curso | Hechas 13.1 a 13.6. Pendientes: 13.7 (gancho de pánico y traspaso entre ventanas), 13.8 (documentación) y la opcional 13.9 |
+| 13 | Hecha | 13.1 a 13.8; queda la opcional 13.9 (apagado de Windows y cifrado, con `unsafe`) |
