@@ -774,6 +774,28 @@ iba a ampliar, y el texto de la fase 7 se escribe ya sobre ellos.
   de la herramienta, no de la app: `type` no escribe «#» y Ctrl+N no llega.
   Capturas en `C:\Dev\archivo\eval-10-10\qa\capturas\`.
 
+### Fase 14 · Herramientas de estudio (pedido del 19 de noviembre)
+
+Surgió de usar el programa para estudiar. Va después de la fase 9, antes del
+instalador. Las tareas 14.1 a 14.3 comparten una decisión de almacenamiento que
+**se toma una sola vez, con todas a la vista** (decisión de la persona): dónde
+viven los datos extra (subrayados, marcas de libro) para que viajen, o no, con
+el archivo. Hasta entonces no se escribe código de estas tareas.
+
+- [ ] **14.0** Decidir el almacenamiento común. Opciones: marcas dentro del
+  `.md` (`==texto==`, `<mark>`), o un archivo lateral por documento (el `.md`
+  queda intacto, pero no viaja si se mueve), o ambas con exportación.
+- [ ] **14.1** Subrayar con colores, a elección, partes del texto en modo
+  lectura.
+- [ ] **14.2** Marcas de libro: barras de color (o señaladores, con forma a
+  elegir) en distintos puntos, con texto opcional. Aparecen como barra de color
+  junto al párrafo y, además, como extra en el índice del documento. A futuro:
+  anclar imágenes.
+- [ ] **14.3** (a futuro) Enviar el texto seleccionado a una IA o al buscador
+  de Google con un gesto fácil. Ya existe «Preparar fragmentos para IA»; falta
+  el envío y decidir qué se manda a un servicio externo (la privacidad de lo
+  que se estudia es una decisión de la persona).
+
 ### Pedidos sueltos del propietario
 
 - [x] **P-01** (15 de noviembre) Un documento nuevo se llama como su primer
@@ -972,4 +994,5 @@ asociación.
 | 8 | Hecha | 8.1 a 8.10; quedan dos retoques de la fase 11 y el árbol de accesibilidad |
 | 12 | Pendiente | Ventanas (un proceso por ventana) y asociación de archivos |
 | 9 | Pendiente | — |
+| 14 | Pendiente | Herramientas de estudio; empieza por la decisión 14.0 |
 | 13 | En curso | Hechas 13.1 a 13.6. Pendientes: 13.7 (gancho de pánico y traspaso entre ventanas), 13.8 (documentación) y la opcional 13.9 |

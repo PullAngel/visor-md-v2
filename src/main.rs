@@ -6380,9 +6380,13 @@ fn estimate_height(block: &Block, width: f32, scale: f32) -> f32 {
     // a proposito: el error se corrige al maquetar de verdad el bloque.
     let char_w = size * scale * if mono { 0.60 } else { 0.50 };
     let per_line = (advance / char_w).max(1.0);
-    let lines = (block.text.chars().count() as f32 / per_line)
-        .ceil()
-        .max(1.0);
+    // Un salto forzado (barra invertida o dos espacios al final de la línea)
+    // deja un salto de línea en el texto: cada tramo ocupa al menos una línea.
+    let lines: f32 = block
+        .text
+        .split('\n')
+        .map(|segment| (segment.chars().count() as f32 / per_line).ceil().max(1.0))
+        .sum();
     lines * size * scale * block.kind.line_height()
 }
 
@@ -23077,6 +23081,40 @@ agregado por otro programa
         if app.write_text_to_clipboard("x".into(), CODE_COPIED_KIND) {
             assert!(app.notice.is_none());
         }
+    }
+
+    #[test]
+    fn un_salto_forzado_antes_de_una_lista_no_la_encima() {
+        let mut font_cx = FontContext::new();
+        register_embedded_fonts(&mut font_cx);
+        let mut layout_cx = LayoutContext::new();
+        // El «\» al final de una línea es un salto forzado: el párrafo mide dos
+        // líneas aunque su texto sea corto. La estimación (sin maquetar) debe
+        // contarlas, o la lista que sigue se dibuja encima.
+        let fuente = "# Titulo\n\\\nFaltan las herramientas:\\\n1. Poder subrayar\n";
+        let blocks = parse_blocks(fuente).expect("válido").blocks;
+        let parrafo = blocks
+            .iter()
+            .position(|b| matches!(b.kind, Kind::Para) && b.text.contains('\n'))
+            .expect("hay un párrafo con salto forzado");
+        let (estimado, _, _) = measure_all(
+            &blocks,
+            &mut font_cx,
+            &mut layout_cx,
+            800.0,
+            1.0,
+            false,
+            &[],
+        );
+        let (exacto, _, _) =
+            measure_all(&blocks, &mut font_cx, &mut layout_cx, 800.0, 1.0, true, &[]);
+        assert!(
+            (estimado[parrafo].height - exacto[parrafo].height).abs() < 1.0,
+            "estimado {} frente a real {}",
+            estimado[parrafo].height,
+            exacto[parrafo].height
+        );
+        assert!(estimado[parrafo + 1].y >= estimado[parrafo].y + exacto[parrafo].height - 1.0);
     }
 
     #[test]
