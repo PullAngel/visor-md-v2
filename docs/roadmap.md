@@ -524,3 +524,15 @@ Solo se evalúan con evidencia de uso:
 Ver [`future.md`](future.md), incluida la investigación no prioritaria de un
 teclado virtual y una sesión de seguridad pragmática. Ninguna es requisito ni
 gate de v2.0; primero se evalúa su utilidad antes de decidir su incorporación.
+
+## Asociación de archivos en los paquetes
+
+- **Windows, desde la aplicación:** Archivo > Sistema > «Abrir archivos con Visor
+  MD…» registra el programa en «Abrir con» (solo `HKCU`) y abre la pantalla de
+  aplicaciones predeterminadas. Windows exige que la persona confirme el
+  predeterminado; ningún programa puede fijarlo solo.
+- **Instalador de Windows:** reutiliza el mismo registro (`src/asociacion.rs`),
+  ejecutado al instalar, y lo quita al desinstalar.
+- **Linux:** el paquete instala un `.desktop` con `MimeType=text/markdown;
+  text/plain;` y `Exec=visor-md %F` (varias rutas), y lo deja como lector con
+  `xdg-mime default visor-md.desktop text/markdown`.

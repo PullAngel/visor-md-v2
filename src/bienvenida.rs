@@ -21,6 +21,10 @@ const TITLE_HEIGHT: f32 = 34.0;
 const TITLE_GAP: f32 = 22.0;
 const HINTS_GAP: f32 = 24.0;
 const HINTS_HEIGHT: f32 = 44.0;
+const LINK_GAP: f32 = 8.0;
+const LINK_HEIGHT: f32 = 24.0;
+/// La línea que ofrece abrir los archivos de texto con Visor MD (D-27, D-34).
+pub(crate) const FILE_TYPES_LINK: &str = "Abrir tus archivos .md con Visor MD · Configurar";
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct WelcomeGeometry {
@@ -29,6 +33,8 @@ pub(crate) struct WelcomeGeometry {
     pub(crate) buttons: [DialogRect; 3],
     pub(crate) hints_x: f32,
     pub(crate) hints_y: f32,
+    /// La línea de la asociación de archivos, debajo de las dos de los modos.
+    pub(crate) link: DialogRect,
     /// Ancho disponible para el título y las dos líneas.
     pub(crate) width: f32,
 }
@@ -43,7 +49,9 @@ pub(crate) fn geometry(x: f32, y: f32, width: f32, height: f32) -> WelcomeGeomet
         + BUTTON_HEIGHT * 3.0
         + BUTTON_GAP * 2.0
         + HINTS_GAP
-        + HINTS_HEIGHT;
+        + HINTS_HEIGHT
+        + LINK_GAP
+        + LINK_HEIGHT;
     let top = (y + ((height - total) * 0.5 - 10.0).max(8.0)).round();
     let buttons_top = top + TITLE_HEIGHT + TITLE_GAP;
     let button = |index: usize| DialogRect {
@@ -52,19 +60,38 @@ pub(crate) fn geometry(x: f32, y: f32, width: f32, height: f32) -> WelcomeGeomet
         width: block_width,
         height: BUTTON_HEIGHT,
     };
+    let hints_y = |buttons_top: f32| {
+        (buttons_top + BUTTON_HEIGHT * 3.0 + BUTTON_GAP * 2.0 + HINTS_GAP).round()
+    };
     WelcomeGeometry {
         title_x: left,
         title_y: top,
         buttons: [button(0), button(1), button(2)],
         hints_x: left,
-        hints_y: (buttons_top + BUTTON_HEIGHT * 3.0 + BUTTON_GAP * 2.0 + HINTS_GAP).round(),
+        hints_y: hints_y(buttons_top),
+        link: DialogRect {
+            x: left,
+            y: (hints_y(buttons_top) + HINTS_HEIGHT + LINK_GAP).round(),
+            width: block_width,
+            height: LINK_HEIGHT,
+        },
         width: block_width,
     }
 }
 
-/// Qué botón hay bajo el punto.
-pub(crate) fn button_at(geometry: &WelcomeGeometry, x: f32, y: f32) -> Option<usize> {
-    geometry.buttons.iter().position(|rect| rect.contains(x, y))
+/// Qué botón hay bajo el punto: 0 a 2 son los grandes y 3 la línea de la
+/// asociación, que solo cuenta si `with_link`.
+pub(crate) fn button_at(
+    geometry: &WelcomeGeometry,
+    x: f32,
+    y: f32,
+    with_link: bool,
+) -> Option<usize> {
+    geometry
+        .buttons
+        .iter()
+        .position(|rect| rect.contains(x, y))
+        .or_else(|| (with_link && geometry.link.contains(x, y)).then_some(3))
 }
 
 #[cfg(test)]
@@ -83,6 +110,10 @@ mod pruebas {
                 );
             }
             assert!(
+                g.link.y + g.link.height <= 110.0 + alto,
+                "la línea de la asociación cabe a {ancho}"
+            );
+            assert!(
                 g.hints_y + HINTS_HEIGHT <= 110.0 + alto,
                 "las líneas caben a {ancho}"
             );
@@ -98,12 +129,12 @@ mod pruebas {
         let g = geometry(0.0, 110.0, 1100.0, 584.0);
         for (indice, rect) in g.buttons.iter().enumerate() {
             let centro = (rect.x + rect.width * 0.5, rect.y + rect.height * 0.5);
-            assert_eq!(button_at(&g, centro.0, centro.1), Some(indice));
+            assert_eq!(button_at(&g, centro.0, centro.1, true), Some(indice));
         }
-        assert_eq!(button_at(&g, 2.0, 2.0), None);
+        assert_eq!(button_at(&g, 2.0, 2.0, true), None);
         // El hueco entre botones no activa ninguno.
         let hueco = g.buttons[0].y + BUTTON_HEIGHT + BUTTON_GAP * 0.5;
-        assert_eq!(button_at(&g, g.buttons[0].x + 10.0, hueco), None);
+        assert_eq!(button_at(&g, g.buttons[0].x + 10.0, hueco, true), None);
     }
 
     #[test]

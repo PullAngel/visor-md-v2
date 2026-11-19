@@ -28,6 +28,9 @@ pub(crate) enum DialogChoice {
     KeepRecoveryEntry,
     UseDocumentFolder,
     SkipUseFolder,
+    RegisterFileTypes,
+    RemoveFileTypes,
+    CancelFileTypes,
 }
 
 /// Peso visual de un botón. El primario es la acción recomendada; el
@@ -84,6 +87,29 @@ impl Dialog {
             focused,
             safe_choice,
         }
+    }
+
+    /// Ofrece agregar Visor MD a «Abrir con». Windows no deja que un programa se
+    /// declare el predeterminado: tras registrar se abre Configuración.
+    pub(crate) fn file_types() -> Self {
+        Self::new(
+            "¿Abrir tus archivos con Visor MD?",
+            "Se agrega Visor MD a «Abrir con» para Markdown (.md .markdown .mdown .mkdn), texto (.txt) y otros formatos de texto (.json .yaml .yml .toml .csv). Después se abre Configuración: ahí elegís Visor MD como predeterminado.",
+            vec![
+                button("Quitar", DialogChoice::RemoveFileTypes, ButtonTone::Neutral),
+                button(
+                    "Cancelar",
+                    DialogChoice::CancelFileTypes,
+                    ButtonTone::Neutral,
+                ),
+                button(
+                    "Registrar",
+                    DialogChoice::RegisterFileTypes,
+                    ButtonTone::Primary,
+                ),
+            ],
+            DialogChoice::CancelFileTypes,
+        )
     }
 
     pub(crate) fn recovery_privacy() -> Self {

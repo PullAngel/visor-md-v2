@@ -13,6 +13,7 @@
 // existe y cuando exista se aisla en su propio modulo y se revisa a mano.
 #![forbid(unsafe_code)]
 
+mod asociacion;
 mod bienvenida;
 mod dialog;
 pub mod editor;
@@ -39,6 +40,7 @@ use menu::MenuEntry;
 use panel_list::{floating_capacity, floating_rows, list_nav_for_key};
 use surface::toolbar_button_active;
 use ui_target::UiTarget;
+mod ventanas;
 mod vfs;
 #[cfg(test)]
 mod visual_tests;
@@ -376,7 +378,7 @@ fn grouped_entries(groups: &[MenuGroup]) -> Vec<MenuEntry> {
 /// botón ni un menú propio. Una prueba exige que esta lista sea exacta.
 #[cfg(test)]
 const PALETTE_ONLY: [AppAction; 0] = [];
-const FILE_ACTIONS: [AppAction; 7] = [
+const FILE_ACTIONS: [AppAction; 11] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -384,8 +386,12 @@ const FILE_ACTIONS: [AppAction; 7] = [
     AppAction::ExportPdf,
     AppAction::ChooseWorkspace,
     AppAction::CloseDocument,
+    AppAction::MoveTabToNewWindow,
+    AppAction::MoveTabToOtherWindow,
+    AppAction::AssociateFiles,
+    AppAction::ToggleOpenExternalInExisting,
 ];
-const FILE_GROUPS: [MenuGroup; 3] = [
+const FILE_GROUPS: [MenuGroup; 4] = [
     (
         "Documento",
         &[
@@ -397,7 +403,21 @@ const FILE_GROUPS: [MenuGroup; 3] = [
         ],
     ),
     ("Carpeta de apuntes", &[AppAction::ChooseWorkspace]),
-    ("Pestaña", &[AppAction::CloseDocument]),
+    (
+        "Pestaña",
+        &[
+            AppAction::CloseDocument,
+            AppAction::MoveTabToNewWindow,
+            AppAction::MoveTabToOtherWindow,
+        ],
+    ),
+    (
+        "Sistema",
+        &[
+            AppAction::AssociateFiles,
+            AppAction::ToggleOpenExternalInExisting,
+        ],
+    ),
 ];
 const EDIT_ACTIONS: [AppAction; 8] = [
     AppAction::Undo,
@@ -1985,6 +2005,10 @@ enum AppAction {
     SplitDocumentBelow,
     ToggleTheme,
     ToggleReduceMotion,
+    AssociateFiles,
+    ToggleOpenExternalInExisting,
+    MoveTabToNewWindow,
+    MoveTabToOtherWindow,
     TogglePinOnTop,
     InsertSymbol,
     ToggleFloatingOutline,
@@ -2051,7 +2075,7 @@ enum AppAction {
     Paste,
 }
 
-const APP_ACTIONS: [AppAction; 70] = [
+const APP_ACTIONS: [AppAction; 74] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -2059,6 +2083,10 @@ const APP_ACTIONS: [AppAction; 70] = [
     AppAction::SearchDocument,
     AppAction::ToggleTheme,
     AppAction::ToggleReduceMotion,
+    AppAction::AssociateFiles,
+    AppAction::ToggleOpenExternalInExisting,
+    AppAction::MoveTabToNewWindow,
+    AppAction::MoveTabToOtherWindow,
     AppAction::TogglePinOnTop,
     AppAction::InsertSymbol,
     AppAction::ToggleFloatingOutline,
@@ -2141,6 +2169,10 @@ impl AppAction {
             Self::SplitDocumentBelow => "Dividir abajo con otra pestaña",
             Self::ToggleTheme => "Cambiar tema día o noche · Ctrl+Shift+D",
             Self::ToggleReduceMotion => "Activar o desactivar movimiento reducido",
+            Self::AssociateFiles => "Abrir archivos con Visor MD…",
+            Self::MoveTabToNewWindow => "Mover pestaña a una ventana nueva",
+            Self::MoveTabToOtherWindow => "Mover pestaña a otra ventana",
+            Self::ToggleOpenExternalInExisting => "Abrir archivos externos en la ventana abierta",
             Self::TogglePinOnTop => "Fijar la ventana encima de las demás",
             Self::InsertSymbol => "Insertar símbolo o emoji",
             Self::ToggleFloatingOutline => "Mostrar u ocultar el índice flotante",
@@ -7999,6 +8031,13 @@ struct App {
     recovery_privacy_notice_pending: bool,
     /// El aviso que se ve invita a «Más detalles» sobre la recuperación.
     privacy_toast: bool,
+    /// Esta ventana en el registro compartido de ventanas (D-33). `None` en
+    /// pruebas y en `--bench`.
+    windows: Option<ventanas::Registry>,
+    next_heartbeat: Instant,
+    next_mailbox_poll: Instant,
+    /// Archivos de la línea de comandos después del primero.
+    startup_extra_paths: Vec<PathBuf>,
     workspace: Option<(WorkspaceRoot, WorkspaceIndex)>,
     /// Cambiar de carpeta cancela cooperativamente el recorrido anterior. El
     /// contador descarta además cualquier resultado tardío del hilo anterior.
@@ -8382,6 +8421,10 @@ impl App {
             recovery,
             recovery_privacy_notice_pending,
             privacy_toast: false,
+            windows: None,
+            next_heartbeat: started,
+            next_mailbox_poll: started,
+            startup_extra_paths: Vec::new(),
             workspace: None,
             workspace_request: 0,
             workspace_generation: 0,
@@ -8570,6 +8613,16 @@ impl App {
     }
 }
 
+impl Drop for App {
+    /// Al cerrar, la ventana sale del registro y vacía su buzón; si el proceso
+    /// muere de golpe, su anotación caduca sola a los 6 s.
+    fn drop(&mut self) {
+        if let Some(registry) = &self.windows {
+            registry.unregister();
+        }
+    }
+}
+
 impl ApplicationHandler<AppEvent> for App {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         if std::mem::take(&mut self.exit_requested) {
@@ -8578,6 +8631,7 @@ impl ApplicationHandler<AppEvent> for App {
             return;
         }
         let now = Instant::now();
+        let windows_deadline = self.service_windows(now);
         self.flush_due_recoveries(now);
 
         let theme_deadline = self.theme_transition.and_then(|transition| {
@@ -8676,6 +8730,7 @@ impl ApplicationHandler<AppEvent> for App {
             toast_deadline,
             scroll_bar_deadline,
             copy_deadline,
+            windows_deadline,
             self.next_recovery_deadline(),
         ]
         .into_iter()
@@ -9408,6 +9463,10 @@ impl ApplicationHandler<AppEvent> for App {
                 ));
             }
         }
+        // Los demás archivos de la línea de comandos, cada uno en su pestaña.
+        for path in std::mem::take(&mut self.startup_extra_paths) {
+            self.open_document_path(path);
+        }
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
@@ -9623,6 +9682,7 @@ impl ApplicationHandler<AppEvent> for App {
                 self.modifiers = ModifiersState::empty();
             }
             WindowEvent::Focused(true) => {
+                self.read_mailbox();
                 self.check_external_change();
                 self.check_workspace_change();
             }
@@ -10870,6 +10930,10 @@ impl App {
             }
             AppAction::ToggleTheme => self.toggle_theme(),
             AppAction::ToggleReduceMotion => self.toggle_reduce_motion(),
+            AppAction::AssociateFiles => self.open_dialog(Dialog::file_types(), None),
+            AppAction::MoveTabToNewWindow => self.move_tab_to_new_window(),
+            AppAction::MoveTabToOtherWindow => self.move_tab_to_other_window(),
+            AppAction::ToggleOpenExternalInExisting => self.toggle_open_external_in_existing(),
             AppAction::TogglePinOnTop => self.toggle_pin_on_top(),
             AppAction::InsertSymbol => self.open_symbol_picker(),
             AppAction::ToggleFloatingOutline => self.toggle_floating_outline(),
@@ -11149,6 +11213,71 @@ impl App {
         true
     }
 
+    fn toggle_open_external_in_existing(&mut self) {
+        self.settings.open_external_in_existing = !self.settings.open_external_in_existing;
+        if self.settings.store().is_err() {
+            self.set_notice("la preferencia no pudo guardarse");
+        } else if self.settings.open_external_in_existing {
+            self.set_notice("Los archivos externos se abren en la ventana abierta");
+        } else {
+            self.set_notice("Los archivos externos se abren en una ventana nueva");
+        }
+    }
+
+    /// «Registrar» del diálogo de tipos de archivo: agrega Visor MD a «Abrir
+    /// con» y abre Configuración para que la persona lo confirme.
+    fn register_file_types(&mut self) {
+        let extensions: Vec<&str> = asociacion::MARKDOWN
+            .iter()
+            .chain(asociacion::TEXT.iter())
+            .chain(asociacion::OTHER.iter())
+            .copied()
+            .collect();
+        let result = std::env::current_exe()
+            .and_then(|exe| asociacion::register(&asociacion::Root::user(), &exe, &extensions));
+        match result {
+            Ok(()) => {
+                if asociacion::open_default_apps_settings().is_ok() {
+                    self.set_notice(
+                        "Visor MD quedó en «Abrir con»: elegilo como predeterminado en Configuración",
+                    );
+                } else {
+                    self.set_notice(
+                        "Visor MD quedó en «Abrir con»: elegilo con clic derecho > Abrir con",
+                    );
+                }
+            }
+            Err(error) => {
+                self.log.push(format!("[asociación] {error}"));
+                self.set_notice("No se pudo registrar Visor MD en «Abrir con»");
+            }
+        }
+    }
+
+    /// Tras contestar una vez, la bienvenida deja de ofrecer la asociación.
+    fn mark_file_types_offered(&mut self) {
+        if !self.settings.file_types_offered {
+            self.settings.file_types_offered = true;
+            let _ = self.settings.store();
+        }
+    }
+
+    fn remove_file_types(&mut self) {
+        let extensions: Vec<&str> = asociacion::MARKDOWN
+            .iter()
+            .chain(asociacion::TEXT.iter())
+            .chain(asociacion::OTHER.iter())
+            .copied()
+            .collect();
+        match asociacion::unregister(&asociacion::Root::user(), &extensions) {
+            Ok(()) => self.set_notice("Visor MD ya no figura en «Abrir con»"),
+            Err(error) => {
+                self.log.push(format!("[asociación] {error}"));
+                self.set_notice("No se pudo quitar Visor MD de «Abrir con»");
+            }
+        }
+    }
+
     fn toggle_reduce_motion(&mut self) {
         self.reduce_motion = !self.reduce_motion;
         if self.reduce_motion
@@ -11301,6 +11430,10 @@ impl App {
             AppAction::ToggleReduceMotion => ("Movimiento reducido", self.reduce_motion),
             AppAction::ToggleRecovery => ("Recuperación de cambios", self.recovery_enabled),
             AppAction::ToggleFloatingOutline => ("Índice flotante", self.settings.floating_outline),
+            AppAction::ToggleOpenExternalInExisting => (
+                "Abrir archivos externos en la ventana abierta",
+                self.settings.open_external_in_existing,
+            ),
             AppAction::TogglePinOnTop => ("Ventana siempre encima", self.pinned_on_top),
             AppAction::ToggleTheme => ("Tema de noche", self.palette.bg.0 < 0x80),
             _ => return action_name(action).to_string(),
@@ -13921,6 +14054,15 @@ impl App {
                 }
             }
             DialogChoice::SkipCreateNote => self.pending_new_note = None,
+            DialogChoice::RegisterFileTypes => {
+                self.mark_file_types_offered();
+                self.register_file_types();
+            }
+            DialogChoice::RemoveFileTypes => {
+                self.mark_file_types_offered();
+                self.remove_file_types();
+            }
+            DialogChoice::CancelFileTypes => self.mark_file_types_offered(),
             DialogChoice::UseDocumentFolder => {
                 if let Some((folder, destination)) = self.pending_folder_link.take() {
                     self.pending_wikilink_after_index = Some(destination);
@@ -14122,6 +14264,86 @@ impl App {
         self.open_document_path(path);
     }
 
+    /// La ruta de la pestaña activa si se puede mover a otra ventana: un archivo
+    /// guardado, sin cambios y sin operaciones en curso. Lo sin guardar necesita
+    /// el traspaso por copia de recuperación (13.7); mientras tanto se pide
+    /// guardar antes.
+    fn movable_tab_path(&self) -> Result<PathBuf, &'static str> {
+        let document = &self.document;
+        if document.source_identity.is_none() || document.is_untitled() {
+            return Err("Guardá el documento para moverlo a otra ventana");
+        }
+        if document.is_dirty() {
+            return Err("Guardá los cambios para mover la pestaña a otra ventana");
+        }
+        if self.document_busy(document.id) {
+            return Err("Esperá a que termine la operación de esta pestaña");
+        }
+        std::path::absolute(&document.path).map_err(|_| "No se pudo resolver la ruta del documento")
+    }
+
+    /// La pestaña ya está en la otra ventana: aquí se cierra, y si era la
+    /// última, la ventana entera.
+    fn finish_moving_tab(&mut self) {
+        if self.tab_order.len() <= 1 {
+            self.exit_requested = true;
+        } else {
+            self.finish_close_active_document_tab();
+        }
+    }
+
+    fn move_tab_to_new_window(&mut self) {
+        let path = match self.movable_tab_path() {
+            Ok(path) => path,
+            Err(message) => {
+                self.set_notice(message);
+                return;
+            }
+        };
+        let spawned = std::env::current_exe().and_then(|exe| {
+            std::process::Command::new(exe)
+                .arg("--ventana-nueva")
+                .arg(&path)
+                .spawn()
+        });
+        match spawned {
+            Ok(_) => self.finish_moving_tab(),
+            Err(error) => {
+                self.log.push(format!("[ventanas] {error}"));
+                self.set_notice("No se pudo abrir una ventana nueva");
+            }
+        }
+    }
+
+    fn move_tab_to_other_window(&mut self) {
+        let path = match self.movable_tab_path() {
+            Ok(path) => path,
+            Err(message) => {
+                self.set_notice(message);
+                return;
+            }
+        };
+        let Some(registry) = self.windows.clone() else {
+            self.set_notice("No hay otra ventana abierta");
+            return;
+        };
+        let Some(target) = registry
+            .others(std::time::SystemTime::now())
+            .first()
+            .copied()
+        else {
+            self.set_notice("No hay otra ventana abierta: usá «Mover pestaña a una ventana nueva»");
+            return;
+        };
+        match registry.send(target.pid, &ventanas::Message::Open(vec![path])) {
+            Ok(()) => self.finish_moving_tab(),
+            Err(error) => {
+                self.log.push(format!("[ventanas] {error}"));
+                self.set_notice("No se pudo enviar la pestaña a la otra ventana");
+            }
+        }
+    }
+
     /// Un clic sobre el aviso de privacidad abre el diálogo con los detalles.
     fn press_privacy_toast(&mut self, x: f32, y: f32) -> bool {
         let visible = self
@@ -14194,6 +14416,51 @@ impl App {
         }
     }
 
+    /// Latido y buzón de esta ventana: cada 2 s anota que sigue viva y cada
+    /// 500 ms mira si otra le pidió algo. Devuelve cuándo hay que volver.
+    fn service_windows(&mut self, now: Instant) -> Option<Instant> {
+        let registry = self.windows.clone()?;
+        if now >= self.next_heartbeat {
+            if let Err(error) = registry.heartbeat(std::time::SystemTime::now()) {
+                self.log.push(format!("[ventanas] latido: {error}"));
+            }
+            self.next_heartbeat = now + ventanas::HEARTBEAT_EVERY;
+        }
+        if now >= self.next_mailbox_poll {
+            self.read_mailbox();
+            self.next_mailbox_poll = now + ventanas::MAILBOX_POLL;
+        }
+        Some(self.next_heartbeat.min(self.next_mailbox_poll))
+    }
+
+    /// Atiende lo que otras ventanas dejaron en el buzón: abrir archivos, cada
+    /// uno en su pestaña, y traer esta ventana al frente.
+    fn read_mailbox(&mut self) {
+        let Some(registry) = self.windows.clone() else {
+            return;
+        };
+        let messages = registry.take();
+        if messages.is_empty() {
+            return;
+        }
+        for message in messages {
+            match message {
+                ventanas::Message::Open(paths) => {
+                    for path in paths {
+                        self.open_document_path(path);
+                    }
+                }
+            }
+        }
+        if let Some(window) = &self.window {
+            if window.is_minimized() == Some(true) {
+                window.set_minimized(false);
+            }
+            window.focus_window();
+            window.request_redraw();
+        }
+    }
+
     /// Dónde están los botones de la bienvenida, si se está mostrando.
     fn welcome_geometry(&self) -> Option<bienvenida::WelcomeGeometry> {
         let (width, height) = self.view_size()?;
@@ -14221,6 +14488,7 @@ impl App {
         match index {
             0 => self.perform_action(AppAction::ChooseWorkspace),
             1 => self.perform_action(AppAction::OpenDocument),
+            3 => self.open_dialog(Dialog::file_types(), None),
             _ => {
                 self.document.welcome = false;
                 self.refresh_title();
@@ -17828,10 +18096,20 @@ impl App {
                     false,
                     Some(geometry.width),
                 );
+                let offer_link = !self.settings.file_types_offered;
                 let hover = self
                     .pointer
-                    .and_then(|(x, y)| bienvenida::button_at(&geometry, x, y));
-                (geometry, title, labels, shortcuts, hints, hover)
+                    .and_then(|(x, y)| bienvenida::button_at(&geometry, x, y, offer_link));
+                let link = offer_link.then(|| {
+                    text(
+                        bienvenida::FILE_TYPES_LINK,
+                        palette.accent,
+                        13.0,
+                        false,
+                        None,
+                    )
+                });
+                (geometry, title, labels, shortcuts, hints, hover, link)
             });
         let toast_layout = self
             .notice_visible_until
@@ -19003,7 +19281,7 @@ impl App {
                 &paint,
             );
         }
-        if let Some((geometry, title, labels, shortcuts, hints, hover)) = &welcome_render {
+        if let Some((geometry, title, labels, shortcuts, hints, hover, link)) = &welcome_render {
             // La bienvenida cubre el editor vacío que hay debajo.
             let area_x = document_area.x;
             let mut cover = Paint::default();
@@ -19094,6 +19372,28 @@ impl App {
                 geometry.hints_x,
                 geometry.hints_y,
             );
+            if let Some(link) = link {
+                // La línea de la asociación: en acento, se enciende al pasar.
+                let hovered = *hover == Some(3);
+                draw_text_layout(
+                    pixmap,
+                    scale_cx,
+                    glyphs,
+                    link,
+                    geometry.link.x,
+                    (geometry.link.y + (geometry.link.height - link.height()) * 0.5).round(),
+                );
+                if hovered
+                    && let Some(rect) = Rect::from_xywh(
+                        geometry.link.x,
+                        geometry.link.y + geometry.link.height - 3.0,
+                        link.width(),
+                        1.0,
+                    )
+                {
+                    pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
+                }
+            }
         }
         for (header, focused, title, modes, active_slot) in &pane_headers {
             let top = DOCUMENT_VIEWPORT_TOP + header.y;
@@ -21308,7 +21608,19 @@ fn main() {
         )
     });
     let exact_measure = args.iter().any(|a| a == "--exacto");
-    let opening_path = args.iter().find(|a| !a.starts_with("--")).cloned();
+    // `--ventana-nueva`: abre aquí aunque haya otra ventana (mover una pestaña a
+    // una ventana nueva).
+    let force_new_window = args.iter().any(|a| a == "--ventana-nueva");
+    // Una o varias rutas: la primera abre en esta ventana y las demás, cada una
+    // en su pestaña.
+    let mut opening_paths = args.iter().filter(|a| !a.starts_with("--")).cloned();
+    let opening_path = opening_paths.next();
+    let extra_paths: Vec<PathBuf> = opening_paths.map(PathBuf::from).collect();
+    let all_paths: Vec<PathBuf> = opening_path
+        .iter()
+        .map(PathBuf::from)
+        .chain(extra_paths.iter().cloned())
+        .collect();
     let initial_document_request = u64::from(opening_path.is_some());
 
     let t = Instant::now();
@@ -21341,6 +21653,37 @@ fn main() {
     ));
 
     let settings = Settings::load();
+    // Otra ventana abierta recibe los archivos y esta se va (D-33): el proceso
+    // nuevo deja el mensaje y sale. Si no hay ninguna o el envío falla, abre
+    // aquí como siempre.
+    let windows = if bench.is_none() {
+        ventanas::Registry::for_this_process()
+    } else {
+        None
+    };
+    if let Some(registry) = &windows
+        && !all_paths.is_empty()
+        && settings.open_external_in_existing
+        && !force_new_window
+        && let Some(target) = registry
+            .others(std::time::SystemTime::now())
+            .first()
+            .copied()
+    {
+        let absolute: Vec<PathBuf> = all_paths
+            .iter()
+            .map(|path| std::path::absolute(path).unwrap_or_else(|_| path.clone()))
+            .collect();
+        if registry
+            .send(target.pid, &ventanas::Message::Open(absolute))
+            .is_ok()
+        {
+            return;
+        }
+    }
+    if let Some(registry) = &windows {
+        let _ = registry.heartbeat(std::time::SystemTime::now());
+    }
     let recovery = settings
         .recovery_enabled
         .then(RecoverySession::start)
@@ -21362,6 +21705,8 @@ fn main() {
     });
     let initial_document_id = app.document.id;
 
+    app.windows = windows;
+    app.startup_extra_paths = extra_paths;
     if let Some(worker_path) = opening_path {
         thread::spawn(move || {
             let started = Instant::now();
@@ -23118,6 +23463,154 @@ agregado por otro programa
     }
 
     #[test]
+    fn un_archivo_enviado_por_otra_ventana_se_abre_aqui_y_el_latido_se_renueva() {
+        let raiz =
+            std::env::temp_dir().join(format!("visor-md-app-ventanas-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&raiz);
+        let archivo = raiz.join("enviado.md");
+        fs::create_dir_all(&raiz).unwrap();
+        fs::write(
+            &archivo,
+            "# Enviado
+",
+        )
+        .unwrap();
+
+        let mut app = App::for_tests(NIGHT);
+        app.windows = Some(ventanas::Registry::at(&raiz, 111));
+        let otra = ventanas::Registry::at(&raiz, 222);
+        // El latido de esta ventana aparece en el registro.
+        app.service_windows(Instant::now());
+        assert_eq!(otra.others(std::time::SystemTime::now()).len(), 1);
+        // La otra ventana le pide abrir un archivo.
+        otra.send(111, &ventanas::Message::Open(vec![archivo.clone()]))
+            .unwrap();
+        let pestanas = app.tab_order.len();
+        app.read_mailbox();
+        assert!(
+            app.tab_order.len() > pestanas || !app.open_requests.is_empty(),
+            "la ventana empezó a abrir el archivo"
+        );
+        assert!(
+            app.windows.as_ref().unwrap().take().is_empty(),
+            "el mensaje se consumió"
+        );
+        let _ = fs::remove_dir_all(raiz);
+    }
+
+    #[test]
+    fn la_bienvenida_ofrece_la_asociacion_una_sola_vez() {
+        let mut app = App::for_tests(NIGHT);
+        app.draw_for_test(1100, 720);
+        let geometria = app.welcome_geometry().expect("se muestra");
+        let (x, y) = (
+            geometria.link.x + 10.0,
+            geometria.link.y + geometria.link.height * 0.5,
+        );
+        assert_eq!(app.ui_target_at(x, y), Some(UiTarget::Welcome(3)));
+        // Con la oferta ya hecha, la línea desaparece y no es un objetivo.
+        app.settings.file_types_offered = true;
+        assert_ne!(app.ui_target_at(x, y), Some(UiTarget::Welcome(3)));
+        // Pulsarla abre el diálogo de tipos de archivo.
+        let mut otra = App::for_tests(NIGHT);
+        otra.press_welcome_button(3);
+        let dialogo = otra.dialog.as_ref().expect("se abre el diálogo");
+        assert_eq!(dialogo.safe_choice, DialogChoice::CancelFileTypes);
+    }
+
+    /// Un documento guardado y sin cambios, abierto en una pestaña de `app`.
+    fn abrir_guardado(app: &mut App, ruta: &Path) {
+        let opened = open_explicit_primary(ruta, 1 << 20).unwrap();
+        let mut documento = recovered_document(opened.source).unwrap();
+        documento.path = ruta.to_string_lossy().into_owned();
+        documento.source_editor = SourceEditor::new();
+        replace_file_baseline(&mut documento, opened.identity, opened.baseline_bytes);
+        app.open_document_in_tab(documento);
+    }
+
+    #[test]
+    fn mover_una_pestana_guardada_a_otra_ventana_la_envia_y_la_cierra_aqui() {
+        let raiz = std::env::temp_dir().join(format!("visor-md-mover-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&raiz);
+        fs::create_dir_all(&raiz).unwrap();
+        let archivo = raiz.join("nota.md");
+        fs::write(
+            &archivo, "# Nota
+",
+        )
+        .unwrap();
+
+        let mut app = App::for_tests(NIGHT);
+        app.windows = Some(ventanas::Registry::at(&raiz, 111));
+        // Sin otra ventana, avisa y no cierra nada.
+        abrir_guardado(&mut app, &archivo);
+        app.perform_action(AppAction::NewDocument);
+        let otra = ventanas::Registry::at(&raiz, 222);
+        // Pestaña activa: la de «Otra», sin archivo: pide guardar.
+        app.move_tab_to_other_window();
+        assert_eq!(
+            app.notice.as_deref(),
+            Some("Guardá el documento para moverlo a otra ventana")
+        );
+        // Con la guardada activa y otra ventana viva, se envía y se cierra aquí.
+        let id = app
+            .inactive_documents
+            .iter()
+            .find(|tab| tab.document.path == archivo.to_string_lossy())
+            .map(|tab| tab.document.id)
+            .expect("la guardada sigue abierta");
+        app.activate_document_tab(id);
+        assert_eq!(app.document.path, archivo.to_string_lossy());
+        app.move_tab_to_other_window();
+        assert_eq!(
+            app.notice.as_deref(),
+            Some("No hay otra ventana abierta: usá «Mover pestaña a una ventana nueva»")
+        );
+        otra.heartbeat(std::time::SystemTime::now()).unwrap();
+        let pestanas = app.tab_order.len();
+        app.move_tab_to_other_window();
+        assert_eq!(
+            app.tab_order.len(),
+            pestanas - 1,
+            "la pestaña se cerró aquí"
+        );
+        assert_eq!(
+            otra.take(),
+            vec![ventanas::Message::Open(vec![
+                std::path::absolute(&archivo).unwrap()
+            ])]
+        );
+        let _ = fs::remove_dir_all(raiz);
+    }
+
+    #[test]
+    fn mover_la_ultima_pestana_cierra_la_ventana_y_lo_sin_guardar_se_pide_guardar() {
+        let raiz = std::env::temp_dir().join(format!("visor-md-mover2-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&raiz);
+        fs::create_dir_all(&raiz).unwrap();
+        let archivo = raiz.join("sola.md");
+        fs::write(
+            &archivo, "# Sola
+",
+        )
+        .unwrap();
+        let mut app = App::for_tests(NIGHT);
+        app.windows = Some(ventanas::Registry::at(&raiz, 111));
+        abrir_guardado(&mut app, &archivo);
+        // Cambios sin guardar: no se mueve.
+        app.edit_source(|editor, source| editor.insert(source, "x"));
+        assert!(app.movable_tab_path().is_err());
+        app.edit_source(|editor, source| editor.undo(source));
+        assert!(!app.document.is_dirty());
+        assert!(app.movable_tab_path().is_ok());
+        // Si queda una sola pestaña, la ventana se cierra con ella.
+        app.tab_order.retain(|id| *id == app.document.id);
+        app.finish_moving_tab();
+        assert!(app.exit_requested);
+        let _ = fs::remove_dir_all(raiz);
+    }
+
+    #[test]
     fn una_copia_danada_no_se_abre_y_avisa() {
         let (orphan, carpeta) = copia_huerfana("Rota", "", "contenido");
         let mut bytes = fs::read(orphan.path()).unwrap();
@@ -23740,10 +24233,11 @@ agregado por otro programa
 
         // Incluye documento, workspace, estudio y accesibilidad sin convertir
         // la paleta en un menú de IDE: las familias densas también tienen
-        // ámbitos propios desde el menú contextual. Superar 71 exige revisar
-        // esa jerarquía antes de añadir otra acción. Las últimas fueron fijar
-        // la ventana encima, símbolos y emojis, índice flotante y PDF.
-        assert!(original_len <= 71, "el catálogo dejó de ser pequeño");
+        // ámbitos propios desde el menú contextual. Superar 72 exige revisar
+        // esa jerarquía antes de añadir otra acción. Las últimas fueron
+        // símbolos y emojis, índice flotante, PDF y las dos del menú Sistema
+        // (asociar archivos y abrir archivos externos en la ventana abierta).
+        assert!(original_len <= 74, "el catálogo dejó de ser pequeño");
         assert_eq!(labels.len(), original_len);
     }
 

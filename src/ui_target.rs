@@ -137,7 +137,8 @@ impl App {
             }
         }
         if let Some(geometry) = self.welcome_geometry()
-            && let Some(index) = crate::bienvenida::button_at(&geometry, x, y)
+            && let Some(index) =
+                crate::bienvenida::button_at(&geometry, x, y, !self.settings.file_types_offered)
         {
             return Some(UiTarget::Welcome(index));
         }

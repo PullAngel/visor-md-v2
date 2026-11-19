@@ -854,26 +854,37 @@ Absorbe las tareas 5.5, 5.6 y 5.7. Va después de la 5.
 
 Va después de la 8 y antes de la 9.
 
-- [ ] **12.1** D-33 `src/ventanas.rs`: registro con latido, buzón, lectura al
-  recibir el foco y cada 500 ms. Pruebas con una raíz temporal.
-- [ ] **12.2** Abrir desde fuera en la ventana existente: el proceso nuevo deja el
-  mensaje, activa la ventana y sale. Varias rutas por línea de comandos.
-- [ ] **12.3** Sacar una pestaña a una ventana nueva: arrastrar fuera, menú
-  «Mover a ventana nueva» y doble clic en una cabecera de panel. Lo sin
-  guardar viaja como copia de recuperación y el origen cierra tras la
-  confirmación.
-- [ ] **12.4** Traer una pestaña a otra ventana: soltar sobre la tira o un panel de
-  otra ventana y «Mover a otra ventana ▸». La ventana que queda vacía se
-  cierra sola.
-- [ ] **12.5** D-34 `src/asociacion.rs`: registrar, leer de vuelta, quitar, abrir
-  `ms-settings:defaultapps`; diálogo con extensiones y el ajuste de apertura
-  externa; entrada en Archivo. Prueba con la raíz `VisorMDPrueba`.
-- [ ] **12.6** Línea de la pantalla de bienvenida (D-27) que ofrece configurar la
-  asociación, una sola vez.
-- [ ] **12.7** Documentar el paquete: `.desktop` con tipos MIME y `xdg-mime default`
-  para Linux; el instalador de Windows reutiliza 12.5 (`docs/roadmap.md`).
-- [ ] **12.8** Cierre de fase: prueba manual con dos ventanas, arrastre entre ellas,
-  apertura desde el Explorador y desde Claude; ejecutable nuevo.
+- [x] **12.1** D-33 `src/ventanas.rs`: registro con latido (2 s; se ignora y se
+  borra a los 6 s), buzón por proceso, lectura al recibir el foco y cada 500 ms.
+  Pruebas con una raíz temporal. **Desviación:** los archivos son `.txt` y
+  `.msg` con líneas `clave=valor` (no JSON), para no escapar rutas ni sumar una
+  dependencia.
+- [x] **12.2** Abrir desde fuera en la ventana existente: el proceso nuevo deja el
+  mensaje y sale; la ventana abierta abre cada ruta en su pestaña y pasa al
+  frente. Acepta varias rutas por línea de comandos y la bandera
+  `--ventana-nueva`. Ajuste «Abrir archivos externos en la ventana abierta»
+  (Archivo > Sistema). Verificado en vivo con dos procesos.
+- [~] **12.3** Sacar una pestaña a una ventana nueva: hecho con el menú
+  «Mover pestaña a una ventana nueva» (Archivo > Pestaña) para documentos
+  guardados y sin cambios; verificado en vivo. Falta arrastrar fuera, el doble
+  clic en una cabecera de panel y lo sin guardar, que viaja como copia de
+  recuperación con la 13.7.
+- [~] **12.4** Traer una pestaña a otra ventana: hecho con «Mover pestaña a otra
+  ventana» (a la ventana con el latido más reciente); la ventana que se queda
+  sin pestañas se cierra sola. Falta soltar sobre la tira o un panel de otra
+  ventana (pide coordenadas entre procesos) y lo sin guardar (13.7).
+- [x] **12.5** D-34 `src/asociacion.rs`: registrar en «Abrir con» (solo `HKCU`,
+  con `reg.exe`), leer de vuelta, quitar y abrir `ms-settings:defaultapps`;
+  diálogo «¿Abrir tus archivos con Visor MD?» (Archivo > Sistema). La prueba usa
+  `HKCU\Software\VisorMDPrueba`. **Desviación:** el diálogo registra las tres
+  familias de extensiones juntas, sin elegirlas una por una.
+- [x] **12.6** Línea de la bienvenida que ofrece la asociación, una sola vez
+  (se apaga al contestar el diálogo).
+- [x] **12.7** Paquetes: ver [`roadmap.md`](roadmap.md#asociación-de-archivos-en-los-paquetes).
+- [~] **12.8** Cierre de fase: verificado en vivo con dos procesos (abrir desde
+  fuera y mover a una ventana nueva). Falta probar el arrastre entre ventanas
+  (no existe todavía), abrir desde el Explorador con la asociación ya hecha y
+  desde Claude.
 
 ### Fase 13 · Servicio de recuperación (P-02)
 
@@ -992,7 +1003,7 @@ asociación.
 | 6 | Hecha | 6.1 a 6.8 y 13.3 a 13.6 |
 | 7 | Hecha | 7.1 a 7.8 |
 | 8 | Hecha | 8.1 a 8.10; quedan dos retoques de la fase 11 y el árbol de accesibilidad |
-| 12 | Pendiente | Ventanas (un proceso por ventana) y asociación de archivos |
+| 12 | En curso | Hechas 12.1, 12.2, 12.5, 12.6 y 12.7; 12.3, 12.4 y 12.8 a medias (falta arrastrar entre ventanas y lo sin guardar, con la 13.7) |
 | 9 | Pendiente | — |
 | 14 | Pendiente | Herramientas de estudio; empieza por la decisión 14.0 |
 | 13 | En curso | Hechas 13.1 a 13.6. Pendientes: 13.7 (gancho de pánico y traspaso entre ventanas), 13.8 (documentación) y la opcional 13.9 |

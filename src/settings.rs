@@ -46,6 +46,11 @@ pub(crate) struct Settings {
     pub(crate) reduce_motion: bool,
     /// Índice flotante en lectura, desactivado por defecto.
     pub(crate) floating_outline: bool,
+    /// Abrir un archivo desde fuera (el Explorador, otra aplicación) en la
+    /// ventana que ya está abierta, y no en una nueva.
+    pub(crate) open_external_in_existing: bool,
+    /// La bienvenida ya ofreció registrar Visor MD en «Abrir con»: no insiste.
+    pub(crate) file_types_offered: bool,
     document_modes: Vec<(String, DocumentModePreference)>,
 }
 
@@ -55,6 +60,8 @@ impl Default for Settings {
             recovery_enabled: true,
             reduce_motion: false,
             floating_outline: false,
+            open_external_in_existing: true,
+            file_types_offered: false,
             document_modes: Vec::new(),
         }
     }
@@ -127,6 +134,8 @@ fn load_from(path: &Path) -> Result<Settings, std::io::Error> {
     let mut recovery_enabled = None;
     let mut reduce_motion = None;
     let mut floating_outline = None;
+    let mut open_external_in_existing = None;
+    let mut file_types_offered = None;
     let mut document_modes = Vec::new();
     for line in source.lines().map(str::trim) {
         let Some((key, value)) = line.split_once('=') else {
@@ -150,6 +159,20 @@ fn load_from(path: &Path) -> Result<Settings, std::io::Error> {
             }
             "floating_outline" => {
                 floating_outline = match value.trim() {
+                    "true" => Some(true),
+                    "false" => Some(false),
+                    _ => None,
+                }
+            }
+            "open_external_in_existing" => {
+                open_external_in_existing = match value.trim() {
+                    "true" => Some(true),
+                    "false" => Some(false),
+                    _ => None,
+                }
+            }
+            "file_types_offered" => {
+                file_types_offered = match value.trim() {
                     "true" => Some(true),
                     "false" => Some(false),
                     _ => None,
@@ -180,6 +203,8 @@ fn load_from(path: &Path) -> Result<Settings, std::io::Error> {
         recovery_enabled: recovery_enabled.unwrap_or(true),
         reduce_motion: reduce_motion.unwrap_or(false),
         floating_outline: floating_outline.unwrap_or(false),
+        open_external_in_existing: open_external_in_existing.unwrap_or(true),
+        file_types_offered: file_types_offered.unwrap_or(false),
         document_modes: if matches!(version, Some(2) | Some(SETTINGS_VERSION)) {
             document_modes
         } else {
@@ -190,8 +215,12 @@ fn load_from(path: &Path) -> Result<Settings, std::io::Error> {
 
 fn store_to(path: &Path, settings: &Settings) -> Result<(), std::io::Error> {
     let mut source = format!(
-        "version={SETTINGS_VERSION}\nrecovery_enabled={}\nreduce_motion={}\nfloating_outline={}\n",
-        settings.recovery_enabled, settings.reduce_motion, settings.floating_outline
+        "version={SETTINGS_VERSION}\nrecovery_enabled={}\nreduce_motion={}\nfloating_outline={}\nopen_external_in_existing={}\nfile_types_offered={}\n",
+        settings.recovery_enabled,
+        settings.reduce_motion,
+        settings.floating_outline,
+        settings.open_external_in_existing,
+        settings.file_types_offered
     );
     for (key, mode) in &settings.document_modes {
         source.push_str(&format!("document_mode={key},{}\n", mode.code()));
@@ -242,6 +271,8 @@ mod tests {
             recovery_enabled: false,
             reduce_motion: true,
             floating_outline: true,
+            open_external_in_existing: false,
+            file_types_offered: true,
             document_modes: Vec::new(),
         };
         store_to(&path, &settings).unwrap();
@@ -252,6 +283,8 @@ mod tests {
                 recovery_enabled: false,
                 reduce_motion: true,
                 floating_outline: true,
+                open_external_in_existing: false,
+                file_types_offered: true,
                 document_modes: Vec::new(),
             }
         );
