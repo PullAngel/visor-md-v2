@@ -10017,7 +10017,16 @@ impl ApplicationHandler<AppEvent> for App {
                         if target.kind == InlineTargetKind::WikiLink
                             && self.wikilink_is_missing(&target.destination)
                         {
-                            return format!("Esta nota no existe: {}", target.destination);
+                            return format!(
+                                "Esta nota no existe: {} · clic para crearla",
+                                target.destination
+                            );
+                        }
+                        if target.kind == InlineTargetKind::WikiLink && self.workspace.is_none() {
+                            return format!(
+                                "Enlace a otra nota: {} · abrí una carpeta de apuntes para seguirlo",
+                                target.destination
+                            );
                         }
                         let label = target_label(target.kind, &target.destination);
                         format!("{label}: {}", target.destination)
@@ -20594,8 +20603,12 @@ impl App {
                         Cursor::from_byte_index(layout, target.end, Affinity::Downstream),
                     )
                     .geometry(layout);
+                    // Un enlace roto lleva el color de aviso (el amarillo de
+                    // estudio), distinto del acento de un enlace que sí existe.
                     let color = if is_web {
                         palette.external_link
+                    } else if is_broken {
+                        palette.study[0].stroke
                     } else {
                         palette.accent
                     };
@@ -20610,7 +20623,7 @@ impl App {
                             let mut x = panes.source.x + slot.x + rect.x0 as f32;
                             let end = panes.source.x + slot.x + rect.x1 as f32;
                             while x < end {
-                                if let Some(dot) = Rect::from_xywh(x, y, 2.0, 1.2) {
+                                if let Some(dot) = Rect::from_xywh(x, y - 0.5, 2.5, 1.8) {
                                     pixmap.fill_rect(dot, &mark, Transform::identity(), None);
                                 }
                                 x += 4.0;
