@@ -777,24 +777,126 @@ iba a ampliar, y el texto de la fase 7 se escribe ya sobre ellos.
 ### Fase 14 · Herramientas de estudio (pedido del 19 de noviembre)
 
 Surgió de usar el programa para estudiar. Va después de la fase 9, antes del
-instalador. Las tareas 14.1 a 14.3 comparten una decisión de almacenamiento que
-**se toma una sola vez, con todas a la vista** (decisión de la persona): dónde
-viven los datos extra (subrayados, marcas de libro) para que viajen, o no, con
-el archivo. Hasta entonces no se escribe código de estas tareas.
+instalador. El diseño completo está en
+[`diseno-anotaciones-2026-11-19.md`](diseno-anotaciones-2026-11-19.md) y se
+probó con un prototipo sobre una guía real de 116 KB (sección 12 del diseño).
 
-- [ ] **14.0** Decidir el almacenamiento común. Opciones: marcas dentro del
-  `.md` (`==texto==`, `<mark>`), o un archivo lateral por documento (el `.md`
-  queda intacto, pero no viaja si se mueve), o ambas con exportación.
-- [ ] **14.1** Subrayar con colores, a elección, partes del texto en modo
-  lectura.
-- [ ] **14.2** Marcas de libro: barras de color (o señaladores, con forma a
-  elegir) en distintos puntos, con texto opcional. Aparecen como barra de color
-  junto al párrafo y, además, como extra en el índice del documento. A futuro:
-  anclar imágenes.
-- [ ] **14.3** (a futuro) Enviar el texto seleccionado a una IA o al buscador
-  de Google con un gesto fácil. Ya existe «Preparar fragmentos para IA»; falta
-  el envío y decidir qué se manda a un servicio externo (la privacidad de lo
-  que se estudia es una decisión de la persona).
+**Decisión de almacenamiento (D-45).** El texto del documento no se toca nunca.
+Subrayados, marcas de libro y lo que se agregue después viven en **un único
+comentario HTML al final del `.md`** (`<!-- visor-md:anotaciones v1 … -->`), con
+una frase fija que avisa que no es parte del texto y una línea JSON por
+anotación, anclada por cita y contexto. Viaja con el archivo, es invisible en
+GitHub, Obsidian y VS Code, y «quitar todas» devuelve el archivo idéntico byte a
+byte.
+
+**Decisiones de la persona (19 de noviembre).**
+
+- Se guardan como cualquier cambio: «•» y Ctrl+S; la recuperación las cubre.
+- El PDF las incluye, con una casilla para quitarlas al exportar.
+- Viajan siempre en el archivo; existe «Guardar copia sin anotaciones».
+- Enviar a IA o a Google: sin decidir; se pensará como función propia.
+- **El bloque no se ve al leer.** En Leer no aparece nunca. En Editar aparece
+  **siempre contraído** en una sola línea al final («▸ Anotaciones de estudio ·
+  42»), salvo que la persona lo abra; contraído no alarga el documento, así la
+  barra de desplazamiento sigue dando la idea real del largo y de cuánto falta.
+- **El color se elige** en cada subrayado y cada marca, y se puede cambiar
+  después; la leyenda le da a cada color el significado que la persona quiera.
+- **En el índice, las marcas se ven de forma muy sutil** y sin romper el
+  formato aunque haya muchas: ver 14.6.
+
+Cada tarea deja `cargo test` y `cargo clippy` en verde.
+
+- [x] **14.0** Diseño aprobado y probado con un prototipo (26 de 26 casos borde).
+  Falta registrar el ADR «Anotaciones en un bloque final de comentario HTML» en
+  [`decisions.md`](decisions.md), que se hace con la 14.1.
+- [ ] **14.1** Formato puro (`src/anotaciones.rs`, sin interfaz ni
+  dependencias): modelo, lector y escritor. Ida y vuelta byte a byte, orden
+  determinista, límites, contenido desconocido conservado, y los separadores de
+  línea de Unicode (U+2028, U+2029, U+0085) siempre escapados, como `<` y `>`.
+  Pruebas: `bloque_vacio_no_se_escribe`, `ida_y_vuelta_conserva_bytes`,
+  `escritura_ordena_por_posicion_tipo_e_id`, `escapa_menor_y_mayor_en_cadenas`,
+  `escapa_los_separadores_de_linea_de_unicode`,
+  `ninguna_nota_puede_cerrar_el_comentario`, `version_mayor_se_conserva_inerte`,
+  `linea_invalida_se_conserva_al_final`, `claves_desconocidas_se_conservan`,
+  `limites_vuelven_inerte_el_bloque`, `crlf_y_lf_producen_mismas_posiciones`.
+- [ ] **14.2** Anclaje puro (mismo módulo), según la sección 6 del diseño:
+  posición guardada, cita exacta, desempate por contexto y por cercanía,
+  espacios colapsados; si nada coincide, la anotación queda sin lugar y nunca
+  se borra sola. Pruebas: `camino_rapido_ancla_en_su_posicion`,
+  `cita_unica_se_ancla_tras_insertar_texto_antes`,
+  `cita_repetida_desempata_por_contexto`, `empate_total_elige_la_mas_cercana`,
+  `espacios_colapsados_reanclan_tras_reajuste_de_linea`,
+  `texto_borrado_deja_huerfana_sin_eliminarla`,
+  `reanclar_dos_veces_da_el_mismo_resultado`, `tope_de_apariciones_se_respeta`.
+- [ ] **14.3** Separar cuerpo y bloque al abrir, guardar, recargar y recuperar.
+  - **Leer:** el bloque no se dibuja nunca y no cuenta en el alto del documento.
+  - **Editar:** el bloque se muestra como **una sola línea contraída** al final,
+    con un chevron dibujado y el total («▸ Anotaciones de estudio · 42»). Clic
+    o Enter sobre ella lo abre como texto de solo lectura (se puede copiar, no
+    escribir) y vuelve a contraerse al salir de Editar o al cerrar la pestaña.
+    Contraído ocupa una línea: la barra de desplazamiento refleja el largo del
+    cuerpo. Escribir nunca puede romper el bloque.
+  - **Comparar:** la fuente se comporta como Editar y la vista como Leer.
+  - Buscar, copiar, contar palabras y caracteres solo ven el cuerpo.
+  Pruebas: `cuerpo_y_bloque_se_separan_al_abrir`,
+  `bloque_dentro_de_codigo_no_se_reconoce`, `texto_despues_del_bloque_lo_invalida`,
+  `agregar_y_quitar_deja_el_archivo_identico` (con y sin salto final, CRLF y
+  BOM), `leer_no_dibuja_el_bloque_ni_lo_suma_al_alto`,
+  `editar_muestra_el_bloque_contraido_en_una_linea`,
+  `abrir_el_bloque_lo_muestra_de_solo_lectura`,
+  `escribir_al_final_no_entra_en_el_bloque`,
+  `cuerpo_con_codigo_sin_cerrar_rechaza_guardar_anotaciones`,
+  `recuperacion_restaura_cuerpo_y_anotaciones`, `buscar_y_copiar_ignoran_el_bloque`.
+- [ ] **14.4** Paleta de estudio en `src/theme.rs`: cinco colores con nombre
+  (amarillo, verde, azul, rosa, violeta), con su tono de día y de noche.
+  Pruebas: `paleta_de_estudio_conserva_contraste_en_ambos_temas`,
+  `colores_de_estudio_se_distinguen_entre_si_y_del_resaltado`.
+- [ ] **14.5** Subrayar desde la selección en Leer: menú Estudio, menú
+  contextual y atajo; **selector de color** (los cinco, con el último usado
+  como predeterminado); cambiar el color de uno, quitar uno; leyenda editable
+  (qué significa cada color). Pruebas:
+  `subrayado_cruza_bloques_y_se_dibuja_por_tramos`,
+  `subrayar_usa_el_ultimo_color_elegido`, `cambiar_el_color_no_mueve_el_ancla`,
+  `subrayar_marca_el_documento_sin_guardar`,
+  `ocultar_mis_anotaciones_muestra_el_original`. QA manual con capturas.
+- [ ] **14.6** Marcas de libro: forma (barra, cinta, punto, bandera), **color
+  elegido** y nota opcional, en el margen izquierdo. **En el índice, sutiles y
+  sin romper el formato:**
+  - no se agregan filas: cada título del índice puede llevar, a la derecha,
+    **puntos de color de 6 px** de las marcas de su sección (las que caen entre
+    ese título y el siguiente);
+  - un punto por color distinto, en el orden de la paleta, **como máximo tres**;
+    si hay más colores, un «+N» en tono tenue;
+  - el espacio de los puntos está **reservado y es fijo** (unos 28 px): el
+    título no se mueve, no cambia de alto ni se recorta distinto por tener o no
+    marcas, aunque una sección tenga decenas;
+  - al pasar el puntero, la ayuda lista las marcas de la sección (las primeras
+    cinco con su nota o su cita, y «y N más»); clic en un punto lleva a la
+    primera marca de ese color en la sección;
+  - lo mismo en el índice flotante; los subrayados no aparecen en el índice.
+  Pruebas: `marca_suma_un_punto_al_titulo_de_su_seccion`,
+  `muchas_marcas_no_cambian_la_fila_del_indice`,
+  `mas_de_tres_colores_muestran_mas_n`,
+  `la_ayuda_lista_las_marcas_de_la_seccion`,
+  `marca_antes_del_primer_titulo_va_al_comienzo_del_indice`.
+- [ ] **14.7** Editar: las anclas se desplazan con cada edición y con deshacer;
+  panel «Anotaciones sin lugar» con Reubicar, Copiar cita y Quitar. Pruebas:
+  `editar_antes_del_subrayado_lo_desplaza`,
+  `borrar_el_texto_anclado_lo_deja_huerfano`,
+  `deshacer_el_borrado_recupera_el_subrayado`.
+- [ ] **14.8** Integraciones: fragmentos para IA sin anotaciones (casilla
+  opcional), PDF con las anotaciones dibujadas y casilla para quitarlas,
+  «Quitar todas» (con confirmación y deshacer), «Guardar copia sin
+  anotaciones», resumen en Comparar. Pruebas:
+  `fragmentos_para_ia_excluyen_anotaciones_por_defecto`,
+  `pdf_no_incluye_el_bloque_en_la_capa_de_texto`,
+  `pdf_sin_anotaciones_si_se_desmarca_la_casilla`,
+  `quitar_todas_se_puede_deshacer`, `copia_sin_anotaciones_es_el_cuerpo`.
+- [ ] **14.9** Documentar en `docs/features.md`, `docs/security.md` (el bloque
+  como dato inerte) y `docs/test-matrix.md`; QA manual en Leer, Editar y con
+  el archivo abierto en otro editor y en GitHub.
+- [ ] **14.10** (futuro) Imágenes ancladas.
+- [ ] **14.11** (futuro, sin decidir) Enviar la selección a una IA o a Google.
 
 ### Pedidos sueltos del propietario
 
@@ -1009,5 +1111,5 @@ asociación.
 | 8 | Hecha | 8.1 a 8.10; quedan dos retoques de la fase 11 y el árbol de accesibilidad |
 | 12 | Hecha | 12.1 a 12.8; el arrastre real entre ventanas queda por probar a mano |
 | 9 | Pendiente | — |
-| 14 | Pendiente | Herramientas de estudio; empieza por la decisión 14.0 |
+| 14 | Pendiente | Diseño aprobado (D-45); empieza por la 14.1, el formato puro |
 | 13 | Hecha | 13.1 a 13.8; queda la opcional 13.9 (apagado de Windows y cifrado, con `unsafe`) |
