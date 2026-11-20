@@ -645,6 +645,168 @@ fn cuatro_hex(cursor: &mut Cursor) -> Option<u32> {
     Some(valor)
 }
 
+// ---------------------------------------------------------------------------
+// Anclaje (diseño, sección 6). Todo opera sobre el cuerpo normalizado a LF, en
+// caracteres Unicode, y solo depende del cuerpo y del registro.
+// ---------------------------------------------------------------------------
+
+/// Apariciones de la cita que se consideran como máximo.
+pub(crate) const MAX_APARICIONES: usize = 1_000;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Ancla {
+    /// Rango `[inicio, fin)` en caracteres del cuerpo.
+    Anclada { inicio: usize, fin: usize },
+    /// Nada coincide; la anotación se conserva con su última cita.
+    Huerfana,
+    /// El registro no cita texto (por ejemplo, una leyenda).
+    NoAplica,
+}
+
+/// Dónde está hoy la cita de `registro` dentro de `cuerpo`.
+pub(crate) fn anclar(cuerpo: &str, registro: &Registro) -> Ancla {
+    let Some(cita) = registro.cita.as_deref().filter(|c| !c.is_empty()) else {
+        return Ancla::NoAplica;
+    };
+    let texto: Vec<char> = cuerpo.chars().collect();
+    let cita: Vec<char> = cita.chars().collect();
+    let pos = registro
+        .pos
+        .map_or(0, |p| usize::try_from(p).unwrap_or(usize::MAX));
+    let antes: Vec<char> = registro.antes.as_deref().unwrap_or("").chars().collect();
+    let despues: Vec<char> = registro.despues.as_deref().unwrap_or("").chars().collect();
+
+    // 1. Camino rápido: el texto sigue donde estaba.
+    if registro.pos.is_some()
+        && pos
+            .checked_add(cita.len())
+            .is_some_and(|fin| fin <= texto.len())
+        && texto[pos..pos + cita.len()] == cita[..]
+    {
+        return Ancla::Anclada {
+            inicio: pos,
+            fin: pos + cita.len(),
+        };
+    }
+    // 2 y 3. Búsqueda exacta con desempate.
+    if let Some(inicio) = buscar(&texto, &cita, &antes, &despues, pos) {
+        return Ancla::Anclada {
+            inicio,
+            fin: inicio + cita.len(),
+        };
+    }
+    // 4. Con los espacios en blanco colapsados (re-ajustes de línea de otro editor).
+    let normal = Normal::de(&texto);
+    let cita_n = colapsar(&cita);
+    let antes_n = colapsar(&antes);
+    let despues_n = colapsar(&despues);
+    let pos_n = normal.inicio.partition_point(|&inicio| inicio < pos);
+    if let Some(inicio) = buscar(&normal.chars, &cita_n, &antes_n, &despues_n, pos_n) {
+        return Ancla::Anclada {
+            inicio: normal.inicio[inicio],
+            fin: normal.fin[inicio + cita_n.len() - 1],
+        };
+    }
+    // 5. Sin lugar.
+    Ancla::Huerfana
+}
+
+/// Texto con cada tramo de espacios en blanco reducido a un espacio, y para
+/// cada carácter resultante el rango que ocupaba en el original.
+struct Normal {
+    chars: Vec<char>,
+    inicio: Vec<usize>,
+    fin: Vec<usize>,
+}
+
+impl Normal {
+    fn de(texto: &[char]) -> Self {
+        let mut normal = Self {
+            chars: Vec::new(),
+            inicio: Vec::new(),
+            fin: Vec::new(),
+        };
+        let mut indice = 0;
+        while indice < texto.len() {
+            let inicio = indice;
+            if texto[indice].is_whitespace() {
+                while indice < texto.len() && texto[indice].is_whitespace() {
+                    indice += 1;
+                }
+                normal.chars.push(' ');
+            } else {
+                normal.chars.push(texto[indice]);
+                indice += 1;
+            }
+            normal.inicio.push(inicio);
+            normal.fin.push(indice);
+        }
+        normal
+    }
+}
+
+fn colapsar(texto: &[char]) -> Vec<char> {
+    Normal::de(texto).chars
+}
+
+/// Mejor aparición de `cita` en `texto`: la única, o la de mayor coincidencia
+/// de contexto, o la más cercana a `pos`, o la primera.
+fn buscar(
+    texto: &[char],
+    cita: &[char],
+    antes: &[char],
+    despues: &[char],
+    pos: usize,
+) -> Option<usize> {
+    if cita.is_empty() || cita.len() > texto.len() {
+        return None;
+    }
+    // (puntaje, distancia, inicio)
+    let mut mejor: Option<(usize, usize, usize)> = None;
+    let mut encontradas = 0;
+    for inicio in 0..=texto.len() - cita.len() {
+        if texto[inicio] != cita[0] || texto[inicio..inicio + cita.len()] != *cita {
+            continue;
+        }
+        encontradas += 1;
+        let puntaje = contexto_en_comun(texto, inicio, inicio + cita.len(), antes, despues);
+        let candidata = (puntaje, inicio.abs_diff(pos), inicio);
+        // Mayor puntaje; luego menor distancia; luego menor posición.
+        let mejora = mejor.is_none_or(|(p, d, i)| {
+            candidata.0 > p
+                || (candidata.0 == p && (candidata.1 < d || (candidata.1 == d && candidata.2 < i)))
+        });
+        if mejora {
+            mejor = Some(candidata);
+        }
+        if encontradas >= MAX_APARICIONES {
+            break;
+        }
+    }
+    mejor.map(|(_, _, inicio)| inicio)
+}
+
+fn contexto_en_comun(
+    texto: &[char],
+    inicio: usize,
+    fin: usize,
+    antes: &[char],
+    despues: &[char],
+) -> usize {
+    let hacia_atras = antes
+        .iter()
+        .rev()
+        .zip(texto[..inicio].iter().rev())
+        .take_while(|(a, b)| a == b)
+        .count();
+    let hacia_adelante = despues
+        .iter()
+        .zip(&texto[fin..])
+        .take_while(|(a, b)| a == b)
+        .count();
+    hacia_atras + hacia_adelante
+}
+
 #[cfg(test)]
 mod pruebas {
     use super::*;
@@ -984,5 +1146,113 @@ mod pruebas {
             registro.despues.as_ref().unwrap().chars().count(),
             MAX_CONTEXTO
         );
+    }
+
+    fn con_cita(pos: u64, antes: &str, cita: &str, despues: &str) -> Registro {
+        Registro {
+            antes: Some(antes.to_string()),
+            despues: Some(despues.to_string()),
+            ..subrayado("a1", pos, cita)
+        }
+    }
+
+    fn rango(ancla: Ancla) -> (usize, usize) {
+        match ancla {
+            Ancla::Anclada { inicio, fin } => (inicio, fin),
+            otra => panic!("se esperaba anclada, salió {otra:?}"),
+        }
+    }
+
+    #[test]
+    fn camino_rapido_ancla_en_su_posicion() {
+        // La cita aparece dos veces; la posición guardada manda.
+        let cuerpo = "uno dos uno";
+        assert_eq!(rango(anclar(cuerpo, &con_cita(8, "", "uno", ""))), (8, 11));
+        assert_eq!(rango(anclar(cuerpo, &con_cita(0, "", "uno", ""))), (0, 3));
+    }
+
+    #[test]
+    fn cita_unica_se_ancla_tras_insertar_texto_antes() {
+        let registro = con_cita(4, "uno ", "dos", " tres");
+        assert_eq!(rango(anclar("INSERTADO uno dos tres", &registro)), (14, 17));
+        // Con emoji fuera del BMP las posiciones siguen siendo de caracteres.
+        assert_eq!(rango(anclar("😀😀 uno dos tres", &registro)), (7, 10));
+    }
+
+    #[test]
+    fn cita_repetida_desempata_por_contexto() {
+        let cuerpo = "rojo casa azul. verde casa gris. rojo casa verde.";
+        let registro = con_cita(0, "verde ", "casa", " gris");
+        assert_eq!(rango(anclar(cuerpo, &registro)), (22, 26));
+        let registro = con_cita(0, "rojo ", "casa", " verde");
+        assert_eq!(rango(anclar(cuerpo, &registro)), (38, 42));
+    }
+
+    #[test]
+    fn empate_total_elige_la_mas_cercana() {
+        let cuerpo = "x casa y casa z casa w";
+        // Sin contexto: gana la más cercana a la posición guardada.
+        assert_eq!(
+            rango(anclar(cuerpo, &con_cita(11, "", "casa", ""))),
+            (9, 13)
+        );
+        assert_eq!(
+            rango(anclar(cuerpo, &con_cita(100, "", "casa", ""))),
+            (16, 20)
+        );
+        // A igual distancia, la primera.
+        assert_eq!(
+            rango(anclar("casa x casa", &con_cita(5, "", "casa", ""))),
+            (0, 4)
+        );
+    }
+
+    #[test]
+    fn espacios_colapsados_reanclan_tras_reajuste_de_linea() {
+        let registro = con_cita(3, "ab ", "uno dos  tres", " fin");
+        let cuerpo = "ab uno\ndos tres fin";
+        let (inicio, fin) = rango(anclar(cuerpo, &registro));
+        let letras: Vec<char> = cuerpo.chars().collect();
+        assert_eq!(
+            letras[inicio..fin].iter().collect::<String>(),
+            "uno\ndos tres"
+        );
+    }
+
+    #[test]
+    fn texto_borrado_deja_huerfana_sin_eliminarla() {
+        let registro = con_cita(0, "", "frase que ya no existe", "");
+        assert_eq!(anclar("otro texto", &registro), Ancla::Huerfana);
+        assert_eq!(anclar("", &registro), Ancla::Huerfana);
+        // La leyenda no cita texto: no aplica, y no es huérfana.
+        assert_eq!(
+            anclar("x", &leyenda("a2", Color::Rosa, "nota")),
+            Ancla::NoAplica
+        );
+    }
+
+    #[test]
+    fn reanclar_dos_veces_da_el_mismo_resultado() {
+        let cuerpo = "a casa b casa c casa d";
+        let registro = con_cita(7, "b ", "casa", " c");
+        let (inicio, fin) = rango(anclar(cuerpo, &registro));
+        let movida = Registro {
+            pos: Some(inicio as u64),
+            ..registro.clone()
+        };
+        assert_eq!(rango(anclar(cuerpo, &movida)), (inicio, fin));
+        assert_eq!(anclar(cuerpo, &registro), anclar(cuerpo, &registro));
+    }
+
+    #[test]
+    fn tope_de_apariciones_se_respeta() {
+        let cuerpo = "ab ".repeat(5 * MAX_APARICIONES);
+        let registro = con_cita(1, "", "ab", "");
+        let (inicio, _) = rango(anclar(&cuerpo, &registro));
+        assert!(inicio < 3 * MAX_APARICIONES);
+        // Más allá del tope no se mira: la que sigue a la aparición 1 001 no cuenta.
+        let tardia = format!("{}RARA", "ab ".repeat(2 * MAX_APARICIONES));
+        let registro = con_cita(0, "ab ", "RARA", "");
+        assert!(matches!(anclar(&tardia, &registro), Ancla::Anclada { .. }));
     }
 }

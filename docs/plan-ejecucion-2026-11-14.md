@@ -818,7 +818,7 @@ Cada tarea deja `cargo test` y `cargo clippy` en verde.
   `ninguna_nota_puede_cerrar_el_comentario`, `version_mayor_se_conserva_inerte`,
   `linea_invalida_se_conserva_al_final`, `claves_desconocidas_se_conservan`,
   `limites_vuelven_inerte_el_bloque`, `crlf_y_lf_producen_mismas_posiciones`.
-- [ ] **14.2** Anclaje puro (mismo módulo), según la sección 6 del diseño:
+- [x] **14.2** Anclaje puro (mismo módulo), según la sección 6 del diseño:
   posición guardada, cita exacta, desempate por contexto y por cercanía,
   espacios colapsados; si nada coincide, la anotación queda sin lugar y nunca
   se borra sola. Pruebas: `camino_rapido_ancla_en_su_posicion`,
