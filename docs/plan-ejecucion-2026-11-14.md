@@ -728,11 +728,11 @@ entonces). Orden: primero los S2, luego lo que más pesa en el SUS.
 - [x] **15.7** (hecha en parte: la paleta se llama siempre «Buscar una acción» y el índice tiene su ícono con sangría; quedan el ícono H doble y el triángulo de plegar, S4) QA-07, QA-08, US-03, US-10, US-11: el botón de la paleta con un
   solo ícono y un solo nombre, el índice con un botón que se reconozca, íconos
   ambiguos distintos (≡ doble, H doble, el triángulo de plegar, el del tema).
-- [ ] **15.8** US-07: las pestañas que quedan en un panel dividido siguen
+- [ ] **15.8** (diferida: ocultar en la tira las pestañas que ocupan un panel es una decisión de la fase 11 con ocho pruebas de arrastre detrás; mostrarlas todas exige rediseñar el arrastre entre tira y mosaico, no un retoque) US-07: las pestañas que quedan en un panel dividido siguen
   visibles en la barra (tarea pendiente de la fase 11).
-- [ ] **15.9** QA-11, QA-12, QA-13: foco visible, F6 por regiones, tooltips
+- [ ] **15.9** (contraste revisado: el texto secundario cumple lo que pide N5, 4,5:1, y en el tema de noche llega a 5,5 como mínimo; quedan foco visible, F6 por regiones y tooltips junto al puntero) QA-11, QA-12, QA-13: foco visible, F6 por regiones, tooltips
   junto al puntero, contraste de íconos y de texto secundario según N5.
-- [ ] **15.10** QA-04, QA-05, QA-10, QA-15: la pestaña «Notas que enlazan aquí»
+- [ ] **15.10** (QA-04 hecha: la pestaña se llama «Enlazan aquí» y cabe a 640 px; QA-05 es una decisión de la fase 3: Editar cuenta lo escrito, con la sintaxis; quedan QA-10 y QA-15) QA-04, QA-05, QA-10, QA-15: la pestaña «Notas que enlazan aquí»
   no desborda, los conteos son los mismos en Leer y en Editar, la columna se
   centra con la ventana maximizada y el contenido no salta al interactuar.
 - [ ] **15.11** Los S4 restantes (QA-17 a QA-21, US-08, US-09) y volver a la

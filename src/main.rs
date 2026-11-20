@@ -1196,7 +1196,7 @@ impl WorkspaceDestination {
             Self::Files => "Archivos",
             Self::Outline => "Índice",
             Self::Search => "Buscar",
-            Self::Backlinks => "Notas que enlazan aquí",
+            Self::Backlinks => "Enlazan aquí",
         }
     }
 
