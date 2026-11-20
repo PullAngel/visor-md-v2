@@ -910,11 +910,19 @@ Cada tarea deja `cargo test` y `cargo clippy` en verde.
   `marca_antes_del_primer_titulo_va_al_comienzo_del_indice`,
   `la_marca_de_libro_se_pone_se_dibuja_y_aparece_en_el_indice`.
   **Falta:** las marcas en Editar (ahí solo viajan en el archivo) y QA manual.
-- [ ] **14.7** Editar: las anclas se desplazan con cada edición y con deshacer;
-  panel «Anotaciones sin lugar» con Reubicar, Copiar cita y Quitar. Pruebas:
+- [x] **14.7** Editar con anotaciones. Como las anotaciones se anclan por cita
+  y contexto contra el texto de ahora, cada edición (y cada deshacer) las
+  desplaza sola: borrar el texto anclado la deja **sin lugar** sin borrarla, y
+  deshacer la recupera. Al guardar, cada una anclada recalcula su posición y su
+  contexto (la cita no cambia). La línea contraída de Editar dice «· N sin lugar»
+  cuando las hay, y el menú Estudio ofrece «Copiar las citas de anotaciones sin
+  lugar» y «Quitar las anotaciones sin lugar».
+  **Desviación:** no hay panel con «Reubicar» por anotación; se difiere a un
+  uso real (copiar la cita y volver a subrayar cubre el caso). Pruebas:
   `editar_antes_del_subrayado_lo_desplaza`,
   `borrar_el_texto_anclado_lo_deja_huerfano`,
-  `deshacer_el_borrado_recupera_el_subrayado`.
+  `deshacer_el_borrado_recupera_el_subrayado`,
+  `editar_con_anotaciones_las_desplaza_y_las_deja_sin_lugar_sin_borrarlas`.
 - [ ] **14.8** Integraciones: fragmentos para IA sin anotaciones (casilla
   opcional), PDF con las anotaciones dibujadas y casilla para quitarlas,
   «Quitar todas» (con confirmación y deshacer), «Guardar copia sin

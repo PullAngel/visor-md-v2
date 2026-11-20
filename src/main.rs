@@ -352,7 +352,7 @@ const WORKSPACE_HUB_ACTIONS: [AppAction; 8] = [
 ];
 /// Herramientas de estudio reunidas fuera del menú contextual plano. Comparten
 /// paleta, teclado y la misma fuente Markdown portable que el resto del editor.
-const STUDY_ACTIONS: [AppAction; 23] = [
+const STUDY_ACTIONS: [AppAction; 25] = [
     AppAction::HighlightSelection,
     AppAction::HighlightYellow,
     AppAction::HighlightGreen,
@@ -367,6 +367,8 @@ const STUDY_ACTIONS: [AppAction; 23] = [
     AppAction::CycleBookmarkShape,
     AppAction::CycleBookmarkColor,
     AppAction::EditBookmarkNote,
+    AppAction::CopyLostAnnotations,
+    AppAction::RemoveLostAnnotations,
     AppAction::InsertStudyQuestion,
     AppAction::InsertStudySummary,
     AppAction::InsertStudyConceptList,
@@ -604,7 +606,7 @@ const BLOCK_GROUPS: [MenuGroup; 3] = [
     ),
     ("Bloque", &[AppAction::InsertQuote]),
 ];
-const STUDY_GROUPS: [MenuGroup; 4] = [
+const STUDY_GROUPS: [MenuGroup; 5] = [
     (
         "Subrayar",
         &[
@@ -627,6 +629,13 @@ const STUDY_GROUPS: [MenuGroup; 4] = [
             AppAction::CycleBookmarkShape,
             AppAction::CycleBookmarkColor,
             AppAction::EditBookmarkNote,
+        ],
+    ),
+    (
+        "Anotaciones sin lugar",
+        &[
+            AppAction::CopyLostAnnotations,
+            AppAction::RemoveLostAnnotations,
         ],
     ),
     (
@@ -2113,6 +2122,8 @@ enum AppAction {
     CycleBookmarkShape,
     CycleBookmarkColor,
     EditBookmarkNote,
+    CopyLostAnnotations,
+    RemoveLostAnnotations,
     CopyPlatform,
     ToggleSection,
     SearchDocument,
@@ -2294,6 +2305,8 @@ impl AppAction {
             Self::CycleBookmarkShape => "Cambiar la forma de la marca",
             Self::CycleBookmarkColor => "Cambiar el color de la marca",
             Self::EditBookmarkNote => "Nota de la marca",
+            Self::CopyLostAnnotations => "Copiar las citas de anotaciones sin lugar",
+            Self::RemoveLostAnnotations => "Quitar las anotaciones sin lugar",
             Self::CopyPlatform => "Copiar para Discord o correo",
             Self::ToggleSection => "Plegar o desplegar sección enfocada",
             Self::SearchDocument => "Buscar en documento · Ctrl+F",
@@ -7293,7 +7306,7 @@ struct DocumentState {
     /// salir de Editar.
     annotations_open: bool,
     /// Subrayados anclados para la revisión y el bloque actuales (clave hash).
-    study_cache: Option<(u64, Vec<estudio::Highlight>, Vec<estudio::Bookmark>)>,
+    study_cache: Option<StudyCache>,
     source_metadata: TextMetadata,
     source_identity: Option<FileIdentity>,
     source_baseline_bytes: Option<Vec<u8>>,
@@ -7386,6 +7399,9 @@ const DRAG_START_DISTANCE: f32 = 6.0;
 /// Por bloque del lector, los tramos de su texto dibujado que llevan un
 /// subrayado de estudio y el color de fondo de cada uno.
 type StudyRanges = HashMap<usize, Vec<(usize, usize, (u8, u8, u8))>>;
+
+/// Clave de revisión, subrayados, marcas y cuántas anotaciones no tienen lugar.
+type StudyCache = (u64, Vec<estudio::Highlight>, Vec<estudio::Bookmark>, usize);
 
 /// Marcas de libro de un bloque del lector: color del trazo y forma.
 type BlockBookmarks = HashMap<usize, Vec<((u8, u8, u8), anotaciones::Forma)>>;
@@ -11391,6 +11407,8 @@ impl App {
             AppAction::CycleBookmarkShape => self.cycle_bookmark(true),
             AppAction::CycleBookmarkColor => self.cycle_bookmark(false),
             AppAction::EditBookmarkNote => self.start_bookmark_note(),
+            AppAction::CopyLostAnnotations => self.copy_lost_annotations(),
+            AppAction::RemoveLostAnnotations => self.remove_lost_annotations(),
             AppAction::CopyPlatform => self.copy_selection_for_platform(),
             AppAction::ToggleSection => self.toggle_focused_section(),
             AppAction::SearchDocument => self.open_document_search(),
@@ -12626,20 +12644,38 @@ impl App {
             .document
             .study_cache
             .as_ref()
-            .is_none_or(|(cached, _, _)| *cached != key)
+            .is_none_or(|(cached, _, _, _)| *cached != key)
         {
             let source = self.document.source.to_string();
-            let (items, marks) = estudio::parse(Some(block))
+            let (items, marks, lost) = estudio::parse(Some(block))
                 .map(|parsed| {
                     (
                         estudio::highlights(&source, &parsed),
                         estudio::bookmarks(&source, &parsed),
+                        estudio::orphans(&source, &parsed).len(),
                     )
                 })
                 .unwrap_or_default();
-            self.document.study_cache = Some((key, items, marks));
+            self.document.study_cache = Some((key, items, marks, lost));
         }
         true
+    }
+
+    /// Cuántas anotaciones no encuentran su texto.
+    fn orphan_annotation_count(&mut self) -> usize {
+        if self.document.annotations.is_none() {
+            return 0;
+        }
+        let hidden = std::mem::replace(&mut self.hide_annotations, false);
+        let shown = self.refresh_study_cache();
+        self.hide_annotations = hidden;
+        if !shown {
+            return 0;
+        }
+        self.document
+            .study_cache
+            .as_ref()
+            .map_or(0, |(_, _, _, lost)| *lost)
     }
 
     /// Las marcas de libro ancladas (vacío si están ocultas).
@@ -12650,7 +12686,7 @@ impl App {
         self.document
             .study_cache
             .as_ref()
-            .map(|(_, _, marks)| marks.clone())
+            .map(|(_, _, marks, _)| marks.clone())
             .unwrap_or_default()
     }
 
@@ -12716,6 +12752,44 @@ impl App {
         self.document
             .scroll_anchor
             .or_else(|| self.document.blocks.first().map(|block| block.source.start))
+    }
+
+    fn copy_lost_annotations(&mut self) {
+        let source = self.document.source.to_string();
+        let quotes = estudio::parse(self.document.annotations.as_deref())
+            .map(|parsed| estudio::orphan_quotes(&source, &parsed))
+            .unwrap_or_default();
+        if quotes.is_empty() {
+            self.set_notice("No hay anotaciones sin lugar");
+        } else {
+            self.copy_text_to_clipboard(quotes, "Citas sin lugar copiadas");
+        }
+    }
+
+    fn remove_lost_annotations(&mut self) {
+        self.change_annotations(|anotaciones, source| {
+            match estudio::remove_orphans(anotaciones, source) {
+                0 => Err("No hay anotaciones sin lugar"),
+                1 => Ok("Una anotación sin lugar quitada".to_string()),
+                n => Ok(format!("{n} anotaciones sin lugar quitadas")),
+            }
+        });
+    }
+
+    /// Antes de guardar, cada anotación anclada actualiza su posición y su
+    /// contexto con el texto de ahora.
+    fn refresh_annotation_anchors(&mut self) {
+        let Some(block) = self.document.annotations.as_deref() else {
+            return;
+        };
+        let Ok(mut parsed) = estudio::parse(Some(block)) else {
+            return;
+        };
+        let source = self.document.source.to_string();
+        if estudio::refresh_anchors(&mut parsed, &source) > 0 {
+            let eol = self.document.annotation_line_ending();
+            self.document.annotations = anotaciones::escribir(&parsed, eol);
+        }
     }
 
     fn toggle_bookmark(&mut self) {
@@ -12878,7 +12952,7 @@ impl App {
         if self.document.mode != DocumentMode::Reading || !self.refresh_study_cache() {
             return ranges;
         }
-        let Some((_, items, _)) = &self.document.study_cache else {
+        let Some((_, items, _, _)) = &self.document.study_cache else {
             return ranges;
         };
         if items.is_empty() {
@@ -14775,6 +14849,7 @@ impl App {
             return;
         }
         let path = self.document.path.clone();
+        self.refresh_annotation_anchors();
         let source = self.document.source.to_string();
         let (annotations, annotations_skipped) = self.document.annotations_to_write(&source);
         let metadata = self.document.source_metadata;
@@ -14829,6 +14904,7 @@ impl App {
             self.set_notice("guardar como cancelado");
             return;
         };
+        self.refresh_annotation_anchors();
         let source = self.document.source.to_string();
         let (annotations, annotations_skipped) = self.document.annotations_to_write(&source);
         let metadata = self.document.source_metadata;
@@ -19605,9 +19681,20 @@ impl App {
         if annotations_block.is_none() {
             self.document.annotations_open = false;
         }
+        let orphan_count = if annotations_block.is_some() {
+            self.orphan_annotation_count()
+        } else {
+            0
+        };
         let annotations_line = annotations_block.as_deref().map(|block| {
             build_ui_text_layout(
-                &format!("Anotaciones de estudio · {}", annotation_count(block)),
+                &match orphan_count {
+                    0 => format!("Anotaciones de estudio · {}", annotation_count(block)),
+                    lost => format!(
+                        "Anotaciones de estudio · {} · {lost} sin lugar",
+                        annotation_count(block)
+                    ),
+                },
                 &mut self.font_cx,
                 &mut self.layout_cx,
                 self.palette.accent,
@@ -24729,6 +24816,47 @@ texto dos
         // Poner otra vez en la misma línea la quita.
         app.perform_action(AppAction::ToggleBookmark);
         assert!(app.study_bookmarks().is_empty());
+    }
+
+    #[test]
+    fn editar_con_anotaciones_las_desplaza_y_las_deja_sin_lugar_sin_borrarlas() {
+        let mut app = app_de_estudio();
+        seleccionar(&mut app, (2, 0), (2, 4));
+        app.perform_action(AppAction::HighlightSelection);
+        // Borrar el texto subrayado en Editar: la anotación queda sin lugar.
+        app.document.mode = DocumentMode::SourceEditing;
+        let desde = app.document.source.to_string().find("Otra").unwrap();
+        app.edit_source(|editor, source| {
+            editor.set_cursor(source, desde, false)?;
+            editor.set_cursor(source, desde + 4, true)?;
+            editor.insert(source, "XXXX")
+        });
+        assert_eq!(app.orphan_annotation_count(), 1);
+        assert!(app.document.annotations.is_some(), "no se borra sola");
+        // Deshacer la recupera.
+        app.undo_edit();
+        assert_eq!(app.orphan_annotation_count(), 0);
+        // Al guardar se actualizan la posición y el contexto.
+        app.edit_source(|editor, source| {
+            editor.set_cursor(source, 0, false)?;
+            editor.insert(
+                source, "ANTES
+",
+            )
+        });
+        app.refresh_annotation_anchors();
+        let parsed = estudio::parse(app.document.annotations.as_deref()).unwrap();
+        assert_eq!(parsed.registros[0].cita.as_deref(), Some("Otra"));
+        assert_eq!(
+            parsed.registros[0].pos,
+            Some({
+                let texto = app.document.source.to_string();
+                texto[..texto.find("Otra").unwrap()].chars().count() as u64
+            })
+        );
+        // Quitar las sin lugar no toca las ancladas.
+        app.perform_action(AppAction::RemoveLostAnnotations);
+        assert!(app.document.annotations.is_some());
     }
 
     #[test]

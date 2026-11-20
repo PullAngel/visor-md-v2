@@ -526,6 +526,93 @@ pub(crate) fn sections(heading_starts: &[usize], marks: &[Bookmark]) -> Vec<Sect
     sections
 }
 
+// ---------------------------------------------------------------------------
+// Edición y anotaciones sin lugar (14.7).
+// ---------------------------------------------------------------------------
+
+/// Anotaciones con cita que ya no se encuentran en el texto.
+pub(crate) fn orphans<'a>(source: &str, anotaciones: &'a Anotaciones) -> Vec<&'a Registro> {
+    let index = LfIndex::new(source);
+    anotaciones
+        .registros
+        .iter()
+        .filter(|registro| matches!(registro.tipo, Tipo::Subrayado | Tipo::Marca))
+        .filter(|registro| anotaciones::anclar(&index.lf, registro) == Ancla::Huerfana)
+        .collect()
+}
+
+/// Al guardar: cada anotación anclada recalcula su posición y su contexto con
+/// el texto de ahora (la cita no cambia). Las que no tienen lugar se guardan
+/// tal cual, con su última cita. Devuelve cuántas cambiaron.
+pub(crate) fn refresh_anchors(anotaciones: &mut Anotaciones, source: &str) -> usize {
+    let index = LfIndex::new(source);
+    let chars: Vec<char> = index.lf.chars().collect();
+    let mut changed = 0;
+    for registro in &mut anotaciones.registros {
+        if !matches!(registro.tipo, Tipo::Subrayado | Tipo::Marca) {
+            continue;
+        }
+        let Ancla::Anclada { inicio, fin } = anotaciones::anclar(&index.lf, registro) else {
+            continue;
+        };
+        let antes: String = chars[inicio.saturating_sub(anotaciones::MAX_CONTEXTO)..inicio]
+            .iter()
+            .collect();
+        let despues: String = chars[fin..(fin + anotaciones::MAX_CONTEXTO).min(chars.len())]
+            .iter()
+            .collect();
+        let cita: String = chars[inicio..fin].iter().collect();
+        let nuevo = (Some(inicio as u64), Some(antes), Some(cita), Some(despues));
+        let viejo = (
+            registro.pos,
+            registro.antes.clone(),
+            registro.cita.clone(),
+            registro.despues.clone(),
+        );
+        if nuevo != viejo {
+            (
+                registro.pos,
+                registro.antes,
+                registro.cita,
+                registro.despues,
+            ) = nuevo;
+            changed += 1;
+        }
+    }
+    changed
+}
+
+/// Quita las anotaciones sin lugar. Devuelve cuántas.
+pub(crate) fn remove_orphans(anotaciones: &mut Anotaciones, source: &str) -> usize {
+    let ids: Vec<String> = orphans(source, anotaciones)
+        .into_iter()
+        .map(|registro| registro.id.clone())
+        .collect();
+    anotaciones
+        .registros
+        .retain(|registro| !ids.contains(&registro.id));
+    ids.len()
+}
+
+/// Las citas de las anotaciones sin lugar, una por línea, para copiarlas.
+pub(crate) fn orphan_quotes(source: &str, anotaciones: &Anotaciones) -> String {
+    orphans(source, anotaciones)
+        .into_iter()
+        .map(|registro| {
+            let cita = registro.cita.as_deref().unwrap_or("").replace('\n', " ");
+            match registro
+                .nota
+                .as_deref()
+                .filter(|nota| !nota.trim().is_empty())
+            {
+                Some(nota) => format!("{cita} — {nota}"),
+                None => cita,
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 #[cfg(test)]
 mod pruebas {
     use super::*;
@@ -748,5 +835,51 @@ mod pruebas {
         .unwrap();
         assert_eq!(bookmarks(GUIA, &anotaciones)[0].shape, Forma::Cinta);
         assert!(change_bookmark(&mut anotaciones, GUIA, 0, |_| {}).is_err());
+    }
+
+    #[test]
+    fn editar_antes_del_subrayado_lo_desplaza() {
+        let original = "uno dos tres\ncuatro";
+        let mut anotaciones = Anotaciones::default();
+        highlight(&mut anotaciones, original, 4, 7, 0).unwrap();
+        let editado = "INSERTADO uno dos tres\ncuatro";
+        let pintados = highlights(editado, &anotaciones);
+        assert_eq!(&editado[pintados[0].start..pintados[0].end], "dos");
+        // Al guardar, la posición y el contexto se actualizan; la cita no.
+        assert_eq!(refresh_anchors(&mut anotaciones, editado), 1);
+        let registro = &anotaciones.registros[0];
+        assert_eq!(registro.pos, Some(14));
+        assert_eq!(registro.antes.as_deref(), Some("INSERTADO uno "));
+        assert_eq!(registro.cita.as_deref(), Some("dos"));
+        assert_eq!(refresh_anchors(&mut anotaciones, editado), 0);
+    }
+
+    #[test]
+    fn borrar_el_texto_anclado_lo_deja_huerfano() {
+        let original = "uno dos tres";
+        let mut anotaciones = Anotaciones::default();
+        highlight(&mut anotaciones, original, 4, 7, 2).unwrap();
+        let sin_texto = "uno tres";
+        assert!(highlights(sin_texto, &anotaciones).is_empty());
+        assert_eq!(orphans(sin_texto, &anotaciones).len(), 1);
+        // Guardar no la borra ni la cambia.
+        let antes = anotaciones.clone();
+        assert_eq!(refresh_anchors(&mut anotaciones, sin_texto), 0);
+        assert_eq!(anotaciones, antes);
+        assert_eq!(orphan_quotes(sin_texto, &anotaciones), "dos");
+        assert_eq!(remove_orphans(&mut anotaciones, sin_texto), 1);
+        assert!(anotaciones.registros.is_empty());
+    }
+
+    #[test]
+    fn deshacer_el_borrado_recupera_el_subrayado() {
+        let original = "uno dos tres";
+        let mut anotaciones = Anotaciones::default();
+        highlight(&mut anotaciones, original, 4, 7, 1).unwrap();
+        assert!(highlights("uno tres", &anotaciones).is_empty());
+        // Volver al texto de antes (deshacer) lo ancla otra vez.
+        let vuelto = highlights(original, &anotaciones);
+        assert_eq!(vuelto.len(), 1);
+        assert_eq!(&original[vuelto[0].start..vuelto[0].end], "dos");
     }
 }
