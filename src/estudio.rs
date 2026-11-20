@@ -3,7 +3,7 @@
 //! tramos pintar. Sin interfaz: solo texto, rangos y el formato de
 //! `anotaciones`.
 
-use crate::anotaciones::{self, Ancla, Anotaciones, Color, Lectura, Registro, Tipo};
+use crate::anotaciones::{self, Ancla, Anotaciones, Color, Forma, Lectura, Registro, Tipo};
 
 /// Tope de la cita de un subrayado (diseño, 5.6).
 pub(crate) const MAX_CITA_BYTES: usize = 4096;
@@ -316,6 +316,216 @@ pub(crate) fn set_legend(anotaciones: &mut Anotaciones, color: usize, text: &str
     }
 }
 
+// ---------------------------------------------------------------------------
+// Marcas de libro (14.6).
+// ---------------------------------------------------------------------------
+
+/// Caracteres de la línea que cita una marca.
+pub(crate) const MARK_QUOTE_CHARS: usize = 48;
+/// Colores distintos que se ven como puntos en una fila del índice.
+pub(crate) const MAX_INDEX_DOTS: usize = 3;
+/// Marcas que lista la ayuda de una fila del índice antes de «y N más».
+pub(crate) const MAX_TOOLTIP_MARKS: usize = 5;
+
+/// Una marca anclada: byte del texto real donde está, color, forma y lo que
+/// la describe (su nota o, si no tiene, su cita).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Bookmark {
+    pub(crate) start: usize,
+    pub(crate) color: usize,
+    pub(crate) shape: Forma,
+    pub(crate) label: String,
+    pub(crate) id: String,
+}
+
+/// Las marcas ancladas, ordenadas por posición.
+pub(crate) fn bookmarks(source: &str, anotaciones: &Anotaciones) -> Vec<Bookmark> {
+    let index = LfIndex::new(source);
+    let mut marks: Vec<Bookmark> = anotaciones
+        .registros
+        .iter()
+        .filter(|registro| registro.tipo == Tipo::Marca)
+        .filter_map(|registro| {
+            let color = color_index(&registro.color)?;
+            let Ancla::Anclada { inicio, .. } = anotaciones::anclar(&index.lf, registro) else {
+                return None;
+            };
+            let label = registro
+                .nota
+                .clone()
+                .filter(|nota| !nota.trim().is_empty())
+                .or_else(|| registro.cita.clone())
+                .unwrap_or_default();
+            Some(Bookmark {
+                start: index.byte_at_char(inicio),
+                color,
+                shape: registro.forma.clone().unwrap_or(Forma::Barra),
+                label,
+                id: registro.id.clone(),
+            })
+        })
+        .collect();
+    marks.sort_by_key(|mark| mark.start);
+    marks
+}
+
+/// Comienzo de la línea del texto real que contiene `byte`.
+fn line_start(source: &str, byte: usize) -> usize {
+    source[..byte.min(source.len())]
+        .rfind('\n')
+        .map_or(0, |index| index + 1)
+}
+
+/// La marca anclada en la línea de `byte`, si hay.
+fn bookmark_on_line(source: &str, anotaciones: &Anotaciones, byte: usize) -> Option<String> {
+    let start = line_start(source, byte);
+    let end = source[start..]
+        .find('\n')
+        .map_or(source.len(), |index| start + index);
+    bookmarks(source, anotaciones)
+        .into_iter()
+        .find(|mark| (start..=end).contains(&mark.start))
+        .map(|mark| mark.id)
+}
+
+/// Pone una marca en la línea de `byte` o, si ya tiene una, la quita.
+/// Devuelve `true` si la puso.
+pub(crate) fn toggle_bookmark(
+    anotaciones: &mut Anotaciones,
+    source: &str,
+    byte: usize,
+    color: usize,
+    shape: Forma,
+) -> Result<bool, &'static str> {
+    if let Some(id) = bookmark_on_line(source, anotaciones, byte) {
+        anotaciones.registros.retain(|registro| registro.id != id);
+        return Ok(false);
+    }
+    let start = line_start(source, byte);
+    let line_end = source[start..]
+        .find('\n')
+        .map_or(source.len(), |index| start + index);
+    let line = source[start..line_end].trim_end_matches('\r');
+    let head: String = line.chars().take(MARK_QUOTE_CHARS).collect();
+    let head = head.trim_end();
+    if head.trim().is_empty() {
+        return Err("Poné la marca en una línea con texto");
+    }
+    let (pos, antes, cita, despues) = quote(source, start, start + head.len())?;
+    let id = anotaciones.nuevo_id();
+    anotaciones.registros.push(Registro {
+        id,
+        tipo: Tipo::Marca,
+        color: color_for_index(color),
+        forma: Some(shape),
+        pos: Some(pos),
+        antes: Some(antes),
+        cita: Some(cita),
+        despues: Some(despues),
+        nota: None,
+        imagen: None,
+        extras: Vec::new(),
+    });
+    Ok(true)
+}
+
+/// Aplica un cambio a la marca de la línea de `byte`. Error si no hay.
+pub(crate) fn change_bookmark(
+    anotaciones: &mut Anotaciones,
+    source: &str,
+    byte: usize,
+    change: impl FnOnce(&mut Registro),
+) -> Result<(), &'static str> {
+    let id = bookmark_on_line(source, anotaciones, byte).ok_or("Esta línea no tiene marca")?;
+    let registro = anotaciones
+        .registros
+        .iter_mut()
+        .find(|registro| registro.id == id)
+        .ok_or("Esta línea no tiene marca")?;
+    change(registro);
+    Ok(())
+}
+
+/// La siguiente forma de marca: barra → cinta → punto → bandera → barra.
+pub(crate) fn next_shape(shape: Option<&Forma>) -> Forma {
+    match shape {
+        Some(Forma::Barra) | None | Some(Forma::Otro(_)) => Forma::Cinta,
+        Some(Forma::Cinta) => Forma::Punto,
+        Some(Forma::Punto) => Forma::Bandera,
+        Some(Forma::Bandera) => Forma::Barra,
+    }
+}
+
+/// Lo que el índice muestra de las marcas de una sección.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct SectionMarks {
+    /// Colores distintos, en el orden de la paleta, como máximo tres.
+    pub(crate) colors: Vec<usize>,
+    /// Cuántos colores distintos más hay («+N»).
+    pub(crate) more: usize,
+    /// Todas las marcas de la sección: color, byte y descripción.
+    pub(crate) marks: Vec<(usize, usize, String)>,
+}
+
+impl SectionMarks {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.marks.is_empty()
+    }
+
+    /// La primera marca de un color en la sección.
+    pub(crate) fn first_of_color(&self, color: usize) -> Option<usize> {
+        self.marks
+            .iter()
+            .find(|(mark_color, _, _)| *mark_color == color)
+            .map(|(_, start, _)| *start)
+    }
+
+    /// Texto de la ayuda: las primeras marcas con su descripción y «y N más».
+    pub(crate) fn tooltip(&self) -> String {
+        let mut lines: Vec<String> = self
+            .marks
+            .iter()
+            .take(MAX_TOOLTIP_MARKS)
+            .map(|(color, _, label)| {
+                let label: String = label.chars().take(60).collect();
+                format!("{}: {label}", crate::theme::STUDY_COLOR_NAMES[*color])
+            })
+            .collect();
+        if self.marks.len() > MAX_TOOLTIP_MARKS {
+            lines.push(format!("y {} más", self.marks.len() - MAX_TOOLTIP_MARKS));
+        }
+        lines.join("\n")
+    }
+}
+
+/// Reparte las marcas entre las secciones del índice. `heading_starts` son
+/// los bytes donde empieza cada título de la lista, en orden. Una marca va a
+/// la sección del último título anterior a ella; las que están antes del
+/// primer título van a la primera fila (el comienzo del índice).
+pub(crate) fn sections(heading_starts: &[usize], marks: &[Bookmark]) -> Vec<SectionMarks> {
+    let mut sections = vec![SectionMarks::default(); heading_starts.len()];
+    if sections.is_empty() {
+        return sections;
+    }
+    for mark in marks {
+        let index = heading_starts
+            .partition_point(|&start| start <= mark.start)
+            .saturating_sub(1);
+        sections[index]
+            .marks
+            .push((mark.color, mark.start, mark.label.clone()));
+    }
+    for section in &mut sections {
+        let mut colors: Vec<usize> = section.marks.iter().map(|(color, _, _)| *color).collect();
+        colors.sort_unstable();
+        colors.dedup();
+        section.more = colors.len().saturating_sub(MAX_INDEX_DOTS);
+        colors.truncate(MAX_INDEX_DOTS);
+        section.colors = colors;
+    }
+    sections
+}
+
 #[cfg(test)]
 mod pruebas {
     use super::*;
@@ -411,5 +621,132 @@ mod pruebas {
     fn un_bloque_de_version_nueva_no_se_puede_cambiar() {
         assert!(parse(Some("<!-- visor-md:anotaciones v2\n-->")).is_err());
         assert_eq!(parse(None), Ok(Anotaciones::default()));
+    }
+
+    const GUIA: &str = "Intro suelta\n\n# Uno\n\ntexto uno\n\notra línea\n\n# Dos\n\ntexto dos\n";
+
+    fn titulos() -> Vec<usize> {
+        vec![GUIA.find("# Uno").unwrap(), GUIA.find("# Dos").unwrap()]
+    }
+
+    fn marcar(anotaciones: &mut Anotaciones, cita: &str, color: usize) {
+        let byte = GUIA.find(cita).unwrap();
+        assert_eq!(
+            toggle_bookmark(anotaciones, GUIA, byte, color, Forma::Barra),
+            Ok(true)
+        );
+    }
+
+    #[test]
+    fn marca_suma_un_punto_al_titulo_de_su_seccion() {
+        let mut anotaciones = Anotaciones::default();
+        marcar(&mut anotaciones, "texto dos", 2);
+        let secciones = sections(&titulos(), &bookmarks(GUIA, &anotaciones));
+        assert!(secciones[0].is_empty());
+        assert_eq!(secciones[1].colors, vec![2]);
+        assert_eq!(secciones[1].more, 0);
+        // La marca cita el comienzo de su línea.
+        assert_eq!(anotaciones.registros[0].cita.as_deref(), Some("texto dos"));
+        // Poner otra vez en la misma línea la quita.
+        let byte = GUIA.find("dos\n").unwrap();
+        assert_eq!(
+            toggle_bookmark(&mut anotaciones, GUIA, byte, 0, Forma::Barra),
+            Ok(false)
+        );
+        assert!(anotaciones.registros.is_empty());
+    }
+
+    #[test]
+    fn muchas_marcas_no_cambian_la_fila_del_indice() {
+        // Decenas de marcas del mismo color en una sección: un solo punto.
+        let mut texto = String::from("# Tema\n\n");
+        for numero in 0..40 {
+            texto.push_str(&format!("línea {numero}\n"));
+        }
+        let mut anotaciones = Anotaciones::default();
+        for numero in 0..40 {
+            let byte = texto.find(&format!("línea {numero}\n")).unwrap();
+            toggle_bookmark(&mut anotaciones, &texto, byte, 1, Forma::Punto).unwrap();
+        }
+        let secciones = sections(&[0], &bookmarks(&texto, &anotaciones));
+        assert_eq!(secciones[0].marks.len(), 40);
+        assert_eq!(secciones[0].colors, vec![1]);
+        assert_eq!(secciones[0].more, 0);
+    }
+
+    #[test]
+    fn mas_de_tres_colores_muestran_mas_n() {
+        let mut texto = String::from("# Tema\n\n");
+        for color in 0..5 {
+            texto.push_str(&format!("color {color}\n"));
+        }
+        let mut anotaciones = Anotaciones::default();
+        for color in (0..5).rev() {
+            let byte = texto.find(&format!("color {color}\n")).unwrap();
+            toggle_bookmark(&mut anotaciones, &texto, byte, color, Forma::Barra).unwrap();
+        }
+        let secciones = sections(&[0], &bookmarks(&texto, &anotaciones));
+        // En el orden de la paleta, aunque se marcaron al revés.
+        assert_eq!(secciones[0].colors, vec![0, 1, 2]);
+        assert_eq!(secciones[0].more, 2);
+        assert_eq!(secciones[0].first_of_color(3), texto.find("color 3"));
+    }
+
+    #[test]
+    fn la_ayuda_lista_las_marcas_de_la_seccion() {
+        let mut texto = String::from("# Tema\n\n");
+        for numero in 0..7 {
+            texto.push_str(&format!("punto {numero}\n"));
+        }
+        let mut anotaciones = Anotaciones::default();
+        for numero in 0..7 {
+            let byte = texto.find(&format!("punto {numero}\n")).unwrap();
+            toggle_bookmark(&mut anotaciones, &texto, byte, 0, Forma::Barra).unwrap();
+        }
+        // Una nota reemplaza a la cita en la ayuda.
+        let byte = texto.find("punto 0").unwrap();
+        change_bookmark(&mut anotaciones, &texto, byte, |registro| {
+            registro.nota = Some("repasar".to_string());
+        })
+        .unwrap();
+        let ayuda = sections(&[0], &bookmarks(&texto, &anotaciones))[0].tooltip();
+        let lineas: Vec<&str> = ayuda.lines().collect();
+        assert_eq!(lineas[0], "amarillo: repasar");
+        assert_eq!(lineas[1], "amarillo: punto 1");
+        assert_eq!(lineas.len(), MAX_TOOLTIP_MARKS + 1);
+        assert_eq!(lineas[MAX_TOOLTIP_MARKS], "y 2 más");
+    }
+
+    #[test]
+    fn marca_antes_del_primer_titulo_va_al_comienzo_del_indice() {
+        let mut anotaciones = Anotaciones::default();
+        marcar(&mut anotaciones, "Intro suelta", 4);
+        let secciones = sections(&titulos(), &bookmarks(GUIA, &anotaciones));
+        assert_eq!(secciones[0].colors, vec![4]);
+        assert!(secciones[1].is_empty());
+        assert!(sections(&[], &bookmarks(GUIA, &anotaciones)).is_empty());
+    }
+
+    #[test]
+    fn la_marca_cambia_de_forma_y_no_se_pone_en_una_linea_vacia() {
+        let mut anotaciones = Anotaciones::default();
+        assert!(
+            toggle_bookmark(
+                &mut anotaciones,
+                GUIA,
+                GUIA.find("\n\n# Uno").unwrap() + 1,
+                0,
+                Forma::Barra
+            )
+            .is_err()
+        );
+        marcar(&mut anotaciones, "texto uno", 0);
+        let byte = GUIA.find("texto uno").unwrap();
+        change_bookmark(&mut anotaciones, GUIA, byte, |registro| {
+            registro.forma = Some(next_shape(registro.forma.as_ref()));
+        })
+        .unwrap();
+        assert_eq!(bookmarks(GUIA, &anotaciones)[0].shape, Forma::Cinta);
+        assert!(change_bookmark(&mut anotaciones, GUIA, 0, |_| {}).is_err());
     }
 }

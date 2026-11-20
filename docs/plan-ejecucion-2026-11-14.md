@@ -884,26 +884,32 @@ Cada tarea deja `cargo test` y `cargo clippy` en verde.
   `subrayar_marca_el_documento_sin_guardar`,
   `ocultar_mis_anotaciones_muestra_el_original`, más las de `estudio::pruebas`.
   **Falta:** QA manual con capturas en la ventana real.
-- [ ] **14.6** Marcas de libro: forma (barra, cinta, punto, bandera), **color
-  elegido** y nota opcional, en el margen izquierdo. **En el índice, sutiles y
-  sin romper el formato:**
-  - no se agregan filas: cada título del índice puede llevar, a la derecha,
-    **puntos de color de 6 px** de las marcas de su sección (las que caen entre
-    ese título y el siguiente);
+- [x] **14.6** Marcas de libro: una por línea, con forma (barra, cinta, punto,
+  bandera), **color elegido** (el último usado) y nota opcional, en el margen
+  izquierdo de Leer. Ctrl+Shift+M (o menú Estudio > «Marcas de libro») la pone o,
+  si la línea ya tiene una, la quita; hay acciones para cambiar su forma, su
+  color y su nota. **En el índice, sutiles y sin romper el formato:**
+  - no se agregan filas: cada título puede llevar, a la derecha, **puntos de
+    color de 6 px** de las marcas de su sección (las que caen entre ese título
+    y el siguiente);
   - un punto por color distinto, en el orden de la paleta, **como máximo tres**;
-    si hay más colores, un «+N» en tono tenue;
-  - el espacio de los puntos está **reservado y es fijo** (unos 28 px): el
-    título no se mueve, no cambia de alto ni se recorta distinto por tener o no
-    marcas, aunque una sección tenga decenas;
+    si hay más colores, un «+N» tenue;
+  - el lugar de los puntos está **reservado y es fijo** (40 px) en todas las
+    filas del índice de un documento con anotaciones: el título no se mueve ni
+    se recorta distinto por tener o no marcas, aunque una sección tenga decenas;
+    sin anotaciones el índice queda como siempre;
   - al pasar el puntero, la ayuda lista las marcas de la sección (las primeras
     cinco con su nota o su cita, y «y N más»); clic en un punto lleva a la
     primera marca de ese color en la sección;
-  - lo mismo en el índice flotante; los subrayados no aparecen en el índice.
+  - lo mismo en el índice flotante (con 30 caracteres de título); los
+    subrayados no aparecen en el índice.
   Pruebas: `marca_suma_un_punto_al_titulo_de_su_seccion`,
   `muchas_marcas_no_cambian_la_fila_del_indice`,
   `mas_de_tres_colores_muestran_mas_n`,
   `la_ayuda_lista_las_marcas_de_la_seccion`,
-  `marca_antes_del_primer_titulo_va_al_comienzo_del_indice`.
+  `marca_antes_del_primer_titulo_va_al_comienzo_del_indice`,
+  `la_marca_de_libro_se_pone_se_dibuja_y_aparece_en_el_indice`.
+  **Falta:** las marcas en Editar (ahí solo viajan en el archivo) y QA manual.
 - [ ] **14.7** Editar: las anclas se desplazan con cada edición y con deshacer;
   panel «Anotaciones sin lugar» con Reubicar, Copiar cita y Quitar. Pruebas:
   `editar_antes_del_subrayado_lo_desplaza`,
