@@ -366,3 +366,20 @@ cerrar la prueba sin intentar explotar el fallo.
 5. **Asociación.** Archivo > Sistema > «Abrir archivos con Visor MD…» > Registrar:
    Visor MD aparece en «Abrir con» y se abre Configuración; elegirlo como
    predeterminado. «Quitar» lo retira.
+
+## Anotaciones de estudio (manual, noviembre de 2026)
+
+1. **Subrayar.** En Leer, seleccioná texto que cruce dos párrafos y usá
+   Ctrl+Shift+H; probá los cinco colores desde Estudio > Subrayar y «Leyenda».
+   En el tema de día y en el de noche el texto debe leerse igual.
+2. **Guardar.** Aparece «•»; Ctrl+S; cerrá y abrí: los subrayados siguen.
+3. **Otro lector.** Abrí el `.md` en VS Code, en GitHub o en Obsidian: el bloque
+   no se ve; en un lector sin HTML se ve como texto con su frase de aviso.
+4. **Editar.** Debe verse la línea «▸ Anotaciones de estudio · N» en la barra de
+   estado, sin alargar la barra de desplazamiento; clic la despliega, Esc la
+   contrae. Borrá un texto subrayado: «· 1 sin lugar»; deshacé: vuelve.
+5. **Marcas.** Ctrl+Shift+M pone una marca; en el índice aparece un punto sutil
+   en su sección; con decenas de marcas el título no se mueve.
+6. **PDF.** Exportar a PDF lleva los subrayados; «Exportar a PDF sin
+   anotaciones» no.
+7. **Quitar todas** pide confirmación y se puede restaurar.

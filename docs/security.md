@@ -458,6 +458,16 @@ formato y suma de verificación que una copia, en `recovery\traspaso\`; el
 origen la cierra solo cuando la otra ventana confirma que la abrió y siempre que
 no haya cambiado mientras tanto. Los traspasos que nadie recoge caducan al día.
 
+Las anotaciones de estudio son datos inertes: un bloque de comentario HTML al
+final del documento con JSON de un solo nivel (cadenas y enteros). El lector es
+propio, acotado (1 MiB, 5 000 registros, 16 KiB por línea) y no recursivo; no
+ejecuta, abre rutas, consulta la red ni cambia preferencias con nada de lo que
+lee. `<`, `>` y los separadores de línea de Unicode se escriben siempre
+escapados, de modo que ninguna nota puede cerrar el comentario ni partir un
+registro. Lo desconocido (versión nueva, claves, líneas dañadas) se conserva
+sin interpretar. El bloque se separa del texto al abrir: Leer, la búsqueda, el
+PDF, las métricas y los fragmentos para IA solo ven el cuerpo.
+
 Las preferencias de modo por archivo no almacenan rutas en claro: guardan como
 máximo 128 hashes estables y uno de tres valores de presentación. Ese hash no es
 un control criptográfico y podría probarse por diccionario si un atacante ya

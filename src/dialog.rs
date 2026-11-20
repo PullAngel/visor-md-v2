@@ -31,6 +31,8 @@ pub(crate) enum DialogChoice {
     RegisterFileTypes,
     RemoveFileTypes,
     CancelFileTypes,
+    RemoveAllAnnotations,
+    KeepAnnotations,
 }
 
 /// Peso visual de un botón. El primario es la acción recomendada; el
@@ -142,6 +144,29 @@ impl Dialog {
                 ),
             ],
             DialogChoice::KeepRecovery,
+        )
+    }
+
+    pub(crate) fn remove_annotations(count: usize) -> Self {
+        let body = format!(
+            "Se quitan {count} anotaciones de estudio (subrayados, marcas y leyendas) de este documento. El texto no cambia. Podés volver a ponerlas con «Restaurar las anotaciones quitadas» mientras no cierres la pestaña."
+        );
+        Self::new(
+            "¿Quitar todas las anotaciones?",
+            &body,
+            vec![
+                button(
+                    "Quitar todas",
+                    DialogChoice::RemoveAllAnnotations,
+                    ButtonTone::Destructive,
+                ),
+                button(
+                    "Conservarlas",
+                    DialogChoice::KeepAnnotations,
+                    ButtonTone::Primary,
+                ),
+            ],
+            DialogChoice::KeepAnnotations,
         )
     }
 
@@ -524,6 +549,7 @@ mod tests {
                     | DialogChoice::CloseWindow
                     | DialogChoice::DiscardRecovery
                     | DialogChoice::DisableRecovery
+                    | DialogChoice::RemoveAllAnnotations
                     | DialogChoice::ReloadExternal
             ));
             assert_eq!(dialog.buttons[dialog.focused].tone, ButtonTone::Primary);

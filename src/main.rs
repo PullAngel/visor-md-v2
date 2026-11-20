@@ -352,7 +352,7 @@ const WORKSPACE_HUB_ACTIONS: [AppAction; 8] = [
 ];
 /// Herramientas de estudio reunidas fuera del menú contextual plano. Comparten
 /// paleta, teclado y la misma fuente Markdown portable que el resto del editor.
-const STUDY_ACTIONS: [AppAction; 25] = [
+const STUDY_ACTIONS: [AppAction; 29] = [
     AppAction::HighlightSelection,
     AppAction::HighlightYellow,
     AppAction::HighlightGreen,
@@ -369,6 +369,10 @@ const STUDY_ACTIONS: [AppAction; 25] = [
     AppAction::EditBookmarkNote,
     AppAction::CopyLostAnnotations,
     AppAction::RemoveLostAnnotations,
+    AppAction::RemoveAllAnnotations,
+    AppAction::RestoreRemovedAnnotations,
+    AppAction::SaveCopyWithoutAnnotations,
+    AppAction::ExportPdfPlain,
     AppAction::InsertStudyQuestion,
     AppAction::InsertStudySummary,
     AppAction::InsertStudyConceptList,
@@ -606,7 +610,7 @@ const BLOCK_GROUPS: [MenuGroup; 3] = [
     ),
     ("Bloque", &[AppAction::InsertQuote]),
 ];
-const STUDY_GROUPS: [MenuGroup; 5] = [
+const STUDY_GROUPS: [MenuGroup; 6] = [
     (
         "Subrayar",
         &[
@@ -636,6 +640,15 @@ const STUDY_GROUPS: [MenuGroup; 5] = [
         &[
             AppAction::CopyLostAnnotations,
             AppAction::RemoveLostAnnotations,
+        ],
+    ),
+    (
+        "Todas las anotaciones",
+        &[
+            AppAction::RemoveAllAnnotations,
+            AppAction::RestoreRemovedAnnotations,
+            AppAction::SaveCopyWithoutAnnotations,
+            AppAction::ExportPdfPlain,
         ],
     ),
     (
@@ -2124,6 +2137,10 @@ enum AppAction {
     EditBookmarkNote,
     CopyLostAnnotations,
     RemoveLostAnnotations,
+    RemoveAllAnnotations,
+    RestoreRemovedAnnotations,
+    SaveCopyWithoutAnnotations,
+    ExportPdfPlain,
     CopyPlatform,
     ToggleSection,
     SearchDocument,
@@ -2307,6 +2324,10 @@ impl AppAction {
             Self::EditBookmarkNote => "Nota de la marca",
             Self::CopyLostAnnotations => "Copiar las citas de anotaciones sin lugar",
             Self::RemoveLostAnnotations => "Quitar las anotaciones sin lugar",
+            Self::RemoveAllAnnotations => "Quitar todas las anotaciones",
+            Self::RestoreRemovedAnnotations => "Restaurar las anotaciones quitadas",
+            Self::SaveCopyWithoutAnnotations => "Guardar copia sin anotaciones",
+            Self::ExportPdfPlain => "Exportar a PDF sin anotaciones",
             Self::CopyPlatform => "Copiar para Discord o correo",
             Self::ToggleSection => "Plegar o desplegar sección enfocada",
             Self::SearchDocument => "Buscar en documento · Ctrl+F",
@@ -7307,6 +7328,9 @@ struct DocumentState {
     annotations_open: bool,
     /// Subrayados anclados para la revisión y el bloque actuales (clave hash).
     study_cache: Option<StudyCache>,
+    /// Las anotaciones que se acaban de quitar con «Quitar todas», para poder
+    /// restaurarlas mientras la pestaña siga abierta.
+    removed_annotations: Option<String>,
     source_metadata: TextMetadata,
     source_identity: Option<FileIdentity>,
     source_baseline_bytes: Option<Vec<u8>>,
@@ -7399,6 +7423,34 @@ const DRAG_START_DISTANCE: f32 = 6.0;
 /// Por bloque del lector, los tramos de su texto dibujado que llevan un
 /// subrayado de estudio y el color de fondo de cada uno.
 type StudyRanges = HashMap<usize, Vec<(usize, usize, (u8, u8, u8))>>;
+
+/// Traduce subrayados (rangos de la fuente) a tramos del texto dibujado de
+/// cada bloque, con el fondo de la paleta dada.
+fn highlight_ranges_for(
+    blocks: &[Block],
+    source: &str,
+    items: &[estudio::Highlight],
+    palette: &Palette,
+) -> StudyRanges {
+    let mut ranges = StudyRanges::new();
+    for item in items {
+        let fill = palette.study[item.color.min(4)].fill;
+        let first = blocks.partition_point(|block| block.source.end <= item.start);
+        for (index, block) in blocks.iter().enumerate().skip(first) {
+            if block.source.start >= item.end {
+                break;
+            }
+            let Some(slice) = source.get(block.source.start..block.source.end) else {
+                continue;
+            };
+            let map = estudio::rendered_source_map(&block.text, slice, block.source.start);
+            if let Some((start, end)) = estudio::rendered_range(&map, item.start, item.end) {
+                ranges.entry(index).or_default().push((start, end, fill));
+            }
+        }
+    }
+    ranges
+}
 
 /// Clave de revisión, subrayados, marcas y cuántas anotaciones no tienen lugar.
 type StudyCache = (u64, Vec<estudio::Highlight>, Vec<estudio::Bookmark>, usize);
@@ -7618,6 +7670,7 @@ impl DocumentState {
             annotations: None,
             annotations_open: false,
             study_cache: None,
+            removed_annotations: None,
             source_metadata: TextMetadata::default(),
             source_identity: None,
             source_baseline_bytes: None,
@@ -8720,6 +8773,7 @@ impl App {
                 annotations: None,
                 annotations_open: false,
                 study_cache: None,
+                removed_annotations: None,
                 source_metadata: TextMetadata::default(),
                 source_identity: None,
                 source_baseline_bytes: None,
@@ -11358,7 +11412,7 @@ impl App {
             AppAction::TogglePinOnTop => self.toggle_pin_on_top(),
             AppAction::InsertSymbol => self.open_symbol_picker(),
             AppAction::ToggleFloatingOutline => self.toggle_floating_outline(),
-            AppAction::ExportPdf => self.export_current_pdf(),
+            AppAction::ExportPdf => self.export_current_pdf(true),
             AppAction::Cut => self.cut_source_selection(),
             AppAction::FormatBold => self.apply_markdown_surround("**", "**", "texto"),
             AppAction::FormatItalic => self.apply_markdown_surround("_", "_", "texto"),
@@ -11409,6 +11463,10 @@ impl App {
             AppAction::EditBookmarkNote => self.start_bookmark_note(),
             AppAction::CopyLostAnnotations => self.copy_lost_annotations(),
             AppAction::RemoveLostAnnotations => self.remove_lost_annotations(),
+            AppAction::RemoveAllAnnotations => self.ask_remove_all_annotations(),
+            AppAction::RestoreRemovedAnnotations => self.restore_removed_annotations(),
+            AppAction::SaveCopyWithoutAnnotations => self.save_copy_without_annotations(),
+            AppAction::ExportPdfPlain => self.export_current_pdf(false),
             AppAction::CopyPlatform => self.copy_selection_for_platform(),
             AppAction::ToggleSection => self.toggle_focused_section(),
             AppAction::SearchDocument => self.open_document_search(),
@@ -11553,7 +11611,7 @@ impl App {
     /// Exporta la versión actual del documento, aunque esté en edición. El
     /// destino lo elige la persona; se escribe de forma atómica y nunca se
     /// toca el archivo Markdown.
-    fn export_current_pdf(&mut self) {
+    fn export_current_pdf(&mut self, with_annotations: bool) {
         let source = self.document.source.to_string();
         let outcome = match self.document.content_kind.prepare_view(&source) {
             Ok(outcome) => outcome,
@@ -11585,8 +11643,28 @@ impl App {
             return;
         }
         let started = Instant::now();
+        // Los subrayados van pintados en el PDF salvo que se pida sin ellos
+        // (o que estén ocultos): son pintura, el bloque nunca entra.
+        let study = if with_annotations && !self.hide_annotations {
+            self.document
+                .annotations
+                .as_deref()
+                .and_then(|block| estudio::parse(Some(block)).ok())
+                .map(|parsed| {
+                    highlight_ranges_for(
+                        &outcome.blocks,
+                        &source,
+                        &estudio::highlights(&source, &parsed),
+                        &DAY,
+                    )
+                })
+                .unwrap_or_default()
+        } else {
+            StudyRanges::new()
+        };
         let (bytes, pages) = export_pdf_bytes(
             &outcome.blocks,
+            &study,
             &stem,
             &mut self.font_cx,
             &mut self.layout_cx,
@@ -12754,6 +12832,82 @@ impl App {
             .or_else(|| self.document.blocks.first().map(|block| block.source.start))
     }
 
+    fn ask_remove_all_annotations(&mut self) {
+        let Some(block) = self.document.annotations.as_deref() else {
+            self.set_notice("Este documento no tiene anotaciones");
+            return;
+        };
+        let count = annotation_count(block);
+        self.open_dialog(Dialog::remove_annotations(count), Some(self.document.id));
+    }
+
+    fn remove_all_annotations(&mut self) {
+        let Some(block) = self.document.annotations.take() else {
+            return;
+        };
+        self.document.removed_annotations = Some(block);
+        self.document.annotations_open = false;
+        self.document.study_cache = None;
+        self.document.source_editor.mark_changed();
+        self.schedule_recovery();
+        self.set_notice("Anotaciones quitadas · «Restaurar las anotaciones quitadas» las devuelve");
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    fn restore_removed_annotations(&mut self) {
+        let Some(block) = self.document.removed_annotations.take() else {
+            self.set_notice("No hay anotaciones quitadas para restaurar");
+            return;
+        };
+        if self.document.annotations.is_some() {
+            self.document.removed_annotations = Some(block);
+            self.set_notice("Ya hay anotaciones nuevas: no se pisan");
+            return;
+        }
+        self.document.annotations = Some(block);
+        self.document.study_cache = None;
+        self.document.source_editor.mark_changed();
+        self.schedule_recovery();
+        self.set_notice("Anotaciones restauradas");
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    /// Guarda el texto, sin el bloque, en un archivo nuevo. La pestaña sigue
+    /// ligada a su archivo con las anotaciones.
+    fn save_copy_without_annotations(&mut self) {
+        if self.document.annotations.is_none() {
+            self.set_notice("Este documento no tiene anotaciones: Guardar como ya hace una copia");
+            return;
+        }
+        let Some(path) = self
+            .file_dialog()
+            .add_filter("Markdown", &["md", "markdown"])
+            .set_file_name(format!(
+                "{} sin anotaciones.md",
+                self.document.suggested_stem()
+            ))
+            .set_title("Guardar copia sin anotaciones")
+            .save_file()
+        else {
+            self.set_notice("copia sin anotaciones cancelada");
+            return;
+        };
+        if paths_refer_to_same_file(std::path::Path::new(&self.document.path), &path) {
+            self.set_notice("La copia no puede reemplazar el documento abierto");
+            return;
+        }
+        let source = self.document.source.to_string();
+        match save_new_primary_with_annotations(&path, &source, None, self.document.source_metadata)
+        {
+            Ok(_) => self.set_notice("Copia sin anotaciones guardada"),
+            Err(error) => self.set_notice(&format!("No se pudo guardar la copia: {error}")),
+        }
+    }
+
     fn copy_lost_annotations(&mut self) {
         let source = self.document.source.to_string();
         let quotes = estudio::parse(self.document.annotations.as_deref())
@@ -12948,35 +13102,17 @@ impl App {
     }
 
     fn study_highlight_ranges(&mut self) -> StudyRanges {
-        let mut ranges = StudyRanges::new();
         if self.document.mode != DocumentMode::Reading || !self.refresh_study_cache() {
-            return ranges;
+            return StudyRanges::new();
         }
         let Some((_, items, _, _)) = &self.document.study_cache else {
-            return ranges;
+            return StudyRanges::new();
         };
         if items.is_empty() {
-            return ranges;
+            return StudyRanges::new();
         }
         let source = self.document.source.to_string();
-        let blocks = &self.document.blocks;
-        for item in items {
-            let fill = self.palette.study[item.color.min(4)].fill;
-            let first = blocks.partition_point(|block| block.source.end <= item.start);
-            for (index, block) in blocks.iter().enumerate().skip(first) {
-                if block.source.start >= item.end {
-                    break;
-                }
-                let Some(slice) = source.get(block.source.start..block.source.end) else {
-                    continue;
-                };
-                let map = estudio::rendered_source_map(&block.text, slice, block.source.start);
-                if let Some((start, end)) = estudio::rendered_range(&map, item.start, item.end) {
-                    ranges.entry(index).or_default().push((start, end, fill));
-                }
-            }
-        }
-        ranges
+        highlight_ranges_for(&self.document.blocks, &source, items, &self.palette)
     }
 
     fn toggle_annotations_open(&mut self) {
@@ -15161,6 +15297,10 @@ impl App {
                 self.set_notice("Recuperación activada");
             }
             DialogChoice::KeepRecovery => self.set_notice("La recuperación sigue activa"),
+            DialogChoice::RemoveAllAnnotations => self.remove_all_annotations(),
+            DialogChoice::KeepAnnotations => {
+                self.set_notice("Las anotaciones siguen donde estaban")
+            }
             DialogChoice::DisableRecovery => self.apply_recovery_toggle(),
             DialogChoice::ReloadExternal => self.reload_external_preserving_local(),
             DialogChoice::SaveCopy => self.save_as_current_document(),
@@ -22813,6 +22953,7 @@ const PDF_MARGIN: f32 = 56.0;
 /// enlaces, imágenes ni HTML: el resultado no tiene comportamiento propio.
 fn export_pdf_bytes(
     blocks: &[Block],
+    study: &StudyRanges,
     title: &str,
     font_cx: &mut FontContext,
     layout_cx: &mut LayoutContext<Brush>,
@@ -22831,7 +22972,7 @@ fn export_pdf_bytes(
     let mut y = 0.0f32;
     let mut previous: Option<&Block> = None;
 
-    for block in blocks {
+    for (block_index, block) in blocks.iter().enumerate() {
         let x = MARGIN + block.indent();
         let mut gap = 0.0;
         if y > 0.0 {
@@ -23032,6 +23173,28 @@ fn export_pdf_bytes(
                             palette.dim,
                         );
                     }
+                }
+            }
+            // Subrayados de estudio: un fondo de color por línea, detrás del texto.
+            for (start, end, fill) in study.get(&block_index).into_iter().flatten() {
+                for (rect, _) in Selection::new(
+                    Cursor::from_byte_index(&layout, *start, Affinity::Downstream),
+                    Cursor::from_byte_index(&layout, *end, Affinity::Downstream),
+                )
+                .geometry(&layout)
+                {
+                    if rect.y0 < f64::from(metrics.block_min_coord) - 0.5
+                        || rect.y0 >= f64::from(metrics.block_max_coord)
+                    {
+                        continue;
+                    }
+                    out.fill_rect(
+                        to_x(x + rect.x0 as f32),
+                        to_y(y),
+                        rect.width() as f32 * k,
+                        line_height * k,
+                        *fill,
+                    );
                 }
             }
             let mut cursor = GlyphCursor::default();
@@ -24857,6 +25020,107 @@ texto dos
         // Quitar las sin lugar no toca las ancladas.
         app.perform_action(AppAction::RemoveLostAnnotations);
         assert!(app.document.annotations.is_some());
+    }
+
+    fn pdf_de(markdown: &str, rangos: &StudyRanges) -> String {
+        let mut font_cx = FontContext::new();
+        register_embedded_fonts(&mut font_cx);
+        let mut layout_cx = LayoutContext::new();
+        let mut scale_cx = ScaleContext::new();
+        let blocks = parse_blocks(markdown).expect("válido").blocks;
+        let (bytes, _) = export_pdf_bytes(
+            &blocks,
+            rangos,
+            "t",
+            &mut font_cx,
+            &mut layout_cx,
+            &mut scale_cx,
+        );
+        String::from_utf8_lossy(&bytes).into_owned()
+    }
+
+    #[test]
+    fn pdf_no_incluye_el_bloque_en_la_capa_de_texto() {
+        // El PDF se arma con el cuerpo: el bloque nunca llega a la capa de texto.
+        let app = documento_con_anotaciones(
+            "# Título
+
+texto de estudio
+",
+        );
+        let cuerpo = app.source.to_string();
+        let pdf = pdf_de(&cuerpo, &StudyRanges::new());
+        assert!(!pdf.contains("visor-md"));
+        assert!(!pdf.contains("anotaciones"));
+    }
+
+    #[test]
+    fn pdf_sin_anotaciones_si_se_desmarca_la_casilla() {
+        let texto = "Una frase de estudio para subrayar.
+";
+        let blocks = parse_blocks(texto).expect("válido").blocks;
+        let mut anotaciones = anotaciones::Anotaciones::default();
+        estudio::highlight(&mut anotaciones, texto, 3, 8, 0).unwrap();
+        let items = estudio::highlights(texto, &anotaciones);
+        let con = highlight_ranges_for(&blocks, texto, &items, &DAY);
+        assert_eq!(con.len(), 1);
+        let fondo = DAY.study[0].fill;
+        let marca = format!(
+            "{:.3} {:.3} {:.3} rg",
+            f32::from(fondo.0) / 255.0,
+            f32::from(fondo.1) / 255.0,
+            f32::from(fondo.2) / 255.0
+        );
+        assert!(pdf_de(texto, &con).contains(&marca), "{marca}");
+        assert!(!pdf_de(texto, &StudyRanges::new()).contains(&marca));
+    }
+
+    #[test]
+    fn quitar_todas_se_puede_deshacer() {
+        let mut app = app_de_estudio();
+        seleccionar(&mut app, (1, 0), (1, 3));
+        app.perform_action(AppAction::HighlightSelection);
+        let con = app.document.annotations.clone();
+        assert!(con.is_some());
+        app.document.source_editor.mark_saved();
+        // Pide confirmación y no quita nada hasta que se acepta.
+        app.perform_action(AppAction::RemoveAllAnnotations);
+        assert!(app.dialog.is_some());
+        assert_eq!(app.document.annotations, con);
+        app.finish_dialog(DialogChoice::KeepAnnotations);
+        assert_eq!(app.document.annotations, con);
+        app.perform_action(AppAction::RemoveAllAnnotations);
+        app.finish_dialog(DialogChoice::RemoveAllAnnotations);
+        assert_eq!(app.document.annotations, None);
+        assert!(app.document.is_dirty());
+        app.perform_action(AppAction::RestoreRemovedAnnotations);
+        assert_eq!(app.document.annotations, con);
+    }
+
+    #[test]
+    fn copia_sin_anotaciones_es_el_cuerpo() {
+        let app = documento_con_anotaciones(
+            "# Título
+
+texto
+",
+        );
+        let cuerpo = app.source.to_string();
+        let bytes = app.source_metadata.encode_with_annotations(&cuerpo, None);
+        assert_eq!(bytes, cuerpo.as_bytes());
+        assert!(app.full_text().len() > cuerpo.len());
+    }
+
+    #[test]
+    fn fragmentos_para_ia_excluyen_anotaciones_por_defecto() {
+        // Los fragmentos salen de la fuente del documento, que no incluye el bloque.
+        let app = documento_con_anotaciones(
+            "# Título
+
+texto
+",
+        );
+        assert!(!app.source.to_string().contains("visor-md"));
     }
 
     #[test]
@@ -26858,6 +27122,7 @@ sin guardar",
         let blocks = parse_blocks(source).expect("el corpus es válido").blocks;
         let (bytes, pages) = export_pdf_bytes(
             &blocks,
+            &StudyRanges::new(),
             "Corpus (prueba)",
             &mut font_cx,
             &mut layout_cx,
@@ -26890,6 +27155,7 @@ sin guardar",
         let blocks = parse_blocks(&largo).expect("válido").blocks;
         let (_, pages) = export_pdf_bytes(
             &blocks,
+            &StudyRanges::new(),
             "largo",
             &mut font_cx,
             &mut layout_cx,
@@ -26906,8 +27172,14 @@ sin guardar",
         let mut layout_cx = LayoutContext::new();
         let mut scale_cx = ScaleContext::new();
         let blocks = parse_blocks(markdown).expect("válido").blocks;
-        let (bytes, _) =
-            export_pdf_bytes(&blocks, "capa", &mut font_cx, &mut layout_cx, &mut scale_cx);
+        let (bytes, _) = export_pdf_bytes(
+            &blocks,
+            &StudyRanges::new(),
+            "capa",
+            &mut font_cx,
+            &mut layout_cx,
+            &mut scale_cx,
+        );
         let contenido = String::from_utf8_lossy(&bytes);
         let mut salida = String::new();
         for linea in contenido.lines().filter(|l| l.contains(" Tr /F1 ")) {

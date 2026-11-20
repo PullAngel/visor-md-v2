@@ -113,3 +113,18 @@ registro reproducible. Una afirmación verbal o un binario antiguo no alcanza.
 | Soltar una pestaña fuera de la ventana | `soltar_una_pestana_fuera_de_la_ventana_la_manda_a_la_ventana_de_debajo` |
 | Restaurar ligado al original o aparte | `restaurar_con_el_original_sin_cambios_lo_liga_a_su_archivo`, `restaurar_con_el_original_cambiado_o_ausente_abre_la_copia_aparte` |
 | Asociación de archivos (clave de prueba) | `asociacion::pruebas` |
+
+## Anotaciones de estudio (noviembre de 2026)
+
+| Comportamiento | Pruebas |
+| --- | --- |
+| Formato: ida y vuelta, orden, escapes, límites, contenido desconocido | `anotaciones::pruebas` (`ida_y_vuelta_conserva_bytes`, `escapa_los_separadores_de_linea_de_unicode`, `ninguna_nota_puede_cerrar_el_comentario`, `limites_vuelven_inerte_el_bloque`…) |
+| Anclaje por cita y contexto, huérfanas | `camino_rapido_ancla_en_su_posicion`, `cita_repetida_desempata_por_contexto`, `texto_borrado_deja_huerfana_sin_eliminarla`, `tope_de_apariciones_se_respeta` |
+| Separar cuerpo y bloque, byte a byte | `cuerpo_y_bloque_se_separan_al_abrir`, `agregar_y_quitar_deja_el_archivo_identico`, `el_bloque_de_anotaciones_viaja_aparte_y_se_guarda_con_los_mismos_bytes` |
+| Leer no lo dibuja; Editar lo contrae | `leer_no_dibuja_el_bloque_ni_lo_suma_al_alto`, `editar_muestra_el_bloque_contraido_en_una_linea`, `abrir_el_bloque_lo_muestra_de_solo_lectura` |
+| Recuperación con anotaciones | `recuperacion_restaura_cuerpo_y_anotaciones` |
+| Paleta de estudio | `paleta_de_estudio_conserva_contraste_en_ambos_temas`, `colores_de_estudio_se_distinguen_entre_si_y_del_resaltado` |
+| Subrayar, color, leyenda, ocultar | `subrayado_cruza_bloques_y_se_dibuja_por_tramos`, `subrayar_usa_el_ultimo_color_elegido`, `cambiar_el_color_no_mueve_el_ancla`, `subrayar_marca_el_documento_sin_guardar`, `ocultar_mis_anotaciones_muestra_el_original` |
+| Marcas de libro e índice | `marca_suma_un_punto_al_titulo_de_su_seccion`, `muchas_marcas_no_cambian_la_fila_del_indice`, `mas_de_tres_colores_muestran_mas_n`, `la_ayuda_lista_las_marcas_de_la_seccion` |
+| Editar, huérfanas, recalculo al guardar | `editar_antes_del_subrayado_lo_desplaza`, `borrar_el_texto_anclado_lo_deja_huerfano`, `deshacer_el_borrado_recupera_el_subrayado` |
+| PDF, quitar todas, copia sin anotaciones | `pdf_no_incluye_el_bloque_en_la_capa_de_texto`, `pdf_sin_anotaciones_si_se_desmarca_la_casilla`, `quitar_todas_se_puede_deshacer`, `copia_sin_anotaciones_es_el_cuerpo` |

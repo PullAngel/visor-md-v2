@@ -923,17 +923,22 @@ Cada tarea deja `cargo test` y `cargo clippy` en verde.
   `borrar_el_texto_anclado_lo_deja_huerfano`,
   `deshacer_el_borrado_recupera_el_subrayado`,
   `editar_con_anotaciones_las_desplaza_y_las_deja_sin_lugar_sin_borrarlas`.
-- [ ] **14.8** Integraciones: fragmentos para IA sin anotaciones (casilla
-  opcional), PDF con las anotaciones dibujadas y casilla para quitarlas,
-  «Quitar todas» (con confirmación y deshacer), «Guardar copia sin
-  anotaciones», resumen en Comparar. Pruebas:
+- [x] **14.8** Integraciones: los fragmentos para IA, el PDF, la búsqueda y las
+  métricas parten del cuerpo, así que nunca incluyen el bloque. El PDF pinta los
+  subrayados por línea (fondo de día) y existe «Exportar a PDF sin
+  anotaciones» en el menú Estudio (en lugar de una casilla en un diálogo).
+  «Quitar todas las anotaciones» pide confirmación y se restaura con
+  «Restaurar las anotaciones quitadas» mientras la pestaña siga abierta;
+  «Guardar copia sin anotaciones» escribe el cuerpo. **Falta:** resumen de
+  anotaciones en Comparar (diferido). Pruebas:
   `fragmentos_para_ia_excluyen_anotaciones_por_defecto`,
   `pdf_no_incluye_el_bloque_en_la_capa_de_texto`,
   `pdf_sin_anotaciones_si_se_desmarca_la_casilla`,
   `quitar_todas_se_puede_deshacer`, `copia_sin_anotaciones_es_el_cuerpo`.
-- [ ] **14.9** Documentar en `docs/features.md`, `docs/security.md` (el bloque
-  como dato inerte) y `docs/test-matrix.md`; QA manual en Leer, Editar y con
-  el archivo abierto en otro editor y en GitHub.
+- [x] **14.9** Documentado en `docs/features.md`, `docs/security.md` (el bloque
+  como dato inerte), `docs/test-matrix.md` y el QA manual de `docs/manual-qa-v2.md`.
+  **Pendiente para la persona:** el QA manual en la ventana real (Leer, Editar,
+  otro editor y GitHub).
 - [ ] **14.10** (futuro) Imágenes ancladas.
 - [ ] **14.11** (futuro, sin decidir) Enviar la selección a una IA o a Google.
 

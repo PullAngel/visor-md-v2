@@ -130,7 +130,7 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Función | Estado | Criterio mínimo |
 | --- | --- | --- |
 | Resaltado `==texto==` | Parcial | Render nativo y fuente preservada; falta corpus de compatibilidad y QA visual |
-| Sidecar para datos no portables | Planificado | Formato versionado y recuperable |
+| Anotaciones de estudio (subrayados y marcas de libro) | Hecha, falta QA manual | Un bloque `<!-- visor-md:anotaciones v1 -->` al final del `.md` (ADR-39), anclado por cita y contexto: viaja con el archivo, es invisible en Leer y en otros lectores, y quitarlo devuelve el archivo idéntico. Cinco colores con leyenda, formas de marca, puntos sutiles en el índice, PDF con subrayados, «Quitar todas» con restaurar y «Guardar copia sin anotaciones». |
 | Preguntas y respuestas | Parcial | Inserta un callout `[!QUESTION]-` portable y permite plegar su respuesta solo en lectura; falta QA de accesibilidad y corpus de compatibilidad. |
 | Ocultar respuesta | Parcial | Las respuestas de preguntas se pliegan en lectura sin alterar la fuente; faltan variantes de práctica y QA accesible. |
 | Estados de aprendizaje | Parcial | La paleta inserta callouts portables `[!SUCCESS]`, `[!WARNING]` y `[!TODO]` para entendido, duda y pendiente; falta edición contextual de estados ya existentes y QA visual. |
