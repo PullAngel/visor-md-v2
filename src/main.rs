@@ -9390,17 +9390,11 @@ impl ApplicationHandler<AppEvent> for App {
                     } else {
                         self.reset_document_view();
                     }
-                    self.set_notice(if self.document.mode == DocumentMode::Split {
-                        "vista dividida actualizada"
-                    } else {
-                        "vista de lectura actualizada"
-                    });
                     if let Some(window) = &self.window {
                         window.request_redraw();
                     }
                 } else {
                     self.invalidate_document_pane_layout(document_id);
-                    self.set_notice("otra pestaña actualizó su vista de lectura");
                     if let Some(window) = &self.window {
                         window.request_redraw();
                     }
@@ -9607,7 +9601,7 @@ impl ApplicationHandler<AppEvent> for App {
                     (_, _, true) => "; límite de lectura de carpeta alcanzado",
                     (true, true, false) => "; límite de notas y contenido alcanzado",
                     (true, false, false) => "; límite de notas alcanzado",
-                    (false, true, false) => "; búsqueda limitada por presupuesto de memoria",
+                    (false, true, false) => "; la búsqueda cubre solo parte del contenido",
                     (false, false, false) => "",
                 };
                 if self.silent_workspace_request != Some(request) {
@@ -17759,11 +17753,8 @@ impl App {
         self.doc_height = 0.0;
         self.laid_for_width = -1.0;
         self.exact_after_edit = false;
-        self.set_notice(if folded {
-            "sección plegada; la fuente permanece intacta"
-        } else {
-            "sección desplegada"
-        });
+        // El triángulo ya muestra si la sección está plegada: sin aviso.
+        let _ = folded;
         if let Some(window) = &self.window {
             window.request_redraw();
         }
