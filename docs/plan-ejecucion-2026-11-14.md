@@ -737,6 +737,22 @@ entonces). Orden: primero los S2, luego lo que más pesa en el SUS.
   centra con la ventana maximizada y el contenido no salta al interactuar.
 - [ ] **15.11** Los S4 restantes (QA-17 a QA-21, US-08, US-09) y volver a la
   fase 9 con la misma evaluación.
+- [ ] **15.12** QA-02 (ronda 3) = 15.8: con la ventana dividida la barra de
+  pestañas no puede quedar vacía; dos rondas seguidas lo marcan S2. Decidir
+  entre mostrar todas las pestañas o una tira mínima con los documentos de los
+  paneles, y reescribir las pruebas de arrastre que dependen de ello.
+- [ ] **15.13** QA-01 (ronda 3): la segunda barra no debe cambiar de lugar los
+  controles de paneles según el modo; los botones del Índice, Archivos, Buscar
+  y Enlazan aquí quedan siempre donde están.
+- [ ] **15.14** US-04, QA-04, QA-06, QA-17, QA-24: «Subrayar» sin selección
+  dice cómo hacerlo; «Estudio» visible en Leer; el amarillo de estudio se lee
+  como amarillo en noche; avisos más cortos; «Copiado» dura lo suficiente; un
+  clic en un enlace entre notas sin carpeta responde; el documento vacío en
+  Leer invita a escribir.
+- [ ] **15.15** QA-07, QA-21, QA-05, US-03: contraste del borde de las tareas,
+  hover en tareas y flechas de plegado, foco de teclado visible (Tab desde la
+  barra), un clic en otro menú con uno abierto lo cambia, la tabla se inserta
+  con forma de tabla en Leer y ofrece agregar filas.
 
 ### Fase 10 · Barra, menús y tema
 
@@ -1191,7 +1207,7 @@ asociación.
 | 7 | Hecha | 7.1 a 7.8 |
 | 8 | Hecha | 8.1 a 8.10; quedan dos retoques de la fase 11 y el árbol de accesibilidad |
 | 12 | Hecha | 12.1 a 12.8; el arrastre real entre ventanas queda por probar a mano |
-| 9 | Hecha, criterios sin cumplir | Ronda 2: 0 S1, 5 S2, SUS 67,5, 80 % sin dificultad, Nielsen 3,6; abre la fase 15 |
+| 9 | Hecha, criterios sin cumplir | Ronda 3: 0 S1, 5 S2, SUS 75, 75 % sin dificultad, Nielsen 3,6; sigue la fase 15 (15.12 a 15.15) |
 | 15 | Pendiente | Hallazgos de la ronda 2 |
 | 14 | Hecha | 14.1 a 14.9 hechas; falta el QA manual en la ventana real y el resumen en Comparar |
 | 13 | Hecha | 13.1 a 13.8; queda la opcional 13.9 (apagado de Windows y cifrado, con `unsafe`) |

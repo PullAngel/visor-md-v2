@@ -123,7 +123,6 @@ const NEW_TAB_BUTTON_WIDTH: f32 = 32.0;
 const STATUS_HEIGHT: f32 = 28.0;
 const MAX_TAB_WIDTH: f32 = 220.0;
 const PANEL_X: f32 = MARGIN;
-const PANEL_Y: f32 = 150.0;
 /// Los paneles flotantes se abren justo bajo la barra contextual.
 const FLOATING_PANEL_Y: f32 = DOCUMENT_VIEWPORT_TOP + 4.0;
 const PANEL_WIDTH: f32 = 420.0;
@@ -22107,17 +22106,20 @@ impl App {
             }
         }
 
+        // El campo de búsqueda ocupa la segunda barra, no el texto: nunca tapa
+        // la coincidencia activa.
+        const SEARCH_FIELD_Y: f32 = CONTEXT_TOOLBAR_Y;
         if let Some(layout) = search_overlay {
             let overlay_width = (layout.width() + 24.0).min(w.get() as f32 - MARGIN * 2.0);
-            if let Some(rect) = Rect::from_xywh(MARGIN, PANEL_Y, overlay_width, 28.0) {
+            if let Some(rect) = Rect::from_xywh(MARGIN, SEARCH_FIELD_Y, overlay_width, 28.0) {
                 pixmap.fill_rect(rect, &floating_paint, Transform::identity(), None);
             }
             // Borde de acento: es un campo de texto y se nota.
             for (x, y, width, height) in [
-                (MARGIN, PANEL_Y, overlay_width, 1.5),
-                (MARGIN, PANEL_Y + 26.5, overlay_width, 1.5),
-                (MARGIN, PANEL_Y, 1.5, 28.0),
-                (MARGIN + overlay_width - 1.5, PANEL_Y, 1.5, 28.0),
+                (MARGIN, SEARCH_FIELD_Y, overlay_width, 1.5),
+                (MARGIN, SEARCH_FIELD_Y + 26.5, overlay_width, 1.5),
+                (MARGIN, SEARCH_FIELD_Y, 1.5, 28.0),
+                (MARGIN + overlay_width - 1.5, SEARCH_FIELD_Y, 1.5, 28.0),
             ] {
                 if let Some(rect) = Rect::from_xywh(x, y, width, height) {
                     pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
@@ -22126,14 +22128,14 @@ impl App {
             for line in layout.lines() {
                 for entry in line.items() {
                     if let PositionedLayoutItem::GlyphRun(run) = entry {
-                        draw_run_background(pixmap, &run, MARGIN + 10.0, PANEL_Y + 5.0);
+                        draw_run_background(pixmap, &run, MARGIN + 10.0, SEARCH_FIELD_Y + 5.0);
                         draw_glyph_run(
                             pixmap,
                             scale_cx,
                             glyphs,
                             &run,
                             MARGIN + 10.0,
-                            PANEL_Y + 5.0,
+                            SEARCH_FIELD_Y + 5.0,
                         );
                     }
                 }
