@@ -722,10 +722,10 @@ entonces). Orden: primero los S2, luego lo que más pesa en el SUS.
   del editor se atenúan para que no ocupen la atención.
 - [x] **15.5** (hecha: el aviso de la tarea dice «sin guardar: Ctrl+S la guarda») US-01: tildar o editar algo avisa que queda sin guardar y cómo
   guardarlo (una vez por documento, sin ruido).
-- [ ] **15.6** QA-06, US-06, QA-20: avisos más cortos, sin jerga («presupuesto
+- [x] **15.6** (hecha: se quitaron los avisos de «vista actualizada» y de plegar, y la jerga) QA-06, US-06, QA-20: avisos más cortos, sin jerga («presupuesto
   de memoria», «la fuente permanece intacta»), sin los de «actualizado» y sin
   tapar el contenido; el de bienvenida dura lo suficiente para leerse.
-- [ ] **15.7** QA-07, QA-08, US-03, US-10, US-11: el botón de la paleta con un
+- [x] **15.7** (hecha en parte: la paleta se llama siempre «Buscar una acción» y el índice tiene su ícono con sangría; quedan el ícono H doble y el triángulo de plegar, S4) QA-07, QA-08, US-03, US-10, US-11: el botón de la paleta con un
   solo ícono y un solo nombre, el índice con un botón que se reconozca, íconos
   ambiguos distintos (≡ doble, H doble, el triángulo de plegar, el del tema).
 - [ ] **15.8** US-07: las pestañas que quedan en un panel dividido siguen

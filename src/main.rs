@@ -4553,10 +4553,15 @@ fn draw_toolbar_icon(
             path.move_to(center_x + 1.0, bottom - 4.5);
             path.line_to(right - 3.0, bottom - 4.5);
         }
+        // Índice: títulos con sangría. Las tres rayas iguales son el menú «≡».
         AppAction::DocumentOutline => {
-            for row in [top + 5.0, center_y, bottom - 5.0] {
-                path.move_to(left + 4.0, row);
-                path.line_to(right - 3.0, row);
+            for (row, start, end) in [
+                (top + 5.0, left + 4.0, right - 3.0),
+                (center_y, left + 9.0, right - 3.0),
+                (bottom - 5.0, left + 9.0, right - 7.0),
+            ] {
+                path.move_to(start, row);
+                path.line_to(end, row);
             }
         }
         AppAction::ToggleSection => {
@@ -18730,7 +18735,9 @@ impl App {
                 .sync(panel_key, entries.len(), selected, capacity);
             let title = if self.command_palette_query.is_empty() {
                 match self.command_palette_scope {
-                    CommandPaletteScope::All => "Acciones · escribe para filtrar".to_string(),
+                    CommandPaletteScope::All => {
+                        "Buscar una acción · escribí para filtrar".to_string()
+                    }
                     CommandPaletteScope::File => "Archivo".to_string(),
                     CommandPaletteScope::Edit => "Editar".to_string(),
                     CommandPaletteScope::View => "Vista".to_string(),
@@ -18743,7 +18750,7 @@ impl App {
                 }
             } else {
                 format!(
-                    "Acciones: {} · {}",
+                    "Buscar una acción: {} · {}",
                     self.command_palette_query,
                     count_noun(entries.len(), "resultado", "resultados")
                 )
