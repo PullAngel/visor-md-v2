@@ -685,21 +685,58 @@ junto al borde del panel enfocado.
 
 ### Fase 9 · Re-evaluación
 
-- [ ] **9.1** Construir la build de evaluación: aplicar
+- [x] **9.1** Construir la build de evaluación: aplicar
   `scripts/evaluacion/build-evaluacion.patch` y quitar del parche el cambio
   que ya entró por D-06.
-- [ ] **9.2** Repetir la evaluación de QA y la de usuaria con los mismos
+- [x] **9.2** Repetir la evaluación de QA y la de usuaria con los mismos
   prompts: [`prompt-qa.md`](../scripts/evaluacion/prompt-qa.md) y
   [`prompt-usuario.md`](../scripts/evaluacion/prompt-usuario.md). El
   procedimiento está en [`agente-ejecutor.md`](agente-ejecutor.md#re-evaluación).
-- [ ] **9.3** Comparar la ronda 1 con la ronda 2 (`user-research` si está
+- [x] **9.3** Comparar la ronda 1 con la ronda 2 (`user-research` si está
   disponible) y escribir `docs/evaluacion-usabilidad-ronda-2.md`.
-- [ ] **9.4** Criterios: 0 hallazgos S1 o S2, SUS ≥ 68, ≥ 80 % de tareas sin
+- [x] **9.4** (no se cumplen: ver la fase 15) Criterios: 0 hallazgos S1 o S2, SUS ≥ 68, ≥ 80 % de tareas sin
   dificultad, Nielsen ≥ 3,5 de promedio. Si no se cumplen, se agregan tareas a
   una fase 10 con los hallazgos nuevos y se vuelve a la 9.
 - [ ] **9.5** Actualizar [`design.md`](design.md), [`features.md`](features.md)
   y [`manual-qa-v2.md`](manual-qa-v2.md); entregar el ejecutable al
   propietario.
+
+### Fase 15 · Hallazgos de la ronda 2
+
+Sale de [`evaluacion-usabilidad-ronda-2.md`](evaluacion-usabilidad-ronda-2.md):
+cinco S2 abiertos y SUS 67,5. Al terminarla se repite la fase 9 (9.5 queda para
+entonces). Orden: primero los S2, luego lo que más pesa en el SUS.
+
+- [ ] **15.1** QA-01: dividir con un documento en Editar no puede mostrar la
+  fuente con «Copiar» por línea; el panel nuevo abre en Leer y su selector lo
+  dice. Revisar también QA-16 (selector duplicado, barra cambiante, números de
+  línea).
+- [ ] **15.2** QA-03 y US-04: la búsqueda (documento y carpeta) con campo de
+  texto con borde, «n de m», anterior y siguiente, y todas las coincidencias
+  resaltadas; el resultado de la carpeta no se corta y al abrirlo lleva a la
+  frase. Absorbe la 3.9.
+- [ ] **15.3** QA-02: el enlace roto se distingue del válido (estilo propio) y
+  su ayuda dice que la nota no existe.
+- [ ] **15.4** US-05: aplicar Título 1 en una nota vacía no deja un `#` suelto;
+  el icono con aspecto de lista no inserta una cita; los símbolos de Markdown
+  del editor se atenúan para que no ocupen la atención.
+- [ ] **15.5** US-01: tildar o editar algo avisa que queda sin guardar y cómo
+  guardarlo (una vez por documento, sin ruido).
+- [ ] **15.6** QA-06, US-06, QA-20: avisos más cortos, sin jerga («presupuesto
+  de memoria», «la fuente permanece intacta»), sin los de «actualizado» y sin
+  tapar el contenido; el de bienvenida dura lo suficiente para leerse.
+- [ ] **15.7** QA-07, QA-08, US-03, US-10, US-11: el botón de la paleta con un
+  solo ícono y un solo nombre, el índice con un botón que se reconozca, íconos
+  ambiguos distintos (≡ doble, H doble, el triángulo de plegar, el del tema).
+- [ ] **15.8** US-07: las pestañas que quedan en un panel dividido siguen
+  visibles en la barra (tarea pendiente de la fase 11).
+- [ ] **15.9** QA-11, QA-12, QA-13: foco visible, F6 por regiones, tooltips
+  junto al puntero, contraste de íconos y de texto secundario según N5.
+- [ ] **15.10** QA-04, QA-05, QA-10, QA-15: la pestaña «Notas que enlazan aquí»
+  no desborda, los conteos son los mismos en Leer y en Editar, la columna se
+  centra con la ventana maximizada y el contenido no salta al interactuar.
+- [ ] **15.11** Los S4 restantes (QA-17 a QA-21, US-08, US-09) y volver a la
+  fase 9 con la misma evaluación.
 
 ### Fase 10 · Barra, menús y tema
 
@@ -1154,6 +1191,7 @@ asociación.
 | 7 | Hecha | 7.1 a 7.8 |
 | 8 | Hecha | 8.1 a 8.10; quedan dos retoques de la fase 11 y el árbol de accesibilidad |
 | 12 | Hecha | 12.1 a 12.8; el arrastre real entre ventanas queda por probar a mano |
-| 9 | Pendiente | — |
+| 9 | Hecha, criterios sin cumplir | Ronda 2: 0 S1, 5 S2, SUS 67,5, 80 % sin dificultad, Nielsen 3,6; abre la fase 15 |
+| 15 | Pendiente | Hallazgos de la ronda 2 |
 | 14 | Hecha | 14.1 a 14.9 hechas; falta el QA manual en la ventana real y el resumen en Comparar |
 | 13 | Hecha | 13.1 a 13.8; queda la opcional 13.9 (apagado de Windows y cifrado, con `unsafe`) |
