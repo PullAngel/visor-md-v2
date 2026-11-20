@@ -827,16 +827,27 @@ Cada tarea deja `cargo test` y `cargo clippy` en verde.
   `espacios_colapsados_reanclan_tras_reajuste_de_linea`,
   `texto_borrado_deja_huerfana_sin_eliminarla`,
   `reanclar_dos_veces_da_el_mismo_resultado`, `tope_de_apariciones_se_respeta`.
-- [ ] **14.3** Separar cuerpo y bloque al abrir, guardar, recargar y recuperar.
-  - **Leer:** el bloque no se dibuja nunca y no cuenta en el alto del documento.
-  - **Editar:** el bloque se muestra como **una sola línea contraída** al final,
-    con un chevron dibujado y el total («▸ Anotaciones de estudio · 42»). Clic
-    o Enter sobre ella lo abre como texto de solo lectura (se puede copiar, no
-    escribir) y vuelve a contraerse al salir de Editar o al cerrar la pestaña.
-    Contraído ocupa una línea: la barra de desplazamiento refleja el largo del
-    cuerpo. Escribir nunca puede romper el bloque.
-  - **Comparar:** la fuente se comporta como Editar y la vista como Leer.
+- [x] **14.3** Separar cuerpo y bloque al abrir, guardar, recargar y recuperar.
+  - **Leer:** el bloque no se dibuja nunca y no cuenta en el alto del documento
+    (el texto del documento no lo incluye: `DocumentState.annotations` lo guarda
+    aparte y se une al guardar).
+  - **Editar:** el bloque se muestra como **una sola línea contraída**, con un
+    chevron dibujado y el total, en la barra de estado («▸ Anotaciones de
+    estudio · 42»). Un clic la despliega como un panel de solo lectura sobre la
+    barra; Esc o otro clic la contraen, y se contrae sola al salir de Editar.
+    **Desviación:** la línea va en la barra de estado y no al final del texto:
+    la vista de fuente es una lista de bloques ligada a rangos de la fuente, y
+    una línea sintética ahí rompía cursor y selección. Contraída no suma alto,
+    así la barra de desplazamiento refleja el largo del cuerpo. Abrirla con
+    Enter y copiar su texto quedan para la 14.5 (menú Estudio); mientras tanto
+    el archivo se puede abrir en otro editor.
+  - **Comparar:** igual que Editar.
   - Buscar, copiar, contar palabras y caracteres solo ven el cuerpo.
+  - Si el cuerpo termina dentro de un bloque de código o comentario sin cerrar,
+    el bloque no se escribe (no se reconocería al abrir): se guarda el texto y
+    un aviso lo explica; las anotaciones siguen en memoria.
+  - La recuperación y el traspaso entre ventanas guardan el texto completo
+    (cuerpo y bloque), así una copia restaurada conserva las anotaciones.
   Pruebas: `cuerpo_y_bloque_se_separan_al_abrir`,
   `bloque_dentro_de_codigo_no_se_reconoce`, `texto_despues_del_bloque_lo_invalida`,
   `agregar_y_quitar_deja_el_archivo_identico` (con y sin salto final, CRLF y
@@ -845,7 +856,8 @@ Cada tarea deja `cargo test` y `cargo clippy` en verde.
   `abrir_el_bloque_lo_muestra_de_solo_lectura`,
   `escribir_al_final_no_entra_en_el_bloque`,
   `cuerpo_con_codigo_sin_cerrar_rechaza_guardar_anotaciones`,
-  `recuperacion_restaura_cuerpo_y_anotaciones`, `buscar_y_copiar_ignoran_el_bloque`.
+  `recuperacion_restaura_cuerpo_y_anotaciones`, `buscar_y_copiar_ignoran_el_bloque`,
+  `el_bloque_de_anotaciones_viaja_aparte_y_se_guarda_con_los_mismos_bytes`.
 - [ ] **14.4** Paleta de estudio en `src/theme.rs`: cinco colores con nombre
   (amarillo, verde, azul, rosa, violeta), con su tono de día y de noche.
   Pruebas: `paleta_de_estudio_conserva_contraste_en_ambos_temas`,

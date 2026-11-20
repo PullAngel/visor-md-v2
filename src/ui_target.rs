@@ -38,6 +38,8 @@ pub(crate) enum UiTarget {
     ScrollThumb,
     /// «Quitar del mosaico», en la cabecera del panel con ese índice.
     PaneClose(usize),
+    /// La línea contraída «Anotaciones de estudio · N» de la barra de estado.
+    AnnotationsLine,
 }
 
 /// Objetivo del cromo de la ventana (controles, barras y pestañas) bajo el
@@ -113,6 +115,9 @@ impl App {
             })
         {
             return Some(UiTarget::PaneClose(index));
+        }
+        if self.annotations_line_at(x, y) {
+            return Some(UiTarget::AnnotationsLine);
         }
         if self.scroll_bar_visible(Instant::now())
             && let Some(thumb) = self.scroll_thumb()

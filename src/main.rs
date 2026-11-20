@@ -7206,6 +7206,9 @@ struct DocumentState {
     /// el cuerpo del documento no lo incluye, así que ni Leer, ni la búsqueda,
     /// ni las métricas, ni el PDF lo ven. Se une al texto al guardar.
     annotations: Option<String>,
+    /// El bloque está desplegado (solo lectura). Siempre vuelve a contraerse al
+    /// salir de Editar.
+    annotations_open: bool,
     source_metadata: TextMetadata,
     source_identity: Option<FileIdentity>,
     source_baseline_bytes: Option<Vec<u8>>,
@@ -7295,6 +7298,41 @@ enum DropTarget {
 /// Cuánto hay que mover el puntero para que un clic sea un arrastre.
 const DRAG_START_DISTANCE: f32 = 6.0;
 
+/// Cuántas anotaciones lleva un bloque, para la línea contraída.
+fn annotation_count(block: &str) -> usize {
+    match anotaciones::leer(block) {
+        anotaciones::Lectura::Entendido(anotaciones) => anotaciones.registros.len(),
+        // Inerte (versión nueva o demasiado grande): se cuentan sus líneas.
+        _ => block.lines().count().saturating_sub(3).max(1),
+    }
+}
+
+/// Tope de líneas del bloque desplegado antes de «… y N más».
+const ANNOTATIONS_PANEL_LINES: usize = 12;
+
+/// El texto del bloque desplegado: las primeras líneas tal como están en el
+/// archivo, recortadas, y un pie que lo dice si hay más.
+fn annotations_panel_text(block: &str) -> String {
+    let lines: Vec<&str> = block
+        .lines()
+        .map(|line| line.trim_end_matches('\r'))
+        .collect();
+    let mut text = lines
+        .iter()
+        .take(ANNOTATIONS_PANEL_LINES)
+        .map(|line| abbreviated_label(line, 110))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if lines.len() > ANNOTATIONS_PANEL_LINES {
+        text.push_str(&format!(
+            "\n… y {} líneas más",
+            lines.len() - ANNOTATIONS_PANEL_LINES
+        ));
+    }
+    text.push_str("\nSolo lectura · Esc o clic en la línea para contraer");
+    text
+}
+
 /// Aviso cuando el texto termina dentro de un bloque de código sin cerrar: el
 /// bloque de anotaciones no se reconocería al abrir, así que no se escribe.
 const ANNOTATIONS_SWALLOWED_NOTICE: &str = "Se guardó el texto sin las anotaciones: termina dentro de un bloque de código sin cerrar. Cerralo y guardá otra vez";
@@ -7380,6 +7418,7 @@ impl DocumentState {
             open_mode_override: None,
             source: TextBuffer::new(),
             annotations: None,
+            annotations_open: false,
             source_metadata: TextMetadata::default(),
             source_identity: None,
             source_baseline_bytes: None,
@@ -8227,6 +8266,9 @@ struct App {
     scroll_bar_until: Option<Instant>,
     /// Se arrastra el tirador: distancia desde su borde superior al puntero.
     scroll_thumb_drag: Option<f32>,
+    /// Ancho de la línea contraída de anotaciones en la barra de estado, tal
+    /// como se dibujó en el último cuadro. `None` si no hay (Leer, o sin bloque).
+    annotations_line_width: Option<f32>,
     /// El puntero estaba en la zona activa de la barra en el último movimiento:
     /// entrar o salir pide un cuadro para mostrarla u ocultarla.
     scroll_hot: bool,
@@ -8466,6 +8508,7 @@ impl App {
                 open_mode_override: None,
                 source: TextBuffer::new(),
                 annotations: None,
+                annotations_open: false,
                 source_metadata: TextMetadata::default(),
                 source_identity: None,
                 source_baseline_bytes: None,
@@ -8567,6 +8610,7 @@ impl App {
             scroll_bar_seen: 0.0,
             scroll_bar_until: None,
             scroll_thumb_drag: None,
+            annotations_line_width: None,
             scroll_hot: false,
             last_divider_click: None,
             mosaic_drag: None,
@@ -9807,6 +9851,14 @@ impl ApplicationHandler<AppEvent> for App {
                         }
                         return;
                     }
+                    if let Some((x, y)) = self.pointer
+                        && self.dialog.is_none()
+                        && self.annotations_line_at(x, y)
+                    {
+                        self.toggle_annotations_open();
+                        self.selecting = false;
+                        return;
+                    }
                     if self.image_preview.take().is_some() {
                         if let Some(window) = &self.window {
                             window.request_redraw();
@@ -10315,6 +10367,13 @@ impl ApplicationHandler<AppEvent> for App {
             }
             WindowEvent::KeyboardInput { event, .. } if self.backlink_paths.is_some() => {
                 self.handle_backlink_key(&event);
+            }
+            WindowEvent::KeyboardInput { event, .. }
+                if self.document.annotations_open
+                    && event.state == ElementState::Pressed
+                    && matches!(event.physical_key, PhysicalKey::Code(KeyCode::Escape)) =>
+            {
+                self.toggle_annotations_open();
             }
             WindowEvent::KeyboardInput { event, .. } if self.recovery_list.is_some() => {
                 self.handle_recovery_list_key(&event);
@@ -12048,6 +12107,27 @@ impl App {
             }
             _ => return,
         }
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    /// ¿Está el punto sobre la línea contraída de anotaciones, en la barra de
+    /// estado? Solo existe en Editar y Comparar, con un bloque presente.
+    fn annotations_line_at(&self, x: f32, y: f32) -> bool {
+        let (Some(width), Some((_, height))) = (self.annotations_line_width, self.view_size())
+        else {
+            return false;
+        };
+        self.document.mode.is_editable()
+            && self.document.annotations.is_some()
+            && (0.0..width).contains(&x)
+            && y >= height - STATUS_HEIGHT
+            && y < height
+    }
+
+    fn toggle_annotations_open(&mut self) {
+        self.document.annotations_open = !self.document.annotations_open;
         if let Some(window) = &self.window {
             window.request_redraw();
         }
@@ -18616,6 +18696,44 @@ impl App {
             }
             None => self.document.display_name(),
         };
+        // La línea contraída de anotaciones: solo en Editar y Comparar. Al salir
+        // de Editar el bloque vuelve a contraerse.
+        let annotations_block = self
+            .document
+            .mode
+            .is_editable()
+            .then(|| self.document.annotations.clone())
+            .flatten();
+        if annotations_block.is_none() {
+            self.document.annotations_open = false;
+        }
+        let annotations_line = annotations_block.as_deref().map(|block| {
+            build_ui_text_layout(
+                &format!("Anotaciones de estudio · {}", annotation_count(block)),
+                &mut self.font_cx,
+                &mut self.layout_cx,
+                self.palette.accent,
+                12.0,
+                false,
+                None,
+            )
+        });
+        let annotations_panel = annotations_block
+            .as_deref()
+            .filter(|_| self.document.annotations_open)
+            .map(|block| {
+                build_menu_layout(
+                    &annotations_panel_text(block),
+                    &mut self.font_cx,
+                    &mut self.layout_cx,
+                    self.palette,
+                )
+            });
+        // 14 px de margen, el chevrón (12 px) y el texto.
+        let annotations_line_width = annotations_line
+            .as_ref()
+            .map(|layout| 14.0 + 16.0 + layout.width() + 14.0);
+        self.annotations_line_width = annotations_line_width;
         let status_location_layout = build_ui_text_layout(
             &abbreviated_label(&status_location, 90),
             &mut self.font_cx,
@@ -20641,15 +20759,76 @@ impl App {
             status_x.max(14.0),
             status_text_y,
         );
-        if status_location_layout.width() + 28.0 < status_x - 14.0 {
+        let location_x = annotations_line_width.unwrap_or(0.0) + 14.0;
+        if location_x + status_location_layout.width() + 14.0 < status_x - 14.0 {
             draw_text_layout(
                 pixmap,
                 scale_cx,
                 glyphs,
                 &status_location_layout,
-                14.0,
+                location_x,
                 status_text_y,
             );
+        }
+        if let Some(layout) = &annotations_line {
+            let open = annotations_panel.is_some();
+            let hovered = tab_hover
+                .is_some_and(|(x, y)| x < annotations_line_width.unwrap_or(0.0) && y >= status_y);
+            if hovered
+                && let Some(rect) = Rect::from_xywh(
+                    4.0,
+                    status_y + 3.0,
+                    annotations_line_width.unwrap_or(0.0) - 8.0,
+                    STATUS_HEIGHT - 6.0,
+                )
+            {
+                pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
+            }
+            // Chevrón dibujado: apunta a la derecha contraído y hacia abajo abierto.
+            let cy = status_y + STATUS_HEIGHT * 0.5;
+            let mut chevron = tiny_skia::PathBuilder::new();
+            if open {
+                chevron.move_to(14.0, cy - 2.5);
+                chevron.line_to(22.0, cy - 2.5);
+                chevron.line_to(18.0, cy + 3.0);
+            } else {
+                chevron.move_to(16.0, cy - 4.5);
+                chevron.line_to(21.5, cy);
+                chevron.line_to(16.0, cy + 4.5);
+            }
+            chevron.close();
+            if let Some(chevron) = chevron.finish() {
+                pixmap.fill_path(
+                    &chevron,
+                    &accent_paint,
+                    tiny_skia::FillRule::Winding,
+                    Transform::identity(),
+                    None,
+                );
+            }
+            draw_text_layout(pixmap, scale_cx, glyphs, layout, 30.0, status_text_y);
+        }
+        if let Some(layout) = &annotations_panel {
+            let panel_width = (layout.width() + 32.0).min(window_width - 24.0);
+            let panel_height = layout.height() + 20.0;
+            let panel_y = (status_y - panel_height - 8.0).max(DOCUMENT_VIEWPORT_TOP);
+            draw_floating_surface(
+                pixmap,
+                12.0,
+                panel_y,
+                panel_width,
+                panel_height,
+                10.0,
+                *palette,
+            );
+            for line in layout.lines() {
+                for entry in line.items() {
+                    if let PositionedLayoutItem::GlyphRun(run) = entry {
+                        draw_run_background(pixmap, &run, 28.0, panel_y + 10.0);
+                        draw_glyph_run(pixmap, scale_cx, glyphs, &run, 28.0, panel_y + 10.0);
+                    }
+                }
+            }
         }
 
         if let Some(layout) = search_overlay {
@@ -23448,6 +23627,125 @@ reservar hotel
         );
         // Las anotaciones siguen en memoria: no se pierden, solo no se escriben.
         assert!(documento.annotations.is_some());
+    }
+
+    /// Píxeles del color de acento en la franja izquierda de la barra de estado,
+    /// donde va la línea contraída de anotaciones.
+    fn pixeles_de_acento_en_la_barra_de_estado(app: &mut App, alto: u32) -> usize {
+        let acento = app.palette.accent;
+        let ancho = 320;
+        let pixmap = app.draw_for_test(900, alto);
+        let top = alto - STATUS_HEIGHT as u32;
+        let datos = pixmap.data();
+        let mut cuenta = 0;
+        for y in top..alto {
+            for x in 0..ancho {
+                let i = ((y * 900 + x) * 4) as usize;
+                if (datos[i], datos[i + 1], datos[i + 2]) == (acento.0, acento.1, acento.2) {
+                    cuenta += 1;
+                }
+            }
+        }
+        cuenta
+    }
+
+    fn app_con_anotaciones(modo: DocumentMode) -> App {
+        let mut app = App::for_tests(NIGHT);
+        let cuerpo = "# Título\n\ntexto de estudio\n";
+        app.load_for_test(cuerpo, modo);
+        app.document.annotations = Some(BLOQUE_ANOTACIONES.to_string());
+        app
+    }
+
+    #[test]
+    fn editar_muestra_el_bloque_contraido_en_una_linea() {
+        let mut leer = app_con_anotaciones(DocumentMode::Reading);
+        assert_eq!(pixeles_de_acento_en_la_barra_de_estado(&mut leer, 600), 0);
+        assert_eq!(leer.annotations_line_width, None);
+
+        let mut editar = app_con_anotaciones(DocumentMode::SourceEditing);
+        assert!(pixeles_de_acento_en_la_barra_de_estado(&mut editar, 600) > 0);
+        assert!(editar.annotations_line_width.is_some());
+        assert!(!editar.document.annotations_open, "contraído por defecto");
+        // El bloque no suma ninguna línea al documento: solo hay las del cuerpo.
+        let sin_bloque = {
+            let mut app = App::for_tests(NIGHT);
+            app.load_for_test(
+                "# Título\n\ntexto de estudio\n",
+                DocumentMode::SourceEditing,
+            );
+            app
+        };
+        assert_eq!(
+            editar.document.blocks.len(),
+            sin_bloque.document.blocks.len()
+        );
+        // Ni hay línea sin bloque.
+        let mut vacio = App::for_tests(NIGHT);
+        vacio.load_for_test("# Título\n", DocumentMode::SourceEditing);
+        assert_eq!(pixeles_de_acento_en_la_barra_de_estado(&mut vacio, 600), 0);
+        // La línea se reconoce como objetivo del puntero.
+        let y = 600.0 - STATUS_HEIGHT * 0.5;
+        assert_eq!(
+            editar.ui_target_at(20.0, y),
+            Some(UiTarget::AnnotationsLine)
+        );
+        assert_ne!(
+            editar.ui_target_at(700.0, y),
+            Some(UiTarget::AnnotationsLine)
+        );
+    }
+
+    #[test]
+    fn abrir_el_bloque_lo_muestra_de_solo_lectura() {
+        let mut app = app_con_anotaciones(DocumentMode::SourceEditing);
+        let cerrado = app.draw_for_test(900, 600).data().to_vec();
+        app.toggle_annotations_open();
+        assert!(app.document.annotations_open);
+        let abierto = app.draw_for_test(900, 600).data().to_vec();
+        assert_ne!(cerrado, abierto, "el panel se dibuja sobre el documento");
+        // Solo lectura: abrirlo no toca el texto ni marca cambios.
+        assert!(!app.document.is_dirty());
+        assert_eq!(
+            app.document.annotations.as_deref(),
+            Some(BLOQUE_ANOTACIONES)
+        );
+        // Al salir de Editar vuelve a contraerse.
+        app.document.mode = DocumentMode::Reading;
+        app.draw_for_test(900, 600);
+        assert!(!app.document.annotations_open);
+        // El panel muestra las líneas del bloque y avisa si hay más.
+        let texto = annotations_panel_text(BLOQUE_ANOTACIONES);
+        assert!(texto.contains("<!-- visor-md:anotaciones v1"));
+        assert!(texto.ends_with("Solo lectura · Esc o clic en la línea para contraer"));
+        let largo = format!("{}\n{}", "linea\n".repeat(30), "fin");
+        assert!(annotations_panel_text(&largo).contains("… y 20 líneas más"));
+    }
+
+    #[test]
+    fn escribir_al_final_no_entra_en_el_bloque() {
+        let mut app = app_con_anotaciones(DocumentMode::SourceEditing);
+        let fin = app.document.source.len_bytes();
+        app.edit_source(|editor, source| {
+            editor.set_cursor(source, fin, false)?;
+            editor.insert(source, "\nmás texto al final")
+        });
+        assert!(
+            app.document
+                .source
+                .to_string()
+                .ends_with("más texto al final")
+        );
+        assert_eq!(
+            app.document.annotations.as_deref(),
+            Some(BLOQUE_ANOTACIONES)
+        );
+        // Lo escrito va al cuerpo; el bloque sigue intacto y aparte, y al
+        // volver a abrir el archivo se separan igual.
+        let archivo = app.document.full_text();
+        let (cuerpo, bloque) = anotaciones::separar(archivo);
+        assert!(cuerpo.ends_with("más texto al final"));
+        assert_eq!(bloque.as_deref(), Some(BLOQUE_ANOTACIONES));
     }
 
     #[test]
