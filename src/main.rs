@@ -4680,13 +4680,18 @@ fn draw_toolbar_icon(
             path.move_to(left + 13.0, top + 12.0);
             path.line_to(right - 3.0, top + 12.0);
         }
+        // Comillas de cita (“ ”), no barra con líneas: eso se leía como una lista.
         AppAction::InsertQuote => {
-            path.move_to(left + 4.0, top + 4.0);
-            path.line_to(left + 4.0, bottom - 4.0);
-            path.move_to(left + 9.0, top + 7.0);
-            path.line_to(right - 4.0, top + 7.0);
-            path.move_to(left + 9.0, top + 12.0);
-            path.line_to(right - 6.0, top + 12.0);
+            for offset in [3.0, 11.0] {
+                let x = left + offset;
+                path.move_to(x, top + 4.0);
+                path.line_to(x + 5.0, top + 4.0);
+                path.line_to(x + 5.0, top + 9.0);
+                path.line_to(x, top + 9.0);
+                path.close();
+                path.move_to(x + 5.0, top + 9.0);
+                path.line_to(x + 2.0, top + 14.0);
+            }
         }
         AppAction::InsertCodeBlock => {
             path.move_to(left + 7.0, top + 4.0);
@@ -14403,6 +14408,12 @@ impl App {
             return;
         }
         self.edit_source(|editor, source| editor.set_heading_level(source, level));
+        // En una línea vacía solo queda la marca: se dice dónde escribir el título.
+        let source = &self.document.source;
+        let line = source.line_at_byte(self.document.source_editor.cursor());
+        if source.line_text(line).trim_end().chars().all(|c| c == '#') {
+            self.set_notice("Escribí el título después de los # (en Leer se ve como título)");
+        }
     }
 
     fn document_line_ending(&self) -> &'static str {
@@ -18004,7 +18015,7 @@ impl App {
             editor.insert(source, replacement)
         });
         self.selection = None;
-        self.set_notice("tarea actualizada · Ctrl+Z para deshacer");
+        self.set_notice("Tarea actualizada · sin guardar: Ctrl+S la guarda, Ctrl+Z la deshace");
     }
 
     fn toggle_selected_task(&mut self) {

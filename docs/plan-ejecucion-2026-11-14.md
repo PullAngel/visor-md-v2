@@ -717,10 +717,10 @@ entonces). Orden: primero los S2, luego lo que más pesa en el SUS.
   frase. Absorbe la 3.9.
 - [ ] **15.3** QA-02: el enlace roto se distingue del válido (estilo propio) y
   su ayuda dice que la nota no existe.
-- [ ] **15.4** US-05: aplicar Título 1 en una nota vacía no deja un `#` suelto;
+- [x] **15.4** (hecha: el ícono de cita ahora son comillas y un aviso dice dónde escribir el título tras aplicar un título en una línea vacía; los símbolos ya salen atenuados) US-05: aplicar Título 1 en una nota vacía no deja un `#` suelto;
   el icono con aspecto de lista no inserta una cita; los símbolos de Markdown
   del editor se atenúan para que no ocupen la atención.
-- [ ] **15.5** US-01: tildar o editar algo avisa que queda sin guardar y cómo
+- [x] **15.5** (hecha: el aviso de la tarea dice «sin guardar: Ctrl+S la guarda») US-01: tildar o editar algo avisa que queda sin guardar y cómo
   guardarlo (una vez por documento, sin ruido).
 - [ ] **15.6** QA-06, US-06, QA-20: avisos más cortos, sin jerga («presupuesto
   de memoria», «la fuente permanece intacta»), sin los de «actualizado» y sin
