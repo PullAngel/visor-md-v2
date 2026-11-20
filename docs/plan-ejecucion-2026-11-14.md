@@ -807,9 +807,8 @@ byte.
 Cada tarea deja `cargo test` y `cargo clippy` en verde.
 
 - [x] **14.0** Diseño aprobado y probado con un prototipo (26 de 26 casos borde).
-  Falta registrar el ADR «Anotaciones en un bloque final de comentario HTML» en
-  [`decisions.md`](decisions.md), que se hace con la 14.1.
-- [ ] **14.1** Formato puro (`src/anotaciones.rs`, sin interfaz ni
+  ADR-39 registrado en [`decisions.md`](decisions.md).
+- [x] **14.1** Formato puro (`src/anotaciones.rs`, sin interfaz ni
   dependencias): modelo, lector y escritor. Ida y vuelta byte a byte, orden
   determinista, límites, contenido desconocido conservado, y los separadores de
   línea de Unicode (U+2028, U+2029, U+0085) siempre escapados, como `<` y `>`.

@@ -13,6 +13,7 @@
 // existe y cuando exista se aisla en su propio modulo y se revisa a mano.
 #![forbid(unsafe_code)]
 
+mod anotaciones;
 mod asociacion;
 mod bienvenida;
 mod dialog;

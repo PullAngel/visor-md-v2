@@ -680,3 +680,30 @@ pero no son activos; las imágenes locales quedan como su marcador textual; la
 capa de búsqueda omite caracteres fuera de WinAnsi (el dibujo los conserva);
 el contenido no se comprime, por lo que un documento largo pesa más que con un
 compresor. Cualquiera de estos puntos puede revisarse sin cambiar la decisión.
+
+## ADR-39: Anotaciones en un bloque final de comentario HTML
+
+**Contexto.** La persona estudia con el programa y quiere subrayar con colores
+y poner marcas de libro. Las anotaciones deben viajar con el documento, crearse
+y borrarse con facilidad, no chocar con otros lectores y no estorbar a una IA
+que lea el archivo sin conocer el formato. El diseño completo y su prueba con
+un archivo real están en `docs/diseno-anotaciones-2026-11-19.md` (D-45).
+
+**Decisión.** El texto del documento no se toca nunca. Las anotaciones viven en
+un único comentario HTML al final del `.md` (`<!-- visor-md:anotaciones v1 … -->`)
+con una frase fija que avisa que no es parte del texto y una línea JSON por
+anotación, anclada por cita y contexto (no por número de línea). El lector y el
+escritor son propios (`src/anotaciones.rs`, sin dependencias): JSON de un solo
+nivel, `<` y `>` y los separadores de línea de Unicode (U+2028, U+2029, U+0085)
+siempre escapados, orden determinista, límites (1 MiB, 5 000 registros, líneas
+de 16 KiB), y todo lo desconocido (versión nueva, claves, líneas dañadas) se
+conserva sin tocar. El bloque no se ve en Leer y en Editar aparece contraído.
+
+**Por qué.** Es invisible en GitHub, Obsidian y VS Code; «quitar todas» devuelve
+el archivo idéntico byte a byte; no hay archivos aparte que se pierdan al mover
+el documento; el bloque es dato inerte (nada se ejecuta, abre o consulta).
+
+**Límites aceptados.** Un renderizador con HTML apagado mostrará el bloque como
+texto (la frase fija lo explica); cada anotación pesa unos 250 bytes; si el
+cuerpo termina dentro de un bloque de código sin cerrar no se guardan
+anotaciones. Enviar a IA o a Google queda sin decidir.
