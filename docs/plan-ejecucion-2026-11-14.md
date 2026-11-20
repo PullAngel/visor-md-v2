@@ -864,14 +864,26 @@ Cada tarea deja `cargo test` y `cargo clippy` en verde.
   trazo para marcas y puntos del índice (3:1 sobre el documento).
   Pruebas: `paleta_de_estudio_conserva_contraste_en_ambos_temas`,
   `colores_de_estudio_se_distinguen_entre_si_y_del_resaltado`.
-- [ ] **14.5** Subrayar desde la selección en Leer: menú Estudio, menú
-  contextual y atajo; **selector de color** (los cinco, con el último usado
-  como predeterminado); cambiar el color de uno, quitar uno; leyenda editable
-  (qué significa cada color). Pruebas:
+- [x] **14.5** Subrayar desde la selección (Leer y también Editar): menú
+  Estudio (grupo «Subrayar»), «Herramientas de estudio» en el menú contextual de
+  Leer y Ctrl+Shift+H. **Color:** «Subrayar en amarillo, verde, azul, rosa o
+  violeta»; «Subrayar» usa el último elegido. Aplicar un color sobre un
+  subrayado que ya existe le cambia el color sin mover el ancla; «Quitar el
+  subrayado» quita los que toca la selección o el cursor. **Leyenda:**
+  «Leyenda: qué significa cada color» abre un campo sobre el documento (↑↓
+  cambia de color, Enter guarda, Esc cancela) y el aviso al subrayar la nombra.
+  «Mostrar u ocultar mis anotaciones» muestra el original. «Ver el bloque de
+  anotaciones» es la vía de teclado de la línea contraída de Editar (14.3).
+  Subrayar marca el documento sin guardar («•», Ctrl+S, recuperación) sin tocar
+  el texto. Lo dibujado se traduce a la fuente carácter a carácter (el texto de
+  Leer es una subsecuencia de su Markdown), así la cita guarda la fuente exacta,
+  con su sintaxis. Solo dos acciones nuevas en la paleta general (subrayar y
+  ocultar); las demás viven en el menú Estudio. Pruebas:
   `subrayado_cruza_bloques_y_se_dibuja_por_tramos`,
   `subrayar_usa_el_ultimo_color_elegido`, `cambiar_el_color_no_mueve_el_ancla`,
   `subrayar_marca_el_documento_sin_guardar`,
-  `ocultar_mis_anotaciones_muestra_el_original`. QA manual con capturas.
+  `ocultar_mis_anotaciones_muestra_el_original`, más las de `estudio::pruebas`.
+  **Falta:** QA manual con capturas en la ventana real.
 - [ ] **14.6** Marcas de libro: forma (barra, cinta, punto, bandera), **color
   elegido** y nota opcional, en el margen izquierdo. **En el índice, sutiles y
   sin romper el formato:**

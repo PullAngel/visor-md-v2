@@ -38,7 +38,6 @@ pub(crate) struct StudyColor {
 }
 
 /// Nombres de los colores de estudio, en el orden de `Palette::study`.
-#[cfg_attr(not(test), allow(dead_code))] // Se usa desde la 14.5.
 pub(crate) const STUDY_COLOR_NAMES: [&str; 5] = ["amarillo", "verde", "azul", "rosa", "violeta"];
 
 const fn study(fill: (u8, u8, u8), stroke: (u8, u8, u8)) -> StudyColor {

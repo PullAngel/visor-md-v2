@@ -312,6 +312,13 @@ impl EditHistory {
         self.saved_revision = 0;
     }
 
+    /// Algo del documento que no es el texto cambió (sus anotaciones): una
+    /// revisión nueva, sin entrada de deshacer, que queda pendiente de guardar.
+    pub fn mark_changed(&mut self) {
+        self.current_revision = self.next_revision;
+        self.next_revision = self.next_revision.saturating_add(1);
+    }
+
     pub fn can_undo(&self) -> bool {
         !self.undo.is_empty()
     }
@@ -569,6 +576,10 @@ impl SourceEditor {
 
     pub fn mark_recovered(&mut self) {
         self.history.mark_recovered();
+    }
+
+    pub fn mark_changed(&mut self) {
+        self.history.mark_changed();
     }
 
     pub fn select_all(&mut self, source: &TextBuffer) {

@@ -18,6 +18,7 @@ mod asociacion;
 mod bienvenida;
 mod dialog;
 pub mod editor;
+mod estudio;
 mod files;
 mod fonts;
 mod images;
@@ -351,7 +352,17 @@ const WORKSPACE_HUB_ACTIONS: [AppAction; 8] = [
 ];
 /// Herramientas de estudio reunidas fuera del menú contextual plano. Comparten
 /// paleta, teclado y la misma fuente Markdown portable que el resto del editor.
-const STUDY_ACTIONS: [AppAction; 9] = [
+const STUDY_ACTIONS: [AppAction; 19] = [
+    AppAction::HighlightSelection,
+    AppAction::HighlightYellow,
+    AppAction::HighlightGreen,
+    AppAction::HighlightBlue,
+    AppAction::HighlightPink,
+    AppAction::HighlightViolet,
+    AppAction::RemoveHighlight,
+    AppAction::ToggleStudyAnnotations,
+    AppAction::ShowAnnotationsBlock,
+    AppAction::EditLegend,
     AppAction::InsertStudyQuestion,
     AppAction::InsertStudySummary,
     AppAction::InsertStudyConceptList,
@@ -589,7 +600,22 @@ const BLOCK_GROUPS: [MenuGroup; 3] = [
     ),
     ("Bloque", &[AppAction::InsertQuote]),
 ];
-const STUDY_GROUPS: [MenuGroup; 2] = [
+const STUDY_GROUPS: [MenuGroup; 3] = [
+    (
+        "Subrayar",
+        &[
+            AppAction::HighlightSelection,
+            AppAction::HighlightYellow,
+            AppAction::HighlightGreen,
+            AppAction::HighlightBlue,
+            AppAction::HighlightPink,
+            AppAction::HighlightViolet,
+            AppAction::RemoveHighlight,
+            AppAction::ToggleStudyAnnotations,
+            AppAction::ShowAnnotationsBlock,
+            AppAction::EditLegend,
+        ],
+    ),
     (
         "Insertar en el documento",
         &[
@@ -2048,6 +2074,19 @@ enum AppAction {
     PrepareStudySummary,
     PrepareStudyConceptList,
     PrepareAiFragments,
+    /// Subraya la selección con el último color usado.
+    HighlightSelection,
+    /// Subraya la selección (o recolorea el subrayado bajo ella) con un color
+    /// de la paleta de estudio.
+    HighlightYellow,
+    HighlightGreen,
+    HighlightBlue,
+    HighlightPink,
+    HighlightViolet,
+    RemoveHighlight,
+    ToggleStudyAnnotations,
+    ShowAnnotationsBlock,
+    EditLegend,
     CopyPlatform,
     ToggleSection,
     SearchDocument,
@@ -2076,7 +2115,7 @@ enum AppAction {
     Paste,
 }
 
-const APP_ACTIONS: [AppAction; 74] = [
+const APP_ACTIONS: [AppAction; 76] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -2138,6 +2177,8 @@ const APP_ACTIONS: [AppAction; 74] = [
     AppAction::PrepareStudySummary,
     AppAction::PrepareStudyConceptList,
     AppAction::PrepareAiFragments,
+    AppAction::HighlightSelection,
+    AppAction::ToggleStudyAnnotations,
     AppAction::CopyPlatform,
     AppAction::ToggleSection,
     AppAction::CopyTableTsv,
@@ -2212,6 +2253,16 @@ impl AppAction {
             Self::PrepareStudySummary => "Preparar resumen desde selección",
             Self::PrepareStudyConceptList => "Preparar conceptos desde selección",
             Self::PrepareAiFragments => "Preparar fragmentos para IA",
+            Self::HighlightSelection => "Subrayar la selección · Ctrl+Shift+H",
+            Self::HighlightYellow => "Subrayar en amarillo",
+            Self::HighlightGreen => "Subrayar en verde",
+            Self::HighlightBlue => "Subrayar en azul",
+            Self::HighlightPink => "Subrayar en rosa",
+            Self::HighlightViolet => "Subrayar en violeta",
+            Self::RemoveHighlight => "Quitar el subrayado",
+            Self::ToggleStudyAnnotations => "Mostrar u ocultar mis anotaciones",
+            Self::ShowAnnotationsBlock => "Ver el bloque de anotaciones",
+            Self::EditLegend => "Leyenda: qué significa cada color",
             Self::CopyPlatform => "Copiar para Discord o correo",
             Self::ToggleSection => "Plegar o desplegar sección enfocada",
             Self::SearchDocument => "Buscar en documento · Ctrl+F",
@@ -2326,6 +2377,7 @@ fn context_actions(
             ContextAction::CopyText,
             ContextAction::CopyMarkdown,
             ContextAction::CopyPlatform,
+            ContextAction::StudyTools,
         ],
         DocumentMode::SourceEditing | DocumentMode::Split => vec![
             ContextAction::Paste,
@@ -7209,6 +7261,8 @@ struct DocumentState {
     /// El bloque está desplegado (solo lectura). Siempre vuelve a contraerse al
     /// salir de Editar.
     annotations_open: bool,
+    /// Subrayados anclados para la revisión y el bloque actuales (clave hash).
+    study_cache: Option<(u64, Vec<estudio::Highlight>)>,
     source_metadata: TextMetadata,
     source_identity: Option<FileIdentity>,
     source_baseline_bytes: Option<Vec<u8>>,
@@ -7297,6 +7351,10 @@ enum DropTarget {
 
 /// Cuánto hay que mover el puntero para que un clic sea un arrastre.
 const DRAG_START_DISTANCE: f32 = 6.0;
+
+/// Por bloque del lector, los tramos de su texto dibujado que llevan un
+/// subrayado de estudio y el color de fondo de cada uno.
+type StudyRanges = HashMap<usize, Vec<(usize, usize, (u8, u8, u8))>>;
 
 /// Cuántas anotaciones lleva un bloque, para la línea contraída.
 fn annotation_count(block: &str) -> usize {
@@ -7419,6 +7477,7 @@ impl DocumentState {
             source: TextBuffer::new(),
             annotations: None,
             annotations_open: false,
+            study_cache: None,
             source_metadata: TextMetadata::default(),
             source_identity: None,
             source_baseline_bytes: None,
@@ -8269,6 +8328,13 @@ struct App {
     /// Ancho de la línea contraída de anotaciones en la barra de estado, tal
     /// como se dibujó en el último cuadro. `None` si no hay (Leer, o sin bloque).
     annotations_line_width: Option<f32>,
+    /// Último color de estudio elegido (índice de la paleta): el que usa
+    /// «Subrayar» sin elegir color.
+    study_color: usize,
+    /// «Ocultar mis anotaciones»: Leer muestra el original, sin subrayados.
+    hide_annotations: bool,
+    /// Leyenda en edición: color y texto escrito.
+    legend_edit: Option<(usize, String)>,
     /// El puntero estaba en la zona activa de la barra en el último movimiento:
     /// entrar o salir pide un cuadro para mostrarla u ocultarla.
     scroll_hot: bool,
@@ -8509,6 +8575,7 @@ impl App {
                 source: TextBuffer::new(),
                 annotations: None,
                 annotations_open: false,
+                study_cache: None,
                 source_metadata: TextMetadata::default(),
                 source_identity: None,
                 source_baseline_bytes: None,
@@ -8611,6 +8678,9 @@ impl App {
             scroll_bar_until: None,
             scroll_thumb_drag: None,
             annotations_line_width: None,
+            study_color: 0,
+            hide_annotations: false,
+            legend_edit: None,
             scroll_hot: false,
             last_divider_click: None,
             mosaic_drag: None,
@@ -10291,6 +10361,16 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::Ime(Ime::Disabled) => {
                 self.ime_preedit = None;
             }
+            WindowEvent::Ime(Ime::Commit(text)) if self.legend_edit.is_some() => {
+                if let Some((_, legend)) = &mut self.legend_edit
+                    && !text.chars().any(char::is_control)
+                {
+                    append_limited_text(legend, &text, estudio::MAX_LEGEND_CHARS);
+                }
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+            }
             WindowEvent::Ime(Ime::Commit(text)) if self.workspace_search_query.is_some() => {
                 self.append_workspace_search_text(&text);
             }
@@ -10420,6 +10500,9 @@ impl ApplicationHandler<AppEvent> for App {
             }
             WindowEvent::KeyboardInput { event, .. } if self.outline_headings.is_some() => {
                 self.handle_outline_key(&event);
+            }
+            WindowEvent::KeyboardInput { event, .. } if self.legend_edit.is_some() => {
+                self.handle_legend_key(&event);
             }
             WindowEvent::KeyboardInput { event, .. } if self.search_query.is_some() => {
                 self.handle_search_key(&event);
@@ -10558,6 +10641,18 @@ impl ApplicationHandler<AppEvent> for App {
                 ..
             } if self.modifiers.control_key() && self.modifiers.shift_key() => {
                 self.perform_action(AppAction::Backlinks);
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::KeyH),
+                        state: ElementState::Pressed,
+                        repeat: false,
+                        ..
+                    },
+                ..
+            } if self.modifiers.control_key() && self.modifiers.shift_key() => {
+                self.perform_action(AppAction::HighlightSelection);
             }
             WindowEvent::KeyboardInput {
                 event:
@@ -11127,6 +11222,16 @@ impl App {
             AppAction::PrepareStudySummary => self.prepare_study_summary(),
             AppAction::PrepareStudyConceptList => self.prepare_study_concept_list(),
             AppAction::PrepareAiFragments => self.prepare_ai_fragments(),
+            AppAction::HighlightSelection => self.highlight_selection(self.study_color),
+            AppAction::HighlightYellow => self.highlight_selection(0),
+            AppAction::HighlightGreen => self.highlight_selection(1),
+            AppAction::HighlightBlue => self.highlight_selection(2),
+            AppAction::HighlightPink => self.highlight_selection(3),
+            AppAction::HighlightViolet => self.highlight_selection(4),
+            AppAction::RemoveHighlight => self.remove_selected_highlight(),
+            AppAction::ToggleStudyAnnotations => self.toggle_study_annotations(),
+            AppAction::ShowAnnotationsBlock => self.show_annotations_block(),
+            AppAction::EditLegend => self.start_legend_edit(),
             AppAction::CopyPlatform => self.copy_selection_for_platform(),
             AppAction::ToggleSection => self.toggle_focused_section(),
             AppAction::SearchDocument => self.open_document_search(),
@@ -12124,6 +12229,267 @@ impl App {
             && (0.0..width).contains(&x)
             && y >= height - STATUS_HEIGHT
             && y < height
+    }
+
+    /// El tramo de la fuente que cubre la selección: en Editar, la del editor;
+    /// en Leer, la del lector traducida carácter a carácter a la fuente.
+    fn selected_source_range(&self) -> Option<(usize, usize)> {
+        if self.document.mode.is_editable() {
+            let editor = &self.document.source_editor;
+            let (anchor, cursor) = (editor.anchor(), editor.cursor());
+            return Some((anchor.min(cursor), anchor.max(cursor)));
+        }
+        let selection = self.selection?;
+        let first = selection.anchor.min(selection.focus);
+        let last = selection.anchor.max(selection.focus);
+        let blocks = &self.document.blocks;
+        let (first_block, last_block) = (blocks.get(first.block)?, blocks.get(last.block)?);
+        let source = self.document.source.to_string();
+        let slice = |block: &Block| source.get(block.source.start..block.source.end);
+        let first_map = estudio::rendered_source_map(
+            &first_block.text,
+            slice(first_block)?,
+            first_block.source.start,
+        );
+        let last_map = estudio::rendered_source_map(
+            &last_block.text,
+            slice(last_block)?,
+            last_block.source.start,
+        );
+        let start = estudio::source_start(&first_map, first.offset);
+        let end = estudio::source_end(&last_map, &last_block.text, last.offset);
+        Some((start, end.max(start)))
+    }
+
+    /// Cambia las anotaciones del documento y lo deja como «sin guardar».
+    fn change_annotations(
+        &mut self,
+        change: impl FnOnce(&mut anotaciones::Anotaciones, &str) -> Result<String, &'static str>,
+    ) {
+        let mut parsed = match estudio::parse(self.document.annotations.as_deref()) {
+            Ok(parsed) => parsed,
+            Err(message) => {
+                self.set_notice(message);
+                return;
+            }
+        };
+        let source = self.document.source.to_string();
+        match change(&mut parsed, &source) {
+            Ok(message) => {
+                let eol = self.document.annotation_line_ending();
+                self.document.annotations = anotaciones::escribir(&parsed, eol);
+                self.document.source_editor.mark_changed();
+                self.document.study_cache = None;
+                self.schedule_recovery();
+                self.set_notice(&message);
+            }
+            Err(message) => self.set_notice(message),
+        }
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    fn highlight_selection(&mut self, color: usize) {
+        let color = color.min(4);
+        let Some((start, end)) = self.selected_source_range() else {
+            self.set_notice("Seleccioná el texto que querés subrayar");
+            return;
+        };
+        self.study_color = color;
+        self.hide_annotations = false;
+        let legend = self.current_legend(color);
+        let name = if legend.is_empty() {
+            crate::theme::STUDY_COLOR_NAMES[color].to_string()
+        } else {
+            format!("{} ({legend})", crate::theme::STUDY_COLOR_NAMES[color])
+        };
+        self.change_annotations(|anotaciones, source| {
+            match estudio::highlight(anotaciones, source, start, end, color)? {
+                0 => Ok(format!("Subrayado en {name}")),
+                1 => Ok(format!("El subrayado ahora es {name}")),
+                n => Ok(format!("{n} subrayados ahora son {name}")),
+            }
+        });
+    }
+
+    fn remove_selected_highlight(&mut self) {
+        let Some((start, end)) = self.selected_source_range() else {
+            self.set_notice("Poné el cursor sobre el subrayado que querés quitar");
+            return;
+        };
+        self.change_annotations(|anotaciones, source| {
+            match estudio::remove_highlights(anotaciones, source, start, end) {
+                0 => Err("Ahí no hay ningún subrayado"),
+                1 => Ok("Subrayado quitado".to_string()),
+                n => Ok(format!("{n} subrayados quitados")),
+            }
+        });
+    }
+
+    fn toggle_study_annotations(&mut self) {
+        self.hide_annotations = !self.hide_annotations;
+        self.set_notice(if self.hide_annotations {
+            "Anotaciones ocultas: ves el texto original"
+        } else {
+            "Anotaciones visibles"
+        });
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    /// La leyenda que tiene hoy un color, o vacía.
+    fn current_legend(&self, color: usize) -> String {
+        estudio::parse(self.document.annotations.as_deref())
+            .ok()
+            .and_then(|parsed| estudio::legend(&parsed, color).map(str::to_string))
+            .unwrap_or_default()
+    }
+
+    fn start_legend_edit(&mut self) {
+        let color = self.study_color;
+        self.legend_edit = Some((color, self.current_legend(color)));
+        self.context_menu = None;
+        self.command_palette = None;
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    /// Escribir cambia la leyenda; ↑ y ↓ pasan a otro color; Enter guarda;
+    /// Esc cancela.
+    fn handle_legend_key(&mut self, event: &KeyEvent) {
+        if event.state != ElementState::Pressed {
+            return;
+        }
+        let Some((color, _)) = self.legend_edit else {
+            return;
+        };
+        match event.physical_key {
+            PhysicalKey::Code(KeyCode::Escape) => self.legend_edit = None,
+            PhysicalKey::Code(KeyCode::ArrowDown | KeyCode::ArrowUp) => {
+                let next = if matches!(event.physical_key, PhysicalKey::Code(KeyCode::ArrowDown)) {
+                    (color + 1) % 5
+                } else {
+                    (color + 4) % 5
+                };
+                self.legend_edit = Some((next, self.current_legend(next)));
+            }
+            PhysicalKey::Code(KeyCode::Backspace) => {
+                if let Some((_, legend)) = &mut self.legend_edit {
+                    legend.pop();
+                }
+            }
+            PhysicalKey::Code(KeyCode::Enter) => self.commit_legend_edit(),
+            _ => {
+                let typed = typed_text(
+                    event.text.as_deref(),
+                    self.modifiers.control_key(),
+                    self.modifiers.alt_key(),
+                );
+                match (typed, &mut self.legend_edit) {
+                    (Some(typed), Some((_, legend))) => {
+                        append_limited_text(legend, typed, estudio::MAX_LEGEND_CHARS);
+                    }
+                    _ => return,
+                }
+            }
+        }
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    /// Guarda la leyenda que se está escribiendo.
+    fn commit_legend_edit(&mut self) {
+        let Some((color, text)) = self.legend_edit.take() else {
+            return;
+        };
+        self.study_color = color;
+        if text.trim() == self.current_legend(color) {
+            self.set_notice("La leyenda no cambió");
+        } else {
+            let name = crate::theme::STUDY_COLOR_NAMES[color];
+            self.change_annotations(|anotaciones, _| {
+                estudio::set_legend(anotaciones, color, &text);
+                Ok(if text.trim().is_empty() {
+                    format!("El {name} ya no tiene leyenda")
+                } else {
+                    format!("Leyenda del {name}: {}", text.trim())
+                })
+            });
+        }
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    fn show_annotations_block(&mut self) {
+        if self.document.annotations.is_none() {
+            self.set_notice("Este documento no tiene anotaciones");
+        } else if !self.document.mode.is_editable() {
+            self.set_notice("El bloque de anotaciones se ve en Editar, contraído al pie");
+        } else {
+            self.toggle_annotations_open();
+        }
+    }
+
+    /// Tramos que se pintan en Leer: por bloque, el rango del texto dibujado y
+    /// el color de fondo. Solo se miran los bloques que tocan algún subrayado.
+    fn study_highlight_ranges(&mut self) -> StudyRanges {
+        let mut ranges = StudyRanges::new();
+        if self.hide_annotations || self.document.mode != DocumentMode::Reading {
+            return ranges;
+        }
+        let Some(block) = self.document.annotations.as_deref() else {
+            return ranges;
+        };
+        let key = {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            self.document.source_editor.revision().hash(&mut hasher);
+            self.document.source.len_bytes().hash(&mut hasher);
+            block.hash(&mut hasher);
+            hasher.finish()
+        };
+        if self
+            .document
+            .study_cache
+            .as_ref()
+            .is_none_or(|(cached, _)| *cached != key)
+        {
+            let source = self.document.source.to_string();
+            let items = estudio::parse(Some(block))
+                .map(|parsed| estudio::highlights(&source, &parsed))
+                .unwrap_or_default();
+            self.document.study_cache = Some((key, items));
+        }
+        let Some((_, items)) = &self.document.study_cache else {
+            return ranges;
+        };
+        if items.is_empty() {
+            return ranges;
+        }
+        let source = self.document.source.to_string();
+        let blocks = &self.document.blocks;
+        for item in items {
+            let fill = self.palette.study[item.color.min(4)].fill;
+            let first = blocks.partition_point(|block| block.source.end <= item.start);
+            for (index, block) in blocks.iter().enumerate().skip(first) {
+                if block.source.start >= item.end {
+                    break;
+                }
+                let Some(slice) = source.get(block.source.start..block.source.end) else {
+                    continue;
+                };
+                let map = estudio::rendered_source_map(&block.text, slice, block.source.start);
+                if let Some((start, end)) = estudio::rendered_range(&map, item.start, item.end) {
+                    ranges.entry(index).or_default().push((start, end, fill));
+                }
+            }
+        }
+        ranges
     }
 
     fn toggle_annotations_open(&mut self) {
@@ -17493,6 +17859,14 @@ impl App {
         let search_hits = self.search_matches();
         let mut search_mark_blocks = search_hits.iter().map(|hit| hit.block).collect::<Vec<_>>();
         search_mark_blocks.dedup();
+        let legend_overlay = self.legend_edit.clone().map(|(color, text)| {
+            let label = format!(
+                "Leyenda del {}: {text}▏ · ↑↓ otro color · Enter guarda · Esc cancela",
+                crate::theme::STUDY_COLOR_NAMES[color]
+            );
+            let label = abbreviated_label(&label, MAX_OVERLAY_LABEL_CHARS);
+            build_menu_layout(&label, &mut self.font_cx, &mut self.layout_cx, self.palette)
+        });
         let search_overlay = search_query.as_ref().map(|query| {
             let matches = search_hits.len();
             let label = if query.is_empty() {
@@ -17506,6 +17880,7 @@ impl App {
             let label = abbreviated_label(&label, MAX_OVERLAY_LABEL_CHARS);
             build_menu_layout(&label, &mut self.font_cx, &mut self.layout_cx, self.palette)
         });
+        let search_overlay = legend_overlay.or(search_overlay);
         let workspace_search_query = self.workspace_search_query.clone();
         let workspace_search_results = workspace_search_query
             .as_ref()
@@ -18816,6 +19191,7 @@ impl App {
         // Se desarma `self` en campos sueltos para que el prestamo del pixmap
         // no choque con el de la cache de glifos ni con el de los bloques.
         let context_mode = self.document.mode;
+        let study_highlights = self.study_highlight_ranges();
         let open_surface = self.open_surface();
         let workspace_open = self.workspace.is_some();
         let workspace_generation = self.workspace_generation;
@@ -19257,6 +19633,28 @@ impl App {
                                 panes.source,
                             );
                             draw_checkbox(pixmap, left, top, width, *done, *palette);
+                        }
+                    }
+                }
+
+                // Subrayados de estudio: un fondo de color detrás del texto, que
+                // conserva su color y contraste.
+                for (start, end, fill) in study_highlights.get(&i).into_iter().flatten() {
+                    let mut study_paint = Paint::default();
+                    study_paint.set_color(Color::from_rgba8(fill.0, fill.1, fill.2, 255));
+                    for (rect, _) in Selection::new(
+                        Cursor::from_byte_index(layout, *start, Affinity::Downstream),
+                        Cursor::from_byte_index(layout, *end, Affinity::Downstream),
+                    )
+                    .geometry(layout)
+                    {
+                        if let Some(rect) = Rect::from_xywh(
+                            panes.source.x + slot.x + rect.x0 as f32,
+                            top + rect.y0 as f32,
+                            rect.width() as f32,
+                            rect.height() as f32,
+                        ) {
+                            pixmap.fill_rect(rect, &study_paint, Transform::identity(), None);
                         }
                     }
                 }
@@ -23657,6 +24055,124 @@ reservar hotel
         app
     }
 
+    const TEXTO_DE_ESTUDIO: &str = "# Título\n\nUna **frase** importante.\n\nOtra línea.\n";
+
+    fn app_de_estudio() -> App {
+        let mut app = App::for_tests(NIGHT);
+        app.load_for_test(TEXTO_DE_ESTUDIO, DocumentMode::Reading);
+        app
+    }
+
+    fn seleccionar(app: &mut App, desde: (usize, usize), hasta: (usize, usize)) {
+        app.selection = Some(DocumentSelection {
+            anchor: BlockCursor {
+                block: desde.0,
+                offset: desde.1,
+            },
+            focus: BlockCursor {
+                block: hasta.0,
+                offset: hasta.1,
+            },
+        });
+    }
+
+    #[test]
+    fn subrayado_cruza_bloques_y_se_dibuja_por_tramos() {
+        let mut app = app_de_estudio();
+        assert_eq!(app.document.blocks[1].text, "Una frase importante.");
+        seleccionar(&mut app, (1, 4), (2, 4));
+        app.perform_action(AppAction::HighlightSelection);
+        let parsed = estudio::parse(app.document.annotations.as_deref()).unwrap();
+        assert_eq!(
+            parsed.registros[0].cita.as_deref(),
+            Some("frase** importante.\n\nOtra"),
+            "la cita es la fuente Markdown, con su sintaxis"
+        );
+        let fondo = app.palette.study[0].fill;
+        let tramos = app.study_highlight_ranges();
+        assert_eq!(tramos.get(&1), Some(&vec![(4, 21, fondo)]));
+        assert_eq!(tramos.get(&2), Some(&vec![(0, 4, fondo)]));
+        assert_eq!(tramos.get(&0), None);
+        // Y se pinta: hay píxeles del fondo de estudio en el lienzo.
+        app.selection = None;
+        let pixmap = app.draw_for_test(900, 600);
+        let pintados = pixmap
+            .data()
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .filter(|p| (p[0], p[1], p[2]) == fondo)
+            .count();
+        assert!(pintados > 200, "{pintados}");
+    }
+
+    #[test]
+    fn subrayar_usa_el_ultimo_color_elegido() {
+        let mut app = app_de_estudio();
+        seleccionar(&mut app, (1, 0), (1, 3));
+        app.perform_action(AppAction::HighlightPink);
+        seleccionar(&mut app, (2, 0), (2, 4));
+        app.perform_action(AppAction::HighlightSelection);
+        let parsed = estudio::parse(app.document.annotations.as_deref()).unwrap();
+        assert_eq!(parsed.registros.len(), 2);
+        assert!(
+            parsed
+                .registros
+                .iter()
+                .all(|registro| registro.color == anotaciones::Color::Rosa)
+        );
+        // Con la leyenda, el aviso dice qué significa el color.
+        app.perform_action(AppAction::EditLegend);
+        assert_eq!(app.legend_edit, Some((3, String::new())));
+        app.legend_edit = Some((3, "repasar".to_string()));
+        app.commit_legend_edit();
+        assert_eq!(app.legend_edit, None);
+        assert_eq!(app.current_legend(3), "repasar");
+    }
+
+    #[test]
+    fn subrayar_marca_el_documento_sin_guardar() {
+        let mut app = app_de_estudio();
+        assert!(!app.document.is_dirty());
+        let texto = app.document.source.to_string();
+        seleccionar(&mut app, (2, 0), (2, 4));
+        app.perform_action(AppAction::HighlightGreen);
+        assert!(app.document.is_dirty(), "queda «•» hasta guardar");
+        assert_eq!(
+            app.document.source.to_string(),
+            texto,
+            "el texto no se toca"
+        );
+        // Lo que se guardaría: el texto idéntico y el bloque al final.
+        let completo = app.document.full_text();
+        assert!(completo.starts_with(&texto));
+        assert!(completo.contains("\"cita\":\"Otra\""));
+        // Quitar el subrayado también es un cambio.
+        app.document.source_editor.mark_saved();
+        seleccionar(&mut app, (2, 1), (2, 1));
+        app.perform_action(AppAction::RemoveHighlight);
+        assert!(app.document.is_dirty());
+        assert_eq!(
+            app.document.annotations, None,
+            "sin anotaciones no queda bloque"
+        );
+    }
+
+    #[test]
+    fn ocultar_mis_anotaciones_muestra_el_original() {
+        let mut app = app_de_estudio();
+        seleccionar(&mut app, (1, 0), (1, 3));
+        app.perform_action(AppAction::HighlightSelection);
+        assert!(!app.study_highlight_ranges().is_empty());
+        app.perform_action(AppAction::ToggleStudyAnnotations);
+        assert!(app.study_highlight_ranges().is_empty());
+        app.perform_action(AppAction::ToggleStudyAnnotations);
+        assert!(!app.study_highlight_ranges().is_empty());
+        // En Editar no se pintan: ahí se ve la fuente.
+        app.document.mode = DocumentMode::SourceEditing;
+        assert!(app.study_highlight_ranges().is_empty());
+    }
+
     #[test]
     fn editar_muestra_el_bloque_contraido_en_una_linea() {
         let mut leer = app_con_anotaciones(DocumentMode::Reading);
@@ -25076,9 +25592,11 @@ sin guardar",
         // la paleta en un menú de IDE: las familias densas también tienen
         // ámbitos propios desde el menú contextual. Superar 72 exige revisar
         // esa jerarquía antes de añadir otra acción. Las últimas fueron
-        // símbolos y emojis, índice flotante, PDF y las dos del menú Sistema
-        // (asociar archivos y abrir archivos externos en la ventana abierta).
-        assert!(original_len <= 74, "el catálogo dejó de ser pequeño");
+        // símbolos y emojis, índice flotante, PDF, las dos del menú Sistema
+        // (asociar archivos y abrir archivos externos en la ventana abierta) y,
+        // en la fase 14, subrayar y mostrar u ocultar anotaciones. Los colores,
+        // quitar, la leyenda y el bloque viven solo en el menú Estudio.
+        assert!(original_len <= 76, "el catálogo dejó de ser pequeño");
         assert_eq!(labels.len(), original_len);
     }
 
@@ -26579,9 +27097,10 @@ Segundo parrafo.
             task_block: None,
             row_height: CONTEXT_MENU_ROW_HEIGHT,
         };
-        assert_eq!(reading_menu.actions.len(), 3);
-        assert_eq!(table_menu.actions.len(), 4);
-        assert_eq!(task_menu.actions.len(), 4);
+        // Leer suma «Herramientas de estudio» (subrayar, leyenda) a las copias.
+        assert_eq!(reading_menu.actions.len(), 4);
+        assert_eq!(table_menu.actions.len(), 5);
+        assert_eq!(task_menu.actions.len(), 5);
         assert_eq!(editing_menu.actions.len(), 8);
         assert_eq!(selected_editing_menu.actions.len(), 11);
         assert!(!reading_menu.actions.contains(&ContextAction::Paste));
