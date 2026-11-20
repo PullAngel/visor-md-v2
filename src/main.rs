@@ -8528,6 +8528,9 @@ struct App {
     hide_annotations: bool,
     /// Leyenda en edición: color y texto escrito.
     legend_edit: Option<(usize, String)>,
+    /// Búsqueda que se aplica cuando termina de abrirse el documento: al abrir
+    /// un resultado de «Buscar en carpeta», la nota se abre en la frase.
+    pending_open_search: Option<(PathBuf, String)>,
     /// Nota de marca en edición: byte de la línea y texto escrito.
     note_edit: Option<(usize, String)>,
     /// Puntos de marcas del índice flotante y la marca a la que llevan.
@@ -8880,6 +8883,7 @@ impl App {
             hide_annotations: false,
             legend_edit: None,
             note_edit: None,
+            pending_open_search: None,
             floating_outline_dots: Vec::new(),
             scroll_hot: false,
             last_divider_click: None,
@@ -9276,6 +9280,14 @@ impl ApplicationHandler<AppEvent> for App {
                 if active {
                     self.reset_document_view();
                     self.notice = None;
+                    if let Some((pending_path, query)) = self.pending_open_search.take()
+                        && paths_refer_to_same_file(
+                            &pending_path,
+                            std::path::Path::new(&self.document.path),
+                        )
+                    {
+                        self.apply_open_search(query);
+                    }
                     self.refresh_title();
                     if let Some(window) = &self.window {
                         window.request_redraw();
@@ -14141,6 +14153,9 @@ impl App {
             && tab.document.mode == DocumentMode::Split
         {
             tab.document.mode = DocumentMode::Reading;
+            // En Comparar `blocks` es la fuente; en Leer, la vista. Sin este
+            // cambio el panel mostraba la fuente con «Copiar» en cada línea.
+            tab.document.blocks = tab.document.rendered_blocks.clone();
         }
     }
 
@@ -17427,6 +17442,26 @@ impl App {
         })
     }
 
+    /// Deja la búsqueda del documento hecha con `query` y lleva la vista a la
+    /// primera coincidencia.
+    fn apply_open_search(&mut self, query: String) {
+        self.search_query = Some(query);
+        self.search_match = 0;
+        if let Some(hit) = self.search_matches().first() {
+            self.selection = Some(DocumentSelection {
+                anchor: BlockCursor {
+                    block: hit.block,
+                    offset: hit.range.start,
+                },
+                focus: BlockCursor {
+                    block: hit.block,
+                    offset: hit.range.end,
+                },
+            });
+            self.document.pending_block = Some(hit.block);
+        }
+    }
+
     fn open_workspace_search_match(&mut self) {
         let matches = self.workspace_search_matches();
         let Some(result) = matches
@@ -17441,8 +17476,21 @@ impl App {
         };
         match root.resolve_existing(&result.relative_path) {
             Ok(path) => {
-                self.workspace_search_query = None;
-                self.open_document_path(path);
+                let query = self
+                    .workspace_search_query
+                    .take()
+                    .filter(|query| !query.is_empty());
+                self.open_document_path(path.clone());
+                if let Some(query) = query {
+                    if paths_refer_to_same_file(&path, std::path::Path::new(&self.document.path))
+                        && !self.open_requests.contains_key(&self.document.id)
+                    {
+                        // Ya estaba abierta: se busca de inmediato.
+                        self.apply_open_search(query);
+                    } else {
+                        self.pending_open_search = Some((path, query));
+                    }
+                }
             }
             Err(error) => {
                 self.log.push(format!("[vfs] {error}"));
@@ -18495,7 +18543,7 @@ impl App {
         search_mark_blocks.dedup();
         let legend_overlay = self.legend_edit.clone().map(|(color, text)| {
             let label = format!(
-                "Leyenda del {}: {text}▏ · ↑↓ otro color · Enter guarda · Esc cancela",
+                "Leyenda del {}: {text}| · ↑↓ otro color · Enter guarda · Esc cancela",
                 crate::theme::STUDY_COLOR_NAMES[color]
             );
             let label = abbreviated_label(&label, MAX_OVERLAY_LABEL_CHARS);
@@ -18504,18 +18552,20 @@ impl App {
         let search_overlay = search_query.as_ref().map(|query| {
             let matches = search_hits.len();
             let label = if query.is_empty() {
-                "Buscar en documento…".to_string()
+                "Buscar en el documento: escribí lo que buscás|".to_string()
+            } else if matches == 0 {
+                format!("Buscar: {query}| · sin resultados · Esc cierra")
             } else {
                 format!(
-                    "Buscar: {query} · {}",
-                    count_noun(matches, "resultado", "resultados")
+                    "Buscar: {query}| · {} de {matches} · Enter siguiente · Mayús+Enter anterior · Esc cierra",
+                    self.search_match % matches + 1
                 )
             };
             let label = abbreviated_label(&label, MAX_OVERLAY_LABEL_CHARS);
             build_menu_layout(&label, &mut self.font_cx, &mut self.layout_cx, self.palette)
         });
         let note_overlay = self.note_edit.clone().map(|(_, text)| {
-            let label = format!("Nota de la marca: {text}▏ · Enter guarda · Esc cancela");
+            let label = format!("Nota de la marca: {text}| · Enter guarda · Esc cancela");
             let label = abbreviated_label(&label, MAX_OVERLAY_LABEL_CHARS);
             build_menu_layout(&label, &mut self.font_cx, &mut self.layout_cx, self.palette)
         });
@@ -18735,10 +18785,10 @@ impl App {
             let workspace_root = self.workspace.as_ref().map(|(root, _)| root.root());
             let workspace_name = workspace_name(workspace_root);
             let title = if query.is_empty() {
-                format!("Buscar en {workspace_name}…")
+                format!("Buscar en {workspace_name}: escribí lo que buscás|")
             } else {
                 format!(
-                    "Buscar en {workspace_name}: {query} · {}",
+                    "Buscar en {workspace_name}: {query}| · {}",
                     count_noun(paths.len(), "resultado", "resultados")
                 )
             };
@@ -20411,6 +20461,29 @@ impl App {
                     }
                 }
 
+                // Todas las coincidencias de la búsqueda, con un fondo tenue; la
+                // actual se destaca después con la selección.
+                for hit in search_hits.iter().filter(|hit| hit.block == i) {
+                    let mut hit_paint = Paint::default();
+                    let mark = palette.mark;
+                    hit_paint.set_color(Color::from_rgba8(mark.0, mark.1, mark.2, 255));
+                    for (rect, _) in Selection::new(
+                        Cursor::from_byte_index(layout, hit.range.start, Affinity::Downstream),
+                        Cursor::from_byte_index(layout, hit.range.end, Affinity::Downstream),
+                    )
+                    .geometry(layout)
+                    {
+                        if let Some(rect) = Rect::from_xywh(
+                            panes.source.x + slot.x + rect.x0 as f32,
+                            top + rect.y0 as f32,
+                            rect.width() as f32,
+                            rect.height() as f32,
+                        ) {
+                            pixmap.fill_rect(rect, &hit_paint, Transform::identity(), None);
+                        }
+                    }
+                }
+
                 // Subrayados de estudio: un fondo de color detrás del texto, que
                 // conserva su color y contraste.
                 for (start, end, fill) in study_highlights.get(&i).into_iter().flatten() {
@@ -22016,6 +22089,17 @@ impl App {
             let overlay_width = (layout.width() + 24.0).min(w.get() as f32 - MARGIN * 2.0);
             if let Some(rect) = Rect::from_xywh(MARGIN, PANEL_Y, overlay_width, 28.0) {
                 pixmap.fill_rect(rect, &floating_paint, Transform::identity(), None);
+            }
+            // Borde de acento: es un campo de texto y se nota.
+            for (x, y, width, height) in [
+                (MARGIN, PANEL_Y, overlay_width, 1.5),
+                (MARGIN, PANEL_Y + 26.5, overlay_width, 1.5),
+                (MARGIN, PANEL_Y, 1.5, 28.0),
+                (MARGIN + overlay_width - 1.5, PANEL_Y, 1.5, 28.0),
+            ] {
+                if let Some(rect) = Rect::from_xywh(x, y, width, height) {
+                    pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
+                }
             }
             for line in layout.lines() {
                 for entry in line.items() {
@@ -25121,6 +25205,93 @@ texto
 ",
         );
         assert!(!app.source.to_string().contains("visor-md"));
+    }
+
+    #[test]
+    fn un_documento_en_comparar_llega_a_un_panel_nuevo_con_la_vista_y_no_con_la_fuente() {
+        let mut app = App::for_tests(NIGHT);
+        app.load_for_test(
+            "# Título
+
+texto
+",
+            DocumentMode::Reading,
+        );
+        let mut otro = DocumentState::untitled();
+        otro.source = TextBuffer::from_text(
+            "# Otro
+
+cuerpo **fuerte**
+",
+        );
+        let outcome = otro
+            .content_kind
+            .prepare_view(
+                "# Otro
+
+cuerpo **fuerte**
+",
+            )
+            .unwrap();
+        otro.mode = DocumentMode::Split;
+        apply_view_outcome(&mut otro, outcome);
+        otro.blocks = safe_buffer_blocks(&otro.source).unwrap();
+        assert!(
+            otro.blocks
+                .iter()
+                .all(|block| matches!(block.kind, Kind::Code))
+        );
+        let id = otro.id;
+        app.inactive_documents.push(InactiveDocument {
+            document: otro,
+            recovery: None,
+        });
+        app.open_in_reading_if_comparing(id);
+        let documento = &app.inactive_documents[0].document;
+        assert_eq!(documento.mode, DocumentMode::Reading);
+        assert_eq!(documento.blocks.len(), documento.rendered_blocks.len());
+        assert!(
+            documento
+                .blocks
+                .iter()
+                .all(|block| !matches!(block.kind, Kind::Code)),
+            "la vista de lectura no puede quedar con bloques de fuente"
+        );
+    }
+
+    #[test]
+    fn la_busqueda_muestra_cuantas_coincidencias_hay_y_abrir_un_resultado_lleva_a_la_frase() {
+        let mut app = App::for_tests(NIGHT);
+        app.load_for_test(
+            "# Tema
+
+una casa y otra casa
+
+la casa final
+",
+            DocumentMode::Reading,
+        );
+        app.open_document_search();
+        app.append_search_text("casa");
+        assert_eq!(app.search_matches().len(), 3);
+        // Todas las coincidencias se pintan con su fondo, no solo la actual.
+        let marca = app.palette.mark;
+        let pixmap = app.draw_for_test(900, 400);
+        let pintados = pixmap
+            .data()
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .filter(|p| (p[0], p[1], p[2]) == marca)
+            .count();
+        assert!(pintados > 100, "{pintados}");
+        // Al abrir un resultado de la carpeta, la búsqueda queda hecha.
+        app.search_query = None;
+        app.selection = None;
+        app.apply_open_search("final".to_string());
+        assert_eq!(app.search_matches().len(), 1);
+        assert!(app.selection.is_some());
+        assert!(app.document.pending_block.is_some());
     }
 
     #[test]

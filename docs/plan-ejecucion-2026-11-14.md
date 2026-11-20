@@ -707,11 +707,11 @@ Sale de [`evaluacion-usabilidad-ronda-2.md`](evaluacion-usabilidad-ronda-2.md):
 cinco S2 abiertos y SUS 67,5. Al terminarla se repite la fase 9 (9.5 queda para
 entonces). Orden: primero los S2, luego lo que más pesa en el SUS.
 
-- [ ] **15.1** QA-01: dividir con un documento en Editar no puede mostrar la
+- [x] **15.1** (causa corregida: un documento que llegaba de Comparar a un panel nuevo pasaba a Leer con los bloques de la fuente; falta verlo en la ventana real) QA-01: dividir con un documento en Editar no puede mostrar la
   fuente con «Copiar» por línea; el panel nuevo abre en Leer y su selector lo
   dice. Revisar también QA-16 (selector duplicado, barra cambiante, números de
   línea).
-- [ ] **15.2** QA-03 y US-04: la búsqueda (documento y carpeta) con campo de
+- [x] **15.2** (hecha; el campo se dibuja con borde de acento, cuenta «n de m» y pinta todas las coincidencias; los botones anterior y siguiente son Enter y Mayús+Enter, dichos en el propio campo; al abrir un resultado de la carpeta la nota abre en la frase) QA-03 y US-04: la búsqueda (documento y carpeta) con campo de
   texto con borde, «n de m», anterior y siguiente, y todas las coincidencias
   resaltadas; el resultado de la carpeta no se corta y al abrirlo lleva a la
   frase. Absorbe la 3.9.
