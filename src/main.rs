@@ -84,8 +84,8 @@ use dialog::{ButtonTone, Dialog, DialogChoice, DialogRect, dialog_layout, dialog
 use editor::{LinePrefix, SourceChange, SourceEditor, TextBuffer};
 use files::{
     DEFAULT_DOCUMENT_LIMIT_BYTES, FileIdentity, FileOpenError, FileSaveError, LineEndings,
-    TextMetadata, changed_on_disk, is_markdown_path, open_explicit_primary, save_explicit_primary,
-    save_new_primary,
+    TextMetadata, changed_on_disk, is_markdown_path, open_explicit_primary,
+    save_explicit_primary_with_annotations, save_new_primary_with_annotations,
 };
 use fonts::{FONT_CODE, FONT_DOC, FONT_UI, register_embedded_fonts};
 use limits::{Degradation, MAX_BLOCKS, MAX_INDENT_DEPTH, MAX_NEST, MAX_SAFE_LINE_BYTES};
@@ -2431,6 +2431,7 @@ enum AppEvent {
         request: u64,
         path: PathBuf,
         source: String,
+        annotations: Option<String>,
         metadata: TextMetadata,
         identity: FileIdentity,
         baseline_bytes: Vec<u8>,
@@ -7201,6 +7202,10 @@ struct DocumentState {
     /// del recordado: un enlace abre en Leer y una nota nueva en Editar.
     open_mode_override: Option<DocumentMode>,
     source: TextBuffer,
+    /// Bloque de anotaciones de estudio (de `<!--` a `-->`), aparte del texto:
+    /// el cuerpo del documento no lo incluye, así que ni Leer, ni la búsqueda,
+    /// ni las métricas, ni el PDF lo ven. Se une al texto al guardar.
+    annotations: Option<String>,
     source_metadata: TextMetadata,
     source_identity: Option<FileIdentity>,
     source_baseline_bytes: Option<Vec<u8>>,
@@ -7290,6 +7295,10 @@ enum DropTarget {
 /// Cuánto hay que mover el puntero para que un clic sea un arrastre.
 const DRAG_START_DISTANCE: f32 = 6.0;
 
+/// Aviso cuando el texto termina dentro de un bloque de código sin cerrar: el
+/// bloque de anotaciones no se reconocería al abrir, así que no se escribe.
+const ANNOTATIONS_SWALLOWED_NOTICE: &str = "Se guardó el texto sin las anotaciones: termina dentro de un bloque de código sin cerrar. Cerralo y guardá otra vez";
+
 /// Ruta con la que nace un documento nuevo, mientras no se guarda.
 const UNTITLED_PATH: &str = "sin título.md";
 
@@ -7370,6 +7379,7 @@ impl DocumentState {
             pinned: false,
             open_mode_override: None,
             source: TextBuffer::new(),
+            annotations: None,
             source_metadata: TextMetadata::default(),
             source_identity: None,
             source_baseline_bytes: None,
@@ -7396,6 +7406,58 @@ impl DocumentState {
 
     fn is_dirty(&self) -> bool {
         self.source_editor.is_dirty()
+    }
+
+    /// Salto de línea con el que se escribe el bloque de anotaciones.
+    fn annotation_line_ending(&self) -> &'static str {
+        if self.source_metadata.line_endings == files::LineEndings::CrLf {
+            "\r\n"
+        } else {
+            "\n"
+        }
+    }
+
+    /// El bloque que se escribiría junto a este texto. `None` si no hay, o si
+    /// el texto termina dentro de un bloque de código sin cerrar: ahí el bloque
+    /// no se volvería a reconocer. El segundo valor avisa de ese caso.
+    fn annotations_to_write(&self, source: &str) -> (Option<String>, bool) {
+        match &self.annotations {
+            Some(_) if anotaciones::el_cuerpo_se_tragaria_el_bloque(source) => (None, true),
+            block => (block.clone(), false),
+        }
+    }
+
+    /// El texto completo tal como queda en el archivo: cuerpo y anotaciones.
+    /// La recuperación y el traspaso entre ventanas guardan esto, así una copia
+    /// restaurada conserva las anotaciones.
+    fn full_text(&self) -> String {
+        let mut text = self.source.to_string();
+        if let Some(block) = &self.annotations {
+            let suffix = anotaciones::sufijo(&text, block, self.annotation_line_ending());
+            text.push_str(&suffix);
+        }
+        text
+    }
+
+    /// Lo mismo para el registro del gancho de pánico: una copia barata del
+    /// texto con el sufijo de anotaciones agregado, sin recorrerlo entero.
+    fn full_snapshot(&self) -> ropey::Rope {
+        let mut rope = self.source.snapshot();
+        if let Some(block) = &self.annotations {
+            let body_ends_with_newline =
+                rope.len_bytes() > 0 && rope.byte(rope.len_bytes() - 1) == b'\n';
+            let eol = self.annotation_line_ending();
+            let suffix = if rope.len_bytes() == 0 {
+                format!("{block}{eol}")
+            } else if body_ends_with_newline {
+                format!("{eol}{block}{eol}")
+            } else {
+                format!("{eol}{eol}{block}")
+            };
+            let end = rope.len_chars();
+            rope.insert(end, &suffix);
+        }
+        rope
     }
 
     /// Palabras y caracteres para la barra de estado. En Leer salen del
@@ -7593,12 +7655,15 @@ fn restore_notice(outcomes: &[(String, RestoreOutcome)]) -> Option<String> {
     }
 }
 
-fn recovered_document(source: String) -> Result<DocumentState, &'static str> {
+fn recovered_document(text: String) -> Result<DocumentState, &'static str> {
+    // La copia guarda el texto completo; el bloque de anotaciones vuelve a ir aparte.
+    let (source, annotations) = anotaciones::separar(text);
     let index = SourceIndex::new(&source);
     let blocks = safe_source_blocks(&source, &index)?;
     let mut recovered = DocumentState::untitled();
     recovered.path = UNTITLED_PATH.to_string();
     recovered.source = TextBuffer::from_text(&source);
+    recovered.annotations = annotations;
     recovered.source_editor.mark_recovered();
     recovered.blocks = blocks;
     Ok(recovered)
@@ -8400,6 +8465,7 @@ impl App {
                 pinned: false,
                 open_mode_override: None,
                 source: TextBuffer::new(),
+                annotations: None,
                 source_metadata: TextMetadata::default(),
                 source_identity: None,
                 source_baseline_bytes: None,
@@ -8807,6 +8873,7 @@ impl ApplicationHandler<AppEvent> for App {
                 request,
                 path,
                 source,
+                annotations,
                 metadata,
                 identity,
                 baseline_bytes,
@@ -8858,6 +8925,7 @@ impl ApplicationHandler<AppEvent> for App {
                 document.path = path.to_string_lossy().into_owned();
                 document.content_kind = DocumentContentKind::for_path(&path);
                 document.source = TextBuffer::from_text(&source);
+                document.annotations = annotations;
                 document.source_metadata = metadata;
                 replace_file_baseline(document, identity, baseline_bytes);
                 document.source_editor = SourceEditor::new();
@@ -11378,12 +11446,12 @@ impl App {
         };
         let mut pending = Vec::new();
         if let (Some(recovery), Some(request)) = (self.recovery.clone(), take(&mut self.document)) {
-            pending.push((recovery, self.document.source.to_string(), request));
+            pending.push((recovery, self.document.full_text(), request));
         }
         for tab in &mut self.inactive_documents {
             if let (Some(recovery), Some(request)) = (tab.recovery.clone(), take(&mut tab.document))
             {
-                pending.push((recovery, tab.document.source.to_string(), request));
+                pending.push((recovery, tab.document.full_text(), request));
             }
         }
         for (recovery, source, request) in pending {
@@ -13447,7 +13515,7 @@ impl App {
         let request = recovery.next_write_request();
         // El gancho de pánico ve siempre lo último escrito, aunque la copia
         // espere su plazo.
-        recovery.publish_live(self.document.source.snapshot());
+        recovery.publish_live(self.document.full_snapshot());
         self.document.queue_recovery(request, Instant::now());
     }
 
@@ -13844,6 +13912,7 @@ impl App {
         }
         let path = self.document.path.clone();
         let source = self.document.source.to_string();
+        let (annotations, annotations_skipped) = self.document.annotations_to_write(&source);
         let metadata = self.document.source_metadata;
         let revision = self.document.source_editor.revision();
         let proxy = self.proxy.clone();
@@ -13854,21 +13923,30 @@ impl App {
         }
         invalidate_external_baseline(&mut self.document);
         self.set_notice("Guardando");
+        if annotations_skipped {
+            self.set_notice(ANNOTATIONS_SWALLOWED_NOTICE);
+        }
         thread::spawn(move || {
-            let event =
-                match save_explicit_primary(&path, &source, metadata, &identity, &baseline_bytes) {
-                    Ok(saved) => AppEvent::SaveReady {
-                        document_id,
-                        revision,
-                        identity: saved.identity,
-                        baseline_bytes: saved.baseline_bytes,
-                    },
-                    Err(error) => AppEvent::SaveFailed {
-                        document_id,
-                        failure: classify_save_failure(&error),
-                        error: format!("no se pudo guardar: {error}"),
-                    },
-                };
+            let event = match save_explicit_primary_with_annotations(
+                &path,
+                &source,
+                annotations.as_deref(),
+                metadata,
+                &identity,
+                &baseline_bytes,
+            ) {
+                Ok(saved) => AppEvent::SaveReady {
+                    document_id,
+                    revision,
+                    identity: saved.identity,
+                    baseline_bytes: saved.baseline_bytes,
+                },
+                Err(error) => AppEvent::SaveFailed {
+                    document_id,
+                    failure: classify_save_failure(&error),
+                    error: format!("no se pudo guardar: {error}"),
+                },
+            };
             let _ = proxy.send_event(event);
         });
     }
@@ -13888,6 +13966,7 @@ impl App {
             return;
         };
         let source = self.document.source.to_string();
+        let (annotations, annotations_skipped) = self.document.annotations_to_write(&source);
         let metadata = self.document.source_metadata;
         let revision = self.document.source_editor.revision();
         let proxy = self.proxy.clone();
@@ -13898,8 +13977,16 @@ impl App {
         }
         invalidate_external_baseline(&mut self.document);
         self.set_notice("Guardando");
+        if annotations_skipped {
+            self.set_notice(ANNOTATIONS_SWALLOWED_NOTICE);
+        }
         thread::spawn(move || {
-            let event = match save_new_primary(&path, &source, metadata) {
+            let event = match save_new_primary_with_annotations(
+                &path,
+                &source,
+                annotations.as_deref(),
+                metadata,
+            ) {
                 Ok(saved) => AppEvent::SaveAsReady {
                     document_id,
                     path,
@@ -14017,7 +14104,7 @@ impl App {
                 );
                 return;
             };
-            if let Err(error) = recovery.write(&self.document.source.to_string()) {
+            if let Err(error) = recovery.write(&self.document.full_text()) {
                 self.log.push(format!("[recuperación] {error}"));
                 self.set_notice(
                     "no se pudo conservar una recuperación; no se recargó el archivo externo",
@@ -14254,7 +14341,7 @@ impl App {
         let current_result = if self.recovery_enabled && self.document.is_dirty() {
             self.recovery.as_ref().map_or(Ok(()), |recovery| {
                 recovery
-                    .write(&self.document.source.to_string())
+                    .write(&self.document.full_text())
                     .map_err(|_| "falló la recuperación")
             })
         } else {
@@ -14264,7 +14351,7 @@ impl App {
             dirty_inactive.into_iter().try_for_each(|tab| {
                 tab.recovery.as_ref().map_or(Ok(()), |recovery| {
                     recovery
-                        .write(&tab.document.source.to_string())
+                        .write(&tab.document.full_text())
                         .map_err(|_| "falló la recuperación")
                 })
             })
@@ -14399,7 +14486,7 @@ impl App {
     /// que la otra ventana confirme que ya lo abrió.
     fn write_tab_handoff(&mut self) -> Option<String> {
         let meta = self.document.recovery_meta();
-        let text = self.document.source.to_string();
+        let text = self.document.full_text();
         match recovery::write_handoff(&meta, &text) {
             Ok(name) => {
                 self.pending_handoffs.insert(
@@ -15083,6 +15170,7 @@ impl App {
                         request,
                         path,
                         source: opened.source,
+                        annotations: opened.annotations,
                         metadata: opened.metadata,
                         identity: opened.identity,
                         baseline_bytes: opened.baseline_bytes,
@@ -15191,6 +15279,7 @@ impl App {
                         request,
                         path,
                         source: opened.source,
+                        annotations: opened.annotations,
                         metadata: opened.metadata,
                         identity: opened.identity,
                         baseline_bytes: opened.baseline_bytes,
@@ -21983,6 +22072,7 @@ fn main() {
                             request: initial_document_request,
                             path: PathBuf::from(&worker_path),
                             source: opened.source,
+                            annotations: opened.annotations,
                             metadata: opened.metadata,
                             identity: opened.identity,
                             baseline_bytes: opened.baseline_bytes,
@@ -23281,6 +23371,83 @@ reservar hotel
             .identity
             .fingerprint();
         (carpeta, ruta, huella)
+    }
+
+    const BLOQUE_ANOTACIONES: &str = "<!-- visor-md:anotaciones v1\nfrase\n{\"id\":\"a1\",\"tipo\":\"leyenda\",\"color\":\"rosa\"}\n-->";
+
+    fn documento_con_anotaciones(cuerpo: &str) -> DocumentState {
+        let texto = format!(
+            "{cuerpo}{}",
+            anotaciones::sufijo(cuerpo, BLOQUE_ANOTACIONES, "\n")
+        );
+        recovered_document(texto).expect("el texto es válido")
+    }
+
+    #[test]
+    fn leer_no_dibuja_el_bloque_ni_lo_suma_al_alto() {
+        let cuerpo = "# Título\n\nUn párrafo de estudio.\n";
+        let con_bloque = format!(
+            "{cuerpo}{}",
+            anotaciones::sufijo(cuerpo, BLOQUE_ANOTACIONES, "\n")
+        );
+        let (separado, bloque) = anotaciones::separar(con_bloque.clone());
+        assert!(bloque.is_some());
+        let sin = DocumentContentKind::Markdown.prepare_view(cuerpo).unwrap();
+        let con = DocumentContentKind::Markdown
+            .prepare_view(&separado)
+            .unwrap();
+        assert_eq!(sin.blocks.len(), con.blocks.len());
+        assert_eq!(format!("{:?}", sin.blocks), format!("{:?}", con.blocks));
+        // Si el bloque llegara al lector, sí sumaría un bloque (la regresión que se evita).
+        let sin_separar = DocumentContentKind::Markdown
+            .prepare_view(&con_bloque)
+            .unwrap();
+        assert!(sin_separar.blocks.len() > con.blocks.len());
+    }
+
+    #[test]
+    fn recuperacion_restaura_cuerpo_y_anotaciones() {
+        let original = documento_con_anotaciones("# Título\n\ntexto\n");
+        assert_eq!(original.annotations.as_deref(), Some(BLOQUE_ANOTACIONES));
+        assert_eq!(original.source.to_string(), "# Título\n\ntexto\n");
+        // Lo que se guarda en la copia y en el registro del gancho de pánico.
+        let copia = original.full_text();
+        assert!(copia.contains("visor-md:anotaciones"));
+        assert_eq!(original.full_snapshot().to_string(), copia);
+        let restaurado = recovered_document(copia).unwrap();
+        assert_eq!(restaurado.source.to_string(), "# Título\n\ntexto\n");
+        assert_eq!(restaurado.annotations, original.annotations);
+        // Sin anotaciones, la copia es solo el texto.
+        let simple = recovered_document("solo texto".to_string()).unwrap();
+        assert_eq!(simple.full_text(), "solo texto");
+        assert_eq!(simple.full_snapshot().to_string(), "solo texto");
+    }
+
+    #[test]
+    fn buscar_y_copiar_ignoran_el_bloque() {
+        let mut documento = documento_con_anotaciones("# Título\n\ntexto\n");
+        // Las métricas y la búsqueda parten del cuerpo.
+        let metricas = documento.live_metrics();
+        let sin_bloque = DocumentMetrics::from_source(&documento.source.to_string());
+        assert_eq!(metricas, sin_bloque);
+        assert!(!documento.source.to_string().contains("anotaciones"));
+    }
+
+    #[test]
+    fn cuerpo_con_codigo_sin_cerrar_rechaza_guardar_anotaciones_en_el_documento() {
+        let mut documento = documento_con_anotaciones("# Título\n\ntexto\n");
+        assert_eq!(
+            documento.annotations_to_write(&documento.source.to_string()),
+            (Some(BLOQUE_ANOTACIONES.to_string()), false)
+        );
+        // La persona abre una cerca de código al final y no la cierra.
+        documento.source = TextBuffer::from_text("# Título\n\n```rust\nfn x() {}\n");
+        assert_eq!(
+            documento.annotations_to_write(&documento.source.to_string()),
+            (None, true)
+        );
+        // Las anotaciones siguen en memoria: no se pierden, solo no se escriben.
+        assert!(documento.annotations.is_some());
     }
 
     #[test]

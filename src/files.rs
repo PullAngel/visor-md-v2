@@ -115,22 +115,46 @@ impl TextMetadata {
     /// Reconstruye exactamente la codificación UTF-8 que Visor MD admite.
     /// Los EOL pertenecen a `source`: el editor inserta el estilo observado,
     /// pero no normaliza las líneas ya existentes ni las mixtas.
+    #[cfg(test)]
     pub(crate) fn encode(self, source: &str) -> Vec<u8> {
+        self.encode_with_annotations(source, None)
+    }
+
+    /// Igual que [`Self::encode`], con el bloque de anotaciones al final. El
+    /// bloque se escribe tal cual, con el salto de línea del documento.
+    pub(crate) fn encode_with_annotations(
+        self,
+        source: &str,
+        annotations: Option<&str>,
+    ) -> Vec<u8> {
         let prefix: &[u8] = if self.has_utf8_bom {
             &[0xef, 0xbb, 0xbf]
         } else {
             &[]
         };
-        let mut bytes = Vec::with_capacity(prefix.len() + source.len());
+        let suffix = annotations.map(|block| {
+            let eol = if self.line_endings == LineEndings::CrLf {
+                "\r\n"
+            } else {
+                "\n"
+            };
+            crate::anotaciones::sufijo(source, block, eol)
+        });
+        let suffix = suffix.as_deref().unwrap_or("");
+        let mut bytes = Vec::with_capacity(prefix.len() + source.len() + suffix.len());
         bytes.extend_from_slice(prefix);
         bytes.extend_from_slice(source.as_bytes());
+        bytes.extend_from_slice(suffix.as_bytes());
         bytes
     }
 }
 
 #[derive(Debug)]
 pub(crate) struct OpenedText {
+    /// El cuerpo del documento, sin el bloque de anotaciones.
     pub(crate) source: String,
+    /// El bloque de anotaciones de estudio (de `<!--` a `-->`), aparte del texto.
+    pub(crate) annotations: Option<String>,
     pub(crate) metadata: TextMetadata,
     pub(crate) identity: FileIdentity,
     /// Bytes exactos que se leyeron del archivo. Se conservan solo hasta el
@@ -259,9 +283,17 @@ pub(crate) fn open_explicit_primary(
     let source_bytes = if has_utf8_bom { &bytes[3..] } else { &bytes };
     let source =
         String::from_utf8(source_bytes.to_vec()).map_err(|_| FileOpenError::InvalidUtf8)?;
-    let metadata = TextMetadata::from_source(&source, has_utf8_bom);
+    let full_metadata = TextMetadata::from_source(&source, has_utf8_bom);
+    let (source, annotations) = crate::anotaciones::separar(source);
+    // Los saltos de línea del documento son los de su texto; los del bloque
+    // (que se conserva tal cual) solo cuentan si el texto no tiene ninguno.
+    let metadata = match TextMetadata::from_source(&source, has_utf8_bom) {
+        body if body.line_endings != LineEndings::None => body,
+        _ => full_metadata,
+    };
     Ok(OpenedText {
         source,
+        annotations,
         metadata,
         identity,
         baseline_bytes: bytes,
@@ -309,9 +341,29 @@ pub(crate) fn changed_on_disk(
 /// guardó por última vez. Esta comparación completa complementa la huella de
 /// metadatos, que por sí sola puede no detectar dos cambios de igual tamaño y
 /// fecha. Ante cualquier diferencia no se toca el destino.
+#[cfg(test)]
 pub(crate) fn save_explicit_primary(
     path: impl AsRef<Path>,
     source: &str,
+    metadata: TextMetadata,
+    expected_identity: &FileIdentity,
+    baseline_bytes: &[u8],
+) -> Result<SavedText, FileSaveError> {
+    save_explicit_primary_with_annotations(
+        path,
+        source,
+        None,
+        metadata,
+        expected_identity,
+        baseline_bytes,
+    )
+}
+
+/// Igual que [`save_explicit_primary`], con el bloque de anotaciones al final.
+pub(crate) fn save_explicit_primary_with_annotations(
+    path: impl AsRef<Path>,
+    source: &str,
+    annotations: Option<&str>,
     metadata: TextMetadata,
     expected_identity: &FileIdentity,
     baseline_bytes: &[u8],
@@ -352,7 +404,7 @@ pub(crate) fn save_explicit_primary(
         return Err(FileSaveError::Conflict);
     }
 
-    let output = metadata.encode(source);
+    let output = metadata.encode_with_annotations(source, annotations);
     let atomic = AtomicFile::new(path, AllowOverwrite);
     atomic
         .write(|file| {
@@ -375,16 +427,27 @@ pub(crate) fn save_explicit_primary(
 /// Crea un documento en una ruta que la persona eligió explícitamente. No
 /// reemplaza un archivo existente: Guardar como no puede convertirse en una
 /// vía silenciosa para destruir un destino que todavía no fue abierto.
+#[cfg(test)]
 pub(crate) fn save_new_primary(
     path: impl AsRef<Path>,
     source: &str,
+    metadata: TextMetadata,
+) -> Result<SavedText, FileSaveError> {
+    save_new_primary_with_annotations(path, source, None, metadata)
+}
+
+/// Igual que [`save_new_primary`], con el bloque de anotaciones al final.
+pub(crate) fn save_new_primary_with_annotations(
+    path: impl AsRef<Path>,
+    source: &str,
+    annotations: Option<&str>,
     metadata: TextMetadata,
 ) -> Result<SavedText, FileSaveError> {
     let path = path.as_ref();
     if fs::symlink_metadata(path).is_ok() {
         return Err(FileSaveError::Conflict);
     }
-    let output = metadata.encode(source);
+    let output = metadata.encode_with_annotations(source, annotations);
     AtomicFile::new(path, DisallowOverwrite)
         .write(|file| {
             file.write_all(&output)?;
@@ -628,6 +691,65 @@ mod tests {
             assert_eq!(reopened.metadata, opened.metadata);
             assert_eq!(fs::read(&path).unwrap(), opened.metadata.encode(&expected));
             assert_eq!(saved.baseline_bytes, opened.metadata.encode(&expected));
+        }
+    }
+
+    const BLOQUE_DE_PRUEBA: &str = "<!-- visor-md:anotaciones v1\nfrase\n{\"id\":\"a1\",\"tipo\":\"leyenda\",\"color\":\"rosa\"}\n-->";
+
+    #[test]
+    fn el_bloque_de_anotaciones_viaja_aparte_y_se_guarda_con_los_mismos_bytes() {
+        let casos: &[(&str, &str)] = &[
+            ("lf", "# Titulo\n\ntexto\n"),
+            ("sin-salto-final", "# Titulo\n\ntexto"),
+            ("bom-crlf", "\u{feff}# Titulo\r\n\r\ntexto\r\n"),
+        ];
+        for (nombre, cuerpo) in casos {
+            let eol = if cuerpo.contains("\r\n") {
+                "\r\n"
+            } else {
+                "\n"
+            };
+            let cuerpo_sin_bom = cuerpo.trim_start_matches('\u{feff}');
+            let original = format!(
+                "{}{}{}",
+                if cuerpo.starts_with('\u{feff}') {
+                    "\u{feff}"
+                } else {
+                    ""
+                },
+                cuerpo_sin_bom,
+                crate::anotaciones::sufijo(cuerpo_sin_bom, BLOQUE_DE_PRUEBA, eol)
+            );
+            let path = temporary_file(&format!("anotaciones-{nombre}"), original.as_bytes());
+            let opened = open_explicit_primary(&path, 1 << 20).unwrap();
+            assert_eq!(
+                opened.source, cuerpo_sin_bom,
+                "{nombre}: el cuerpo no incluye el bloque"
+            );
+            assert_eq!(opened.annotations.as_deref(), Some(BLOQUE_DE_PRUEBA));
+            assert_eq!(
+                opened
+                    .metadata
+                    .encode_with_annotations(&opened.source, opened.annotations.as_deref()),
+                original.as_bytes(),
+                "{nombre}: guardar sin cambios reproduce el archivo"
+            );
+            let saved = save_explicit_primary_with_annotations(
+                &path,
+                &opened.source,
+                opened.annotations.as_deref(),
+                opened.metadata,
+                &opened.identity,
+                &opened.baseline_bytes,
+            )
+            .unwrap();
+            assert_eq!(fs::read(&path).unwrap(), original.as_bytes());
+            assert_eq!(saved.baseline_bytes, original.as_bytes());
+            // Sin el bloque, el archivo vuelve a ser exactamente el cuerpo.
+            let sin = opened
+                .metadata
+                .encode_with_annotations(&opened.source, None);
+            assert_eq!(sin, cuerpo.as_bytes(), "{nombre}");
         }
     }
 

@@ -807,6 +807,127 @@ fn contexto_en_comun(
     hacia_atras + hacia_adelante
 }
 
+// ---------------------------------------------------------------------------
+// Cuerpo y bloque dentro del archivo. El texto del documento (el cuerpo) nunca
+// incluye el bloque: se separa al abrir y se vuelve a unir al guardar.
+// ---------------------------------------------------------------------------
+
+/// Separa un archivo en cuerpo y bloque. El bloque devuelto va de `<!--` a
+/// `-->` sin saltos de línea alrededor. Devuelve `None` en el bloque si el
+/// archivo no termina en un bloque de anotaciones reconocible: el último que
+/// empieza en columna 0 tras una línea en blanco, sin nada después salvo
+/// espacios, y fuera de un bloque de código.
+///
+/// El cuerpo es lo que había antes, sin la línea en blanco que se agregó para
+/// separarlo; [`sufijo`] la vuelve a poner, así quitar el bloque devuelve el
+/// archivo idéntico byte a byte.
+pub(crate) fn separar(texto: String) -> (String, Option<String>) {
+    match localizar(&texto) {
+        Some((cuerpo_fin, bloque_ini, bloque_fin)) => {
+            let bloque = texto[bloque_ini..bloque_fin].to_string();
+            let mut cuerpo = texto;
+            cuerpo.truncate(cuerpo_fin);
+            (cuerpo, Some(bloque))
+        }
+        None => (texto, None),
+    }
+}
+
+/// `(fin del cuerpo, inicio del bloque, fin del bloque)` en bytes.
+fn localizar(texto: &str) -> Option<(usize, usize, usize)> {
+    let inicio = texto
+        .rmatch_indices(APERTURA)
+        .map(|(indice, _)| indice)
+        .find(|&indice| indice == 0 || texto.as_bytes()[indice - 1] == b'\n')?;
+    let recortado = texto[inicio..].trim_end();
+    let bloque_fin = inicio + recortado.len();
+    if leer(recortado) == Lectura::NoEsBloque {
+        return None;
+    }
+    let sigue_salto = texto[bloque_fin..].contains('\n');
+    let previo = &texto[..inicio];
+    if dentro_de_cerca(previo) || comentario_sin_cerrar(previo) {
+        return None;
+    }
+    if previo.is_empty() {
+        return Some((0, inicio, bloque_fin));
+    }
+    // Línea en blanco antes del bloque.
+    let una = quitar_salto(previo)?;
+    if !una.ends_with('\n') {
+        return None;
+    }
+    let cuerpo = if sigue_salto { una } else { quitar_salto(una)? };
+    Some((cuerpo.len(), inicio, bloque_fin))
+}
+
+fn quitar_salto(texto: &str) -> Option<&str> {
+    let sin = texto.strip_suffix('\n')?;
+    Some(sin.strip_suffix('\r').unwrap_or(sin))
+}
+
+/// Lo que va después del cuerpo para unirlo con el bloque: el separador, el
+/// bloque y, si el cuerpo terminaba en salto de línea, otro al final.
+pub(crate) fn sufijo(cuerpo: &str, bloque: &str, salto: &str) -> String {
+    if cuerpo.is_empty() {
+        format!("{bloque}{salto}")
+    } else if cuerpo.ends_with('\n') {
+        format!("{salto}{bloque}{salto}")
+    } else {
+        format!("{salto}{salto}{bloque}")
+    }
+}
+
+/// `true` si el bloque, puesto después de este cuerpo, quedaría dentro de un
+/// bloque de código o de un comentario sin cerrar: ahí no se reconocería.
+pub(crate) fn el_cuerpo_se_tragaria_el_bloque(cuerpo: &str) -> bool {
+    dentro_de_cerca(cuerpo) || comentario_sin_cerrar(cuerpo)
+}
+
+/// ¿Queda abierto un bloque de código con cercas (``` o ~~~) al final?
+fn dentro_de_cerca(texto: &str) -> bool {
+    // (carácter de la cerca, largo)
+    let mut abierta: Option<(char, usize)> = None;
+    for linea in texto.split('\n') {
+        let linea = linea.strip_suffix('\r').unwrap_or(linea);
+        let sin_sangria = linea.trim_start_matches(' ');
+        if linea.len() - sin_sangria.len() > 3 {
+            continue;
+        }
+        let Some(marca) = sin_sangria
+            .chars()
+            .next()
+            .filter(|c| matches!(c, '`' | '~'))
+        else {
+            continue;
+        };
+        let largo = sin_sangria.chars().take_while(|&c| c == marca).count();
+        if largo < 3 {
+            continue;
+        }
+        let resto = &sin_sangria[largo..];
+        match abierta {
+            None => {
+                if marca == '~' || !resto.contains('`') {
+                    abierta = Some((marca, largo));
+                }
+            }
+            Some((abre, minimo)) => {
+                if marca == abre && largo >= minimo && resto.trim().is_empty() {
+                    abierta = None;
+                }
+            }
+        }
+    }
+    abierta.is_some()
+}
+
+fn comentario_sin_cerrar(texto: &str) -> bool {
+    texto
+        .rfind("<!--")
+        .is_some_and(|inicio| !texto[inicio..].contains("-->"))
+}
+
 #[cfg(test)]
 mod pruebas {
     use super::*;
@@ -1254,5 +1375,87 @@ mod pruebas {
         let tardia = format!("{}RARA", "ab ".repeat(2 * MAX_APARICIONES));
         let registro = con_cita(0, "ab ", "RARA", "");
         assert!(matches!(anclar(&tardia, &registro), Ancla::Anclada { .. }));
+    }
+
+    const BLOQUE: &str = "<!-- visor-md:anotaciones v1\nfrase\n{\"id\":\"a1\",\"tipo\":\"leyenda\",\"color\":\"rosa\"}\n-->";
+
+    fn unir(cuerpo: &str, bloque: &str, salto: &str) -> String {
+        format!("{cuerpo}{}", sufijo(cuerpo, bloque, salto))
+    }
+
+    #[test]
+    fn cuerpo_y_bloque_se_separan_al_abrir() {
+        let archivo = format!("# Título\n\ntexto\n\n{BLOQUE}\n");
+        let (cuerpo, bloque) = separar(archivo);
+        assert_eq!(cuerpo, "# Título\n\ntexto\n");
+        assert_eq!(bloque.as_deref(), Some(BLOQUE));
+        // Sin bloque, el texto queda tal cual.
+        let (cuerpo, bloque) = separar("# Solo texto\n".to_string());
+        assert_eq!((cuerpo.as_str(), bloque), ("# Solo texto\n", None));
+    }
+
+    #[test]
+    fn bloque_dentro_de_codigo_no_se_reconoce() {
+        for cerca in ["```", "~~~~", "   ```md"] {
+            let archivo = format!("{cerca}\nejemplo del formato:\n\n{BLOQUE}\n");
+            let (cuerpo, bloque) = separar(archivo.clone());
+            assert_eq!(bloque, None, "{cerca}");
+            assert_eq!(cuerpo, archivo);
+        }
+        // Una cerca ya cerrada no impide reconocerlo.
+        let archivo = format!("```\ncódigo\n```\n\n{BLOQUE}");
+        assert!(separar(archivo).1.is_some());
+        // Dentro de un comentario sin cerrar tampoco.
+        let archivo = format!("<!-- nota\n\n{BLOQUE}");
+        assert_eq!(separar(archivo).1, None);
+    }
+
+    #[test]
+    fn texto_despues_del_bloque_lo_invalida() {
+        let archivo = format!("cuerpo\n\n{BLOQUE}\n\nmás texto\n");
+        let (cuerpo, bloque) = separar(archivo.clone());
+        assert_eq!((cuerpo, bloque), (archivo, None));
+        // Sin línea en blanco antes tampoco es un bloque.
+        let pegado = format!("cuerpo\n{BLOQUE}\n");
+        assert_eq!(separar(pegado).1, None);
+        // Con dos bloques cuenta solo el último; el primero es texto.
+        let dos = format!("{BLOQUE}\n\n{BLOQUE}\n");
+        let (cuerpo, bloque) = separar(dos);
+        assert_eq!(cuerpo, format!("{BLOQUE}\n"));
+        assert!(bloque.is_some());
+    }
+
+    #[test]
+    fn agregar_y_quitar_deja_el_archivo_identico() {
+        let cuerpos = [
+            "# Título\n\ntexto\n",
+            "# Título\n\ntexto",
+            "linea\n\n\n",
+            "con\r\ncrlf\r\n",
+            "con\r\ncrlf",
+            "",
+            "\u{feff}no es bom aquí",
+        ];
+        for cuerpo in cuerpos {
+            for salto in ["\n", "\r\n"] {
+                let con_bloque = unir(cuerpo, BLOQUE, salto);
+                let (vuelto, bloque) = separar(con_bloque.clone());
+                assert_eq!(vuelto, cuerpo, "cuerpo {cuerpo:?} con {salto:?}");
+                assert_eq!(bloque.as_deref(), Some(BLOQUE));
+                // Y unir de nuevo reproduce los mismos bytes.
+                assert_eq!(unir(&vuelto, BLOQUE, salto), con_bloque);
+            }
+        }
+    }
+
+    #[test]
+    fn cuerpo_con_codigo_sin_cerrar_rechaza_guardar_anotaciones() {
+        assert!(el_cuerpo_se_tragaria_el_bloque("```rust\nfn main() {}\n"));
+        assert!(el_cuerpo_se_tragaria_el_bloque("<!-- sin cerrar\n"));
+        assert!(!el_cuerpo_se_tragaria_el_bloque("```\ncerrado\n```\n"));
+        assert!(!el_cuerpo_se_tragaria_el_bloque("texto con `código`\n"));
+        // El bloque unido a un cuerpo así no se vuelve a reconocer.
+        let tragado = unir("```\nabierto\n", BLOQUE, "\n");
+        assert_eq!(separar(tragado).1, None);
     }
 }
