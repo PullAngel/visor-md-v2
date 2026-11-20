@@ -23,6 +23,26 @@ pub(crate) struct Palette {
     pub(crate) tab: (u8, u8, u8),
     /// Fondo de una pestaña inactiva al pasar el puntero.
     pub(crate) tab_idle: (u8, u8, u8),
+    /// Colores de estudio (subrayados y marcas de libro), en el orden de la
+    /// paleta: amarillo, verde, azul, rosa y violeta.
+    pub(crate) study: [StudyColor; 5],
+}
+
+/// Un color de estudio en un tema: el fondo que va detrás del texto subrayado
+/// (el texto sigue con su color y contraste) y un trazo sólido para la barra
+/// de una marca, los puntos del índice y el selector.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct StudyColor {
+    pub(crate) fill: (u8, u8, u8),
+    pub(crate) stroke: (u8, u8, u8),
+}
+
+/// Nombres de los colores de estudio, en el orden de `Palette::study`.
+#[cfg_attr(not(test), allow(dead_code))] // Se usa desde la 14.5.
+pub(crate) const STUDY_COLOR_NAMES: [&str; 5] = ["amarillo", "verde", "azul", "rosa", "violeta"];
+
+const fn study(fill: (u8, u8, u8), stroke: (u8, u8, u8)) -> StudyColor {
+    StudyColor { fill, stroke }
 }
 
 pub(crate) const NIGHT: Palette = Palette {
@@ -39,6 +59,13 @@ pub(crate) const NIGHT: Palette = Palette {
     kbd: (0x18, 0x27, 0x1E),
     tab: (0x17, 0x30, 0x1F),
     tab_idle: (0x11, 0x22, 0x18),
+    study: [
+        study((0x55, 0x44, 0x10), (0xE8, 0xC5, 0x4A)),
+        study((0x30, 0x50, 0x10), (0x9F, 0xD3, 0x5A)),
+        study((0x1C, 0x34, 0x5C), (0x6F, 0xA8, 0xF0)),
+        study((0x55, 0x22, 0x38), (0xF0, 0x86, 0xB0)),
+        study((0x40, 0x26, 0x5E), (0xB4, 0x96, 0xF2)),
+    ],
 };
 
 pub(crate) const DAY: Palette = Palette {
@@ -55,6 +82,13 @@ pub(crate) const DAY: Palette = Palette {
     kbd: (0xE5, 0xDA, 0xC3),
     tab: (0xDC, 0xE6, 0xCF),
     tab_idle: (0xED, 0xE4, 0xCF),
+    study: [
+        study((0xF7, 0xE0, 0x7A), (0x8C, 0x6A, 0x00)),
+        study((0xC4, 0xE6, 0x9C), (0x4A, 0x7A, 0x1A)),
+        study((0xC6, 0xDC, 0xF5), (0x2A, 0x62, 0xB0)),
+        study((0xF4, 0xC0, 0xD4), (0xB0, 0x3A, 0x6E)),
+        study((0xE2, 0xCB, 0xF2), (0x6E, 0x4C, 0xB8)),
+    ],
 };
 
 #[derive(Clone, Copy, Debug)]
@@ -64,6 +98,16 @@ pub(crate) enum Role {
 }
 
 impl Palette {
+    /// El color de estudio por su nombre (`amarillo`, `verde`…). `None` si el
+    /// nombre no es de la paleta: esa anotación se conserva pero no se dibuja.
+    #[cfg_attr(not(test), allow(dead_code))] // Se usa desde la 14.5.
+    pub(crate) fn study_color(&self, name: &str) -> Option<StudyColor> {
+        STUDY_COLOR_NAMES
+            .iter()
+            .position(|known| *known == name)
+            .map(|index| self.study[index])
+    }
+
     pub(crate) fn resolve(self, role: Role) -> (u8, u8, u8) {
         match role {
             Role::Text => self.text,
@@ -97,13 +141,17 @@ impl Palette {
             kbd: mix(self.kbd, target.kbd),
             tab: mix(self.tab, target.tab),
             tab_idle: mix(self.tab_idle, target.tab_idle),
+            study: std::array::from_fn(|index| StudyColor {
+                fill: mix(self.study[index].fill, target.study[index].fill),
+                stroke: mix(self.study[index].stroke, target.study[index].stroke),
+            }),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{DAY, NIGHT};
+    use super::{DAY, NIGHT, STUDY_COLOR_NAMES};
 
     fn relative_luminance((red, green, blue): (u8, u8, u8)) -> f64 {
         let channel = |value: u8| {
@@ -196,5 +244,58 @@ mod tests {
             relative_luminance(NIGHT.tab) > relative_luminance(NIGHT.bg),
             "la pestaña activa debe leerse sobre el fondo de la barra"
         );
+    }
+
+    /// El texto subrayado se sigue leyendo como el resto (7:1, AAA) y el trazo
+    /// de una marca o un punto del índice se distingue del documento (3:1,
+    /// WCAG 1.4.11), en los dos temas.
+    #[test]
+    fn paleta_de_estudio_conserva_contraste_en_ambos_temas() {
+        for palette in [DAY, NIGHT] {
+            for (index, color) in palette.study.iter().enumerate() {
+                let nombre = STUDY_COLOR_NAMES[index];
+                assert!(
+                    contrast(palette.text, color.fill) >= 7.0,
+                    "{nombre}: texto sobre el subrayado {:.2}",
+                    contrast(palette.text, color.fill)
+                );
+                assert!(
+                    contrast(color.stroke, palette.surface) >= 3.0,
+                    "{nombre}: trazo sobre el documento {:.2}",
+                    contrast(color.stroke, palette.surface)
+                );
+                assert!(contrast(color.stroke, palette.floating) >= 3.0, "{nombre}");
+            }
+        }
+    }
+
+    fn distancia((r1, g1, b1): (u8, u8, u8), (r2, g2, b2): (u8, u8, u8)) -> u32 {
+        u32::from(r1.abs_diff(r2)) + u32::from(g1.abs_diff(g2)) + u32::from(b1.abs_diff(b2))
+    }
+
+    #[test]
+    fn colores_de_estudio_se_distinguen_entre_si_y_del_resaltado() {
+        for palette in [DAY, NIGHT] {
+            for (i, a) in palette.study.iter().enumerate() {
+                // Ni con el resaltado de búsqueda ni con el fondo del documento.
+                assert!(
+                    distancia(a.fill, palette.mark) >= 45,
+                    "{}",
+                    STUDY_COLOR_NAMES[i]
+                );
+                assert!(
+                    distancia(a.fill, palette.surface) >= 45,
+                    "{}",
+                    STUDY_COLOR_NAMES[i]
+                );
+                for (j, b) in palette.study.iter().enumerate().skip(i + 1) {
+                    let (x, y) = (STUDY_COLOR_NAMES[i], STUDY_COLOR_NAMES[j]);
+                    assert!(distancia(a.fill, b.fill) >= 45, "{x} y {y}: fondos");
+                    assert!(distancia(a.stroke, b.stroke) >= 60, "{x} y {y}: trazos");
+                }
+            }
+            assert_eq!(palette.study_color("azul"), Some(palette.study[2]));
+            assert_eq!(palette.study_color("turquesa"), None);
+        }
     }
 }

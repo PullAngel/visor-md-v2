@@ -858,8 +858,10 @@ Cada tarea deja `cargo test` y `cargo clippy` en verde.
   `cuerpo_con_codigo_sin_cerrar_rechaza_guardar_anotaciones`,
   `recuperacion_restaura_cuerpo_y_anotaciones`, `buscar_y_copiar_ignoran_el_bloque`,
   `el_bloque_de_anotaciones_viaja_aparte_y_se_guarda_con_los_mismos_bytes`.
-- [ ] **14.4** Paleta de estudio en `src/theme.rs`: cinco colores con nombre
-  (amarillo, verde, azul, rosa, violeta), con su tono de día y de noche.
+- [x] **14.4** Paleta de estudio en `src/theme.rs`: cinco colores con nombre
+  (amarillo, verde, azul, rosa, violeta), con su tono de día y de noche. Cada
+  color tiene un fondo para el subrayado (el texto conserva 7:1 sobre él) y un
+  trazo para marcas y puntos del índice (3:1 sobre el documento).
   Pruebas: `paleta_de_estudio_conserva_contraste_en_ambos_temas`,
   `colores_de_estudio_se_distinguen_entre_si_y_del_resaltado`.
 - [ ] **14.5** Subrayar desde la selección en Leer: menú Estudio, menú
