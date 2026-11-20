@@ -1202,7 +1202,7 @@ mod pruebas {
         );
         // A igual distancia, la primera.
         assert_eq!(
-            rango(anclar("casa x casa", &con_cita(5, "", "casa", ""))),
+            rango(anclar("casa  casa", &con_cita(3, "", "casa", ""))),
             (0, 4)
         );
     }
