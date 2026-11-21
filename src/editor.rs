@@ -722,9 +722,23 @@ impl SourceEditor {
         } else {
             &selected
         };
-        let replacement = format!("{prefix}{content}{suffix}");
+        // Sin texto elegido, el formato nuevo no se pega a un carácter vecino:
+        // «#**texto**» dejaba de ser un título. Se separa con un espacio.
+        let lead = if selected.is_empty() && range.start > 0 {
+            let before = source.slice_bytes(source.previous_boundary(range.start)..range.start)?;
+            usize::from(
+                before
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_alphanumeric() || c.is_ascii_punctuation()),
+            )
+        } else {
+            0
+        };
+        let replacement = format!("{}{prefix}{content}{suffix}", " ".repeat(lead));
         let changed = self.history.apply(source, range.clone(), &replacement)?;
         if changed {
+            let range = range.start + lead..range.end + lead;
             self.anchor = source.normalize_edit_boundary(range.start + prefix.len());
             self.cursor = source.normalize_edit_boundary(self.anchor + content.len());
             self.preferred_column = None;

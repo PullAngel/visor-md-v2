@@ -4729,13 +4729,16 @@ fn draw_toolbar_icon(
             path.move_to(center_x - 2.0, center_y - 3.0);
             path.line_to(center_x + 2.0, center_y + 3.0);
         }
+        // Texto resaltado (==texto==): una caja con una línea adentro. La «H»
+        // de antes se confundía con la de los títulos.
         AppAction::FormatHighlight => {
-            path.move_to(left + 4.0, top + 3.0);
-            path.line_to(left + 4.0, bottom - 3.0);
-            path.move_to(right - 4.0, top + 3.0);
-            path.line_to(right - 4.0, bottom - 3.0);
-            path.move_to(left + 4.0, center_y);
-            path.line_to(right - 4.0, center_y);
+            path.move_to(left + 2.0, top + 5.0);
+            path.line_to(right - 2.0, top + 5.0);
+            path.line_to(right - 2.0, bottom - 5.0);
+            path.line_to(left + 2.0, bottom - 5.0);
+            path.close();
+            path.move_to(left + 5.0, center_y);
+            path.line_to(right - 5.0, center_y);
         }
         AppAction::InsertLink | AppAction::InsertTools => {
             path.move_to(left + 3.0, center_y);
@@ -19961,7 +19964,14 @@ impl App {
         let words = live_metrics.words;
         let characters = live_metrics.characters;
         let status_right = format!(
-            "{words} palabras · {characters} caracteres{} · {document_mode_label} · {document_state_label}{workspace_status}",
+            "{} · {} {}{} · {document_mode_label} · {document_state_label}{workspace_status}",
+            count_noun(words, "palabra", "palabras"),
+            characters,
+            if characters == 1 {
+                "carácter"
+            } else {
+                "caracteres"
+            },
             cursor_position.unwrap_or_default()
         );
         let status_layout = build_ui_text_layout(
@@ -20094,6 +20104,13 @@ impl App {
                     .into_iter()
                     .find(|divider| divider.index == index)
             });
+        // Con el puntero sobre el enlace, el destino se muestra pegado a él;
+        // con el foco de teclado, al pie.
+        let link_peek_anchor = self
+            .hover_destination
+            .is_some()
+            .then_some(self.pointer)
+            .flatten();
         let link_peek_layout = self
             .hover_destination
             .as_deref()
@@ -22059,18 +22076,30 @@ impl App {
         let status_y = h.get() as f32 - STATUS_HEIGHT;
         if let Some(layout) = link_peek_layout {
             let peek_width = (layout.width() + 24.0).min(w.get() as f32 - MARGIN * 2.0);
-            let peek_y = (status_y - 32.0).max(DOCUMENT_VIEWPORT_TOP + 4.0);
-            if let Some(rect) = Rect::from_xywh(MARGIN, peek_y, peek_width, 28.0) {
-                pixmap.fill_rect(rect, &floating_paint, Transform::identity(), None);
-            }
-            if let Some(rect) = Rect::from_xywh(MARGIN, peek_y, 3.0, 28.0) {
+            let (peek_x, peek_y) = match link_peek_anchor {
+                Some((px, py)) => {
+                    let x = (px - 8.0)
+                        .min((w.get() as f32 - peek_width - 8.0).max(8.0))
+                        .max(8.0);
+                    let below = py + 22.0;
+                    let y = if below + 28.0 <= status_y {
+                        below
+                    } else {
+                        (py - 36.0).max(DOCUMENT_VIEWPORT_TOP + 4.0)
+                    };
+                    (x, y)
+                }
+                None => (MARGIN, (status_y - 32.0).max(DOCUMENT_VIEWPORT_TOP + 4.0)),
+            };
+            draw_floating_surface(pixmap, peek_x, peek_y, peek_width, 28.0, 6.0, *palette);
+            if let Some(rect) = Rect::from_xywh(peek_x, peek_y, 3.0, 28.0) {
                 pixmap.fill_rect(rect, &accent_paint, Transform::identity(), None);
             }
             for line in layout.lines() {
                 for entry in line.items() {
                     if let PositionedLayoutItem::GlyphRun(run) = entry {
-                        draw_run_background(pixmap, &run, MARGIN + 10.0, peek_y + 5.0);
-                        draw_glyph_run(pixmap, scale_cx, glyphs, &run, MARGIN + 10.0, peek_y + 5.0);
+                        draw_run_background(pixmap, &run, peek_x + 10.0, peek_y + 5.0);
+                        draw_glyph_run(pixmap, scale_cx, glyphs, &run, peek_x + 10.0, peek_y + 5.0);
                     }
                 }
             }
@@ -25615,6 +25644,26 @@ la casa final
         app.pick_highlight_color(4);
         assert_eq!(app.study_color, 4);
         assert_eq!(parsed.registros.len(), 1);
+    }
+
+    #[test]
+    fn la_negrita_sin_seleccion_no_se_pega_al_caracter_vecino_y_no_rompe_el_titulo() {
+        for (inicial, esperado) in [
+            ("#", "# **texto**"),
+            ("# ", "# **texto**"),
+            ("", "**texto**"),
+            ("hola ", "hola **texto**"),
+            ("hola,", "hola, **texto**"),
+        ] {
+            let mut source = TextBuffer::from_text(inicial);
+            let mut editor = SourceEditor::new();
+            editor.set_cursor(&source, inicial.len(), false).unwrap();
+            editor.surround(&mut source, "**", "**", "texto").unwrap();
+            assert_eq!(source.to_string(), esperado, "{inicial:?}");
+            // El rótulo queda seleccionado para escribir encima.
+            let (a, c) = (editor.anchor(), editor.cursor());
+            assert_eq!(source.slice_bytes(a.min(c)..a.max(c)).unwrap(), "texto");
+        }
     }
 
     #[test]

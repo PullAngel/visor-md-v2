@@ -1214,7 +1214,7 @@ asociación.
 | 7 | Hecha | 7.1 a 7.8 |
 | 8 | Hecha | 8.1 a 8.10; quedan dos retoques de la fase 11 y el árbol de accesibilidad |
 | 12 | Hecha | 12.1 a 12.8; el arrastre real entre ventanas queda por probar a mano |
-| 9 | Hecha, criterios sin cumplir | Ronda 3: 0 S1, 5 S2, SUS 75, 75 % sin dificultad, Nielsen 3,6; sigue la fase 15 (15.12 a 15.15) |
+| 9 | En curso | Ronda 4: 0 S1, 3 S2 (ya corregidos), SUS 75, 93 % sin dificultad, Nielsen 3,6; falta la ronda 5 para confirmar 0 S2 |
 | 15 | Pendiente | Hallazgos de la ronda 2 |
 | 14 | Hecha | 14.1 a 14.9 hechas; falta el QA manual en la ventana real y el resumen en Comparar |
 | 13 | Hecha | 13.1 a 13.8; queda la opcional 13.9 (apagado de Windows y cifrado, con `unsafe`) |
