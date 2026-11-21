@@ -298,7 +298,7 @@ const fn mode_target_for_document(mode: DocumentMode) -> ModeTarget {
         DocumentMode::Split => ModeTarget::Compare,
     }
 }
-const READING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 9] = [
+const READING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 10] = [
     AppAction::WorkspaceHub,
     AppAction::DocumentOutline,
     AppAction::ToggleSection,
@@ -308,6 +308,7 @@ const READING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 9] = [
     AppAction::Backlinks,
     AppAction::HighlightSelection,
     AppAction::HighlightPickColor,
+    AppAction::StudyTools,
 ];
 const EDITING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 14] = [
     // El primer botón es el mismo en los tres modos: la carpeta y los paneles
@@ -11439,7 +11440,7 @@ impl App {
         }
         match target {
             ModeTarget::Reading if self.document.mode != DocumentMode::Reading => {
-                self.refresh_reading_async("vista de lectura")
+                self.refresh_reading_async("Leer")
             }
             ModeTarget::Editing if self.document.mode != DocumentMode::SourceEditing => {
                 self.enter_source_mode()
@@ -12646,7 +12647,9 @@ impl App {
     fn highlight_selection(&mut self, color: usize) {
         let color = color.min(4);
         let Some((start, end)) = self.selected_source_range() else {
-            self.set_notice("Seleccioná el texto que querés subrayar");
+            self.set_notice(
+                "Seleccioná con el mouse el texto que querés subrayar y volvé a pulsar el marcador",
+            );
             return;
         };
         self.study_color = color;
@@ -14343,7 +14346,6 @@ impl App {
         self.focused_pane_raster = None;
         self.reset_document_view();
         self.restore_focused_pane_scroll();
-        self.set_notice("pestaña cerrada");
         if let Some(window) = &self.window {
             window.request_redraw();
         }
@@ -15455,7 +15457,7 @@ impl App {
             }
             DialogChoice::DiscardAndCloseTab => self.finish_close_active_document_tab(),
             DialogChoice::CloseWindow => self.exit_requested = true,
-            DialogChoice::KeepEditing => self.set_notice("seguís editando; no se cerró nada"),
+            DialogChoice::KeepEditing => {}
             DialogChoice::LoadImage => {
                 if let Some(destination) = self.pending_image_destination.take() {
                     self.preview_local_image(&destination, true);
@@ -19574,13 +19576,16 @@ impl App {
             })
             .unwrap_or_default();
         // Un documento vacío en edición invita a escribir sin parecer un error.
-        let empty_hint = (self.document.mode.is_editable()
-            && !self.document.is_welcome()
+        let empty_hint = (!self.document.is_welcome()
             && self.document.source.is_empty()
             && self.ime_preedit.is_none())
         .then(|| {
             build_ui_text_layout(
-                "Escribí aquí. El formato está en la barra de arriba; Ctrl+S guarda.",
+                if self.document.mode.is_editable() {
+                    "Escribí aquí. El formato está en la barra de arriba; Ctrl+S guarda."
+                } else {
+                    "Este documento está vacío. Pulsá Editar (F2) para escribir."
+                },
                 &mut self.font_cx,
                 &mut self.layout_cx,
                 self.palette.dim,

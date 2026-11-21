@@ -188,14 +188,18 @@ fn quote(
     end: usize,
 ) -> Result<(u64, String, String, String), &'static str> {
     if start >= end || end > source.len() {
-        return Err("Seleccioná el texto que querés subrayar");
+        return Err(
+            "Seleccioná con el mouse el texto que querés subrayar y volvé a pulsar el marcador",
+        );
     }
     let index = LfIndex::new(source);
     let (first, last) = (index.char_at_byte(start), index.char_at_byte(end));
     let chars: Vec<char> = index.lf.chars().collect();
     let cita: String = chars[first..last].iter().collect();
     if cita.trim().is_empty() {
-        return Err("Seleccioná el texto que querés subrayar");
+        return Err(
+            "Seleccioná con el mouse el texto que querés subrayar y volvé a pulsar el marcador",
+        );
     }
     if cita.len() > MAX_CITA_BYTES {
         return Err("La selección es demasiado larga: subrayá en partes más cortas");
