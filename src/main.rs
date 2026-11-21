@@ -19522,7 +19522,7 @@ impl App {
                         // 30 caracteres en todas las filas: el lugar de los puntos
                         // queda reservado aunque la sección no tenga marcas.
                         let label = build_ui_text_layout(
-                            &abbreviated_label(&block.text, 30),
+                            &abbreviated_label(&block.text, 26),
                             &mut self.font_cx,
                             &mut self.layout_cx,
                             if active { palette.text } else { palette.dim },
