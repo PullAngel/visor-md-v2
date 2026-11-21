@@ -800,6 +800,37 @@ impl SourceEditor {
         source: &mut TextBuffer,
         eol: &str,
     ) -> Result<bool, EditError> {
+        // Con el rótulo «texto» de un formato recién puesto seleccionado,
+        // Enter sale del formato en lugar de reemplazar el rótulo y partir los
+        // marcadores (`**` en una línea y `**` en otra).
+        let range = self.selection();
+        if !range.is_empty()
+            && let Ok(selected) = source.slice_bytes(range.clone())
+            && matches!(selected.as_str(), "texto" | "código")
+        {
+            for (open, close) in [
+                ("**", "**"),
+                ("~~", "~~"),
+                ("==", "=="),
+                ("_", "_"),
+                ("`", "`"),
+            ] {
+                let before_start = range.start.saturating_sub(open.len());
+                let after_end = (range.end + close.len()).min(source.len_bytes());
+                let wrapped = source
+                    .slice_bytes(before_start..range.start)
+                    .is_ok_and(|b| b == open)
+                    && source
+                        .slice_bytes(range.end..after_end)
+                        .is_ok_and(|a| a == close);
+                if wrapped {
+                    self.cursor = after_end;
+                    self.anchor = after_end;
+                    self.preferred_column = None;
+                    break;
+                }
+            }
+        }
         if !self.selection().is_empty() {
             return self.insert(source, eol);
         }

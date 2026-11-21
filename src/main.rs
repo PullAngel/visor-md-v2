@@ -738,6 +738,8 @@ const INSERT_ACTIONS: [AppAction; 7] = [
     AppAction::InsertSymbol,
 ];
 static NEXT_DOCUMENT_ID: AtomicU64 = AtomicU64::new(1);
+/// Número que distingue a los documentos nuevos entre sí («sin título 2»).
+static NEXT_UNTITLED_NUMBER: AtomicU64 = AtomicU64::new(2);
 const MAX_DOCUMENT_PANES: usize = 4;
 /// Franja propia de cada panel cuando hay más de uno: nombre, modo y cierre.
 const PANE_HEADER_HEIGHT: f32 = 30.0;
@@ -7333,6 +7335,8 @@ struct DocumentState {
     /// Es la pestaña inicial de «Bienvenida»: sin archivo de argumento y sin
     /// que nadie haya escrito todavía.
     welcome: bool,
+    /// Número del documento nuevo (0 el primero): «sin título», «sin título 2».
+    untitled_number: u64,
     content_kind: DocumentContentKind,
     /// Protección reversible de sesión. No se persiste ni modifica el archivo.
     pinned: bool,
@@ -7681,8 +7685,13 @@ impl DocumentState {
             return "Bienvenida".to_string();
         }
         if self.is_untitled() {
-            self.provisional_title()
-                .unwrap_or_else(|| titulo::UNTITLED_NAME.to_string())
+            self.provisional_title().unwrap_or_else(|| {
+                if self.untitled_number > 1 {
+                    format!("{} {}", titulo::UNTITLED_NAME, self.untitled_number)
+                } else {
+                    titulo::UNTITLED_NAME.to_string()
+                }
+            })
         } else {
             document_display_name(&self.path)
         }
@@ -7711,6 +7720,7 @@ impl DocumentState {
             id: NEXT_DOCUMENT_ID.fetch_add(1, Ordering::Relaxed),
             path: UNTITLED_PATH.to_string(),
             welcome: false,
+            untitled_number: NEXT_UNTITLED_NUMBER.fetch_add(1, Ordering::Relaxed),
             content_kind: DocumentContentKind::Markdown,
             pinned: false,
             open_mode_override: None,
@@ -8814,6 +8824,7 @@ impl App {
             document: DocumentState {
                 id: initial_document_id,
                 welcome: opening_path.is_none(),
+                untitled_number: 0,
                 path: opening_path
                     .clone()
                     .unwrap_or_else(|| UNTITLED_PATH.to_string()),
@@ -16147,7 +16158,7 @@ impl App {
     fn show_recovery_list(&mut self) {
         let orphans = recovery::orphans();
         if orphans.is_empty() {
-            self.set_notice("No hay documentos sin guardar para recuperar");
+            self.set_notice("No hay copias de una sesión anterior para recuperar (lo que escribís ahora ya se copia solo)");
             return;
         }
         self.dismiss_navigation_panel();
@@ -18677,9 +18688,9 @@ impl App {
         let search_overlay = search_query.as_ref().map(|query| {
             let matches = search_hits.len();
             let label = if query.is_empty() {
-                "Buscar en el documento: escribí lo que buscás|".to_string()
+                "Buscar en este documento: escribí lo que buscás · Ctrl+Shift+F busca en toda la carpeta|".to_string()
             } else if matches == 0 {
-                format!("Buscar: {query}| · sin resultados · Esc cierra")
+                format!("Buscar: {query}| · sin resultados en este documento · Ctrl+Shift+F busca en la carpeta")
             } else {
                 format!(
                     "Buscar: {query}| · {} de {matches} · Enter siguiente · Mayús+Enter anterior · Esc cierra",
@@ -19910,7 +19921,7 @@ impl App {
         let tab_strip = self.tab_strip();
         let tab_width = tab_width(w.get() as f32, tab_strip);
         let pinned_width = pinned_tab_width(w.get() as f32, tab_strip);
-        let tab_label_chars = ((tab_width - 32.0).max(30.0) / 7.5).floor().max(4.0) as usize;
+        let tab_label_chars = ((tab_width - 38.0).max(30.0) / 8.0).floor().max(4.0) as usize;
         let pinned_label_chars = ((pinned_width - 40.0).max(30.0) / 7.5).floor().max(4.0) as usize;
         let visible_tabs = self.visible_tab_ids();
         let tab_descriptors = visible_tabs
@@ -25667,6 +25678,57 @@ la casa final
             let (a, c) = (editor.anchor(), editor.cursor());
             assert_eq!(source.slice_bytes(a.min(c)..a.max(c)).unwrap(), "texto");
         }
+    }
+
+    #[test]
+    fn enter_con_el_rotulo_de_un_formato_seleccionado_sale_del_formato_sin_partirlo() {
+        for (marca, esperado) in [
+            (
+                "**",
+                "**texto**
+",
+            ),
+            (
+                "_", "_texto_
+",
+            ),
+            (
+                "~~",
+                "~~texto~~
+",
+            ),
+        ] {
+            let mut source = TextBuffer::from_text("");
+            let mut editor = SourceEditor::new();
+            editor.surround(&mut source, marca, marca, "texto").unwrap();
+            editor
+                .insert_newline(
+                    &mut source,
+                    "
+",
+                )
+                .unwrap();
+            assert_eq!(source.to_string(), esperado, "{marca}");
+            assert_eq!(editor.cursor(), source.len_bytes());
+        }
+        // Una selección real que casualmente dice «texto» fuera de un formato
+        // se reemplaza como siempre.
+        let mut source = TextBuffer::from_text("un texto");
+        let mut editor = SourceEditor::new();
+        editor.set_cursor(&source, 3, false).unwrap();
+        editor.set_cursor(&source, 8, true).unwrap();
+        editor
+            .insert_newline(
+                &mut source,
+                "
+",
+            )
+            .unwrap();
+        assert_eq!(
+            source.to_string(),
+            "un 
+"
+        );
     }
 
     #[test]
