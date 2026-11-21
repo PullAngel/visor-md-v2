@@ -4541,12 +4541,10 @@ fn draw_toolbar_icon(
             path.line_to(right - 2.0, bottom - 2.0);
         }
         AppAction::CommandPalette => {
-            // Línea de comandos: «>» y un guion bajo.
-            path.move_to(left + 3.5, top + 4.5);
-            path.line_to(center_x, center_y);
-            path.line_to(left + 3.5, bottom - 4.5);
-            path.move_to(center_x + 1.0, bottom - 4.5);
-            path.line_to(right - 3.0, bottom - 4.5);
+            // Tres puntos «···»: todas las acciones.
+            for dx in [-5.5, 0.0, 5.5] {
+                path.push_circle(center_x + dx, center_y, 1.3);
+            }
         }
         // Índice: títulos con sangría. Las tres rayas iguales son el menú «≡».
         AppAction::DocumentOutline => {
@@ -8366,7 +8364,19 @@ fn paths_refer_to_same_file(left: &std::path::Path, right: &std::path::Path) -> 
     }
     match (fs::canonicalize(left), fs::canonicalize(right)) {
         (Ok(left), Ok(right)) => left == right,
-        _ => false,
+        // Si no se puede resolver alguna, se comparan sin mayúsculas ni
+        // diferencias de barra: es mejor activar la pestaña que ya está
+        // abierta que abrir el mismo archivo dos veces y arriesgar que
+        // guardar una pise a la otra.
+        _ => {
+            let normal = |path: &std::path::Path| {
+                path.to_string_lossy()
+                    .trim_start_matches("\\\\?\\")
+                    .replace('/', "\\")
+                    .to_lowercase()
+            };
+            normal(left) == normal(right)
+        }
     }
 }
 

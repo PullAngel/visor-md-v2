@@ -296,3 +296,17 @@ D-24 aplicado: en el tema de día `dim` pasó de `#6C6151` a `#5A5043` y
 | Texto tenue sobre pestaña inactiva (`dim` / `tab_idle`) | 6.2:1 | 6.4:1 |
 | Enlace externo sobre documento (`external_link` / `surface`) | 5.8:1 | 8.5:1 |
 | Acento sobre documento (`accent` / `surface`) | 5.5:1 | 8.9:1 |
+
+## Ajustes tras la evaluación de noviembre de 2026
+
+- La segunda barra empieza siempre con «Carpeta y paneles» (mismo lugar en Leer,
+  Editar y Comparar); en Leer y Comparar sigue el marcador de subrayar con su
+  selector de color.
+- El campo de búsqueda vive en la segunda barra y no tapa el texto.
+- Íconos: el resaltado de texto es una caja con una línea (no una «H»), la cita
+  son comillas, el índice son líneas con sangría y la paleta son tres puntos.
+- Los avisos que repetían lo que ya se ve (vista actualizada, sección plegada,
+  pestaña cerrada) se quitaron.
+- El borde de las casillas de tarea vacías usa el color tenue (contraste ≥ 3:1).
+- El amarillo de estudio de noche es un amarillo oscuro que conserva 7:1 con el
+  texto.

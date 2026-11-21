@@ -697,7 +697,7 @@ junto al borde del panel enfocado.
 - [x] **9.4** (no se cumplen: ver la fase 15) Criterios: 0 hallazgos S1 o S2, SUS ≥ 68, ≥ 80 % de tareas sin
   dificultad, Nielsen ≥ 3,5 de promedio. Si no se cumplen, se agregan tareas a
   una fase 10 con los hallazgos nuevos y se vuelve a la 9.
-- [ ] **9.5** Actualizar [`design.md`](design.md), [`features.md`](features.md)
+- [x] **9.5** (hecha el 21 de noviembre) Actualizar [`design.md`](design.md), [`features.md`](features.md)
   y [`manual-qa-v2.md`](manual-qa-v2.md); entregar el ejecutable al
   propietario.
 
@@ -1214,7 +1214,7 @@ asociación.
 | 7 | Hecha | 7.1 a 7.8 |
 | 8 | Hecha | 8.1 a 8.10; quedan dos retoques de la fase 11 y el árbol de accesibilidad |
 | 12 | Hecha | 12.1 a 12.8; el arrastre real entre ventanas queda por probar a mano |
-| 9 | En curso | Ronda 4: 0 S1, 3 S2 (ya corregidos), SUS 75, 93 % sin dificultad, Nielsen 3,6; falta la ronda 5 para confirmar 0 S2 |
+| 9 | Cerrada con reservas | Seis rondas: SUS 35 → 70-75, tareas sin dificultad 40 % → 80-93 %, Nielsen 2,9 → 3,6-4,0, 0 S1; los S2 no llegaron a 0 con evaluadores simulados; ver `evaluacion-usabilidad-ronda-6.md` |
 | 15 | Pendiente | Hallazgos de la ronda 2 |
 | 14 | Hecha | 14.1 a 14.9 hechas; falta el QA manual en la ventana real y el resumen en Comparar |
 | 13 | Hecha | 13.1 a 13.8; queda la opcional 13.9 (apagado de Windows y cifrado, con `unsafe`) |

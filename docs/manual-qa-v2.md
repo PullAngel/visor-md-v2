@@ -385,3 +385,15 @@ cerrar la prueba sin intentar explotar el fallo.
 6. **PDF.** Exportar a PDF lleva los subrayados; «Exportar a PDF sin
    anotaciones» no.
 7. **Quitar todas** pide confirmación y se puede restaurar.
+
+## Después de la evaluación (manual, 21 de noviembre de 2026)
+
+1. **Barra.** En Leer, Editar y Comparar el primer botón de la segunda barra es
+   «Carpeta y paneles» y abre Índice, Archivos, Buscar y Enlaces.
+2. **Pestañas.** Dividí la ventana: las dos pestañas siguen en la tira.
+3. **Búsqueda.** Ctrl+F: campo con borde, «1 de N», todas las coincidencias
+   pintadas; en la carpeta, abrir un resultado deja la nota en la frase.
+4. **Negrita.** Sin selección, Negrita deja «texto» seleccionado; Enter sale del
+   formato sin partirlo. Probalo también dentro de una lista.
+5. **Nuevos.** Dos «Nuevo documento» seguidos se llaman «sin título» y
+   «sin título 2».

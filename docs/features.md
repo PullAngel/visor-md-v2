@@ -140,6 +140,18 @@ La evidencia detallada vive en [`status.md`](status.md) y
 | Pomodoro | Futuro | Solo si no distrae ni infla producto |
 | Modo limpio (barras ocultables) | Futuro, extra posterior a la versión final | Las barras se ocultan y reaparecen al llevar el cursor al borde; ver X-01 del plan |
 
+## Cambios tras la evaluación (fase 9 y 15)
+
+| Función | Estado | Criterio mínimo |
+| --- | --- | --- |
+| Subrayado desde la barra | Hecha | Un botón de marcador y un selector de color (teclas 1 a 5) en Leer y en Comparar; Ctrl+Shift+H |
+| Búsqueda en el documento | Hecha | Campo con borde en la segunda barra, «n de m», todas las coincidencias pintadas y la actual más fuerte; Ctrl+Shift+F busca en la carpeta |
+| Resultado de la carpeta | Hecha | Abre la nota en la frase buscada |
+| Pestañas con la ventana dividida | Hecha | La tira lista siempre todas las pestañas |
+| Carpeta y paneles | Hecha | Primer botón de la segunda barra en los tres modos |
+| Enlace roto | Hecha | Color de aviso y ayuda «Esta nota no existe · clic para crearla» |
+| Documentos nuevos | Hecha | Se numeran: «sin título», «sin título 2»… |
+
 ## Contenido enriquecido
 
 | Función | Estado | Criterio mínimo |
