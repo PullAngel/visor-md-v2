@@ -20676,7 +20676,10 @@ impl App {
                 {
                     let ac = palette.accent;
                     let mut selection_paint = Paint::default();
-                    selection_paint.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 92));
+                    // Con la búsqueda abierta, la coincidencia actual se ve
+                    // claramente más fuerte que las demás.
+                    let strength = if search_query.is_some() { 190 } else { 92 };
+                    selection_paint.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, strength));
                     let geometry = if start == end {
                         let focus = selection
                             .filter(|selection| selection.focus.block == i)
