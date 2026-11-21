@@ -298,13 +298,15 @@ const fn mode_target_for_document(mode: DocumentMode) -> ModeTarget {
         DocumentMode::Split => ModeTarget::Compare,
     }
 }
-const READING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 6] = [
+const READING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 8] = [
     AppAction::DocumentOutline,
     AppAction::ToggleSection,
     AppAction::ChooseWorkspace,
     AppAction::WorkspaceFiles,
     AppAction::SearchWorkspace,
     AppAction::Backlinks,
+    AppAction::HighlightSelection,
+    AppAction::HighlightPickColor,
 ];
 const EDITING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 13] = [
     AppAction::FormatBold,
@@ -324,7 +326,7 @@ const EDITING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 13] = [
 /// La comparación conserva el mismo kit de escritura, pero el último control
 /// cambia a orientación porque la vista ya está abierta y se puede cerrar con
 /// F3 o el selector segmentado.
-const SPLIT_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 13] = [
+const SPLIT_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 15] = [
     AppAction::FormatBold,
     AppAction::FormatItalic,
     AppAction::FormatStrikethrough,
@@ -337,6 +339,8 @@ const SPLIT_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 13] = [
     AppAction::InsertCodeBlock,
     AppAction::InsertTable,
     AppAction::InsertTools,
+    AppAction::HighlightSelection,
+    AppAction::HighlightPickColor,
     AppAction::StudyTools,
 ];
 const WORKSPACE_HUB_ACTIONS: [AppAction; 8] = [
@@ -351,13 +355,9 @@ const WORKSPACE_HUB_ACTIONS: [AppAction; 8] = [
 ];
 /// Herramientas de estudio reunidas fuera del menú contextual plano. Comparten
 /// paleta, teclado y la misma fuente Markdown portable que el resto del editor.
-const STUDY_ACTIONS: [AppAction; 29] = [
+const STUDY_ACTIONS: [AppAction; 25] = [
     AppAction::HighlightSelection,
-    AppAction::HighlightYellow,
-    AppAction::HighlightGreen,
-    AppAction::HighlightBlue,
-    AppAction::HighlightPink,
-    AppAction::HighlightViolet,
+    AppAction::HighlightPickColor,
     AppAction::RemoveHighlight,
     AppAction::ToggleStudyAnnotations,
     AppAction::ShowAnnotationsBlock,
@@ -614,11 +614,7 @@ const STUDY_GROUPS: [MenuGroup; 6] = [
         "Subrayar",
         &[
             AppAction::HighlightSelection,
-            AppAction::HighlightYellow,
-            AppAction::HighlightGreen,
-            AppAction::HighlightBlue,
-            AppAction::HighlightPink,
-            AppAction::HighlightViolet,
+            AppAction::HighlightPickColor,
             AppAction::RemoveHighlight,
             AppAction::ToggleStudyAnnotations,
             AppAction::ShowAnnotationsBlock,
@@ -2121,11 +2117,7 @@ enum AppAction {
     HighlightSelection,
     /// Subraya la selección (o recolorea el subrayado bajo ella) con un color
     /// de la paleta de estudio.
-    HighlightYellow,
-    HighlightGreen,
-    HighlightBlue,
-    HighlightPink,
-    HighlightViolet,
+    HighlightPickColor,
     RemoveHighlight,
     ToggleStudyAnnotations,
     ShowAnnotationsBlock,
@@ -2308,11 +2300,7 @@ impl AppAction {
             Self::PrepareStudyConceptList => "Preparar conceptos desde selección",
             Self::PrepareAiFragments => "Preparar fragmentos para IA",
             Self::HighlightSelection => "Subrayar la selección · Ctrl+Shift+H",
-            Self::HighlightYellow => "Subrayar en amarillo",
-            Self::HighlightGreen => "Subrayar en verde",
-            Self::HighlightBlue => "Subrayar en azul",
-            Self::HighlightPink => "Subrayar en rosa",
-            Self::HighlightViolet => "Subrayar en violeta",
+            Self::HighlightPickColor => "Color del subrayado",
             Self::RemoveHighlight => "Quitar el subrayado",
             Self::ToggleStudyAnnotations => "Mostrar u ocultar mis anotaciones",
             Self::ShowAnnotationsBlock => "Ver el bloque de anotaciones",
@@ -2684,6 +2672,7 @@ fn toolbar_action_has_menu(action: AppAction) -> bool {
         AppAction::BlockTools
             | AppAction::InsertTools
             | AppAction::StudyTools
+            | AppAction::HighlightPickColor
             | AppAction::WorkspaceHub
             | AppAction::CommandPalette
             | AppAction::MenuFile
@@ -4754,6 +4743,21 @@ fn draw_toolbar_icon(
             path.line_to(right - 3.0, center_y);
             path.move_to(left + 8.0, center_y);
             path.line_to(right - 8.0, center_y);
+        }
+        // Marcador: el cuerpo en diagonal y la punta; el color va debajo.
+        AppAction::HighlightSelection => {
+            path.move_to(left + 5.0, bottom - 7.0);
+            path.line_to(right - 4.0, top + 3.0);
+            path.line_to(right - 2.0, top + 5.0);
+            path.line_to(left + 8.0, bottom - 5.0);
+            path.close();
+            path.move_to(left + 5.0, bottom - 7.0);
+            path.line_to(left + 3.0, bottom - 4.0);
+            path.line_to(left + 8.0, bottom - 5.0);
+        }
+        // Muestra del color actual: un círculo que se rellena con él.
+        AppAction::HighlightPickColor => {
+            path.push_circle(center_x - 2.0, center_y, 6.0);
         }
         AppAction::StudyTools => {
             path.move_to(left + 3.0, top + 4.0);
@@ -7476,6 +7480,33 @@ fn annotation_count(block: &str) -> usize {
     }
 }
 
+const HIGHLIGHT_PICKER_ROW: f32 = 28.0;
+const HIGHLIGHT_PICKER_WIDTH: f32 = 250.0;
+
+/// Rectángulo del selector de color: bajo el botón que lo abrió, sin salirse
+/// de la ventana.
+fn highlight_picker_rect(anchor_x: f32, window_width: f32) -> (f32, f32, f32, f32) {
+    let height = HIGHLIGHT_PICKER_ROW * 5.0 + 8.0;
+    let x = anchor_x
+        .min(window_width - HIGHLIGHT_PICKER_WIDTH - 8.0)
+        .max(8.0);
+    (
+        x,
+        CONTEXT_TOOLBAR_Y + CONTEXT_TOOLBAR_HEIGHT + 4.0,
+        HIGHLIGHT_PICKER_WIDTH,
+        height,
+    )
+}
+
+/// Fila (color) del selector bajo el punto, si hay.
+fn highlight_picker_row_at(anchor_x: f32, window_width: f32, x: f32, y: f32) -> Option<usize> {
+    let (left, top, width, height) = highlight_picker_rect(anchor_x, window_width);
+    if x < left || x >= left + width || y < top + 4.0 || y >= top + height - 4.0 {
+        return None;
+    }
+    Some(((y - top - 4.0) / HIGHLIGHT_PICKER_ROW) as usize)
+}
+
 /// Tope de la nota de una marca de libro.
 const MAX_BOOKMARK_NOTE_CHARS: usize = 200;
 
@@ -8533,6 +8564,9 @@ struct App {
     /// Último color de estudio elegido (índice de la paleta): el que usa
     /// «Subrayar» sin elegir color.
     study_color: usize,
+    /// Selector de color del subrayado abierto: borde izquierdo del botón que
+    /// lo abrió.
+    highlight_picker: Option<f32>,
     /// «Ocultar mis anotaciones»: Leer muestra el original, sin subrayados.
     hide_annotations: bool,
     /// Leyenda en edición: color y texto escrito.
@@ -8890,6 +8924,7 @@ impl App {
             annotations_line_width: None,
             study_color: 0,
             hide_annotations: false,
+            highlight_picker: None,
             legend_edit: None,
             note_edit: None,
             pending_open_search: None,
@@ -10145,6 +10180,18 @@ impl ApplicationHandler<AppEvent> for App {
                         }
                         return;
                     }
+                    if let Some(anchor) = self.highlight_picker
+                        && let Some((x, y)) = self.pointer
+                        && let Some((width, _)) = self.view_size()
+                    {
+                        match highlight_picker_row_at(anchor, width, x, y) {
+                            Some(row) if row < 5 => self.pick_highlight_color(row),
+                            Some(_) => {}
+                            None => self.toggle_highlight_picker(),
+                        }
+                        self.selecting = false;
+                        return;
+                    }
                     if let Some((x, y)) = self.pointer
                         && self.dialog.is_none()
                         && self.annotations_line_at(x, y)
@@ -10734,6 +10781,24 @@ impl ApplicationHandler<AppEvent> for App {
             }
             WindowEvent::KeyboardInput { event, .. } if self.outline_headings.is_some() => {
                 self.handle_outline_key(&event);
+            }
+            WindowEvent::KeyboardInput { event, .. }
+                if self.highlight_picker.is_some() && event.state == ElementState::Pressed =>
+            {
+                let digit = match event.physical_key {
+                    PhysicalKey::Code(KeyCode::Digit1) => Some(0),
+                    PhysicalKey::Code(KeyCode::Digit2) => Some(1),
+                    PhysicalKey::Code(KeyCode::Digit3) => Some(2),
+                    PhysicalKey::Code(KeyCode::Digit4) => Some(3),
+                    PhysicalKey::Code(KeyCode::Digit5) => Some(4),
+                    PhysicalKey::Code(KeyCode::Enter) => Some(self.study_color),
+                    _ => None,
+                };
+                match (event.physical_key, digit) {
+                    (_, Some(color)) => self.pick_highlight_color(color),
+                    (PhysicalKey::Code(KeyCode::Escape), _) => self.toggle_highlight_picker(),
+                    _ => {}
+                }
             }
             WindowEvent::KeyboardInput { event, .. } if self.note_edit.is_some() => {
                 self.handle_note_key(&event);
@@ -11472,11 +11537,7 @@ impl App {
             AppAction::PrepareStudyConceptList => self.prepare_study_concept_list(),
             AppAction::PrepareAiFragments => self.prepare_ai_fragments(),
             AppAction::HighlightSelection => self.highlight_selection(self.study_color),
-            AppAction::HighlightYellow => self.highlight_selection(0),
-            AppAction::HighlightGreen => self.highlight_selection(1),
-            AppAction::HighlightBlue => self.highlight_selection(2),
-            AppAction::HighlightPink => self.highlight_selection(3),
-            AppAction::HighlightViolet => self.highlight_selection(4),
+            AppAction::HighlightPickColor => self.toggle_highlight_picker(),
             AppAction::RemoveHighlight => self.remove_selected_highlight(),
             AppAction::ToggleStudyAnnotations => self.toggle_study_annotations(),
             AppAction::ShowAnnotationsBlock => self.show_annotations_block(),
@@ -13137,6 +13198,52 @@ impl App {
         }
         let source = self.document.source.to_string();
         highlight_ranges_for(&self.document.blocks, &source, items, &self.palette)
+    }
+
+    /// Abre o cierra el selector de color del subrayado, bajo su botón.
+    fn toggle_highlight_picker(&mut self) {
+        if self.highlight_picker.take().is_some() {
+            if let Some(window) = &self.window {
+                window.request_redraw();
+            }
+            return;
+        }
+        let Some((width, _)) = self.view_size() else {
+            return;
+        };
+        let mode = self.document.mode;
+        let anchor = contextual_toolbar_actions(mode)
+            .iter()
+            .position(|action| *action == AppAction::HighlightPickColor)
+            .and_then(|index| contextual_toolbar_item_geometry(index, width, mode))
+            .map_or(TOOLBAR_X, |geometry| geometry.x);
+        self.context_menu = None;
+        self.command_palette = None;
+        self.highlight_picker = Some(anchor);
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    /// Elige un color en el selector: subraya la selección con él y lo deja
+    /// como color actual.
+    fn pick_highlight_color(&mut self, color: usize) {
+        self.highlight_picker = None;
+        let has_selection = self
+            .selected_source_range()
+            .is_some_and(|(start, end)| end > start);
+        if has_selection {
+            self.highlight_selection(color);
+        } else {
+            self.study_color = color.min(4);
+            self.set_notice(&format!(
+                "Color de subrayado: {} · seleccioná texto y pulsá el marcador",
+                crate::theme::STUDY_COLOR_NAMES[color.min(4)]
+            ));
+        }
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
     }
 
     fn toggle_annotations_open(&mut self) {
@@ -20008,6 +20115,27 @@ impl App {
         // Se desarma `self` en campos sueltos para que el prestamo del pixmap
         // no choque con el de la cache de glifos ni con el de los bloques.
         let context_mode = self.document.mode;
+        let study_color_now = self.study_color.min(4);
+        let highlight_picker = self.highlight_picker;
+        let picker_legends: Vec<String> = (0..5).map(|color| self.current_legend(color)).collect();
+        let picker_layouts = highlight_picker.map(|_| {
+            (0..5)
+                .map(|color| {
+                    let name = crate::theme::STUDY_COLOR_NAMES[color];
+                    let label = if picker_legends[color].is_empty() {
+                        format!("{} · {name}", color + 1)
+                    } else {
+                        format!("{} · {name} · {}", color + 1, picker_legends[color])
+                    };
+                    build_menu_layout(
+                        &abbreviated_label(&label, 30),
+                        &mut self.font_cx,
+                        &mut self.layout_cx,
+                        self.palette,
+                    )
+                })
+                .collect::<Vec<_>>()
+        });
         let study_highlights = self.study_highlight_ranges();
         let study_marks = self.study_mark_blocks();
         let open_surface = self.open_surface();
@@ -21569,6 +21697,44 @@ impl App {
                 18.0,
                 icon_color,
             );
+            // El marcador lleva una raya del color actual; el botón de color,
+            // el círculo relleno con él.
+            let current = palette.study[study_color_now];
+            let mut swatch = Paint {
+                anti_alias: true,
+                ..Default::default()
+            };
+            swatch.set_color(Color::from_rgba8(
+                current.stroke.0,
+                current.stroke.1,
+                current.stroke.2,
+                255,
+            ));
+            match action {
+                AppAction::HighlightSelection => {
+                    if let Some(rect) =
+                        Rect::from_xywh(icon_x + 2.0, CONTEXT_TOOLBAR_Y + 5.0 + 16.0, 14.0, 3.0)
+                    {
+                        pixmap.fill_rect(rect, &swatch, Transform::identity(), None);
+                    }
+                }
+                AppAction::HighlightPickColor => {
+                    if let Some(circle) = tiny_skia::PathBuilder::from_circle(
+                        icon_x + 9.0 - 2.0,
+                        CONTEXT_TOOLBAR_Y + 5.0 + 9.0,
+                        4.5,
+                    ) {
+                        pixmap.fill_path(
+                            &circle,
+                            &swatch,
+                            tiny_skia::FillRule::Winding,
+                            Transform::identity(),
+                            None,
+                        );
+                    }
+                }
+                _ => {}
+            }
             if let Some(layout) = group_label {
                 for line in layout.lines() {
                     for entry in line.items() {
@@ -21593,6 +21759,61 @@ impl App {
                     CONTEXT_TOOLBAR_Y + CONTEXT_TOOLBAR_HEIGHT - 9.0,
                     icon_color,
                 );
+            }
+        }
+
+        if let (Some(anchor), Some(layouts)) = (highlight_picker, picker_layouts.as_ref()) {
+            let (px, py, pw, ph) = highlight_picker_rect(anchor, w.get() as f32);
+            draw_floating_surface(pixmap, px, py, pw, ph, 10.0, *palette);
+            let hovered_row =
+                tab_hover.and_then(|(x, y)| highlight_picker_row_at(anchor, w.get() as f32, x, y));
+            for (row, layout) in layouts.iter().enumerate() {
+                let ry = py + 4.0 + row as f32 * HIGHLIGHT_PICKER_ROW;
+                if hovered_row == Some(row) || study_color_now == row {
+                    let mut fill = Paint::default();
+                    let tone = if hovered_row == Some(row) {
+                        palette.border
+                    } else {
+                        palette.elevated
+                    };
+                    fill.set_color(Color::from_rgba8(tone.0, tone.1, tone.2, 255));
+                    fill_rounded_rect(
+                        pixmap,
+                        px + 4.0,
+                        ry,
+                        pw - 8.0,
+                        HIGHLIGHT_PICKER_ROW,
+                        6.0,
+                        &fill,
+                    );
+                }
+                let color = palette.study[row].stroke;
+                let mut dot = Paint {
+                    anti_alias: true,
+                    ..Default::default()
+                };
+                dot.set_color(Color::from_rgba8(color.0, color.1, color.2, 255));
+                if let Some(circle) = tiny_skia::PathBuilder::from_circle(
+                    px + 20.0,
+                    ry + HIGHLIGHT_PICKER_ROW * 0.5,
+                    6.0,
+                ) {
+                    pixmap.fill_path(
+                        &circle,
+                        &dot,
+                        tiny_skia::FillRule::Winding,
+                        Transform::identity(),
+                        None,
+                    );
+                }
+                for line in layout.lines() {
+                    for entry in line.items() {
+                        if let PositionedLayoutItem::GlyphRun(run) = entry {
+                            draw_run_background(pixmap, &run, px + 36.0, ry + 6.0);
+                            draw_glyph_run(pixmap, scale_cx, glyphs, &run, px + 36.0, ry + 6.0);
+                        }
+                    }
+                }
             }
         }
 
@@ -25319,10 +25540,67 @@ la casa final
     }
 
     #[test]
+    fn subrayar_se_alcanza_desde_la_barra_con_un_solo_selector_de_color() {
+        // El marcador y el selector están en la barra de Leer y de Comparar.
+        for modo in [DocumentMode::Reading, DocumentMode::Split] {
+            let acciones = contextual_toolbar_actions(modo);
+            assert!(acciones.contains(&AppAction::HighlightSelection));
+            assert!(acciones.contains(&AppAction::HighlightPickColor));
+            assert!(toolbar_action_has_menu(AppAction::HighlightPickColor));
+        }
+        // El menú Estudio no tiene una función por color: una sola entrada.
+        let entradas: Vec<AppAction> = STUDY_GROUPS
+            .iter()
+            .flat_map(|(_, acciones)| acciones.iter().copied())
+            .filter(|accion| {
+                accion.label().starts_with("Subrayar") || accion.label().starts_with("Color del")
+            })
+            .collect();
+        assert_eq!(
+            entradas,
+            [AppAction::HighlightSelection, AppAction::HighlightPickColor]
+        );
+        // El selector se abre bajo el botón, elige un color y subraya.
+        let mut app = app_de_estudio();
+        app.draw_for_test(900, 500);
+        seleccionar(&mut app, (1, 4), (1, 9));
+        app.perform_action(AppAction::HighlightPickColor);
+        let ancla = app.highlight_picker.expect("el selector queda abierto");
+        let (x, y, _, _) = highlight_picker_rect(ancla, 900.0);
+        assert_eq!(
+            highlight_picker_row_at(
+                ancla,
+                900.0,
+                x + 20.0,
+                y + 4.0 + 2.0 * HIGHLIGHT_PICKER_ROW + 5.0
+            ),
+            Some(2)
+        );
+        assert_eq!(
+            highlight_picker_row_at(ancla, 900.0, x - 5.0, y + 10.0),
+            None
+        );
+        app.pick_highlight_color(2);
+        assert_eq!(app.highlight_picker, None);
+        let parsed = estudio::parse(app.document.annotations.as_deref()).unwrap();
+        assert_eq!(parsed.registros[0].color, anotaciones::Color::Azul);
+        assert_eq!(
+            app.study_color, 2,
+            "el color queda como actual para el marcador"
+        );
+        // Sin selección, elegir un color solo lo deja como actual.
+        app.selection = None;
+        app.perform_action(AppAction::HighlightPickColor);
+        app.pick_highlight_color(4);
+        assert_eq!(app.study_color, 4);
+        assert_eq!(parsed.registros.len(), 1);
+    }
+
+    #[test]
     fn subrayar_usa_el_ultimo_color_elegido() {
         let mut app = app_de_estudio();
         seleccionar(&mut app, (1, 0), (1, 3));
-        app.perform_action(AppAction::HighlightPink);
+        app.pick_highlight_color(3);
         seleccionar(&mut app, (2, 0), (2, 4));
         app.perform_action(AppAction::HighlightSelection);
         let parsed = estudio::parse(app.document.annotations.as_deref()).unwrap();
@@ -25348,7 +25626,7 @@ la casa final
         assert!(!app.document.is_dirty());
         let texto = app.document.source.to_string();
         seleccionar(&mut app, (2, 0), (2, 4));
-        app.perform_action(AppAction::HighlightGreen);
+        app.pick_highlight_color(1);
         assert!(app.document.is_dirty(), "queda «•» hasta guardar");
         assert_eq!(
             app.document.source.to_string(),

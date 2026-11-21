@@ -369,8 +369,10 @@ cerrar la prueba sin intentar explotar el fallo.
 
 ## Anotaciones de estudio (manual, noviembre de 2026)
 
-1. **Subrayar.** En Leer, seleccioná texto que cruce dos párrafos y usá
-   Ctrl+Shift+H; probá los cinco colores desde Estudio > Subrayar y «Leyenda».
+1. **Subrayar.** En Leer o en Comparar, seleccioná texto que cruce dos párrafos
+   y pulsá el marcador de la segunda barra (o Ctrl+Shift+H); el botón de color
+   de al lado abre el selector con los cinco colores (teclas 1 a 5) y «Leyenda»
+   está en Estudio.
    En el tema de día y en el de noche el texto debe leerse igual.
 2. **Guardar.** Aparece «•»; Ctrl+S; cerrá y abrí: los subrayados siguen.
 3. **Otro lector.** Abrí el `.md` en VS Code, en GitHub o en Obsidian: el bloque

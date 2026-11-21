@@ -936,6 +936,13 @@ Cada tarea deja `cargo test` y `cargo clippy` en verde.
   `subrayar_usa_el_ultimo_color_elegido`, `cambiar_el_color_no_mueve_el_ancla`,
   `subrayar_marca_el_documento_sin_guardar`,
   `ocultar_mis_anotaciones_muestra_el_original`, más las de `estudio::pruebas`.
+  **Cambio del 21 de noviembre (pedido de la persona tras probarlo):** el
+  subrayado se alcanza desde la barra de Leer y de Comparar: un botón de
+  marcador (subraya con el color actual, que muestra en su raya) y un botón de
+  color que abre un selector con los cinco colores, su leyenda y los atajos 1 a
+  5. Elegir un color con texto seleccionado subraya; sin selección solo lo deja
+  como actual. El menú Estudio ya no tiene una función por color: «Subrayar la
+  selección» y «Color del subrayado».
   **Falta:** QA manual con capturas en la ventana real.
 - [x] **14.6** Marcas de libro: una por línea, con forma (barra, cinta, punto,
   bandera), **color elegido** (el último usado) y nota opcional, en el margen
