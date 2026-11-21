@@ -744,12 +744,12 @@ entonces). Orden: primero los S2, luego lo que más pesa en el SUS.
 - [x] **15.13** (hecha: el primer botón de la segunda barra es «Carpeta y paneles» en los tres modos, con el índice, archivos, buscar y enlaces; en Comparar se quitó el tachado de la barra para que todo quepa a 640 px) QA-01 (ronda 3): la segunda barra no debe cambiar de lugar los
   controles de paneles según el modo; los botones del Índice, Archivos, Buscar
   y Enlazan aquí quedan siempre donde están.
-- [ ] **15.14** US-04, QA-04, QA-06, QA-17, QA-24: «Subrayar» sin selección
+- [x] **15.14** (hecha salvo el enlace sin carpeta, que ya avisa: «Guardá esta nota…» o el diálogo de la carpeta; el aviso de «Copiado» no se pudo reproducir) US-04, QA-04, QA-06, QA-17, QA-24: «Subrayar» sin selección
   dice cómo hacerlo; «Estudio» visible en Leer; el amarillo de estudio se lee
   como amarillo en noche; avisos más cortos; «Copiado» dura lo suficiente; un
   clic en un enlace entre notas sin carpeta responde; el documento vacío en
   Leer invita a escribir.
-- [ ] **15.15** QA-07, QA-21, QA-05, US-03: contraste del borde de las tareas,
+- [~] **15.15** (hecho el contraste del borde de las casillas, que ahora usa el color tenue; quedan hover en tareas y flechas, foco de teclado visible desde la barra, y la tabla en Leer) QA-07, QA-21, QA-05, US-03: contraste del borde de las tareas,
   hover en tareas y flechas de plegado, foco de teclado visible (Tab desde la
   barra), un clic en otro menú con uno abierto lo cambia, la tabla se inserta
   con forma de tabla en Leer y ofrece agregar filas.

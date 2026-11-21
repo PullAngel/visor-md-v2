@@ -4138,7 +4138,7 @@ fn marker_for(list: &comrak::nodes::NodeList, index: usize, task: Option<char>) 
 /// Dibuja la casilla de una tarea: cuadrado con borde y, si esta hecha,
 /// relleno con su tilde.
 fn draw_checkbox(pixmap: &mut Pixmap, x: f32, y: f32, size: f32, done: bool, palette: Palette) {
-    let borde = palette.border;
+    let borde = palette.dim;
     let acento = palette.accent;
     let fondo = palette.bg;
 
