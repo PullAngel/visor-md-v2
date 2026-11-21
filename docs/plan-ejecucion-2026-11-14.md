@@ -741,7 +741,7 @@ entonces). Orden: primero los S2, luego lo que más pesa en el SUS.
   pestañas no puede quedar vacía; dos rondas seguidas lo marcan S2. Decidir
   entre mostrar todas las pestañas o una tira mínima con los documentos de los
   paneles, y reescribir las pruebas de arrastre que dependen de ello.
-- [ ] **15.13** QA-01 (ronda 3): la segunda barra no debe cambiar de lugar los
+- [x] **15.13** (hecha: el primer botón de la segunda barra es «Carpeta y paneles» en los tres modos, con el índice, archivos, buscar y enlaces; en Comparar se quitó el tachado de la barra para que todo quepa a 640 px) QA-01 (ronda 3): la segunda barra no debe cambiar de lugar los
   controles de paneles según el modo; los botones del Índice, Archivos, Buscar
   y Enlazan aquí quedan siempre donde están.
 - [ ] **15.14** US-04, QA-04, QA-06, QA-17, QA-24: «Subrayar» sin selección

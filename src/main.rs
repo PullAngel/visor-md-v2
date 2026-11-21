@@ -298,7 +298,8 @@ const fn mode_target_for_document(mode: DocumentMode) -> ModeTarget {
         DocumentMode::Split => ModeTarget::Compare,
     }
 }
-const READING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 8] = [
+const READING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 9] = [
+    AppAction::WorkspaceHub,
     AppAction::DocumentOutline,
     AppAction::ToggleSection,
     AppAction::ChooseWorkspace,
@@ -308,7 +309,10 @@ const READING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 8] = [
     AppAction::HighlightSelection,
     AppAction::HighlightPickColor,
 ];
-const EDITING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 13] = [
+const EDITING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 14] = [
+    // El primer botón es el mismo en los tres modos: la carpeta y los paneles
+    // (índice, archivos, buscar, enlaces) siempre se abren desde ahí.
+    AppAction::WorkspaceHub,
     AppAction::FormatBold,
     AppAction::FormatItalic,
     AppAction::FormatStrikethrough,
@@ -327,9 +331,9 @@ const EDITING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 13] = [
 /// cambia a orientación porque la vista ya está abierta y se puede cerrar con
 /// F3 o el selector segmentado.
 const SPLIT_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 15] = [
+    AppAction::WorkspaceHub,
     AppAction::FormatBold,
     AppAction::FormatItalic,
-    AppAction::FormatStrikethrough,
     AppAction::FormatInlineCode,
     AppAction::FormatHighlight,
     AppAction::BlockTools,
@@ -26824,7 +26828,7 @@ sin guardar",
         );
         assert_eq!(
             toolbar_action_at(30.0, 84.0, 900.0, DocumentMode::Reading),
-            Some(AppAction::DocumentOutline)
+            Some(AppAction::WorkspaceHub)
         );
         assert_eq!(
             toolbar_action_at(900.0, 12.0, 900.0, DocumentMode::Reading),
@@ -26835,19 +26839,19 @@ sin guardar",
             Some(AppAction::Save)
         );
         assert_eq!(
-            toolbar_action_at(100.0, 84.0, 900.0, DocumentMode::SourceEditing),
+            toolbar_action_at(138.0, 84.0, 900.0, DocumentMode::SourceEditing),
             Some(AppAction::FormatStrikethrough)
         );
         assert_eq!(
-            toolbar_action_at(180.0, 84.0, 900.0, DocumentMode::SourceEditing),
+            toolbar_action_at(218.0, 84.0, 900.0, DocumentMode::SourceEditing),
             Some(AppAction::FormatHighlight)
         );
         assert_eq!(
-            toolbar_action_at(230.0, 84.0, 900.0, DocumentMode::SourceEditing),
+            toolbar_action_at(268.0, 84.0, 900.0, DocumentMode::SourceEditing),
             Some(AppAction::BlockTools)
         );
         assert_eq!(
-            toolbar_action_at(250.0, 84.0, 900.0, DocumentMode::SourceEditing),
+            toolbar_action_at(288.0, 84.0, 900.0, DocumentMode::SourceEditing),
             Some(AppAction::InsertTask)
         );
         for (index, action) in READING_CONTEXT_TOOLBAR_ACTIONS.iter().copied().enumerate() {
@@ -26917,7 +26921,7 @@ sin guardar",
         assert!(EDITING_CONTEXT_TOOLBAR_ACTIONS.contains(&AppAction::InsertTools));
         assert!(EDITING_CONTEXT_TOOLBAR_ACTIONS.contains(&AppAction::StudyTools));
         // «Más formato Markdown» ya no existe: sus acciones están en otros menús.
-        assert_eq!(EDITING_CONTEXT_TOOLBAR_ACTIONS.len(), 13);
+        assert_eq!(EDITING_CONTEXT_TOOLBAR_ACTIONS.len(), 14);
         assert!(INSERT_ACTIONS.contains(&AppAction::InsertHorizontalRule));
         assert!(INSERT_ACTIONS.contains(&AppAction::InsertWikiLink));
         assert!(INSERT_ACTIONS.contains(&AppAction::InsertCallout));
@@ -26934,10 +26938,10 @@ sin guardar",
         assert_eq!(toolbar_group_label(AppAction::BlockTools), Some("Párrafo"));
         assert_eq!(toolbar_group_label(AppAction::FormatBold), None);
         let compact_blocks =
-            contextual_toolbar_item_geometry(5, 640.0, DocumentMode::SourceEditing)
+            contextual_toolbar_item_geometry(6, 640.0, DocumentMode::SourceEditing)
                 .expect("el grupo compacto cabe en el ancho mínimo");
         let labeled_blocks =
-            contextual_toolbar_item_geometry(5, 1_200.0, DocumentMode::SourceEditing)
+            contextual_toolbar_item_geometry(6, 1_200.0, DocumentMode::SourceEditing)
                 .expect("el grupo rotulado cabe en un workspace amplio");
         assert_eq!(
             compact_blocks.width,
@@ -27011,7 +27015,7 @@ sin guardar",
                 900.0,
                 DocumentMode::Reading
             ),
-            Some(AppAction::DocumentOutline)
+            Some(AppAction::WorkspaceHub)
         );
         assert_eq!(
             toolbar_hint_action(
@@ -27048,7 +27052,7 @@ sin guardar",
                 DocumentMode::Reading,
                 900.0
             ),
-            Some(AppAction::DocumentOutline)
+            Some(AppAction::WorkspaceHub)
         );
         assert_eq!(
             toolbar_focus_count(DocumentMode::Reading, 900.0),
