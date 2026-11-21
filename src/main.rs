@@ -14055,16 +14055,10 @@ impl App {
     /// documento que ya está en un panel tiene su pestaña en la cabecera de
     /// ese panel y no se repite arriba (D-31).
     fn visible_tab_ids(&self) -> Vec<u64> {
-        if self.document_panes.pane_count() < 2 {
-            return self.tab_order.clone();
-        }
-        let mut in_panes = Vec::new();
-        self.document_panes.document_ids(&mut in_panes);
-        self.tab_order
-            .iter()
-            .copied()
-            .filter(|id| !in_panes.contains(id))
-            .collect()
+        // Todas las pestañas están siempre en la tira, también las que ocupan
+        // un panel: dos rondas de evaluación no encontraron sus pestañas al
+        // dividir la ventana.
+        self.tab_order.clone()
     }
 
     /// Cuántas pestañas lista la tira y cuántas están fijadas (las primeras).
@@ -24650,9 +24644,27 @@ let x = 1;
         app.choose_document_pane_split(candidato);
         app.draw_for_test(1_100, 720);
         assert_eq!(app.document_panes.pane_count(), 2);
-        let tira = app.visible_tab_ids();
+        // La tira lista todas las pestañas; la que no ocupa un panel es la
+        // que sirve para soltar y arrastrar.
+        let mut en_paneles = Vec::new();
+        app.document_panes.document_ids(&mut en_paneles);
+        let tira: Vec<u64> = app
+            .visible_tab_ids()
+            .into_iter()
+            .filter(|id| !en_paneles.contains(id))
+            .collect();
         assert_eq!(tira.len(), 1);
         (app, tira[0])
+    }
+
+    /// Pestañas de la tira que no ocupan un panel.
+    fn fuera_de_paneles(app: &App) -> Vec<u64> {
+        let mut en_paneles = Vec::new();
+        app.document_panes.document_ids(&mut en_paneles);
+        app.visible_tab_ids()
+            .into_iter()
+            .filter(|id| !en_paneles.contains(id))
+            .collect()
     }
 
     fn arrastrar(app: &mut App, origen: MosaicSource, destino: (f32, f32)) {
@@ -24692,7 +24704,7 @@ let x = 1;
         assert_eq!(capas.len(), 2);
         assert!(capas.iter().any(|layout| layout.document_id == en_la_tira));
         assert_eq!(
-            app.visible_tab_ids(),
+            fuera_de_paneles(&app),
             vec![reemplazado],
             "el reemplazado vuelve a la tira"
         );
@@ -24700,7 +24712,7 @@ let x = 1;
         // Una pestaña en el borde izquierdo abre un tercer panel.
         arrastrar(&mut app, MosaicSource::Tab(reemplazado), (20.0, y));
         assert_eq!(app.document_panes.pane_count(), 3);
-        assert!(app.visible_tab_ids().is_empty());
+        assert!(fuera_de_paneles(&app).is_empty());
     }
 
     #[test]
@@ -24741,7 +24753,7 @@ let x = 1;
             (825.0, y),
         );
         assert_eq!(app.document_panes.pane_count(), 2);
-        assert_eq!(app.visible_tab_ids(), vec![en_la_tira]);
+        assert_eq!(fuera_de_paneles(&app), vec![en_la_tira]);
     }
 
     #[test]
@@ -24755,7 +24767,7 @@ let x = 1;
         assert!(app.document_panes.pane_for_document(en_la_tira).is_some());
         assert!(app.document_panes.pane_for_document(cerrando).is_none());
         assert!(!app.tab_order.contains(&cerrando));
-        assert!(app.visible_tab_ids().is_empty());
+        assert!(fuera_de_paneles(&app).is_empty());
 
         // Sin pestañas en la tira, cerrar colapsa el panel.
         app.finish_close_active_document_tab();
@@ -26571,7 +26583,7 @@ sin guardar",
     }
 
     #[test]
-    fn con_dos_paneles_la_tira_no_repite_los_documentos_del_mosaico() {
+    fn con_dos_paneles_la_tira_sigue_mostrando_todas_las_pestanas() {
         let mut app = App::for_tests(NIGHT);
         app.load_for_test("uno", DocumentMode::Reading);
         app.perform_action(AppAction::NewDocument);
@@ -26588,12 +26600,13 @@ sin guardar",
         assert_eq!(app.document_panes.pane_count(), 2);
         let mut en_paneles = Vec::new();
         app.document_panes.document_ids(&mut en_paneles);
+        // La tira nunca queda sin los documentos de los paneles: se pueden
+        // reconocer, enfocar y cerrar desde ahí.
         let visibles = app.visible_tab_ids();
-        assert_eq!(visibles.len(), 1, "solo la pestaña que no está en un panel");
-        assert!(visibles.iter().all(|id| !en_paneles.contains(id)));
-        assert_eq!(app.tab_strip(), TabStrip::new(1, 0));
+        assert_eq!(visibles, app.tab_order);
+        assert!(en_paneles.iter().all(|id| visibles.contains(id)));
+        assert_eq!(app.tab_strip(), TabStrip::new(3, 0));
 
-        // Al quitar un panel vuelven a listarse todas.
         app.close_focused_document_pane();
         assert_eq!(app.visible_tab_ids(), app.tab_order);
     }

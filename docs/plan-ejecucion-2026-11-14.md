@@ -737,7 +737,7 @@ entonces). Orden: primero los S2, luego lo que más pesa en el SUS.
   centra con la ventana maximizada y el contenido no salta al interactuar.
 - [ ] **15.11** Los S4 restantes (QA-17 a QA-21, US-08, US-09) y volver a la
   fase 9 con la misma evaluación.
-- [ ] **15.12** QA-02 (ronda 3) = 15.8: con la ventana dividida la barra de
+- [x] **15.12** (hecha: la tira lista siempre todas las pestañas, también las que ocupan un panel; las pruebas del mosaico se reescribieron sobre «las que no ocupan un panel») QA-02 (ronda 3) = 15.8: con la ventana dividida la barra de
   pestañas no puede quedar vacía; dos rondas seguidas lo marcan S2. Decidir
   entre mostrar todas las pestañas o una tira mínima con los documentos de los
   paneles, y reescribir las pruebas de arrastre que dependen de ello.
