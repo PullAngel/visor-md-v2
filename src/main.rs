@@ -4838,6 +4838,40 @@ fn draw_menu_chevron(pixmap: &mut Pixmap, x: f32, y: f32, color: (u8, u8, u8)) {
     }
 }
 
+/// Disco tenue de acento detrás de un control pequeño (casilla, triángulo de
+/// plegar) cuando el puntero está encima: sin él no se nota que se puede pulsar.
+fn draw_hover_disc(
+    pixmap: &mut Pixmap,
+    center: (f32, f32),
+    radius: f32,
+    amount: f32,
+    palette: Palette,
+) {
+    if amount <= 0.0 {
+        return;
+    }
+    let accent = palette.accent;
+    let mut paint = Paint {
+        anti_alias: true,
+        ..Default::default()
+    };
+    paint.set_color(Color::from_rgba8(
+        accent.0,
+        accent.1,
+        accent.2,
+        (70.0 * amount.clamp(0.0, 1.0)) as u8,
+    ));
+    if let Some(path) = tiny_skia::PathBuilder::from_circle(center.0, center.1, radius) {
+        pixmap.fill_path(
+            &path,
+            &paint,
+            tiny_skia::FillRule::Winding,
+            Transform::identity(),
+            None,
+        );
+    }
+}
+
 fn draw_disclosure(pixmap: &mut Pixmap, x: f32, y: f32, size: f32, folded: bool, palette: Palette) {
     let mut path = tiny_skia::PathBuilder::new();
     if folded {
@@ -20470,6 +20504,20 @@ impl App {
 
                 if matches!(slot.kind, Kind::Heading(_)) && context_mode == DocumentMode::Reading {
                     let size = 11.0 * *scale_factor;
+                    draw_hover_disc(
+                        pixmap,
+                        (
+                            panes.source.x + slot.x - 21.0 * *scale_factor + size * 0.5,
+                            top + slot.height.max(size) * 0.5,
+                        ),
+                        size * 0.95,
+                        motion.hover_amount(
+                            UiTarget::SectionDisclosure(i),
+                            motion_now,
+                            motion_reduced,
+                        ),
+                        *palette,
+                    );
                     draw_disclosure(
                         pixmap,
                         panes.source.x + slot.x - 21.0 * *scale_factor,
@@ -20642,6 +20690,17 @@ impl App {
                                 *scale_factor,
                                 panes.source,
                             );
+                            draw_hover_disc(
+                                pixmap,
+                                (left + width * 0.5, top + width * 0.5),
+                                width * 0.9,
+                                motion.hover_amount(
+                                    UiTarget::TaskCheckbox(i),
+                                    motion_now,
+                                    motion_reduced,
+                                ),
+                                *palette,
+                            );
                             draw_checkbox(pixmap, left, top, width, *done, *palette);
                         }
                     }
@@ -20738,7 +20797,9 @@ impl App {
                 {
                     let ac = palette.accent;
                     let mut focus_paint = Paint::default();
-                    focus_paint.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 48));
+                    focus_paint.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 90));
+                    let mut ring_paint = Paint::default();
+                    ring_paint.set_color(Color::from_rgba8(ac.0, ac.1, ac.2, 255));
                     for (rect, _) in Selection::new(
                         Cursor::from_byte_index(layout, target.start, Affinity::Downstream),
                         Cursor::from_byte_index(layout, target.end, Affinity::Downstream),
@@ -20754,6 +20815,17 @@ impl App {
                             continue;
                         };
                         pixmap.fill_rect(rect, &focus_paint, Transform::identity(), None);
+                        // Anillo de foco: un borde de acento nítido de 2 px.
+                        for (x, y, width, height) in [
+                            (rect.x(), rect.y(), rect.width(), 2.0),
+                            (rect.x(), rect.y() + rect.height() - 2.0, rect.width(), 2.0),
+                            (rect.x(), rect.y(), 2.0, rect.height()),
+                            (rect.x() + rect.width() - 2.0, rect.y(), 2.0, rect.height()),
+                        ] {
+                            if let Some(edge) = Rect::from_xywh(x, y, width, height) {
+                                pixmap.fill_rect(edge, &ring_paint, Transform::identity(), None);
+                            }
+                        }
                     }
                 }
 
@@ -25739,6 +25811,35 @@ la casa final
             "un 
 "
         );
+    }
+
+    #[test]
+    fn las_casillas_y_los_triangulos_de_plegar_reaccionan_al_puntero() {
+        let mut app = App::for_tests(NIGHT);
+        app.load_for_test(
+            "# Título
+
+- [ ] una tarea
+",
+            DocumentMode::Reading,
+        );
+        let reposo = app.draw_for_test(900, 400).data().to_vec();
+        let antes = Instant::now() - Duration::from_secs(1);
+        let tarea = app
+            .document
+            .blocks
+            .iter()
+            .position(|block| matches!(block.marker, Some(Marker::Task { .. })))
+            .expect("hay una tarea");
+        app.ui_motion
+            .set_hover(Some(UiTarget::TaskCheckbox(tarea)), antes, false);
+        let sobre_tarea = app.draw_for_test(900, 400).data().to_vec();
+        assert_ne!(reposo, sobre_tarea, "la casilla se resalta");
+        app.ui_motion
+            .set_hover(Some(UiTarget::SectionDisclosure(0)), antes, false);
+        let sobre_titulo = app.draw_for_test(900, 400).data().to_vec();
+        assert_ne!(reposo, sobre_titulo, "el triángulo se resalta");
+        assert_ne!(sobre_tarea, sobre_titulo);
     }
 
     #[test]

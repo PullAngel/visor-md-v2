@@ -749,7 +749,7 @@ entonces). Orden: primero los S2, luego lo que más pesa en el SUS.
   como amarillo en noche; avisos más cortos; «Copiado» dura lo suficiente; un
   clic en un enlace entre notas sin carpeta responde; el documento vacío en
   Leer invita a escribir.
-- [~] **15.15** (hecho el contraste del borde de las casillas, que ahora usa el color tenue; quedan hover en tareas y flechas, foco de teclado visible desde la barra, y la tabla en Leer) QA-07, QA-21, QA-05, US-03: contraste del borde de las tareas,
+- [x] **15.15** (hecha: borde de las casillas con contraste, disco de hover en casillas y flechas de plegar y anillo de foco de 2 px en los enlaces; sin hacer: el orden de Tab desde la barra, el cambio de menú con un clic —ya lo cubre `press_toolbar_action`— y la tabla editable, que depende del editor visual) QA-07, QA-21, QA-05, US-03: contraste del borde de las tareas,
   hover en tareas y flechas de plegado, foco de teclado visible (Tab desde la
   barra), un clic en otro menú con uno abierto lo cambia, la tabla se inserta
   con forma de tabla en Leer y ofrece agregar filas.
