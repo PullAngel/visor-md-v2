@@ -876,6 +876,64 @@ mod pruebas {
     }
 
     #[test]
+    fn marcar_una_casilla_dentro_del_subrayado_no_lo_pierde() {
+        let original = "# Tareas
+
+- [ ] uno
+- [ ] dos
+- [ ] tres
+
+Fin del texto
+";
+        let inicio = original.find("uno").unwrap();
+        let fin = original.find("tres").unwrap() + "tres".len();
+        let mut anotaciones = Anotaciones::default();
+        highlight(&mut anotaciones, original, inicio, fin, 0).unwrap();
+        let marcada = original.replace("- [ ] dos", "- [x] dos");
+        let pintados = highlights(&marcada, &anotaciones);
+        assert_eq!(pintados.len(), 1, "el subrayado se perdió");
+        assert_eq!(
+            &marcada[pintados[0].start..pintados[0].end],
+            "uno
+- [x] dos
+- [ ] tres"
+        );
+        assert!(orphans(&marcada, &anotaciones).is_empty());
+        // Al desmarcar, vuelve a quedar como al principio.
+        assert_eq!(refresh_anchors(&mut anotaciones, &marcada), 1);
+        let desmarcada = marcada.replace("- [x] dos", "- [ ] dos");
+        let pintados = highlights(&desmarcada, &anotaciones);
+        assert_eq!(
+            &desmarcada[pintados[0].start..pintados[0].end],
+            &original[inicio..fin]
+        );
+    }
+
+    #[test]
+    fn escribir_dentro_del_subrayado_lo_ensancha_sin_perderlo() {
+        let original = "Primera frase importante aquí. Segunda frase.";
+        let inicio = original.find("frase importante").unwrap();
+        let fin = inicio + "frase importante".len();
+        let mut anotaciones = Anotaciones::default();
+        highlight(&mut anotaciones, original, inicio, fin, 1).unwrap();
+        let editado = "Primera frase muy importante aquí. Segunda frase.";
+        let pintados = highlights(editado, &anotaciones);
+        assert_eq!(pintados.len(), 1);
+        assert_eq!(
+            &editado[pintados[0].start..pintados[0].end],
+            "frase muy importante"
+        );
+    }
+
+    #[test]
+    fn un_contexto_corto_no_inventa_anclas() {
+        let original = "a b c";
+        let mut anotaciones = Anotaciones::default();
+        highlight(&mut anotaciones, original, 2, 3, 0).unwrap();
+        assert!(highlights("a x c", &anotaciones).is_empty());
+    }
+
+    #[test]
     fn deshacer_el_borrado_recupera_el_subrayado() {
         let original = "uno dos tres";
         let mut anotaciones = Anotaciones::default();

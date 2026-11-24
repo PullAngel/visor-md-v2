@@ -707,8 +707,75 @@ pub(crate) fn anclar(cuerpo: &str, registro: &Registro) -> Ancla {
             fin: normal.fin[inicio + cita_n.len() - 1],
         };
     }
-    // 5. Sin lugar.
+    // 5. La cita cambió por dentro (una casilla `[ ]` → `[x]`, una letra
+    //    escrita): el contexto de los dos lados sigue en su sitio.
+    if let Some((inicio, fin)) = reanclar_por_contexto(&texto, cita.len(), &antes, &despues, pos) {
+        return Ancla::Anclada { inicio, fin };
+    }
+    // 6. Sin lugar.
     Ancla::Huerfana
+}
+
+/// Contexto mínimo (antes + después, en caracteres) para fiarse de él.
+const MIN_CONTEXTO_PARA_REANCLAR: usize = 6;
+
+/// Busca el tramo que quedó entre el contexto de antes y el de después cuando
+/// la cita ya no aparece tal cual. El largo nuevo debe ser parecido al
+/// anterior, para no abarcar medio documento por una coincidencia corta.
+fn reanclar_por_contexto(
+    texto: &[char],
+    largo_cita: usize,
+    antes: &[char],
+    despues: &[char],
+    pos: usize,
+) -> Option<(usize, usize)> {
+    if antes.len() + despues.len() < MIN_CONTEXTO_PARA_REANCLAR {
+        return None;
+    }
+    let ventana = largo_cita.saturating_mul(2).saturating_add(256);
+    // Dónde empezaría el tramo: justo después del contexto de antes (la
+    // aparición más cercana a la posición guardada) o, sin contexto, en 0.
+    let inicio = if antes.is_empty() {
+        (pos == 0).then_some(0)?
+    } else {
+        let mut mejor: Option<(usize, usize)> = None;
+        let mut vistas = 0;
+        for desde in 0..=texto.len().checked_sub(antes.len())? {
+            if texto[desde] != antes[0] || texto[desde..desde + antes.len()] != *antes {
+                continue;
+            }
+            let fin_del_contexto = desde + antes.len();
+            let distancia = fin_del_contexto.abs_diff(pos);
+            if mejor.is_none_or(|(d, _)| distancia < d) {
+                mejor = Some((distancia, fin_del_contexto));
+            }
+            vistas += 1;
+            if vistas >= MAX_APARICIONES {
+                break;
+            }
+        }
+        mejor?.1
+    };
+    // Dónde terminaría: el contexto de después cuyo resultado tenga el largo
+    // más parecido al de la cita.
+    let fin = if despues.is_empty() {
+        let resto = texto.len().checked_sub(inicio)?;
+        (resto <= largo_cita.saturating_add(ventana)).then_some(texto.len())?
+    } else {
+        let tope = (inicio + ventana).min(texto.len().checked_sub(despues.len())?);
+        let mut mejor: Option<(usize, usize)> = None;
+        for desde in (inicio + 1)..=tope {
+            if texto[desde] != despues[0] || texto[desde..desde + despues.len()] != *despues {
+                continue;
+            }
+            let distancia = (desde - inicio).abs_diff(largo_cita);
+            if mejor.is_none_or(|(d, _)| distancia < d) {
+                mejor = Some((distancia, desde));
+            }
+        }
+        mejor?.1
+    };
+    (fin > inicio).then_some((inicio, fin))
 }
 
 /// Texto con cada tramo de espacios en blanco reducido a un espacio, y para

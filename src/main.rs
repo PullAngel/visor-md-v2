@@ -10547,6 +10547,13 @@ impl ApplicationHandler<AppEvent> for App {
                         self.selecting = false;
                         return;
                     }
+                    if let Some((x, y)) = self.pointer
+                        && let Some((start, end)) = self.preview_task_at(x, y)
+                    {
+                        self.toggle_task_in_source(start, end);
+                        self.selecting = false;
+                        return;
+                    }
                     self.focused_link = None;
                     self.focus_destination = None;
                     self.refresh_title();
@@ -12860,14 +12867,7 @@ impl App {
         let Some(block) = self.document.annotations.as_deref() else {
             return false;
         };
-        let key = {
-            use std::hash::{Hash, Hasher};
-            let mut hasher = std::collections::hash_map::DefaultHasher::new();
-            self.document.source_editor.revision().hash(&mut hasher);
-            self.document.source.len_bytes().hash(&mut hasher);
-            block.hash(&mut hasher);
-            hasher.finish()
-        };
+        let key = self.study_cache_key();
         if self
             .document
             .study_cache
@@ -12875,7 +12875,22 @@ impl App {
             .is_none_or(|(cached, _, _, _)| *cached != key)
         {
             let source = self.document.source.to_string();
-            let (items, marks, lost) = estudio::parse(Some(block))
+            let mut parsed = estudio::parse(Some(block));
+            // Con el texto editado, cada anotación recalcula su cita y su
+            // contexto ya: así la siguiente edición parte de lo que hay ahora
+            // y deshacer la encuentra donde estaba. Si el bloque cambia, se
+            // guarda la clave del bloque nuevo para no recalcular de nuevo.
+            let mut key = key;
+            if let Ok(anotaciones) = parsed.as_mut()
+                && estudio::refresh_anchors(anotaciones, &source) > 0
+            {
+                let eol = self.document.annotation_line_ending();
+                if let Some(block) = anotaciones::escribir(anotaciones, eol) {
+                    self.document.annotations = Some(block);
+                    key = self.study_cache_key();
+                }
+            }
+            let (items, marks, lost) = parsed
                 .map(|parsed| {
                     (
                         estudio::highlights(&source, &parsed),
@@ -12887,6 +12902,16 @@ impl App {
             self.document.study_cache = Some((key, items, marks, lost));
         }
         true
+    }
+
+    /// Clave del caché de estudio: revisión del editor, tamaño y bloque.
+    fn study_cache_key(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        self.document.source_editor.revision().hash(&mut hasher);
+        self.document.source.len_bytes().hash(&mut hasher);
+        self.document.annotations.hash(&mut hasher);
+        hasher.finish()
     }
 
     /// Cuántas anotaciones no encuentran su texto.
@@ -12931,12 +12956,25 @@ impl App {
 
     /// Marcas que se dibujan en el margen de Leer, por bloque.
     fn study_mark_blocks(&mut self) -> BlockBookmarks {
+        self.study_mark_blocks_in(false)
+    }
+
+    /// Marcas del lado de lectura de Comparar.
+    fn study_preview_mark_blocks(&mut self) -> BlockBookmarks {
+        self.study_mark_blocks_in(true)
+    }
+
+    fn study_mark_blocks_in(&mut self, preview: bool) -> BlockBookmarks {
         let mut by_block = BlockBookmarks::new();
-        if self.document.mode != DocumentMode::Reading {
+        if (self.document.mode == DocumentMode::Split) != preview {
             return by_block;
         }
         for mark in self.study_bookmarks() {
-            let blocks = &self.document.blocks;
+            let blocks = if preview {
+                &self.document.rendered_blocks
+            } else {
+                &self.document.blocks
+            };
             let index = blocks.partition_point(|block| block.source.end <= mark.start);
             if index < blocks.len() {
                 let stroke = self.palette.study[mark.color.min(4)].stroke;
@@ -13252,7 +13290,19 @@ impl App {
     }
 
     fn study_highlight_ranges(&mut self) -> StudyRanges {
-        if self.document.mode != DocumentMode::Reading || !self.refresh_study_cache() {
+        self.study_highlight_ranges_in(false)
+    }
+
+    /// Subrayados del lado de lectura de Comparar.
+    fn study_preview_highlight_ranges(&mut self) -> StudyRanges {
+        self.study_highlight_ranges_in(true)
+    }
+
+    /// Subrayados por bloque. En Leer y en Editar se pintan sobre los bloques
+    /// del documento; en Comparar, solo en el lado de lectura (`preview`), y
+    /// la fuente queda sin ellos.
+    fn study_highlight_ranges_in(&mut self, preview: bool) -> StudyRanges {
+        if (self.document.mode == DocumentMode::Split) != preview || !self.refresh_study_cache() {
             return StudyRanges::new();
         }
         let Some((_, items, _, _)) = &self.document.study_cache else {
@@ -13262,7 +13312,12 @@ impl App {
             return StudyRanges::new();
         }
         let source = self.document.source.to_string();
-        highlight_ranges_for(&self.document.blocks, &source, items, &self.palette)
+        let blocks = if preview {
+            &self.document.rendered_blocks
+        } else {
+            &self.document.blocks
+        };
+        highlight_ranges_for(blocks, &source, items, &self.palette)
     }
 
     /// Abre o cierra el selector de color del subrayado, bajo su botón.
@@ -18053,6 +18108,35 @@ impl App {
         })
     }
 
+    /// Casilla bajo el puntero en el lado de lectura de Comparar. Devuelve el
+    /// rango de la fuente de esa tarea.
+    fn preview_task_at(&self, x: f32, y: f32) -> Option<(usize, usize)> {
+        if self.document.mode != DocumentMode::Split {
+            return None;
+        }
+        let panes = self.focused_document_panes()?;
+        if !panes.preview.contains(x, y - DOCUMENT_VIEWPORT_TOP) {
+            return None;
+        }
+        self.preview_slots
+            .iter()
+            .enumerate()
+            .find_map(|(index, slot)| {
+                let block = self.document.rendered_blocks.get(index)?;
+                if !matches!(block.marker, Some(Marker::Task { .. })) {
+                    return None;
+                }
+                let (left, top, width, height) = task_checkbox_hit_bounds_in_pane(
+                    slot,
+                    self.preview_scroll,
+                    self.scale_factor,
+                    panes.preview,
+                );
+                ((left..=left + width).contains(&x) && (top..=top + height).contains(&y))
+                    .then_some((block.source.start, block.source.end))
+            })
+    }
+
     /// El menú contextual puede abrirse sobre el texto de la tarea, no solo
     /// sobre su pequeña casilla. Se resuelve antes de mostrarlo para que la
     /// acción posterior no dependa de coordenadas dentro del menú flotante.
@@ -18159,8 +18243,13 @@ impl App {
         let Some(block) = self.document.blocks.get(block) else {
             return;
         };
-        let source = block.source;
-        let Ok(text) = self.document.source.slice_bytes(source.start..source.end) else {
+        self.toggle_task_in_source(block.source.start, block.source.end);
+    }
+
+    /// Marca o desmarca la tarea de la fuente en `[start, end)`.
+    fn toggle_task_in_source(&mut self, start: usize, end: usize) {
+        let source = start..end;
+        let Ok(text) = self.document.source.slice_bytes(source.clone()) else {
             self.set_notice("no se pudo localizar la tarea en la fuente");
             return;
         };
@@ -20213,6 +20302,8 @@ impl App {
         });
         let study_highlights = self.study_highlight_ranges();
         let study_marks = self.study_mark_blocks();
+        let study_preview_highlights = self.study_preview_highlight_ranges();
+        let study_preview_marks = self.study_preview_mark_blocks();
         let open_surface = self.open_surface();
         let workspace_open = self.workspace.is_some();
         let workspace_generation = self.workspace_generation;
@@ -20911,6 +21002,11 @@ impl App {
 
             if split {
                 let preview_pane = panes.preview;
+                let preview_text_left = preview_slots
+                    .iter()
+                    .filter(|slot| slot.height > 0.0)
+                    .map(|slot| slot.x)
+                    .fold(f32::INFINITY, f32::min);
                 if let Some(rect) = Rect::from_xywh(
                     preview_pane.x,
                     DOCUMENT_VIEWPORT_TOP + preview_pane.y,
@@ -21125,6 +21221,42 @@ impl App {
                                     (font_size * *scale_factor * 0.82).max(12.0 * *scale_factor);
                                 draw_checkbox(pixmap, x - size - 8.0, top, size, *done, *palette);
                             }
+                        }
+                    }
+                    // Subrayados de estudio y marcas, solo en el lado de lectura.
+                    for (start, end, fill) in
+                        study_preview_highlights.get(&index).into_iter().flatten()
+                    {
+                        let mut study_paint = Paint::default();
+                        study_paint.set_color(Color::from_rgba8(fill.0, fill.1, fill.2, 255));
+                        for (rect, _) in Selection::new(
+                            Cursor::from_byte_index(layout, *start, Affinity::Downstream),
+                            Cursor::from_byte_index(layout, *end, Affinity::Downstream),
+                        )
+                        .geometry(layout)
+                        {
+                            if let Some(rect) = Rect::from_xywh(
+                                x + rect.x0 as f32,
+                                top + rect.y0 as f32,
+                                rect.width() as f32,
+                                rect.height() as f32,
+                            ) {
+                                pixmap.fill_rect(rect, &study_paint, Transform::identity(), None);
+                            }
+                        }
+                    }
+                    if let Some(marks) = study_preview_marks.get(&index) {
+                        let line = slot.height.min(26.0 * *scale_factor);
+                        for (n, (stroke, shape)) in marks.iter().take(3).enumerate() {
+                            draw_bookmark(
+                                pixmap,
+                                preview_pane.x + preview_text_left
+                                    - (40.0 + n as f32 * 12.0) * *scale_factor,
+                                top,
+                                line,
+                                *stroke,
+                                shape,
+                            );
                         }
                     }
                     for line in layout.lines() {
@@ -25382,6 +25514,97 @@ reservar hotel
     }
 
     #[test]
+    fn subrayar_y_marcar_desde_editar_usan_la_seleccion_de_la_fuente() {
+        let mut app = App::for_tests(NIGHT);
+        app.load_for_test(TEXTO_DE_ESTUDIO, DocumentMode::SourceEditing);
+        let desde = TEXTO_DE_ESTUDIO.find("importante").unwrap();
+        app.edit_source(|editor, source| {
+            editor.set_cursor(source, desde, false)?;
+            editor.set_cursor(source, desde + "importante".len(), true)?;
+            Ok(true)
+        });
+        app.perform_action(AppAction::HighlightSelection);
+        let parsed = estudio::parse(app.document.annotations.as_deref()).unwrap();
+        assert_eq!(parsed.registros[0].cita.as_deref(), Some("importante"));
+        let tramos = app.study_highlight_ranges();
+        assert!(!tramos.is_empty(), "en Editar el subrayado se ve");
+        app.perform_action(AppAction::ToggleBookmark);
+        assert_eq!(app.study_bookmarks().len(), 1);
+        assert!(!app.study_mark_blocks().is_empty(), "y la marca también");
+    }
+
+    #[test]
+    fn la_casilla_del_lado_de_lectura_de_comparar_se_marca_con_un_clic() {
+        let cuerpo = "- [ ] uno
+- [ ] dos
+";
+        let mut app = App::for_tests(NIGHT);
+        app.load_for_test(cuerpo, DocumentMode::Split);
+        app.draw_for_test(1200, 700);
+        let panes = app.focused_document_panes().expect("hay paneles");
+        let indice = app
+            .document
+            .rendered_blocks
+            .iter()
+            .enumerate()
+            .filter(|(_, block)| matches!(block.marker, Some(Marker::Task { .. })))
+            .map(|(index, _)| index)
+            .nth(1)
+            .expect("la segunda tarea está en la vista");
+        let (izquierda, arriba, ancho, alto) = task_checkbox_hit_bounds_in_pane(
+            &app.preview_slots[indice],
+            app.preview_scroll,
+            app.scale_factor,
+            panes.preview,
+        );
+        let (x, y) = (izquierda + ancho / 2.0, arriba + alto / 2.0);
+        let (inicio, fin) = app.preview_task_at(x, y).expect("la casilla responde");
+        app.toggle_task_in_source(inicio, fin);
+        assert_eq!(
+            app.document.source.to_string(),
+            "- [ ] uno
+- [x] dos
+"
+        );
+        // Fuera de la casilla, en el texto, no marca nada.
+        assert!(app.preview_task_at(izquierda + ancho + 60.0, y).is_none());
+    }
+
+    #[test]
+    fn marcar_una_tarea_no_borra_el_subrayado_que_la_cubre() {
+        let cuerpo = "- [ ] uno
+- [ ] dos
+- [ ] tres
+";
+        let mut app = App::for_tests(NIGHT);
+        app.load_for_test(cuerpo, DocumentMode::Reading);
+        let mut parsed = anotaciones::Anotaciones::default();
+        let inicio = cuerpo.find("uno").unwrap();
+        let fin = cuerpo.find("tres").unwrap() + 4;
+        estudio::highlight(&mut parsed, cuerpo, inicio, fin, 0).unwrap();
+        app.document.annotations = anotaciones::escribir(
+            &parsed, "
+",
+        );
+        assert!(!app.study_highlight_ranges().is_empty());
+        let tarea = app
+            .document
+            .blocks
+            .iter()
+            .position(|block| block.text.contains("dos"))
+            .expect("hay una tarea «dos»");
+        app.toggle_task(tarea);
+        assert!(
+            !app.study_highlight_ranges().is_empty(),
+            "marcar la casilla borró el subrayado"
+        );
+        assert_eq!(app.orphan_annotation_count(), 0);
+        app.toggle_task(tarea);
+        assert!(!app.study_highlight_ranges().is_empty());
+        assert_eq!(app.orphan_annotation_count(), 0);
+    }
+
+    #[test]
     fn subrayado_cruza_bloques_y_se_dibuja_por_tramos() {
         let mut app = app_de_estudio();
         assert_eq!(app.document.blocks[1].text, "Una frase importante.");
@@ -25467,7 +25690,7 @@ texto dos
         app.edit_source(|editor, source| {
             editor.set_cursor(source, desde, false)?;
             editor.set_cursor(source, desde + 4, true)?;
-            editor.insert(source, "XXXX")
+            editor.insert(source, "")
         });
         assert_eq!(app.orphan_annotation_count(), 1);
         assert!(app.document.annotations.is_some(), "no se borra sola");
@@ -25904,9 +26127,14 @@ la casa final
         assert!(app.study_highlight_ranges().is_empty());
         app.perform_action(AppAction::ToggleStudyAnnotations);
         assert!(!app.study_highlight_ranges().is_empty());
-        // En Editar no se pintan: ahí se ve la fuente.
+        // En Editar también se ven, sobre la fuente.
         app.document.mode = DocumentMode::SourceEditing;
+        app.document.blocks = safe_buffer_blocks(&app.document.source).unwrap();
+        assert!(!app.study_highlight_ranges().is_empty());
+        // En Comparar solo se ven del lado de lectura.
+        app.document.mode = DocumentMode::Split;
         assert!(app.study_highlight_ranges().is_empty());
+        assert!(!app.study_preview_highlight_ranges().is_empty());
     }
 
     #[test]
