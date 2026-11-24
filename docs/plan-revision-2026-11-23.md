@@ -147,7 +147,7 @@ memoria (D-46) también baja el costo por tecla.
   - Con CRLF se conserva el salto de línea.
 
   Hecho: Editar y Leer muestran la misma numeración.
-- [ ] **16.6** Arrastrar pestañas para sacarlas o integrarlas.
+- [x] **16.6** Arrastrar pestañas para sacarlas o integrarlas. Hecho: el arrastre ya no se cancela al salir el cursor de la ventana. Falta la pestaña fantasma y el resalte sobre otra ventana (retoque posterior); la prueba en la ventana real la hace el propietario.
   Dónde:
   - `WindowEvent::CursorLeft`: no cancelar un arrastre con el botón apretado.
   - Guardar la última posición del puntero aunque esté fuera de la ventana.
@@ -160,11 +160,11 @@ memoria (D-46) también baja el costo por tecla.
 
   Prueba: unidad del estado de arrastre ante `CursorLeft` con el botón
   apretado, y QA manual (ver «Pruebas a mano»).
-- [ ] **16.7** «Enlazan aquí» dentro de su bloque.
+- [x] **16.7** «Enlazan aquí» dentro de su bloque. Hecho: la pestaña pasa a llamarse «Enlaces» y las casillas se reparten según el largo del rótulo.
   Dónde: el dibujo de la pestaña `Backlinks`.
   Prueba: visual que mide el rótulo contra su caja con la escala 100 %, 125 %
   y 150 %.
-- [ ] **16.8** Ofrecer la restauración al arrancar.
+- [x] **16.8** Ofrecer la restauración al arrancar. Hecho con tres botones (Más tarde, Elegir…, Restaurar todo); descartar se hace desde la lista, con su confirmación.
   Dónde: el arranque, donde hoy se llama `recovery::orphans()`. Se usa
   `dialog.rs`.
   Qué:
@@ -334,7 +334,7 @@ avisar. Estas las hacés vos, o yo con tu permiso explícito en ese momento:
 
 | Fase | Estado | Nota |
 | --- | --- | --- |
-| 16 | Pendiente | |
+| 16 | Hecha | 16.1 a 16.8; falta probar a mano el arrastre de pestañas y el diálogo de restauración |
 | 17 | Pendiente | |
 | 18 | Pendiente | |
 | 19 | Pendiente | |

@@ -26,6 +26,9 @@ pub(crate) enum DialogChoice {
     SaveAllAndClose,
     DiscardRecovery,
     KeepRecoveryEntry,
+    RestoreSessionAll,
+    ShowRecoveryList,
+    RestoreLater,
     UseDocumentFolder,
     SkipUseFolder,
     RegisterFileTypes,
@@ -346,6 +349,38 @@ impl Dialog {
         )
     }
 
+    /// Al abrir tras un cierre incorrecto: ofrece volver a abrir lo que quedó
+    /// sin guardar, como hacen los navegadores. Descartar se hace desde la
+    /// lista, con su propia confirmación.
+    pub(crate) fn restore_session(count: usize) -> Self {
+        let body = if count == 1 {
+            "Quedó 1 documento sin guardar de la última sesión. ¿Querés volver a abrirlo?"
+                .to_string()
+        } else {
+            format!(
+                "Quedaron {count} documentos sin guardar de la última sesión. ¿Querés volver a abrirlos?"
+            )
+        };
+        Self::new(
+            "Visor MD no se cerró bien",
+            body,
+            vec![
+                button("Más tarde", DialogChoice::RestoreLater, ButtonTone::Neutral),
+                button(
+                    "Elegir…",
+                    DialogChoice::ShowRecoveryList,
+                    ButtonTone::Neutral,
+                ),
+                button(
+                    "Restaurar todo",
+                    DialogChoice::RestoreSessionAll,
+                    ButtonTone::Primary,
+                ),
+            ],
+            DialogChoice::RestoreLater,
+        )
+    }
+
     /// Descartar una o varias copias recuperables. No se puede deshacer.
     pub(crate) fn discard_recovery(summary: &str) -> Self {
         Self::new(
@@ -537,6 +572,8 @@ mod tests {
             Dialog::create_note("Biología"),
             Dialog::use_document_folder("apuntes"),
             Dialog::discard_recovery("Es una copia de «Mi nota»."),
+            Dialog::restore_session(1),
+            Dialog::restore_session(3),
         ];
         for dialog in dialogs {
             assert!(!dialog.buttons.is_empty());

@@ -1202,6 +1202,15 @@ impl WorkspaceDestination {
         }
     }
 
+    /// Rótulo de la pestaña de la columna: tiene que caber en un cuarto del
+    /// ancho mínimo de la columna, así que «Enlazan aquí» se acorta.
+    const fn tab_label(self) -> &'static str {
+        match self {
+            Self::Backlinks => "Enlaces",
+            otro => otro.label(),
+        }
+    }
+
     const fn action(self) -> AppAction {
         match self {
             Self::Files => AppAction::WorkspaceFiles,
@@ -1222,10 +1231,30 @@ fn workspace_destination_at(
     {
         return None;
     }
-    let slot_width = geometry.width / WORKSPACE_DESTINATIONS.len() as f32;
-    WORKSPACE_DESTINATIONS
-        .get(((x - geometry.x) / slot_width) as usize)
+    workspace_destination_slots(geometry)
+        .iter()
+        .position(|(left, width)| (*left..*left + *width).contains(&x))
+        .and_then(|index| WORKSPACE_DESTINATIONS.get(index))
         .copied()
+}
+
+/// Posición y ancho de la casilla de cada pestaña de la columna. El ancho
+/// reparte el espacio según el largo del rótulo (con un margen), para que
+/// «Archivos» y «Enlaces» quepan aunque la columna esté en su ancho mínimo.
+/// El dibujo y el clic usan esta misma función.
+fn workspace_destination_slots(
+    geometry: PanelGeometry,
+) -> [(f32, f32); WORKSPACE_DESTINATIONS.len()] {
+    let weights = WORKSPACE_DESTINATIONS
+        .map(|destination| destination.tab_label().chars().count() as f32 + 1.5);
+    let total: f32 = weights.iter().sum();
+    let mut left = geometry.x;
+    weights.map(|weight| {
+        let width = geometry.width * weight / total;
+        let slot = (left, width);
+        left += width;
+        slot
+    })
 }
 
 fn workspace_column_close_at(x: f32, y: f32, geometry: PanelGeometry) -> bool {
@@ -9970,11 +9999,10 @@ impl ApplicationHandler<AppEvent> for App {
             );
         } else if self.recovery_enabled {
             let count = recovery::orphans().len();
-            if count > 0 {
-                self.set_notice(&format!(
-                    "Quedaron {} sin guardar de la última sesión: abrilos con Ctrl+Shift+R",
-                    count_noun(count, "documento", "documentos")
-                ));
+            // Una ventana que nace de mover una pestaña no ofrece restaurar:
+            // ya lo ofreció la primera.
+            if count > 0 && self.startup_handoff.is_none() {
+                self.open_dialog(Dialog::restore_session(count), None);
             }
         }
         if let Some((name, from)) = self.startup_handoff.take() {
@@ -10187,12 +10215,7 @@ impl ApplicationHandler<AppEvent> for App {
                 }
             }
             WindowEvent::CursorLeft { .. } => {
-                self.pointer = None;
-                self.tab_drag_id = None;
-                self.selecting = false;
-                self.text_cursor_hover = false;
-                self.hover_destination = None;
-                self.refresh_title();
+                self.handle_cursor_left();
                 if let Some(w) = &self.window {
                     w.set_cursor(CursorIcon::Default);
                     w.request_redraw();
@@ -13997,6 +14020,25 @@ impl App {
     /// Una pestaña que se suelta fuera de la ventana sale de ella: si cae sobre
     /// otra ventana de Visor MD, va a esa; si no, a una ventana nueva. Devuelve
     /// `true` si había una pestaña arrastrada y se soltó fuera.
+    /// El cursor salió de la ventana. Con una pestaña (o un panel) arrastrada
+    /// no se olvida el arrastre ni la posición: Windows sigue entregando el
+    /// movimiento y el botón soltado fuera de la ventana, y con eso se decide
+    /// si la pestaña se saca a una ventana nueva o se envía a otra.
+    fn handle_cursor_left(&mut self) {
+        let dragging_tab = self.tab_drag_id.is_some()
+            || self
+                .mosaic_drag
+                .is_some_and(|drag| drag.active && matches!(drag.source, MosaicSource::Tab(_)));
+        if !dragging_tab {
+            self.pointer = None;
+            self.tab_drag_id = None;
+        }
+        self.selecting = false;
+        self.text_cursor_hover = false;
+        self.hover_destination = None;
+        self.refresh_title();
+    }
+
     fn tear_out_if_dropped_outside(&mut self) -> bool {
         let dragged = match (self.tab_drag_id, self.mosaic_drag) {
             (Some(id), _) => Some(id),
@@ -15605,6 +15647,13 @@ impl App {
             DialogChoice::SaveAllAndClose => self.save_all_then_close(),
             DialogChoice::DiscardRecovery => self.discard_pending_recoveries(),
             DialogChoice::KeepRecoveryEntry => self.pending_recovery_discard.clear(),
+            DialogChoice::RestoreLater => self
+                .set_notice("Las copias siguen guardadas: abrilas cuando quieras con Ctrl+Shift+R"),
+            DialogChoice::ShowRecoveryList => self.show_recovery_list(),
+            DialogChoice::RestoreSessionAll => {
+                self.show_recovery_list();
+                self.restore_recovery_selected(true);
+            }
         }
     }
 
@@ -19356,7 +19405,7 @@ impl App {
                 .iter()
                 .map(|destination| {
                     build_menu_layout(
-                        destination.label(),
+                        destination.tab_label(),
                         &mut self.font_cx,
                         &mut self.layout_cx,
                         self.palette,
@@ -22668,13 +22717,13 @@ impl App {
                 pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
             }
             if let Some(destination_layouts) = workspace_destination_layouts.as_ref() {
-                let slot_width = geometry.width / WORKSPACE_DESTINATIONS.len() as f32;
+                let slots = workspace_destination_slots(geometry);
                 for (index, (destination, layout)) in WORKSPACE_DESTINATIONS
                     .iter()
                     .zip(destination_layouts.iter())
                     .enumerate()
                 {
-                    let x = geometry.x + index as f32 * slot_width;
+                    let (x, slot_width) = slots[index];
                     let active = active_workspace_destination == Some(*destination);
                     let hovered = menu_pointer.is_some_and(|(pointer_x, pointer_y)| {
                         workspace_destination_at(pointer_x, pointer_y, geometry)
@@ -25595,6 +25644,47 @@ reservar hotel
     }
 
     #[test]
+    fn arrastrar_una_pestana_fuera_de_la_ventana_no_cancela_el_arrastre() {
+        let mut app = App::for_tests(NIGHT);
+        app.load_for_test("# Uno\n", DocumentMode::Reading);
+        app.tab_drag_id = Some(app.document.id);
+        app.pointer = Some((-40.0, 12.0));
+        app.handle_cursor_left();
+        assert_eq!(app.tab_drag_id, Some(app.document.id));
+        assert_eq!(app.pointer, Some((-40.0, 12.0)));
+        // Sin arrastre, salir de la ventana sí olvida el puntero.
+        app.tab_drag_id = None;
+        app.handle_cursor_left();
+        assert_eq!(app.pointer, None);
+    }
+
+    #[test]
+    fn los_rotulos_de_las_pestanas_de_la_columna_caben_en_su_casilla() {
+        let mut app = App::for_tests(NIGHT);
+        let columna = PanelGeometry {
+            width: WORKSPACE_COLUMN_MIN_WIDTH,
+            ..workspace_column_geometry(900.0, 600.0)
+        };
+        let casillas = workspace_destination_slots(columna);
+        assert!((casillas.iter().map(|c| c.1).sum::<f32>() - columna.width).abs() < 0.01);
+        for (destination, (_, casilla)) in WORKSPACE_DESTINATIONS.into_iter().zip(casillas) {
+            let layout = build_menu_layout(
+                destination.tab_label(),
+                &mut app.font_cx,
+                &mut app.layout_cx,
+                app.palette,
+            );
+            assert!(
+                layout.width() <= casilla - 8.0,
+                "«{}» mide {} y la casilla {}",
+                destination.tab_label(),
+                layout.width(),
+                casilla
+            );
+        }
+    }
+
+    #[test]
     fn marcar_una_tarea_no_borra_el_subrayado_que_la_cubre() {
         let cuerpo = "- [ ] uno
 - [ ] dos
@@ -26974,6 +27064,29 @@ sin guardar",
     }
 
     #[test]
+    fn tras_un_cierre_incorrecto_se_ofrece_restaurar_y_mas_tarde_conserva_las_copias() {
+        let dialogo = Dialog::restore_session(2);
+        assert!(dialogo.body.contains("Quedaron 2 documentos"));
+        assert_eq!(dialogo.safe_choice, DialogChoice::RestoreLater);
+        assert_eq!(dialogo.focused_choice(), DialogChoice::RestoreSessionAll);
+        let etiquetas: Vec<_> = dialogo.buttons.iter().map(|b| b.label).collect();
+        assert_eq!(etiquetas, ["Más tarde", "Elegir…", "Restaurar todo"]);
+        assert!(
+            Dialog::restore_session(1)
+                .body
+                .contains("Quedó 1 documento")
+        );
+
+        let (orphan, carpeta) = copia_huerfana("Quedó", "", "texto");
+        let mut app = App::for_tests(NIGHT);
+        app.open_dialog(Dialog::restore_session(1), None);
+        app.finish_dialog(DialogChoice::RestoreLater);
+        assert!(orphan.path().exists(), "Más tarde no borra nada");
+        assert!(app.notice.as_deref().unwrap().contains("Ctrl+Shift+R"));
+        let _ = fs::remove_dir_all(carpeta);
+    }
+
+    #[test]
     fn la_lista_restaura_con_enter_y_descarta_con_confirmacion() {
         let (primera, carpeta_a) = copia_huerfana("Primera", "", "uno");
         let (segunda, carpeta_b) = copia_huerfana("Segunda", "", "dos");
@@ -27763,10 +27876,11 @@ sin guardar",
         assert_eq!(narrow.x, 640.0 - WORKSPACE_DOCUMENT_MIN_WIDTH);
         assert_eq!(document_area_geometry(640.0, 480.0, false).x, 0.0);
 
-        let slot_width = column.width / WORKSPACE_DESTINATIONS.len() as f32;
+        let slots = workspace_destination_slots(column);
+        let (slot_files, slot_search) = (slots[0], slots[2]);
         assert_eq!(
             workspace_destination_at(
-                column.x + slot_width * 0.5,
+                slot_files.0 + slot_files.1 * 0.5,
                 column.y + WORKSPACE_DESTINATION_HEIGHT * 0.5,
                 column,
             ),
@@ -27774,7 +27888,7 @@ sin guardar",
         );
         assert_eq!(
             workspace_destination_at(
-                column.x + slot_width * 2.5,
+                slot_search.0 + slot_search.1 * 0.5,
                 column.y + WORKSPACE_DESTINATION_HEIGHT * 0.5,
                 column,
             ),
