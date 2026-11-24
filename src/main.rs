@@ -25571,6 +25571,30 @@ reservar hotel
     }
 
     #[test]
+    fn enter_en_una_lista_numerada_mantiene_los_bloques_al_dia_y_leer_coincide() {
+        let cuerpo = "1. uno\n2. dos\n3. tres\n";
+        let mut app = App::for_tests(NIGHT);
+        app.load_for_test(cuerpo, DocumentMode::SourceEditing);
+        let fin_del_dos = cuerpo.find("dos").unwrap() + 3;
+        app.edit_source(|editor, source| {
+            editor.set_cursor(source, fin_del_dos, false)?;
+            Ok(true)
+        });
+        app.edit_source(|editor, source| editor.insert_newline(source, "\n"));
+        assert_eq!(
+            app.document.source.to_string(),
+            "1. uno\n2. dos\n3. \n4. tres\n"
+        );
+        let lineas: Vec<String> = app
+            .document
+            .blocks
+            .iter()
+            .map(|block| block.text.clone())
+            .collect();
+        assert_eq!(lineas, ["1. uno", "2. dos", "3. ", "4. tres", ""]);
+    }
+
+    #[test]
     fn marcar_una_tarea_no_borra_el_subrayado_que_la_cubre() {
         let cuerpo = "- [ ] uno
 - [ ] dos

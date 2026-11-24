@@ -136,7 +136,7 @@ memoria (D-46) también baja el costo por tecla.
   Dónde: la rama `task_at` del click, con `task_checkbox_hit_bounds_in_pane`.
   Prueba: un click en Comparar alterna la tarea, y la fuente cambia solo en el
   marcador.
-- [ ] **16.5** Renumeración de listas (D-55).
+- [x] **16.5** Renumeración de listas (D-55). Hecho para Enter (crear un elemento en medio de la lista); queda sin renumerar borrar o unir elementos, porque Markdown solo usa el primer número al mostrar la lista.
   Dónde: `editor::insert_newline`, `apply_line_prefix` y el Backspace que une
   elementos, con un nuevo `renumber_following(source, line)`.
   Prueba:

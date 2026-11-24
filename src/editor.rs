@@ -483,6 +483,93 @@ struct ListMarker {
     next: String,
 }
 
+/// Sangría, número, delimitador y cantidad de dígitos de un elemento de lista
+/// numerada.
+fn ordered_item(line: &str) -> Option<(usize, u64, u8, usize)> {
+    let indent = line.len() - line.trim_start_matches([' ', '\t']).len();
+    let rest = &line[indent..];
+    let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+    if digits == 0 || digits > 9 {
+        return None;
+    }
+    let delimiter = *rest.as_bytes().get(digits)?;
+    if !matches!(delimiter, b'.' | b')') {
+        return None;
+    }
+    // Después del delimitador va un espacio, o termina la línea (elemento vacío).
+    if rest.as_bytes().get(digits + 1).is_some_and(|b| *b != b' ') {
+        return None;
+    }
+    let number = rest[..digits].parse().ok()?;
+    Some((indent, number, delimiter, digits))
+}
+
+/// Si en `before` (lo que precede al cursor en su línea) hay un elemento de
+/// lista numerada, devuelve el final del tramo que hay que reescribir y el
+/// texto que reemplaza a `[cursor, final)` salvo el salto y el marcador nuevos:
+/// el resto de esa línea y las siguientes, con los números de los elementos
+/// consecutivos del mismo nivel subidos en uno.
+///
+/// Solo se renumera cuando el siguiente elemento ocupa el número que ahora
+/// tiene el nuevo; una lista con números repetidos (`1. 1. 1.`) o con saltos
+/// se deja como está. Las sublistas y los párrafos de continuación no se
+/// tocan, y la renumeración se detiene en la primera línea que corta la lista.
+fn renumbered_tail(
+    source: &TextBuffer,
+    line: usize,
+    cursor: usize,
+    before: &str,
+) -> Result<Option<(usize, String)>, EditError> {
+    let Some((indent, number, delimiter, _)) = ordered_item(before) else {
+        return Ok(None);
+    };
+    let mut expected = number + 1;
+    let mut edits: Vec<(usize, usize, u64)> = Vec::new();
+    let mut previous_original = number;
+    for next in line + 1..source.line_count() {
+        let text = source.line_text(next);
+        let trimmed = text.trim_end_matches(['\r', '\n']);
+        if trimmed.trim().is_empty() {
+            continue;
+        }
+        let this_indent = trimmed.len() - trimmed.trim_start_matches([' ', '\t']).len();
+        if this_indent > indent {
+            // Sublista o continuación del elemento anterior.
+            continue;
+        }
+        let Some((item_indent, original, found_delimiter, digits)) = ordered_item(trimmed) else {
+            break;
+        };
+        if item_indent != indent || found_delimiter != delimiter {
+            break;
+        }
+        // Debe ser el hueco que dejó el elemento nuevo, y seguir la cuenta.
+        let follows = if edits.is_empty() {
+            original == expected
+        } else {
+            original == previous_original + 1
+        };
+        if !follows {
+            break;
+        }
+        let digits_start = source.line_start_byte(next) + item_indent;
+        edits.push((digits_start, digits_start + digits, original + 1));
+        previous_original = original;
+        expected = original + 1;
+    }
+    let Some(&(_, tail_end, _)) = edits.last() else {
+        return Ok(None);
+    };
+    let mut tail = String::new();
+    let mut copied = cursor;
+    for (start, end, renumbered) in edits {
+        tail.push_str(&source.slice_bytes(copied..start)?);
+        tail.push_str(&renumbered.to_string());
+        copied = end;
+    }
+    Ok(Some((tail_end, tail)))
+}
+
 /// Reconoce el marcador de lista o cita al inicio de una línea, siempre que el
 /// cursor esté después de él. No interpreta contenido: solo la sintaxis del
 /// marcador, para que Enter no invente estructura en texto común.
@@ -861,6 +948,21 @@ impl SourceEditor {
             return Ok(changed);
         }
         let continuation = format!("{eol}{}", marker.next);
+        // En una lista numerada, el elemento nuevo empuja a los siguientes:
+        // se renumeran en el mismo cambio, para que un solo deshacer lo
+        // revierta todo.
+        if let Some((tail_end, tail)) = renumbered_tail(source, line, self.cursor, &before)? {
+            let replacement = format!("{continuation}{tail}");
+            let changed = self
+                .history
+                .apply(source, self.cursor..tail_end, &replacement)?;
+            if changed {
+                self.cursor = source.normalize_edit_boundary(self.cursor + continuation.len());
+                self.anchor = self.cursor;
+                self.preferred_column = None;
+            }
+            return Ok(changed);
+        }
         self.insert(source, &continuation)
     }
 
@@ -1337,6 +1439,51 @@ mod tests {
             assert!(editor.insert_newline(&mut source, "\n").unwrap());
             assert_eq!(source.to_string(), expected, "{text}");
             assert_eq!(editor.cursor(), expected.len());
+        }
+    }
+
+    #[test]
+    fn enter_en_una_lista_numerada_renumera_los_siguientes() {
+        for (text, cursor_en, eol, expected) in [
+            (
+                "1. a\n2. b\n3. c\n4. d",
+                "1. a\n2. b",
+                "\n",
+                "1. a\n2. b\n3. \n4. c\n5. d",
+            ),
+            (
+                "18. a\n19. b\n20. c\n21. d",
+                "18. a\n19. b",
+                "\n",
+                "18. a\n19. b\n20. \n21. c\n22. d",
+            ),
+            ("8. a\n9. b\n10. c", "8. a", "\n", "8. a\n9. \n10. b\n11. c"),
+            (
+                "1. a\n   - x\n2. b",
+                "1. a",
+                "\n",
+                "1. a\n2. \n   - x\n3. b",
+            ),
+            ("1. a\r\n2. b", "1. a", "\r\n", "1. a\r\n2. \r\n3. b"),
+            ("1. a\n1. b", "1. a", "\n", "1. a\n2. \n1. b"),
+            (
+                "1. a\n2. b\n\nTexto\n3. x",
+                "1. a",
+                "\n",
+                "1. a\n2. \n3. b\n\nTexto\n3. x",
+            ),
+            ("1) a\n2) b\n2. z", "1) a", "\n", "1) a\n2) \n3) b\n2. z"),
+        ] {
+            let mut source = buffer(text);
+            let mut editor = editor_at(&source, cursor_en.len());
+            assert!(editor.insert_newline(&mut source, eol).unwrap());
+            assert_eq!(source.to_string(), expected, "{text:?}");
+            // El cursor queda tras el marcador del elemento nuevo.
+            let linea_nueva = cursor_en.len() + eol.len();
+            let tras_marcador = linea_nueva + expected[linea_nueva..].find(['\r', '\n']).unwrap();
+            assert_eq!(editor.cursor(), tras_marcador, "{text:?}");
+            assert!(editor.undo(&mut source).unwrap());
+            assert_eq!(source.to_string(), text, "un solo deshacer: {text:?}");
         }
     }
 
