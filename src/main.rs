@@ -26,6 +26,7 @@ mod images;
 mod lenguaje;
 mod limits;
 mod list_view;
+mod marcadores;
 mod menu;
 mod panel_list;
 mod panes;
@@ -301,7 +302,7 @@ const fn mode_target_for_document(mode: DocumentMode) -> ModeTarget {
         DocumentMode::Split => ModeTarget::Compare,
     }
 }
-const READING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 10] = [
+const READING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 13] = [
     AppAction::WorkspaceHub,
     AppAction::DocumentOutline,
     AppAction::ToggleSection,
@@ -311,6 +312,9 @@ const READING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 10] = [
     AppAction::Backlinks,
     AppAction::HighlightSelection,
     AppAction::HighlightPickColor,
+    AppAction::ToggleBookmark,
+    AppAction::BookmarkMenu,
+    AppAction::BookmarkNavigator,
     AppAction::StudyTools,
 ];
 const EDITING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 14] = [
@@ -334,7 +338,7 @@ const EDITING_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 14] = [
 /// La comparación conserva el mismo kit de escritura, pero el último control
 /// cambia a orientación porque la vista ya está abierta y se puede cerrar con
 /// F3 o el selector segmentado.
-const SPLIT_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 15] = [
+const SPLIT_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 17] = [
     AppAction::WorkspaceHub,
     AppAction::FormatBold,
     AppAction::FormatItalic,
@@ -349,6 +353,8 @@ const SPLIT_CONTEXT_TOOLBAR_ACTIONS: [AppAction; 15] = [
     AppAction::InsertTools,
     AppAction::HighlightSelection,
     AppAction::HighlightPickColor,
+    AppAction::ToggleBookmark,
+    AppAction::BookmarkMenu,
     AppAction::StudyTools,
 ];
 const WORKSPACE_HUB_ACTIONS: [AppAction; 8] = [
@@ -363,15 +369,16 @@ const WORKSPACE_HUB_ACTIONS: [AppAction; 8] = [
 ];
 /// Herramientas de estudio reunidas fuera del menú contextual plano. Comparten
 /// paleta, teclado y la misma fuente Markdown portable que el resto del editor.
-const STUDY_ACTIONS: [AppAction; 17] = [
+const STUDY_ACTIONS: [AppAction; 18] = [
     AppAction::RemoveHighlight,
     AppAction::ToggleStudyAnnotations,
     AppAction::ShowAnnotationsBlock,
     AppAction::EditLegend,
     AppAction::ToggleBookmark,
-    AppAction::CycleBookmarkShape,
-    AppAction::CycleBookmarkColor,
     AppAction::EditBookmarkNote,
+    AppAction::BookmarkNavigator,
+    AppAction::NextBookmark,
+    AppAction::PreviousBookmark,
     AppAction::CopyLostAnnotations,
     AppAction::RemoveLostAnnotations,
     AppAction::RemoveAllAnnotations,
@@ -381,6 +388,15 @@ const STUDY_ACTIONS: [AppAction; 17] = [
     AppAction::PrepareStudySummary,
     AppAction::PrepareStudyConceptList,
     AppAction::PrepareAiFragments,
+];
+/// Subrayar y marcar, que en Leer están en la barra y en Editar no caben
+/// ahí: el menú Estudio los muestra cuando se está escribiendo.
+const STUDY_WRITING_ACTIONS: [AppAction; 5] = [
+    AppAction::HighlightSelection,
+    AppAction::HighlightPickColor,
+    AppAction::ToggleBookmark,
+    AppAction::BookmarkMenu,
+    AppAction::BookmarkNavigator,
 ];
 /// Grupos con encabezado de un menú: el título y sus acciones.
 type MenuGroup = (&'static str, &'static [AppAction]);
@@ -623,9 +639,10 @@ const STUDY_GROUPS: [MenuGroup; 5] = [
         "Marcas de libro",
         &[
             AppAction::ToggleBookmark,
-            AppAction::CycleBookmarkShape,
-            AppAction::CycleBookmarkColor,
             AppAction::EditBookmarkNote,
+            AppAction::BookmarkNavigator,
+            AppAction::NextBookmark,
+            AppAction::PreviousBookmark,
         ],
     ),
     (
@@ -1789,8 +1806,11 @@ fn contextual_toolbar_item_geometry(
 }
 
 fn contextual_toolbar_item_stride(action: AppAction, labeled: bool) -> f32 {
-    if action == AppAction::HighlightPickColor {
-        // La flecha del subrayado: un tramo angosto pegado al botón.
+    if matches!(
+        action,
+        AppAction::HighlightPickColor | AppAction::BookmarkMenu
+    ) {
+        // La flecha de un botón dividido: un tramo angosto pegado al botón.
         return SPLIT_CARET_STRIDE;
     }
     if labeled && toolbar_group_label(action).is_some() {
@@ -2227,7 +2247,8 @@ fn action_category(action: AppAction) -> Option<&'static str> {
             // Subrayar vive en la barra; en la paleta se busca como Estudio.
             AppAction::StudyTools
             | AppAction::HighlightSelection
-            | AppAction::HighlightPickColor => Some("Estudio"),
+            | AppAction::HighlightPickColor
+            | AppAction::BookmarkMenu => Some("Estudio"),
             AppAction::ToggleSection => Some("Vista"),
             _ => None,
         })
@@ -2366,9 +2387,12 @@ enum AppAction {
     ShowAnnotationsBlock,
     EditLegend,
     ToggleBookmark,
-    CycleBookmarkShape,
-    CycleBookmarkColor,
     EditBookmarkNote,
+    /// La flecha del botón de marca: tipo, forma, color y quitar.
+    BookmarkMenu,
+    BookmarkNavigator,
+    NextBookmark,
+    PreviousBookmark,
     CopyLostAnnotations,
     RemoveLostAnnotations,
     RemoveAllAnnotations,
@@ -2403,7 +2427,7 @@ enum AppAction {
     Paste,
 }
 
-const APP_ACTIONS: [AppAction; 71] = [
+const APP_ACTIONS: [AppAction; 74] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -2462,6 +2486,9 @@ const APP_ACTIONS: [AppAction; 71] = [
     AppAction::HighlightSelection,
     AppAction::ToggleStudyAnnotations,
     AppAction::ToggleBookmark,
+    AppAction::BookmarkNavigator,
+    AppAction::NextBookmark,
+    AppAction::PreviousBookmark,
     AppAction::CopyPlatform,
     AppAction::ToggleSection,
     AppAction::CopyTableTsv,
@@ -2537,9 +2564,11 @@ impl AppAction {
             Self::ShowAnnotationsBlock => "Ver el bloque de anotaciones",
             Self::EditLegend => "Leyenda: qué significa cada color",
             Self::ToggleBookmark => "Marca de libro en esta línea · Ctrl+Shift+M",
-            Self::CycleBookmarkShape => "Cambiar la forma de la marca",
-            Self::CycleBookmarkColor => "Cambiar el color de la marca",
-            Self::EditBookmarkNote => "Nota de la marca",
+            Self::EditBookmarkNote => "Texto de la marca",
+            Self::BookmarkMenu => "Tipo, forma y color de la marca",
+            Self::BookmarkNavigator => "Buscar y recorrer las marcas",
+            Self::NextBookmark => "Ir a la marca siguiente · Alt+AvPág",
+            Self::PreviousBookmark => "Ir a la marca anterior · Alt+RePág",
             Self::CopyLostAnnotations => "Copiar las citas de anotaciones sin lugar",
             Self::RemoveLostAnnotations => "Quitar las anotaciones sin lugar",
             Self::RemoveAllAnnotations => "Quitar todas las anotaciones",
@@ -2904,6 +2933,7 @@ fn toolbar_action_has_menu(action: AppAction) -> bool {
             | AppAction::InsertTools
             | AppAction::StudyTools
             | AppAction::HighlightPickColor
+            | AppAction::BookmarkMenu
             | AppAction::WorkspaceHub
             | AppAction::CommandPalette
             | AppAction::MenuFile
@@ -4969,6 +4999,23 @@ fn draw_toolbar_icon(
         // Muestra del color actual: un círculo que se rellena con él.
         AppAction::HighlightPickColor => {
             path.push_circle(center_x - 2.0, center_y, 6.0);
+        }
+        // Marca de libro: una cinta con la muesca abajo.
+        AppAction::ToggleBookmark => {
+            path.move_to(left + 5.0, top + 3.0);
+            path.line_to(right - 5.0, top + 3.0);
+            path.line_to(right - 5.0, bottom - 3.0);
+            path.line_to(center_x, bottom - 6.5);
+            path.line_to(left + 5.0, bottom - 3.0);
+            path.close();
+        }
+        // Navegador de marcas: tres renglones con su viñeta.
+        AppAction::BookmarkNavigator => {
+            for offset in [-5.0, 0.0, 5.0] {
+                path.move_to(left + 7.5, center_y + offset);
+                path.line_to(right - 3.0, center_y + offset);
+                path.push_circle(left + 4.0, center_y + offset, 0.9);
+            }
         }
         AppAction::StudyTools => {
             path.move_to(left + 3.0, top + 4.0);
@@ -7795,9 +7842,6 @@ fn highlight_ranges_for(
 /// Clave de revisión, subrayados, marcas y cuántas anotaciones no tienen lugar.
 type StudyCache = (u64, Vec<estudio::Highlight>, Vec<estudio::Bookmark>, usize);
 
-/// Marcas de libro de un bloque del lector: color del trazo y forma.
-type BlockBookmarks = HashMap<usize, Vec<((u8, u8, u8), anotaciones::Forma)>>;
-
 /// Cuántas anotaciones lleva un bloque, para la línea contraída.
 fn annotation_count(block: &str) -> usize {
     match anotaciones::leer(block) {
@@ -7805,6 +7849,84 @@ fn annotation_count(block: &str) -> usize {
         // Inerte (versión nueva o demasiado grande): se cuentan sus líneas.
         _ => block.lines().count().saturating_sub(3).max(1),
     }
+}
+
+/// Tarjeta de una marca de libro: tipo, forma, color, texto y quitar.
+const MARK_CARD_WIDTH: f32 = 262.0;
+const MARK_CARD_ROW: f32 = 26.0;
+const MARK_CARD_STRIP: f32 = 34.0;
+const MARK_STRIP_SIZE: f32 = 22.0;
+const MARK_STRIP_GAP: f32 = 4.0;
+/// Colores de la tarjeta: los cinco de la paleta y hasta tres recientes.
+const MARK_CARD_RECENT_COLORS: usize = 3;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum CardRow {
+    /// Un tipo (posición en `App::mark_kinds`).
+    Kind(usize),
+    NoKind,
+    Shapes,
+    Colors,
+    Text,
+    NewKind,
+    Remove,
+}
+
+fn card_row_height(row: &CardRow) -> f32 {
+    match row {
+        CardRow::Shapes | CardRow::Colors => MARK_CARD_STRIP,
+        _ => MARK_CARD_ROW,
+    }
+}
+
+/// Rectángulo de la tarjeta: bajo la barra, sin salirse de la ventana.
+fn mark_card_rect(
+    anchor_x: f32,
+    window_size: (f32, f32),
+    top: Option<f32>,
+    rows: &[CardRow],
+) -> (f32, f32, f32, f32) {
+    let height = rows.iter().map(card_row_height).sum::<f32>() + 8.0;
+    let x = anchor_x.min(window_size.0 - MARK_CARD_WIDTH - 8.0).max(8.0);
+    let default_top = CONTEXT_TOOLBAR_Y + CONTEXT_TOOLBAR_HEIGHT + 4.0;
+    let y = top
+        .unwrap_or(default_top)
+        .min(window_size.1 - height - STATUS_HEIGHT - 8.0)
+        .max(default_top);
+    (x, y, MARK_CARD_WIDTH, height)
+}
+
+/// Fila de la tarjeta bajo el punto y su borde superior.
+fn mark_card_row_at(
+    rect: (f32, f32, f32, f32),
+    rows: &[CardRow],
+    x: f32,
+    y: f32,
+) -> Option<(usize, f32)> {
+    let (left, top, width, height) = rect;
+    if x < left || x >= left + width || y < top || y >= top + height {
+        return None;
+    }
+    let mut row_top = top + 4.0;
+    for (index, row) in rows.iter().enumerate() {
+        let row_height = card_row_height(row);
+        if y >= row_top && y < row_top + row_height {
+            return Some((index, row_top));
+        }
+        row_top += row_height;
+    }
+    None
+}
+
+/// Casilla de una tira de íconos (formas o colores) bajo `x`.
+fn mark_strip_slot_at(card_left: f32, x: f32, count: usize) -> Option<usize> {
+    let first = card_left + 12.0;
+    if x < first {
+        return None;
+    }
+    let step = MARK_STRIP_SIZE + MARK_STRIP_GAP;
+    let slot = ((x - first) / step) as usize;
+    ((x - first) - slot as f32 * step < MARK_STRIP_SIZE && slot < count).then_some(slot)
 }
 
 const HIGHLIGHT_PICKER_ROW: f32 = 28.0;
@@ -7827,6 +7949,173 @@ fn recent_swatch_at(anchor_x: f32, window_width: f32, count: usize, x: f32) -> O
     (slot < count && inside).then_some(slot)
 }
 const HIGHLIGHT_PICKER_WIDTH: f32 = 250.0;
+
+/// Ancho del texto de la ayuda que sale al pasar por una etiqueta.
+const MARGIN_HOVER_TEXT_WIDTH: f32 = 236.0;
+const NAV_WIDTH: f32 = 316.0;
+const NAV_CHIP_WIDTH: f32 = 148.0;
+const NAV_CHIP_HEIGHT: f32 = 26.0;
+const NAV_ROW: f32 = 24.0;
+const NAV_MAX_ROWS: usize = 8;
+const NAV_HEAD: f32 = 34.0;
+const NAV_PAD: f32 = 8.0;
+
+/// Una etiqueta de marca en el margen derecho.
+#[derive(Clone, Debug)]
+struct MarginMark {
+    id: String,
+    byte: usize,
+    rect: (f32, f32, f32, f32),
+    display: marcadores::MarkDisplay,
+    color: usize,
+    shape: anotaciones::Forma,
+    kind: Option<String>,
+    /// Lo que dice la etiqueta: su texto, o si no tiene, su tipo o su cita.
+    text: String,
+}
+
+/// Zonas del navegador de marcas, en coordenadas de ventana.
+#[derive(Clone, Debug, PartialEq)]
+struct NavGeometry {
+    rect: (f32, f32, f32, f32),
+    up: (f32, f32, f32, f32),
+    down: (f32, f32, f32, f32),
+    chips: Vec<(f32, f32, f32, f32)>,
+    rows_top: f32,
+    /// Cuántas filas de la lista caben (al menos una, para el mensaje vacío).
+    visible_rows: usize,
+}
+
+fn navigator_geometry(
+    anchor_x: f32,
+    window_width: f32,
+    chip_count: usize,
+    mark_count: usize,
+) -> NavGeometry {
+    let x = anchor_x.min(window_width - NAV_WIDTH - 8.0).max(8.0);
+    let top = CONTEXT_TOOLBAR_Y + CONTEXT_TOOLBAR_HEIGHT + 4.0;
+    let button = (28.0, 24.0);
+    let up = (
+        x + NAV_WIDTH - NAV_PAD - button.0 * 2.0 - 4.0,
+        top + 5.0,
+        button.0,
+        button.1,
+    );
+    let down = (up.0 + button.0 + 4.0, up.1, button.0, button.1);
+    let chips_top = top + NAV_HEAD;
+    let chips: Vec<_> = (0..chip_count)
+        .map(|index| {
+            (
+                x + NAV_PAD + (index % 2) as f32 * (NAV_CHIP_WIDTH + 4.0),
+                chips_top + (index / 2) as f32 * (NAV_CHIP_HEIGHT + 4.0),
+                NAV_CHIP_WIDTH,
+                NAV_CHIP_HEIGHT,
+            )
+        })
+        .collect();
+    let chip_rows = chip_count.div_ceil(2);
+    let rows_top = chips_top + chip_rows as f32 * (NAV_CHIP_HEIGHT + 4.0) + 6.0;
+    let visible_rows = mark_count.clamp(1, NAV_MAX_ROWS);
+    let height = rows_top - top + visible_rows as f32 * NAV_ROW + NAV_PAD;
+    NavGeometry {
+        rect: (x, top, NAV_WIDTH, height),
+        up,
+        down,
+        chips,
+        rows_top,
+        visible_rows,
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum NavHit {
+    Up,
+    Down,
+    Chip(usize),
+    /// Fila visible de la lista (desde la primera que se ve).
+    Row(usize),
+    Panel,
+    Outside,
+}
+
+fn navigator_hit(geometry: &NavGeometry, x: f32, y: f32) -> NavHit {
+    let inside = |rect: (f32, f32, f32, f32)| {
+        x >= rect.0 && x < rect.0 + rect.2 && y >= rect.1 && y < rect.1 + rect.3
+    };
+    if !inside(geometry.rect) {
+        return NavHit::Outside;
+    }
+    if inside(geometry.up) {
+        return NavHit::Up;
+    }
+    if inside(geometry.down) {
+        return NavHit::Down;
+    }
+    if let Some(index) = geometry.chips.iter().position(|chip| inside(*chip)) {
+        return NavHit::Chip(index);
+    }
+    if y >= geometry.rows_top {
+        let row = ((y - geometry.rows_top) / NAV_ROW) as usize;
+        if row < geometry.visible_rows {
+            return NavHit::Row(row);
+        }
+    }
+    NavHit::Panel
+}
+
+/// Primera fila de la lista que se ve para que la elegida quede a la vista.
+fn navigator_first_row(selected: usize, total: usize) -> usize {
+    if total <= NAV_MAX_ROWS {
+        return 0;
+    }
+    selected
+        .saturating_sub(NAV_MAX_ROWS / 2)
+        .min(total - NAV_MAX_ROWS)
+}
+
+/// Lo que el navegador muestra, ya resuelto.
+struct NavView {
+    geometry: NavGeometry,
+    title: String,
+    /// Nombre, cantidad y si el filtro la incluye (`None` es «sin tipo»).
+    chips: Vec<(
+        Option<String>,
+        String,
+        usize,
+        bool,
+        usize,
+        anotaciones::Forma,
+    )>,
+    first: usize,
+    selected: usize,
+    /// Línea, color, forma y texto de cada fila visible.
+    rows: Vec<(usize, usize, anotaciones::Forma, String)>,
+    empty_message: Option<&'static str>,
+}
+
+/// Rectángulo de la tarjeta de una marca y sus filas.
+type CardLayout = ((f32, f32, f32, f32), Vec<CardRow>);
+
+#[derive(Clone, Debug)]
+struct MarkCard {
+    /// Borde izquierdo de la tarjeta (el del botón que la abrió).
+    anchor: f32,
+    /// Línea del documento a la que se refiere.
+    byte: usize,
+    /// La marca de esa línea, si ya tiene una.
+    id: Option<String>,
+    /// Borde superior, si no es el de debajo de la barra (clic en una etiqueta).
+    top: Option<f32>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct MarkNavigator {
+    anchor: f32,
+    /// Tipos que se ven (vacío: todos); `None` es «sin tipo».
+    filter: Vec<Option<String>>,
+    /// Fila elegida de la lista.
+    selected: usize,
+}
 
 /// Rectángulo del selector de color: bajo el botón que lo abrió, sin salirse
 /// de la ventana.
@@ -7917,6 +8206,228 @@ fn draw_bookmark(
             Transform::identity(),
             None,
         );
+    }
+}
+
+/// Signo de un tipo de marca, dibujado con trazos y centrado en `(cx, cy)`
+/// dentro de un cuadrado de lado `size`. Los nombres son los de las formas con
+/// signo de `estudio::shape_catalog`.
+fn draw_mark_glyph(
+    pixmap: &mut Pixmap,
+    name: &str,
+    cx: f32,
+    cy: f32,
+    size: f32,
+    ink: (u8, u8, u8),
+) {
+    let unit = size * 0.5;
+    let mut paint = Paint {
+        anti_alias: true,
+        ..Default::default()
+    };
+    paint.set_color(Color::from_rgba8(ink.0, ink.1, ink.2, 255));
+    let stroke = tiny_skia::Stroke {
+        width: (size * 0.11).max(1.4),
+        line_cap: tiny_skia::LineCap::Round,
+        line_join: tiny_skia::LineJoin::Round,
+        ..Default::default()
+    };
+    let mut path = tiny_skia::PathBuilder::new();
+    let mut dots: Vec<(f32, f32)> = Vec::new();
+    match name {
+        "exclamacion" => {
+            path.move_to(cx, cy - 0.46 * unit);
+            path.line_to(cx, cy + 0.08 * unit);
+            dots.push((cx, cy + 0.48 * unit));
+        }
+        "interrogacion" => {
+            path.move_to(cx - 0.36 * unit, cy - 0.26 * unit);
+            path.quad_to(cx - 0.36 * unit, cy - 0.58 * unit, cx, cy - 0.58 * unit);
+            path.quad_to(
+                cx + 0.38 * unit,
+                cy - 0.58 * unit,
+                cx + 0.38 * unit,
+                cy - 0.24 * unit,
+            );
+            path.quad_to(cx + 0.38 * unit, cy - 0.02 * unit, cx, cy + 0.08 * unit);
+            path.line_to(cx, cy + 0.18 * unit);
+            dots.push((cx, cy + 0.52 * unit));
+        }
+        "casilla" => {
+            path.move_to(cx - 0.42 * unit, cy - 0.42 * unit);
+            path.line_to(cx + 0.42 * unit, cy - 0.42 * unit);
+            path.line_to(cx + 0.42 * unit, cy + 0.42 * unit);
+            path.line_to(cx - 0.42 * unit, cy + 0.42 * unit);
+            path.close();
+        }
+        "repetir" => {
+            let radius = 0.5 * unit;
+            let (start, end) = (0.7_f32, 5.5_f32);
+            for step in 0..=14 {
+                let angle = start + (end - start) * step as f32 / 14.0;
+                let point = (cx + radius * angle.cos(), cy + radius * angle.sin());
+                if step == 0 {
+                    path.move_to(point.0, point.1);
+                } else {
+                    path.line_to(point.0, point.1);
+                }
+            }
+            // Punta de flecha al final del arco.
+            let tip = (cx + radius * end.cos(), cy + radius * end.sin());
+            let tangent = (-end.sin(), end.cos());
+            for turn in [2.5_f32, -2.5_f32] {
+                let (sin, cos) = turn.sin_cos();
+                let back = (
+                    tangent.0 * cos - tangent.1 * sin,
+                    tangent.0 * sin + tangent.1 * cos,
+                );
+                path.move_to(tip.0, tip.1);
+                path.line_to(tip.0 + back.0 * 0.45 * unit, tip.1 + back.1 * 0.45 * unit);
+            }
+        }
+        "lapiz" => {
+            path.move_to(cx - 0.5 * unit, cy + 0.5 * unit);
+            path.line_to(cx + 0.3 * unit, cy - 0.3 * unit);
+            path.move_to(cx + 0.1 * unit, cy - 0.55 * unit);
+            path.line_to(cx + 0.55 * unit, cy - 0.1 * unit);
+            path.move_to(cx - 0.5 * unit, cy + 0.5 * unit);
+            path.line_to(cx - 0.5 * unit, cy + 0.2 * unit);
+            path.move_to(cx - 0.5 * unit, cy + 0.5 * unit);
+            path.line_to(cx - 0.2 * unit, cy + 0.5 * unit);
+        }
+        _ => {}
+    }
+    if let Some(path) = path.finish() {
+        pixmap.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+    }
+    for (x, y) in dots {
+        if let Some(dot) = tiny_skia::PathBuilder::from_circle(x, y, (size * 0.075).max(1.0)) {
+            pixmap.fill_path(
+                &dot,
+                &paint,
+                tiny_skia::FillRule::Winding,
+                Transform::identity(),
+                None,
+            );
+        }
+    }
+}
+
+/// ¿Es una forma con signo (y no una de las clásicas)?
+fn mark_shape_glyph(shape: &anotaciones::Forma) -> Option<&str> {
+    match shape {
+        anotaciones::Forma::Otro(name)
+            if matches!(
+                name.as_str(),
+                "exclamacion" | "interrogacion" | "casilla" | "repetir" | "lapiz"
+            ) =>
+        {
+            Some(name.as_str())
+        }
+        _ => None,
+    }
+}
+
+/// Ícono cuadrado de lado `size` de una forma de marca, para listas y
+/// etiquetas: las formas con signo, como una insignia del color con su signo;
+/// las clásicas, como la marca misma.
+fn draw_mark_icon(
+    pixmap: &mut Pixmap,
+    x: f32,
+    y: f32,
+    size: f32,
+    color: (u8, u8, u8),
+    shape: &anotaciones::Forma,
+) {
+    if let Some(name) = mark_shape_glyph(shape) {
+        let mut paint = Paint {
+            anti_alias: true,
+            ..Default::default()
+        };
+        paint.set_color(Color::from_rgba8(color.0, color.1, color.2, 255));
+        fill_rounded_rect(pixmap, x, y, size, size, size * 0.28, &paint);
+        draw_mark_glyph(
+            pixmap,
+            name,
+            x + size * 0.5,
+            y + size * 0.5,
+            size * 0.82,
+            marcadores::contrast_on(color),
+        );
+    } else {
+        draw_bookmark(pixmap, x + size * 0.3, y, size, color, shape);
+    }
+}
+
+/// Etiqueta de una marca en el margen derecho, con el espacio que le tocó.
+#[allow(clippy::too_many_arguments)]
+fn draw_margin_tag(
+    pixmap: &mut Pixmap,
+    scale_cx: &mut ScaleContext,
+    glyphs: &mut GlyphCache,
+    rect: (f32, f32, f32, f32),
+    display: marcadores::MarkDisplay,
+    color: (u8, u8, u8),
+    shape: &anotaciones::Forma,
+    text: Option<&Layout<Brush>>,
+    hovered: bool,
+) {
+    let (x, y, width, height) = rect;
+    let mut paint = Paint {
+        anti_alias: true,
+        ..Default::default()
+    };
+    match display {
+        marcadores::MarkDisplay::Notch => {
+            paint.set_color(Color::from_rgba8(
+                color.0,
+                color.1,
+                color.2,
+                if hovered { 255 } else { 200 },
+            ));
+            fill_rounded_rect(pixmap, x, y, width, height, 2.0, &paint);
+        }
+        marcadores::MarkDisplay::Ribbon | marcadores::MarkDisplay::Full(_) => {
+            paint.set_color(Color::from_rgba8(
+                color.0,
+                color.1,
+                color.2,
+                if hovered { 255 } else { 235 },
+            ));
+            fill_rounded_rect(pixmap, x, y, width, height, 6.0, &paint);
+            let ink = marcadores::contrast_on(color);
+            if let Some(name) = mark_shape_glyph(shape) {
+                draw_mark_glyph(pixmap, name, x + 11.0, y + height * 0.5, height * 0.72, ink);
+            } else {
+                // Las formas clásicas llevan un punto de tinta como asa.
+                let mut dot = Paint {
+                    anti_alias: true,
+                    ..Default::default()
+                };
+                dot.set_color(Color::from_rgba8(ink.0, ink.1, ink.2, 255));
+                if let Some(circle) =
+                    tiny_skia::PathBuilder::from_circle(x + 11.0, y + height * 0.5, 3.0)
+                {
+                    pixmap.fill_path(
+                        &circle,
+                        &dot,
+                        tiny_skia::FillRule::Winding,
+                        Transform::identity(),
+                        None,
+                    );
+                }
+            }
+            if let (marcadores::MarkDisplay::Full(_), Some(layout)) = (display, text) {
+                draw_text_layout(
+                    pixmap,
+                    scale_cx,
+                    glyphs,
+                    layout,
+                    x + 24.0,
+                    (y + (height - layout.height()) * 0.5).round(),
+                );
+            }
+        }
     }
 }
 
@@ -9032,6 +9543,14 @@ struct App {
     /// Selector de color del subrayado abierto: borde izquierdo del botón que
     /// lo abrió.
     highlight_picker: Option<f32>,
+    /// Tarjeta de la marca de libro abierta (tipo, forma, color, texto, quitar).
+    mark_card: Option<MarkCard>,
+    /// Nombre que se escribe para un tipo de marca nuevo.
+    kind_edit: Option<String>,
+    /// Navegador de marcas abierto.
+    mark_navigator: Option<MarkNavigator>,
+    /// Tipos de marca propios, además de los que trae la aplicación.
+    custom_mark_kinds: Vec<estudio::MarkKind>,
     /// Selector de color libre, abierto dentro del selector de subrayado.
     custom_picker: Option<selector_color::CustomPicker>,
     /// Últimos colores libres elegidos (números de `estudio::custom_color`).
@@ -9280,6 +9799,23 @@ struct AppInit {
 impl App {
     fn new(init: AppInit) -> Self {
         let settings_tree_sort = init.settings.tree_sort;
+        let settings_custom_mark_kinds: Vec<estudio::MarkKind> = init
+            .settings
+            .custom_mark_kinds
+            .iter()
+            .map(|(name, rgb, shape)| estudio::MarkKind {
+                name: name.clone(),
+                color: estudio::custom_color((
+                    ((rgb >> 16) & 0xFF) as u8,
+                    ((rgb >> 8) & 0xFF) as u8,
+                    (rgb & 0xFF) as u8,
+                )),
+                shape: estudio::shape_catalog()
+                    .get(usize::from(*shape))
+                    .cloned()
+                    .unwrap_or(anotaciones::Forma::Cinta),
+            })
+            .collect();
         let settings_recent_colors: Vec<usize> = init
             .settings
             .recent_colors
@@ -9438,6 +9974,10 @@ impl App {
             tree_sort: TreeSort::from_code(settings_tree_sort),
             metrics_refresh_due: None,
             highlight_picker: None,
+            mark_card: None,
+            kind_edit: None,
+            mark_navigator: None,
+            custom_mark_kinds: settings_custom_mark_kinds,
             custom_picker: None,
             recent_colors: settings_recent_colors,
             legend_edit: None,
@@ -10704,6 +11244,36 @@ impl ApplicationHandler<AppEvent> for App {
                         }
                         return;
                     }
+                    if self.mark_card.is_some()
+                        && self.kind_edit.is_none()
+                        && let Some((x, y)) = self.pointer
+                    {
+                        self.mark_card_press(x, y);
+                        self.selecting = false;
+                        return;
+                    }
+                    if self.mark_navigator.is_some()
+                        && let Some((x, y)) = self.pointer
+                    {
+                        self.mark_navigator_press(x, y);
+                        self.selecting = false;
+                        return;
+                    }
+                    if self.dialog.is_none()
+                        && self.highlight_picker.is_none()
+                        && let Some((x, y)) = self.pointer
+                        && let Some(mark) = self.margin_mark_at(x, y)
+                    {
+                        let anchor = mark.rect.0 + mark.rect.2 - MARK_CARD_WIDTH;
+                        self.open_mark_card(
+                            mark.byte,
+                            Some(mark.id),
+                            anchor,
+                            Some(mark.rect.1 + marcadores::TAG_HEIGHT + 4.0),
+                        );
+                        self.selecting = false;
+                        return;
+                    }
                     if let Some(anchor) = self.highlight_picker
                         && let Some((x, y)) = self.pointer
                         && let Some((width, _)) = self.view_size()
@@ -11330,6 +11900,19 @@ impl ApplicationHandler<AppEvent> for App {
             WindowEvent::KeyboardInput { event, .. } if self.outline_headings.is_some() => {
                 self.handle_outline_key(&event);
             }
+            WindowEvent::KeyboardInput { event, .. } if self.kind_edit.is_some() => {
+                self.handle_kind_edit_key(&event);
+            }
+            WindowEvent::KeyboardInput { event, .. }
+                if self.mark_card.is_some() && event.state == ElementState::Pressed =>
+            {
+                self.handle_mark_card_key(&event);
+            }
+            WindowEvent::KeyboardInput { event, .. }
+                if self.mark_navigator.is_some() && event.state == ElementState::Pressed =>
+            {
+                self.handle_mark_navigator_key(&event);
+            }
             WindowEvent::KeyboardInput { event, .. }
                 if self.custom_picker.is_some()
                     && self.highlight_picker.is_some()
@@ -11649,6 +12232,28 @@ impl ApplicationHandler<AppEvent> for App {
                 ..
             } if self.modifiers.control_key() => {
                 self.switch_document_tab(self.modifiers.shift_key())
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::PageUp),
+                        state: ElementState::Pressed,
+                        ..
+                    },
+                ..
+            } if self.modifiers.alt_key() && !self.modifiers.control_key() => {
+                self.perform_action(AppAction::PreviousBookmark);
+            }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(KeyCode::PageDown),
+                        state: ElementState::Pressed,
+                        ..
+                    },
+                ..
+            } if self.modifiers.alt_key() && !self.modifiers.control_key() => {
+                self.perform_action(AppAction::NextBookmark);
             }
             WindowEvent::KeyboardInput {
                 event:
@@ -12092,9 +12697,11 @@ impl App {
             AppAction::ShowAnnotationsBlock => self.show_annotations_block(),
             AppAction::EditLegend => self.start_legend_edit(),
             AppAction::ToggleBookmark => self.toggle_bookmark(),
-            AppAction::CycleBookmarkShape => self.cycle_bookmark(true),
-            AppAction::CycleBookmarkColor => self.cycle_bookmark(false),
             AppAction::EditBookmarkNote => self.start_bookmark_note(),
+            AppAction::BookmarkMenu => self.toggle_mark_card(),
+            AppAction::BookmarkNavigator => self.toggle_mark_navigator(),
+            AppAction::NextBookmark => self.step_bookmark(false),
+            AppAction::PreviousBookmark => self.step_bookmark(true),
             AppAction::CopyLostAnnotations => self.copy_lost_annotations(),
             AppAction::RemoveLostAnnotations => self.remove_lost_annotations(),
             AppAction::RemoveAllAnnotations => self.ask_remove_all_annotations(),
@@ -12773,11 +13380,25 @@ impl App {
             CommandPaletteScope::Blocks => grouped_entries(&BLOCK_GROUPS),
             CommandPaletteScope::Insert => menu::items(&INSERT_ACTIONS),
             CommandPaletteScope::Workspace => menu::items(&WORKSPACE_HUB_ACTIONS),
-            CommandPaletteScope::Study => grouped_entries(&STUDY_GROUPS),
+            CommandPaletteScope::Study => {
+                let mut groups: Vec<MenuGroup> = Vec::new();
+                if self.document.mode.is_editable() {
+                    groups.push(("Subrayar y marcar", &STUDY_WRITING_ACTIONS));
+                }
+                groups.extend_from_slice(&STUDY_GROUPS);
+                grouped_entries(&groups)
+            }
         }
     }
 
     fn command_palette_actions(&self) -> Vec<AppAction> {
+        if self.command_palette_scope == CommandPaletteScope::Study
+            && self.document.mode.is_editable()
+        {
+            let mut actions = STUDY_WRITING_ACTIONS.to_vec();
+            actions.extend_from_slice(&STUDY_ACTIONS);
+            return filtered_actions_from(&actions, &self.command_palette_query);
+        }
         let actions = match self.command_palette_scope {
             CommandPaletteScope::All | CommandPaletteScope::Menu => &APP_ACTIONS[..],
             CommandPaletteScope::File => &FILE_ACTIONS[..],
@@ -13450,39 +14071,6 @@ impl App {
         estudio::sections(&starts, &marks)
     }
 
-    /// Marcas que se dibujan en el margen de Leer, por bloque.
-    fn study_mark_blocks(&mut self) -> BlockBookmarks {
-        self.study_mark_blocks_in(false)
-    }
-
-    /// Marcas del lado de lectura de Comparar.
-    fn study_preview_mark_blocks(&mut self) -> BlockBookmarks {
-        self.study_mark_blocks_in(true)
-    }
-
-    fn study_mark_blocks_in(&mut self, preview: bool) -> BlockBookmarks {
-        let mut by_block = BlockBookmarks::new();
-        if (self.document.mode == DocumentMode::Split) != preview {
-            return by_block;
-        }
-        for mark in self.study_bookmarks() {
-            let blocks = if preview {
-                &self.document.rendered_blocks
-            } else {
-                &self.document.blocks
-            };
-            let index = blocks.partition_point(|block| block.source.end <= mark.start);
-            if index < blocks.len() {
-                let stroke = self.palette.study_tone(mark.color).stroke;
-                by_block
-                    .entry(index)
-                    .or_default()
-                    .push((stroke, mark.shape));
-            }
-        }
-        by_block
-    }
-
     /// Lleva la vista al byte de la fuente (una marca).
     fn jump_to_source_byte(&mut self, byte: usize) {
         let Some(cursor) = source_block_cursor_at(&self.document.blocks, byte) else {
@@ -13630,6 +14218,700 @@ impl App {
         }
     }
 
+    // ------------------------------------------------------------------
+    // Marcas de libro: tarjeta (tipo, forma, color, texto, quitar), tipos
+    // propios, navegador y recorrido.
+    // ------------------------------------------------------------------
+
+    /// Los tipos de marca: los que trae la aplicación y los propios.
+    fn mark_kinds(&self) -> Vec<estudio::MarkKind> {
+        let mut kinds = estudio::default_mark_kinds();
+        kinds.extend(self.custom_mark_kinds.iter().cloned());
+        kinds
+    }
+
+    /// La marca a la que se refiere la tarjeta, con sus datos actuales.
+    fn mark_card_marker(&mut self) -> Option<estudio::Bookmark> {
+        let card = self.mark_card.clone()?;
+        let marks = self.study_bookmarks();
+        match card.id {
+            Some(id) => marks.into_iter().find(|mark| mark.id == id),
+            None => None,
+        }
+    }
+
+    /// Las filas de la tarjeta: los tipos, y según la marca, las acciones que
+    /// le caben.
+    fn mark_card_rows(&mut self) -> Vec<CardRow> {
+        let marker = self.mark_card_marker();
+        let mut rows: Vec<CardRow> = (0..self.mark_kinds().len()).map(CardRow::Kind).collect();
+        if marker.as_ref().is_some_and(|mark| mark.kind.is_some()) {
+            rows.push(CardRow::NoKind);
+        }
+        rows.push(CardRow::Shapes);
+        rows.push(CardRow::Colors);
+        if marker.is_some() {
+            rows.push(CardRow::Text);
+        }
+        rows.push(CardRow::NewKind);
+        if marker.is_some() {
+            rows.push(CardRow::Remove);
+        }
+        rows
+    }
+
+    /// Los colores que ofrece la tarjeta.
+    fn mark_card_colors(&self) -> Vec<usize> {
+        let mut colors: Vec<usize> = (0..5).collect();
+        colors.extend(self.recent_colors.iter().take(MARK_CARD_RECENT_COLORS));
+        colors
+    }
+
+    /// Abre o cierra la tarjeta de la marca de la línea actual, bajo el botón.
+    fn toggle_mark_card(&mut self) {
+        if self.mark_card.take().is_some() {
+            if let Some(window) = &self.window {
+                window.request_redraw();
+            }
+            return;
+        }
+        let Some(byte) = self.bookmark_target_byte() else {
+            self.set_notice("Elegí la línea donde va la marca");
+            return;
+        };
+        let source = self.document.source.to_string();
+        let id = estudio::parse(self.document.annotations.as_deref())
+            .ok()
+            .and_then(|parsed| estudio::bookmark_id_on_line(&source, &parsed, byte));
+        self.open_mark_card(
+            byte,
+            id,
+            self.toolbar_anchor(AppAction::ToggleBookmark),
+            None,
+        );
+    }
+
+    /// Posición horizontal de un botón de la barra de contexto.
+    fn toolbar_anchor(&self, action: AppAction) -> f32 {
+        let Some((width, _)) = self.view_size() else {
+            return TOOLBAR_X;
+        };
+        let mode = self.document.mode;
+        contextual_toolbar_actions(mode)
+            .iter()
+            .position(|candidate| *candidate == action)
+            .and_then(|index| contextual_toolbar_item_geometry(index, width, mode))
+            .map_or(TOOLBAR_X, |geometry| geometry.x)
+    }
+
+    fn open_mark_card(&mut self, byte: usize, id: Option<String>, anchor: f32, top: Option<f32>) {
+        self.context_menu = None;
+        self.command_palette = None;
+        self.highlight_picker = None;
+        self.custom_picker = None;
+        self.mark_navigator = None;
+        self.mark_card = Some(MarkCard {
+            anchor,
+            byte,
+            id,
+            top,
+        });
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    /// Rectángulo de la tarjeta abierta y sus filas.
+    fn mark_card_layout(&mut self) -> Option<CardLayout> {
+        let (anchor, top) = {
+            let card = self.mark_card.as_ref()?;
+            (card.anchor, card.top)
+        };
+        let size = self.view_size()?;
+        let rows = self.mark_card_rows();
+        Some((mark_card_rect(anchor, size, top, &rows), rows))
+    }
+
+    /// Pulsación sobre la tarjeta (o fuera de ella: se cierra).
+    fn mark_card_press(&mut self, x: f32, y: f32) {
+        let Some((rect, rows)) = self.mark_card_layout() else {
+            return;
+        };
+        let Some((index, _)) = mark_card_row_at(rect, &rows, x, y) else {
+            self.mark_card = None;
+            if let Some(window) = &self.window {
+                window.request_redraw();
+            }
+            return;
+        };
+        match rows[index].clone() {
+            CardRow::Kind(kind) => {
+                if let Some(kind) = self.mark_kinds().get(kind).cloned() {
+                    self.mark_card_choose_kind(&kind);
+                }
+            }
+            CardRow::NoKind => self.mark_card_clear_kind(),
+            CardRow::Shapes => {
+                if let Some(slot) = mark_strip_slot_at(rect.0, x, estudio::shape_catalog().len())
+                    && let Some(shape) = estudio::shape_catalog().get(slot).cloned()
+                {
+                    self.mark_card_edit(
+                        |registro| registro.forma = Some(shape.clone()),
+                        "Forma de la marca cambiada",
+                    );
+                }
+            }
+            CardRow::Colors => {
+                let colors = self.mark_card_colors();
+                if let Some(slot) = mark_strip_slot_at(rect.0, x, colors.len())
+                    && let Some(color) = colors.get(slot).copied()
+                {
+                    self.mark_card_edit(
+                        |registro| registro.color = estudio::color_for_index(color),
+                        "Color de la marca cambiado",
+                    );
+                }
+            }
+            CardRow::Text => {
+                let byte = self.mark_card.as_ref().map_or(0, |card| card.byte);
+                self.mark_card = None;
+                self.note_edit = Some((byte, self.mark_card_note(byte)));
+            }
+            CardRow::NewKind => self.kind_edit = Some(String::new()),
+            CardRow::Remove => self.mark_card_remove(),
+        }
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    /// El texto actual de la marca de la línea (vacío si no tiene).
+    fn mark_card_note(&self, byte: usize) -> String {
+        let source = self.document.source.to_string();
+        estudio::parse(self.document.annotations.as_deref())
+            .ok()
+            .and_then(|mut parsed| {
+                let mut note = None;
+                estudio::change_bookmark(&mut parsed, &source, byte, |registro| {
+                    note = Some(registro.nota.clone().unwrap_or_default());
+                })
+                .ok()?;
+                note
+            })
+            .unwrap_or_default()
+    }
+
+    /// Cambia la marca de la tarjeta (la pone si la línea no tenía) y deja la
+    /// tarjeta abierta con la marca recién creada.
+    fn mark_card_edit(&mut self, change: impl FnOnce(&mut anotaciones::Registro), message: &str) {
+        let Some(card) = self.mark_card.clone() else {
+            return;
+        };
+        let color = self.study_color;
+        self.hide_annotations = false;
+        let mut change = Some(change);
+        self.change_annotations(|anotaciones, source| {
+            estudio::ensure_bookmark(
+                anotaciones,
+                source,
+                card.byte,
+                color,
+                anotaciones::Forma::Cinta,
+            )?;
+            estudio::change_bookmark(anotaciones, source, card.byte, |registro| {
+                if let Some(change) = change.take() {
+                    change(registro);
+                }
+            })?;
+            Ok(message.to_string())
+        });
+        self.refresh_mark_card_id();
+    }
+
+    /// Después de un cambio, la tarjeta vuelve a buscar su marca por la línea.
+    fn refresh_mark_card_id(&mut self) {
+        let Some(card) = self.mark_card.clone() else {
+            return;
+        };
+        let source = self.document.source.to_string();
+        let id = estudio::parse(self.document.annotations.as_deref())
+            .ok()
+            .and_then(|parsed| estudio::bookmark_id_on_line(&source, &parsed, card.byte));
+        if let Some(card) = &mut self.mark_card {
+            card.id = id;
+        }
+    }
+
+    fn mark_card_choose_kind(&mut self, kind: &estudio::MarkKind) {
+        let kind = kind.clone();
+        let name = kind.name.clone();
+        self.mark_card_edit(
+            move |registro| estudio::apply_mark_kind(registro, &kind),
+            &format!("Marca: {name}"),
+        );
+        self.mark_card = None;
+    }
+
+    fn mark_card_clear_kind(&mut self) {
+        self.mark_card_edit(
+            |registro| estudio::set_mark_kind(registro, None),
+            "La marca ya no tiene tipo",
+        );
+    }
+
+    fn mark_card_remove(&mut self) {
+        let Some(card) = self.mark_card.take() else {
+            return;
+        };
+        let Some(id) = card.id else {
+            return;
+        };
+        self.change_annotations(|anotaciones, _| {
+            Ok(if estudio::remove_bookmark(anotaciones, &id) {
+                "Marca quitada".to_string()
+            } else {
+                "Esa marca ya no está".to_string()
+            })
+        });
+    }
+
+    /// Teclado con la tarjeta abierta: Esc la cierra, los números eligen tipo
+    /// y Supr quita la marca.
+    fn handle_mark_card_key(&mut self, event: &KeyEvent) {
+        let digit = match event.physical_key {
+            PhysicalKey::Code(KeyCode::Digit1) => Some(0),
+            PhysicalKey::Code(KeyCode::Digit2) => Some(1),
+            PhysicalKey::Code(KeyCode::Digit3) => Some(2),
+            PhysicalKey::Code(KeyCode::Digit4) => Some(3),
+            PhysicalKey::Code(KeyCode::Digit5) => Some(4),
+            PhysicalKey::Code(KeyCode::Digit6) => Some(5),
+            PhysicalKey::Code(KeyCode::Digit7) => Some(6),
+            PhysicalKey::Code(KeyCode::Digit8) => Some(7),
+            PhysicalKey::Code(KeyCode::Digit9) => Some(8),
+            _ => None,
+        };
+        match (event.physical_key, digit) {
+            (_, Some(index)) => {
+                if let Some(kind) = self.mark_kinds().get(index).cloned() {
+                    self.mark_card_choose_kind(&kind);
+                }
+            }
+            (PhysicalKey::Code(KeyCode::Escape), _) => self.mark_card = None,
+            (PhysicalKey::Code(KeyCode::Delete), _) => self.mark_card_remove(),
+            _ => {}
+        }
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    /// Teclado mientras se escribe el nombre de un tipo nuevo.
+    fn handle_kind_edit_key(&mut self, event: &KeyEvent) {
+        if event.state != ElementState::Pressed {
+            return;
+        }
+        match event.physical_key {
+            PhysicalKey::Code(KeyCode::Escape) => self.kind_edit = None,
+            PhysicalKey::Code(KeyCode::Backspace) => {
+                if let Some(name) = &mut self.kind_edit {
+                    name.pop();
+                }
+            }
+            PhysicalKey::Code(KeyCode::Enter | KeyCode::NumpadEnter) => self.commit_kind_edit(),
+            _ => {
+                let typed = typed_text(
+                    event.text.as_deref(),
+                    self.modifiers.control_key(),
+                    self.modifiers.alt_key(),
+                );
+                match (typed, &mut self.kind_edit) {
+                    (Some(typed), Some(name)) => {
+                        append_limited_text(name, typed, estudio::MAX_KIND_NAME_CHARS);
+                    }
+                    _ => return,
+                }
+            }
+        }
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    /// Guarda el tipo nuevo con el color y la forma de la marca (o los de
+    /// ahora) y se lo pone a la marca.
+    fn commit_kind_edit(&mut self) {
+        let Some(typed) = self.kind_edit.take() else {
+            return;
+        };
+        let name = estudio::clean_kind_name(&typed);
+        if name.is_empty() {
+            self.set_notice("El tipo necesita un nombre");
+            return;
+        }
+        if self
+            .mark_kinds()
+            .iter()
+            .any(|kind| kind.name.eq_ignore_ascii_case(&name))
+        {
+            self.set_notice(&format!("Ya hay un tipo «{name}»"));
+            return;
+        }
+        if self.custom_mark_kinds.len() >= settings::MAX_CUSTOM_MARK_KINDS {
+            self.set_notice(
+                "Ya hay demasiados tipos propios: quitá alguno del archivo de preferencias",
+            );
+            return;
+        }
+        let marker = self.mark_card_marker();
+        let color = marker.as_ref().map_or(self.study_color, |mark| mark.color);
+        let shape = marker
+            .as_ref()
+            .map_or(anotaciones::Forma::Cinta, |mark| mark.shape.clone());
+        let kind = estudio::MarkKind {
+            name: name.clone(),
+            color,
+            shape: shape.clone(),
+        };
+        self.custom_mark_kinds.push(kind.clone());
+        let shape_index = estudio::shape_catalog()
+            .iter()
+            .position(|candidate| *candidate == shape)
+            .unwrap_or(1);
+        let rgb =
+            estudio::custom_rgb(color).unwrap_or_else(|| self.palette.study_tone(color).stroke);
+        self.settings.custom_mark_kinds.push((
+            name,
+            (u32::from(rgb.0) << 16) | (u32::from(rgb.1) << 8) | u32::from(rgb.2),
+            shape_index as u8,
+        ));
+        let _ = self.settings.store();
+        self.mark_card_choose_kind(&kind);
+    }
+
+    /// Lleva la vista (y el cursor, en Editar) al byte de una marca.
+    fn jump_to_mark(&mut self, byte: usize) {
+        if self.document.mode.is_editable() {
+            let _ = self
+                .document
+                .source_editor
+                .set_cursor(&self.document.source, byte, false);
+            self.reveal_cursor_pending = true;
+            if let Some(window) = &self.window {
+                window.request_redraw();
+            }
+        } else {
+            self.jump_to_source_byte(byte);
+        }
+    }
+
+    /// Salta a la marca siguiente o anterior a la posición actual, dando la
+    /// vuelta al llegar al final. Con el navegador abierto respeta su filtro.
+    fn step_bookmark(&mut self, backwards: bool) {
+        let marks = self.study_bookmarks();
+        let filter = self
+            .mark_navigator
+            .as_ref()
+            .map(|navigator| navigator.filter.clone())
+            .unwrap_or_default();
+        let filtered = estudio::filter_marks(&marks, &filter);
+        let from = self.bookmark_target_byte().unwrap_or(0);
+        let Some(target) = estudio::step_mark(&filtered, from, backwards).cloned() else {
+            self.set_notice("Este documento no tiene marcas de libro");
+            return;
+        };
+        let position = filtered
+            .iter()
+            .position(|mark| mark.id == target.id)
+            .map_or(0, |index| index + 1);
+        self.jump_to_mark(target.start);
+        let kind = target.kind.as_deref().unwrap_or("sin tipo");
+        let label = abbreviated_label(&target.label, 50);
+        self.set_notice(&format!(
+            "Marca {position} de {}: {kind} · {label}",
+            filtered.len()
+        ));
+        if let Some(navigator) = &mut self.mark_navigator
+            && let Some(index) = filtered.iter().position(|mark| mark.id == target.id)
+        {
+            navigator.selected = index;
+        }
+    }
+
+    /// Las etiquetas de marcas del margen derecho, en coordenadas de ventana.
+    /// `preview` es el lado de lectura de Comparar; si no, el panel principal.
+    /// El dibujo y el clic usan esta misma función.
+    fn margin_marks(&mut self, preview: bool) -> Vec<MarginMark> {
+        if (self.document.mode == DocumentMode::Split) != preview {
+            return Vec::new();
+        }
+        let Some(panes) = self.focused_document_panes() else {
+            return Vec::new();
+        };
+        let marks = self.study_bookmarks();
+        if marks.is_empty() {
+            return Vec::new();
+        }
+        let (pane, slots, scroll, blocks) = if preview {
+            (
+                panes.preview,
+                &self.preview_slots,
+                self.preview_scroll,
+                &self.document.rendered_blocks,
+            )
+        } else {
+            (
+                panes.source,
+                &self.slots,
+                self.scroll,
+                &self.document.blocks,
+            )
+        };
+        let text_left = slots
+            .iter()
+            .filter(|slot| slot.height > 0.0)
+            .map(|slot| slot.x)
+            .fold(f32::INFINITY, f32::min);
+        if !text_left.is_finite() {
+            return Vec::new();
+        }
+        let column_right = pane.x + text_left + pane_text_width(pane, self.scale_factor);
+        // El índice flotante ocupa el borde derecho en Leer.
+        let reserved =
+            if self.settings.floating_outline && self.document.mode == DocumentMode::Reading {
+                236.0
+            } else {
+                0.0
+            };
+        let available = marcadores::available_width(column_right, pane.x + pane.width, reserved);
+        let display = marcadores::display_for(available);
+        let viewport_top = DOCUMENT_VIEWPORT_TOP + pane.y;
+        let viewport_bottom = viewport_top + pane.height;
+        let mut placed: Vec<(f32, &estudio::Bookmark)> = marks
+            .iter()
+            .filter_map(|mark| {
+                let index = blocks.partition_point(|block| block.source.end <= mark.start);
+                let slot = slots.get(index)?;
+                let y = pane_screen_y(slot.y, scroll, pane) + 1.0;
+                (y + marcadores::TAG_HEIGHT > viewport_top && y < viewport_bottom)
+                    .then_some((y, mark))
+            })
+            .collect();
+        placed.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let mut ys: Vec<f32> = placed.iter().map(|(y, _)| *y).collect();
+        marcadores::separate_vertically(&mut ys);
+        placed
+            .into_iter()
+            .zip(ys)
+            .map(|((_, mark), y)| {
+                let text = mark
+                    .note
+                    .clone()
+                    .or_else(|| mark.kind.clone())
+                    .unwrap_or_else(|| mark.label.clone());
+                MarginMark {
+                    id: mark.id.clone(),
+                    byte: mark.start,
+                    rect: marcadores::tag_rect(display, column_right, y),
+                    display,
+                    color: mark.color,
+                    shape: mark.shape.clone(),
+                    kind: mark.kind.clone(),
+                    text,
+                }
+            })
+            .collect()
+    }
+
+    /// La etiqueta del margen bajo el punto, si hay.
+    fn margin_mark_at(&mut self, x: f32, y: f32) -> Option<MarginMark> {
+        let preview = self.document.mode == DocumentMode::Split;
+        self.margin_marks(preview).into_iter().find(|mark| {
+            let (left, top, width, height) = mark.rect;
+            // Un poco de margen para acertar una cinta o una muesca angostas.
+            x >= left - 3.0 && x < left + width + 3.0 && y >= top && y < top + height
+        })
+    }
+
+    /// Lo que muestra el navegador abierto.
+    fn mark_navigator_view(&mut self) -> Option<NavView> {
+        let navigator = self.mark_navigator.clone()?;
+        let (width, _) = self.view_size()?;
+        let marks = self.study_bookmarks();
+        let kinds = self.mark_kinds();
+        let (counts, untyped) = estudio::kind_counts(&marks, &kinds);
+        let mut chips: Vec<(
+            Option<String>,
+            String,
+            usize,
+            bool,
+            usize,
+            anotaciones::Forma,
+        )> = counts
+            .into_iter()
+            .map(|(name, count)| {
+                let (color, shape) = kinds
+                    .iter()
+                    .find(|kind| kind.name == name)
+                    .map_or((4, anotaciones::Forma::Cinta), |kind| {
+                        (kind.color, kind.shape.clone())
+                    });
+                let active = navigator.filter.contains(&Some(name.clone()));
+                (Some(name.clone()), name, count, active, color, shape)
+            })
+            .collect();
+        chips.push((
+            None,
+            "Sin tipo".to_string(),
+            untyped,
+            navigator.filter.contains(&None),
+            4,
+            anotaciones::Forma::Barra,
+        ));
+        let filtered = estudio::filter_marks(&marks, &navigator.filter);
+        let total = filtered.len();
+        let selected = navigator.selected.min(total.saturating_sub(1));
+        let first = navigator_first_row(selected, total);
+        let geometry = navigator_geometry(navigator.anchor, width, chips.len(), total);
+        let rows = filtered
+            .iter()
+            .skip(first)
+            .take(geometry.visible_rows)
+            .map(|mark| {
+                let line = self.document.source.line_at_byte(mark.start) + 1;
+                (line, mark.color, mark.shape.clone(), mark.label.clone())
+            })
+            .collect();
+        let title = if navigator.filter.is_empty() {
+            format!("Marcas · {}", marks.len())
+        } else {
+            format!("Marcas · {} de {}", total, marks.len())
+        };
+        Some(NavView {
+            geometry,
+            title,
+            chips,
+            first,
+            selected,
+            rows,
+            empty_message: (total == 0).then_some(if marks.is_empty() {
+                "Todavía no hay marcas en este documento"
+            } else {
+                "Ninguna marca con ese tipo"
+            }),
+        })
+    }
+
+    /// Elige la marca `index` de la lista filtrada y lleva la vista a ella.
+    fn select_navigator_mark(&mut self, index: usize) {
+        let marks = self.study_bookmarks();
+        let Some(navigator) = self.mark_navigator.as_mut() else {
+            return;
+        };
+        let filtered = estudio::filter_marks(&marks, &navigator.filter);
+        if filtered.is_empty() {
+            return;
+        }
+        let index = index % filtered.len();
+        navigator.selected = index;
+        let byte = filtered[index].start;
+        self.jump_to_mark(byte);
+    }
+
+    /// Pulsación sobre el navegador (o fuera de él: se cierra).
+    fn mark_navigator_press(&mut self, x: f32, y: f32) {
+        let Some(view) = self.mark_navigator_view() else {
+            return;
+        };
+        match navigator_hit(&view.geometry, x, y) {
+            NavHit::Outside => self.mark_navigator = None,
+            NavHit::Up => {
+                let total = estudio::filter_marks(
+                    &self.study_bookmarks(),
+                    &self.mark_navigator.clone().unwrap_or_default().filter,
+                )
+                .len();
+                if total > 0 {
+                    self.select_navigator_mark((view.selected + total - 1) % total);
+                }
+            }
+            NavHit::Down => self.select_navigator_mark(view.selected + 1),
+            NavHit::Chip(index) => {
+                if let Some((kind, ..)) = view.chips.get(index).cloned()
+                    && let Some(navigator) = self.mark_navigator.as_mut()
+                {
+                    match navigator.filter.iter().position(|active| *active == kind) {
+                        Some(position) => {
+                            navigator.filter.remove(position);
+                        }
+                        None => navigator.filter.push(kind),
+                    }
+                    navigator.selected = 0;
+                }
+            }
+            NavHit::Row(row) => self.select_navigator_mark(view.first + row),
+            NavHit::Panel => {}
+        }
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    /// Teclado con el navegador abierto.
+    fn handle_mark_navigator_key(&mut self, event: &KeyEvent) {
+        let selected = self.mark_navigator.as_ref().map_or(0, |nav| nav.selected);
+        let total = self
+            .mark_navigator
+            .as_ref()
+            .map(|nav| nav.filter.clone())
+            .map_or(0, |filter| {
+                estudio::filter_marks(&self.study_bookmarks(), &filter).len()
+            });
+        match event.physical_key {
+            PhysicalKey::Code(KeyCode::Escape) => self.mark_navigator = None,
+            PhysicalKey::Code(KeyCode::ArrowDown) if total > 0 => {
+                self.select_navigator_mark(selected + 1);
+            }
+            PhysicalKey::Code(KeyCode::ArrowUp) if total > 0 => {
+                self.select_navigator_mark(selected + total - 1);
+            }
+            PhysicalKey::Code(KeyCode::Enter | KeyCode::NumpadEnter) => {
+                self.select_navigator_mark(selected);
+                self.mark_navigator = None;
+            }
+            _ => {}
+        }
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    /// Abre o cierra el navegador de marcas, bajo su botón.
+    fn toggle_mark_navigator(&mut self) {
+        if self.mark_navigator.take().is_some() {
+            if let Some(window) = &self.window {
+                window.request_redraw();
+            }
+            return;
+        }
+        self.context_menu = None;
+        self.command_palette = None;
+        self.highlight_picker = None;
+        self.custom_picker = None;
+        self.mark_card = None;
+        self.mark_navigator = Some(MarkNavigator {
+            anchor: self.toolbar_anchor(AppAction::BookmarkNavigator),
+            ..MarkNavigator::default()
+        });
+        if self.study_bookmarks().is_empty() {
+            self.set_notice(
+                "Este documento todavía no tiene marcas: Ctrl+Shift+M pone una en la línea",
+            );
+        }
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
     fn toggle_bookmark(&mut self) {
         let Some(byte) = self.bookmark_target_byte() else {
             self.set_notice("Elegí la línea donde va la marca");
@@ -13651,36 +14933,6 @@ impl App {
                     "Marca quitada".to_string()
                 },
             )
-        });
-    }
-
-    fn cycle_bookmark(&mut self, shape: bool) {
-        let Some(byte) = self.bookmark_target_byte() else {
-            self.set_notice("Elegí la línea de la marca");
-            return;
-        };
-        self.change_annotations(|anotaciones, source| {
-            let mut message = String::new();
-            estudio::change_bookmark(anotaciones, source, byte, |registro| {
-                if shape {
-                    let next = estudio::next_shape(registro.forma.as_ref());
-                    message = format!(
-                        "Forma de la marca: {}",
-                        match next {
-                            anotaciones::Forma::Barra => "barra",
-                            anotaciones::Forma::Cinta => "cinta",
-                            anotaciones::Forma::Punto => "punto",
-                            _ => "bandera",
-                        }
-                    );
-                    registro.forma = Some(next);
-                } else {
-                    let next = (estudio::color_index(&registro.color).unwrap_or(4) + 1) % 5;
-                    message = format!("Color de la marca: {}", estudio::color_name(next));
-                    registro.color = estudio::color_for_index(next);
-                }
-            })?;
-            Ok(message)
         });
     }
 
@@ -19504,7 +20756,17 @@ impl App {
             let label = abbreviated_label(&label, MAX_OVERLAY_LABEL_CHARS);
             build_menu_layout(&label, &mut self.font_cx, &mut self.layout_cx, self.palette)
         });
-        let search_overlay = note_overlay.or(legend_overlay).or(search_overlay);
+        let kind_overlay = self.kind_edit.clone().map(|text| {
+            let label = format!(
+                "Tipo nuevo: {text}| · Enter lo guarda con el color y la forma de la marca · Esc cancela"
+            );
+            let label = abbreviated_label(&label, MAX_OVERLAY_LABEL_CHARS);
+            build_menu_layout(&label, &mut self.font_cx, &mut self.layout_cx, self.palette)
+        });
+        let search_overlay = kind_overlay
+            .or(note_overlay)
+            .or(legend_overlay)
+            .or(search_overlay);
         let workspace_search_query = self.workspace_search_query.clone();
         let workspace_search_results = workspace_search_query
             .as_ref()
@@ -21035,9 +22297,140 @@ impl App {
                 (picker, geometry, hex, back, apply)
             });
         let study_highlights = self.study_highlight_ranges();
-        let study_marks = self.study_mark_blocks();
+        let margin_marks: Vec<MarginMark> = {
+            let mut marks = self.margin_marks(false);
+            marks.extend(self.margin_marks(true));
+            marks
+        };
+        let margin_hover = self.pointer.and_then(|(x, y)| {
+            margin_marks.iter().position(|mark| {
+                let (left, top, width, height) = mark.rect;
+                x >= left - 3.0 && x < left + width + 3.0 && y >= top && y < top + height
+            })
+        });
+        let margin_texts: Vec<Option<Layout<Brush>>> = margin_marks
+            .iter()
+            .map(|mark| match mark.display {
+                marcadores::MarkDisplay::Full(width) => {
+                    let tone = self.palette.study_tone(mark.color).stroke;
+                    let max_chars = ((width - 30.0) / 6.6).max(3.0) as usize;
+                    Some(build_ui_text_layout(
+                        &marcadores::visible_label(&mark.text, max_chars),
+                        &mut self.font_cx,
+                        &mut self.layout_cx,
+                        marcadores::contrast_on(tone),
+                        12.0,
+                        false,
+                        None,
+                    ))
+                }
+                _ => None,
+            })
+            .collect();
+        // Tarjeta al pasar el puntero: el texto completo de la marca.
+        let margin_hover_card = (self.mark_card.is_none() && self.mark_navigator.is_none())
+            .then_some(margin_hover)
+            .flatten()
+            .map(|index| {
+                let mark = &margin_marks[index];
+                let title = mark
+                    .kind
+                    .clone()
+                    .unwrap_or_else(|| "Marca de libro".to_string());
+                let title_layout = build_ui_text_layout(
+                    &title,
+                    &mut self.font_cx,
+                    &mut self.layout_cx,
+                    self.palette.dim,
+                    11.5,
+                    true,
+                    None,
+                );
+                let body_layout = build_ui_text_layout(
+                    &mark.text,
+                    &mut self.font_cx,
+                    &mut self.layout_cx,
+                    self.palette.text,
+                    12.5,
+                    false,
+                    Some(MARGIN_HOVER_TEXT_WIDTH),
+                );
+                (index, title_layout, body_layout)
+            });
+        let mark_card_view = self.mark_card_layout().map(|(rect, rows)| {
+            let kinds = self.mark_kinds();
+            let marker = self.mark_card_marker();
+            let colors = self.mark_card_colors();
+            let labels: Vec<Option<Layout<Brush>>> = rows
+                .iter()
+                .map(|row| {
+                    let text = match row {
+                        CardRow::Kind(index) => kinds
+                            .get(*index)
+                            .map(|kind| format!("{} · {}", index + 1, kind.name)),
+                        CardRow::NoKind => Some("Sin tipo".to_string()),
+                        CardRow::Text => Some("Texto de la marca…".to_string()),
+                        CardRow::NewKind => Some("Guardar como tipo nuevo…".to_string()),
+                        CardRow::Remove => Some("Quitar marcador".to_string()),
+                        CardRow::Shapes | CardRow::Colors => None,
+                    };
+                    text.map(|text| {
+                        build_menu_layout(
+                            &text,
+                            &mut self.font_cx,
+                            &mut self.layout_cx,
+                            self.palette,
+                        )
+                    })
+                })
+                .collect();
+            (rect, rows, labels, kinds, marker, colors)
+        });
+        let nav_view = self.mark_navigator_view().map(|view| {
+            let title = build_menu_layout(
+                &view.title,
+                &mut self.font_cx,
+                &mut self.layout_cx,
+                self.palette,
+            );
+            let chip_labels: Vec<Layout<Brush>> = view
+                .chips
+                .iter()
+                .map(|(_, name, count, ..)| {
+                    build_ui_text_layout(
+                        &format!("{} · {count}", abbreviated_label(name, 14)),
+                        &mut self.font_cx,
+                        &mut self.layout_cx,
+                        self.palette.text,
+                        12.0,
+                        false,
+                        None,
+                    )
+                })
+                .collect();
+            let row_labels: Vec<Layout<Brush>> = view
+                .rows
+                .iter()
+                .map(|(line, _, _, label)| {
+                    build_menu_layout(
+                        &abbreviated_label(&format!("{line}  {label}"), 38),
+                        &mut self.font_cx,
+                        &mut self.layout_cx,
+                        self.palette,
+                    )
+                })
+                .collect();
+            let empty = view.empty_message.map(|message| {
+                build_menu_layout(
+                    message,
+                    &mut self.font_cx,
+                    &mut self.layout_cx,
+                    self.palette,
+                )
+            });
+            (view, title, chip_labels, row_labels, empty)
+        });
         let study_preview_highlights = self.study_preview_highlight_ranges();
-        let study_preview_marks = self.study_preview_mark_blocks();
         let open_surface = self.open_surface();
         let workspace_open = self.workspace.is_some();
         let workspace_generation = self.workspace_generation;
@@ -21169,35 +22562,12 @@ impl App {
             let ancho_texto = pane_text_width(panes.source, *scale_factor);
             let preview_ancho_texto = pane_text_width(panes.preview, *scale_factor);
 
-            // Borde izquierdo de la columna de texto: las marcas de libro van
-            // en el margen, a la izquierda de los triángulos de plegado.
-            let text_left = visible
-                .iter()
-                .filter_map(|index| slots.get(*index))
-                .filter(|slot| slot.height > 0.0)
-                .map(|slot| slot.x)
-                .fold(f32::INFINITY, f32::min);
             for i in visible {
                 let slot = &slots[i];
                 let Some((cached_layout, marker)) = live.get(&i) else {
                     continue;
                 };
                 let top = pane_screen_y(slot.y, *scroll, panes.source);
-                if let Some(marks) = study_marks.get(&i)
-                    && text_left.is_finite()
-                {
-                    let line = slot.height.min(26.0 * *scale_factor);
-                    for (n, (stroke, shape)) in marks.iter().take(3).enumerate() {
-                        draw_bookmark(
-                            pixmap,
-                            panes.source.x + text_left - (40.0 + n as f32 * 12.0) * *scale_factor,
-                            top,
-                            line,
-                            *stroke,
-                            shape,
-                        );
-                    }
-                }
                 // Número de línea en el margen de la fuente. Solo el primer
                 // tramo de una línea larga lo lleva.
                 if context_mode.is_editable()
@@ -21736,11 +23106,6 @@ impl App {
 
             if split {
                 let preview_pane = panes.preview;
-                let preview_text_left = preview_slots
-                    .iter()
-                    .filter(|slot| slot.height > 0.0)
-                    .map(|slot| slot.x)
-                    .fold(f32::INFINITY, f32::min);
                 if let Some(rect) = Rect::from_xywh(
                     preview_pane.x,
                     DOCUMENT_VIEWPORT_TOP + preview_pane.y,
@@ -21979,20 +23344,6 @@ impl App {
                             }
                         }
                     }
-                    if let Some(marks) = study_preview_marks.get(&index) {
-                        let line = slot.height.min(26.0 * *scale_factor);
-                        for (n, (stroke, shape)) in marks.iter().take(3).enumerate() {
-                            draw_bookmark(
-                                pixmap,
-                                preview_pane.x + preview_text_left
-                                    - (40.0 + n as f32 * 12.0) * *scale_factor,
-                                top,
-                                line,
-                                *stroke,
-                                shape,
-                            );
-                        }
-                    }
                     for line in layout.lines() {
                         for entry in line.items() {
                             if let PositionedLayoutItem::GlyphRun(run) = entry {
@@ -22013,6 +23364,21 @@ impl App {
                 &PixmapPaint::default(),
                 Transform::identity(),
                 None,
+            );
+        }
+        // Marcas de libro: etiquetas a la derecha de la columna de texto.
+        for (index, mark) in margin_marks.iter().enumerate() {
+            let tone = palette.study_tone(mark.color).stroke;
+            draw_margin_tag(
+                pixmap,
+                scale_cx,
+                glyphs,
+                mark.rect,
+                mark.display,
+                tone,
+                &mark.shape,
+                margin_texts.get(index).and_then(Option::as_ref),
+                margin_hover == Some(index),
             );
         }
 
@@ -22670,7 +24036,10 @@ impl App {
             } else {
                 x + (width - 18.0) * 0.5
             };
-            if action != AppAction::HighlightPickColor {
+            if !matches!(
+                action,
+                AppAction::HighlightPickColor | AppAction::BookmarkMenu
+            ) {
                 draw_toolbar_icon(
                     pixmap,
                     action,
@@ -22717,7 +24086,10 @@ impl App {
                 }
             }
             if toolbar_action_has_menu(action) {
-                let caret_only = action == AppAction::HighlightPickColor;
+                let caret_only = matches!(
+                    action,
+                    AppAction::HighlightPickColor | AppAction::BookmarkMenu
+                );
                 draw_menu_chevron(
                     pixmap,
                     if caret_only {
@@ -23025,6 +24397,343 @@ impl App {
                         }
                     }
                 }
+            }
+        }
+
+        // Ayuda al pasar el puntero por una etiqueta: el texto completo.
+        if let Some((index, title, body)) = &margin_hover_card {
+            let mark = &margin_marks[*index];
+            let card_width = MARGIN_HOVER_TEXT_WIDTH + 24.0;
+            let card_height = title.height() + body.height() + 24.0;
+            let card_x = (mark.rect.0 + mark.rect.2 - card_width)
+                .clamp(8.0, w.get() as f32 - card_width - 8.0);
+            let card_y = (mark.rect.1 + marcadores::TAG_HEIGHT + 4.0)
+                .min(h.get() as f32 - STATUS_HEIGHT - card_height - 8.0);
+            draw_floating_surface(
+                pixmap,
+                card_x,
+                card_y,
+                card_width,
+                card_height,
+                10.0,
+                *palette,
+            );
+            draw_text_layout(pixmap, scale_cx, glyphs, title, card_x + 12.0, card_y + 8.0);
+            draw_text_layout(
+                pixmap,
+                scale_cx,
+                glyphs,
+                body,
+                card_x + 12.0,
+                card_y + 12.0 + title.height(),
+            );
+        }
+        if let Some((rect, rows, labels, kinds, marker, colors)) = &mark_card_view {
+            let (px, py, pw, ph) = *rect;
+            draw_floating_surface(pixmap, px, py, pw, ph, 10.0, *palette);
+            let hovered_row = tab_hover
+                .and_then(|(x, y)| mark_card_row_at(*rect, rows, x, y))
+                .map(|(index, _)| index);
+            let current_color = marker.as_ref().map_or(study_color_now, |mark| mark.color);
+            let current_tone = palette.study_tone(current_color).stroke;
+            let mut row_top = py + 4.0;
+            for (index, row) in rows.iter().enumerate() {
+                let height = card_row_height(row);
+                let is_current = match (row, marker) {
+                    (CardRow::Kind(kind), Some(mark)) => kinds
+                        .get(*kind)
+                        .is_some_and(|kind| mark.kind.as_deref() == Some(kind.name.as_str())),
+                    _ => false,
+                };
+                let strip = matches!(row, CardRow::Shapes | CardRow::Colors);
+                if (hovered_row == Some(index) && !strip) || is_current {
+                    let tone = if hovered_row == Some(index) {
+                        palette.border
+                    } else {
+                        palette.elevated
+                    };
+                    let mut fill = Paint::default();
+                    fill.set_color(Color::from_rgba8(tone.0, tone.1, tone.2, 255));
+                    fill_rounded_rect(pixmap, px + 4.0, row_top, pw - 8.0, height, 6.0, &fill);
+                }
+                match row {
+                    CardRow::Kind(kind) => {
+                        if let Some(kind) = kinds.get(*kind) {
+                            let tone = palette.study_tone(kind.color).stroke;
+                            draw_mark_icon(
+                                pixmap,
+                                px + 12.0,
+                                row_top + (height - 18.0) * 0.5,
+                                18.0,
+                                tone,
+                                &kind.shape,
+                            );
+                        }
+                    }
+                    CardRow::Shapes => {
+                        let current_shape = marker.as_ref().map(|mark| mark.shape.clone());
+                        for (slot, shape) in estudio::shape_catalog().iter().enumerate() {
+                            let x = px + 12.0 + slot as f32 * (MARK_STRIP_SIZE + MARK_STRIP_GAP);
+                            let y = row_top + (height - MARK_STRIP_SIZE) * 0.5;
+                            if current_shape.as_ref() == Some(shape) {
+                                let mut ring = Paint::default();
+                                ring.set_color(Color::from_rgba8(
+                                    palette.elevated.0,
+                                    palette.elevated.1,
+                                    palette.elevated.2,
+                                    255,
+                                ));
+                                fill_rounded_rect(
+                                    pixmap,
+                                    x - 2.0,
+                                    y - 2.0,
+                                    MARK_STRIP_SIZE + 4.0,
+                                    MARK_STRIP_SIZE + 4.0,
+                                    6.0,
+                                    &ring,
+                                );
+                            }
+                            draw_mark_icon(pixmap, x, y, MARK_STRIP_SIZE, current_tone, shape);
+                        }
+                    }
+                    CardRow::Colors => {
+                        for (slot, color) in colors.iter().enumerate() {
+                            let tone = palette.study_tone(*color).stroke;
+                            let cx = px
+                                + 12.0
+                                + MARK_STRIP_SIZE * 0.5
+                                + slot as f32 * (MARK_STRIP_SIZE + MARK_STRIP_GAP);
+                            let cy = row_top + height * 0.5;
+                            let mut paint = Paint {
+                                anti_alias: true,
+                                ..Default::default()
+                            };
+                            paint.set_color(Color::from_rgba8(tone.0, tone.1, tone.2, 255));
+                            if let Some(circle) = tiny_skia::PathBuilder::from_circle(cx, cy, 8.0) {
+                                pixmap.fill_path(
+                                    &circle,
+                                    &paint,
+                                    tiny_skia::FillRule::Winding,
+                                    Transform::identity(),
+                                    None,
+                                );
+                            }
+                            if marker.as_ref().is_some_and(|mark| mark.color == *color) {
+                                let mut ring = Paint {
+                                    anti_alias: true,
+                                    ..Default::default()
+                                };
+                                ring.set_color(Color::from_rgba8(
+                                    palette.text.0,
+                                    palette.text.1,
+                                    palette.text.2,
+                                    255,
+                                ));
+                                if let Some(circle) =
+                                    tiny_skia::PathBuilder::from_circle(cx, cy, 10.5)
+                                {
+                                    pixmap.stroke_path(
+                                        &circle,
+                                        &ring,
+                                        &tiny_skia::Stroke {
+                                            width: 1.5,
+                                            ..Default::default()
+                                        },
+                                        Transform::identity(),
+                                        None,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+                if let Some(Some(layout)) = labels.get(index) {
+                    let text_x = if matches!(row, CardRow::Kind(_)) {
+                        px + 38.0
+                    } else {
+                        px + 14.0
+                    };
+                    draw_text_layout(
+                        pixmap,
+                        scale_cx,
+                        glyphs,
+                        layout,
+                        text_x,
+                        (row_top + (height - layout.height()) * 0.5).round(),
+                    );
+                }
+                row_top += height;
+            }
+        }
+        if let Some((view, title, chip_labels, row_labels, empty)) = &nav_view {
+            let geometry = &view.geometry;
+            let (px, py, pw, ph) = geometry.rect;
+            draw_floating_surface(pixmap, px, py, pw, ph, 10.0, *palette);
+            draw_text_layout(
+                pixmap,
+                scale_cx,
+                glyphs,
+                title,
+                px + NAV_PAD + 4.0,
+                (py + (NAV_HEAD - title.height()) * 0.5).round(),
+            );
+            // Flechas: ir a la marca anterior o a la siguiente de la lista.
+            for (rect, up) in [(geometry.up, true), (geometry.down, false)] {
+                let hovered = tab_hover.is_some_and(|(x, y)| {
+                    x >= rect.0 && x < rect.0 + rect.2 && y >= rect.1 && y < rect.1 + rect.3
+                });
+                let mut button = Paint {
+                    anti_alias: true,
+                    ..Default::default()
+                };
+                let tone = if hovered {
+                    palette.border
+                } else {
+                    palette.elevated
+                };
+                button.set_color(Color::from_rgba8(tone.0, tone.1, tone.2, 255));
+                fill_rounded_rect(pixmap, rect.0, rect.1, rect.2, rect.3, 6.0, &button);
+                let (cx, cy) = (rect.0 + rect.2 * 0.5, rect.1 + rect.3 * 0.5);
+                let mut arrow = tiny_skia::PathBuilder::new();
+                if up {
+                    arrow.move_to(cx - 4.5, cy + 2.5);
+                    arrow.line_to(cx, cy - 2.5);
+                    arrow.line_to(cx + 4.5, cy + 2.5);
+                } else {
+                    arrow.move_to(cx - 4.5, cy - 2.5);
+                    arrow.line_to(cx, cy + 2.5);
+                    arrow.line_to(cx + 4.5, cy - 2.5);
+                }
+                if let Some(arrow) = arrow.finish() {
+                    let mut ink = Paint {
+                        anti_alias: true,
+                        ..Default::default()
+                    };
+                    ink.set_color(Color::from_rgba8(
+                        palette.text.0,
+                        palette.text.1,
+                        palette.text.2,
+                        255,
+                    ));
+                    pixmap.stroke_path(
+                        &arrow,
+                        &ink,
+                        &tiny_skia::Stroke {
+                            width: 1.6,
+                            line_cap: tiny_skia::LineCap::Round,
+                            line_join: tiny_skia::LineJoin::Round,
+                            ..Default::default()
+                        },
+                        Transform::identity(),
+                        None,
+                    );
+                }
+            }
+            // Un botón por tipo, con su cantidad: filtran la lista.
+            for (index, rect) in geometry.chips.iter().enumerate() {
+                let Some((_, _, count, active, color, shape)) = view.chips.get(index) else {
+                    continue;
+                };
+                let hovered = tab_hover.is_some_and(|(x, y)| {
+                    x >= rect.0 && x < rect.0 + rect.2 && y >= rect.1 && y < rect.1 + rect.3
+                });
+                let mut chip = Paint {
+                    anti_alias: true,
+                    ..Default::default()
+                };
+                if *active {
+                    chip.set_color(Color::from_rgba8(
+                        palette.accent.0,
+                        palette.accent.1,
+                        palette.accent.2,
+                        70,
+                    ));
+                } else if hovered {
+                    chip.set_color(Color::from_rgba8(
+                        palette.border.0,
+                        palette.border.1,
+                        palette.border.2,
+                        255,
+                    ));
+                } else {
+                    chip.set_color(Color::from_rgba8(
+                        palette.elevated.0,
+                        palette.elevated.1,
+                        palette.elevated.2,
+                        255,
+                    ));
+                }
+                fill_rounded_rect(pixmap, rect.0, rect.1, rect.2, rect.3, 7.0, &chip);
+                let tone = palette.study_tone(*color).stroke;
+                let faded = if *count == 0 {
+                    mix_rgb(palette.elevated, tone, 0.45)
+                } else {
+                    tone
+                };
+                draw_mark_icon(pixmap, rect.0 + 7.0, rect.1 + 5.0, 16.0, faded, shape);
+                if let Some(label) = chip_labels.get(index) {
+                    draw_text_layout(
+                        pixmap,
+                        scale_cx,
+                        glyphs,
+                        label,
+                        rect.0 + 30.0,
+                        (rect.1 + (rect.3 - label.height()) * 0.5).round(),
+                    );
+                }
+            }
+            // La lista de marcas.
+            for (index, (_, color, shape, _)) in view.rows.iter().enumerate() {
+                let row_y = geometry.rows_top + index as f32 * NAV_ROW;
+                let absolute = view.first + index;
+                let hovered = tab_hover.is_some_and(|(x, y)| {
+                    x >= px && x < px + pw && y >= row_y && y < row_y + NAV_ROW
+                });
+                if absolute == view.selected || hovered {
+                    let mut fill = Paint {
+                        anti_alias: true,
+                        ..Default::default()
+                    };
+                    if absolute == view.selected {
+                        fill.set_color(Color::from_rgba8(
+                            palette.accent.0,
+                            palette.accent.1,
+                            palette.accent.2,
+                            44,
+                        ));
+                    } else {
+                        fill.set_color(Color::from_rgba8(
+                            palette.border.0,
+                            palette.border.1,
+                            palette.border.2,
+                            255,
+                        ));
+                    }
+                    fill_rounded_rect(pixmap, px + 4.0, row_y, pw - 8.0, NAV_ROW, 6.0, &fill);
+                }
+                let tone = palette.study_tone(*color).stroke;
+                draw_mark_icon(pixmap, px + 12.0, row_y + 3.0, 18.0, tone, shape);
+                if let Some(label) = row_labels.get(index) {
+                    draw_text_layout(
+                        pixmap,
+                        scale_cx,
+                        glyphs,
+                        label,
+                        px + 38.0,
+                        (row_y + (NAV_ROW - label.height()) * 0.5).round(),
+                    );
+                }
+            }
+            if let Some(message) = empty {
+                draw_text_layout(
+                    pixmap,
+                    scale_cx,
+                    glyphs,
+                    message,
+                    px + 14.0,
+                    (geometry.rows_top + (NAV_ROW - message.height()) * 0.5).round(),
+                );
             }
         }
 
@@ -26533,7 +28242,8 @@ reservar hotel
         assert!(!tramos.is_empty(), "en Editar el subrayado se ve");
         app.perform_action(AppAction::ToggleBookmark);
         assert_eq!(app.study_bookmarks().len(), 1);
-        assert!(!app.study_mark_blocks().is_empty(), "y la marca también");
+        app.draw_for_test(900, 500);
+        assert!(!app.margin_marks(false).is_empty(), "y la marca también");
     }
 
     #[test]
@@ -27316,6 +29026,346 @@ la casa final
         app.remove_highlight_from_picker();
         assert!(app.highlight_picker.is_none());
         assert!(app.study_highlight_ranges().is_empty(), "se quitó");
+    }
+
+    const TEXTO_CON_MARCAS: &str = "# Biología celular\n\nLa célula es la unidad básica de la vida.\n\nLa mitocondria produce energía para la célula.\n\nHay dos tipos: procariota y eucariota.\n\n## Partes\n\nMembrana, citoplasma y núcleo.\n";
+
+    /// Un documento con cuatro marcas: (línea, posición del tipo, texto).
+    fn app_con_marcas(ancho: u32, modo: DocumentMode) -> App {
+        let mut app = App::for_tests(NIGHT);
+        app.load_for_test(TEXTO_CON_MARCAS, modo);
+        app.draw_for_test(ancho, 560);
+        let tipos = estudio::default_mark_kinds();
+        let mut parsed = anotaciones::Anotaciones::default();
+        for (linea, tipo, nota) in [
+            (
+                "La célula es",
+                1usize,
+                Some("Repasar para el examen del viernes"),
+            ),
+            ("La mitocondria", 0, None),
+            ("Hay dos tipos", 1, None),
+            ("Membrana", 4, Some("Corregir la ortografía")),
+        ] {
+            let byte = TEXTO_CON_MARCAS.find(linea).unwrap();
+            estudio::toggle_bookmark(
+                &mut parsed,
+                TEXTO_CON_MARCAS,
+                byte,
+                0,
+                anotaciones::Forma::Barra,
+            )
+            .unwrap();
+            estudio::change_bookmark(&mut parsed, TEXTO_CON_MARCAS, byte, |registro| {
+                estudio::apply_mark_kind(registro, &tipos[tipo]);
+                registro.nota = nota.map(str::to_string);
+            })
+            .unwrap();
+        }
+        app.document.annotations = anotaciones::escribir(&parsed, "\n");
+        app.draw_for_test(ancho, 560);
+        app
+    }
+
+    #[test]
+    fn las_marcas_van_a_la_derecha_del_texto_y_se_pliegan_con_el_ancho() {
+        use marcadores::MarkDisplay;
+        for (ancho, esperado) in [(1200u32, "texto"), (900, "cinta"), (640, "muesca")] {
+            let mut app = app_con_marcas(ancho, DocumentMode::Reading);
+            let marcas = app.margin_marks(false);
+            assert_eq!(marcas.len(), 4, "{ancho}");
+            let paneles = app.focused_document_panes().unwrap();
+            let derecha_del_texto = paneles.source.x
+                + app
+                    .slots
+                    .iter()
+                    .filter(|s| s.height > 0.0)
+                    .map(|s| s.x)
+                    .fold(f32::INFINITY, f32::min)
+                + pane_text_width(paneles.source, app.scale_factor);
+            for marca in &marcas {
+                assert!(
+                    marca.rect.0 > derecha_del_texto,
+                    "{ancho}: la etiqueta toca el texto"
+                );
+                assert!(
+                    marca.rect.0 + marca.rect.2 <= ancho as f32,
+                    "{ancho}: se sale de la ventana"
+                );
+                let forma = match marca.display {
+                    MarkDisplay::Full(_) => "texto",
+                    MarkDisplay::Ribbon => "cinta",
+                    MarkDisplay::Notch => "muesca",
+                };
+                assert_eq!(forma, esperado, "{ancho}");
+            }
+            // Una debajo de la otra, sin pisarse.
+            for par in marcas.windows(2) {
+                assert!(par[1].rect.1 - par[0].rect.1 >= marcadores::TAG_HEIGHT);
+            }
+            // Lo que dice la etiqueta: su texto, o si no tiene, su tipo.
+            assert_eq!(marcas[0].text, "Repasar para el examen del viernes");
+            assert_eq!(marcas[1].text, "Importante");
+            // En Comparar solo se ven del lado de lectura.
+            let mut comparar = app_con_marcas(1200, DocumentMode::Split);
+            assert!(comparar.margin_marks(false).is_empty());
+            assert_eq!(comparar.margin_marks(true).len(), 4);
+        }
+    }
+
+    #[test]
+    fn el_indice_flotante_abierto_le_quita_el_espacio_a_las_etiquetas() {
+        let mut app = app_con_marcas(1000, DocumentMode::Reading);
+        assert!(matches!(
+            app.margin_marks(false)[0].display,
+            marcadores::MarkDisplay::Full(_)
+        ));
+        app.settings.floating_outline = true;
+        assert!(!matches!(
+            app.margin_marks(false)[0].display,
+            marcadores::MarkDisplay::Full(_)
+        ));
+    }
+
+    #[test]
+    fn un_clic_en_la_etiqueta_abre_su_tarjeta_y_se_puede_cambiar_todo() {
+        let mut app = app_con_marcas(1200, DocumentMode::Reading);
+        let mitocondria = app.margin_marks(false)[1].clone();
+        let (x, y) = (
+            mitocondria.rect.0 + mitocondria.rect.2 * 0.5,
+            mitocondria.rect.1 + 8.0,
+        );
+        let encontrada = app.margin_mark_at(x, y).expect("la etiqueta responde");
+        assert_eq!(encontrada.id, mitocondria.id);
+        assert!(app.margin_mark_at(x - 400.0, y).is_none());
+        app.open_mark_card(encontrada.byte, Some(encontrada.id.clone()), 300.0, Some(y));
+        app.draw_for_test(1200, 560);
+        // La tarjeta de una marca con tipo ofrece quitarle el tipo, su texto y quitarla.
+        let filas = app.mark_card_rows();
+        assert!(filas.contains(&CardRow::NoKind));
+        assert!(filas.contains(&CardRow::Text));
+        assert!(filas.contains(&CardRow::Remove));
+        // Cambiar el tipo: trae su color y su forma.
+        let duda = app.mark_kinds()[1].clone();
+        app.mark_card_choose_kind(&duda);
+        assert!(app.mark_card.is_none(), "elegir un tipo cierra la tarjeta");
+        let marca = app
+            .study_bookmarks()
+            .into_iter()
+            .find(|m| m.id == mitocondria.id)
+            .unwrap();
+        assert_eq!(marca.kind.as_deref(), Some("Duda"));
+        assert_eq!(marca.color, duda.color);
+        assert_eq!(marca.shape, duda.shape);
+        // Forma y color a mano, con la tarjeta abierta.
+        app.open_mark_card(marca.start, Some(marca.id.clone()), 300.0, None);
+        app.mark_card_edit(
+            |r| r.forma = Some(anotaciones::Forma::Bandera),
+            "Forma de la marca cambiada",
+        );
+        app.mark_card_edit(
+            |r| r.color = estudio::color_for_index(2),
+            "Color de la marca cambiado",
+        );
+        let marca = app
+            .study_bookmarks()
+            .into_iter()
+            .find(|m| m.id == mitocondria.id)
+            .unwrap();
+        assert_eq!(marca.shape, anotaciones::Forma::Bandera);
+        assert_eq!(marca.color, 2);
+        assert_eq!(marca.kind.as_deref(), Some("Duda"), "el tipo se conserva");
+        // Sin tipo, y quitar la marca.
+        app.mark_card_clear_kind();
+        assert!(
+            app.study_bookmarks()
+                .iter()
+                .any(|m| m.id == marca.id && m.kind.is_none())
+        );
+        app.mark_card_remove();
+        assert!(app.mark_card.is_none());
+        assert!(app.study_bookmarks().iter().all(|m| m.id != marca.id));
+        assert_eq!(app.study_bookmarks().len(), 3);
+    }
+
+    #[test]
+    fn desde_una_linea_sin_marca_la_tarjeta_la_crea_con_el_tipo_elegido() {
+        let mut app = app_de_estudio();
+        app.draw_for_test(900, 500);
+        let byte = TEXTO_DE_ESTUDIO.find("Otra").unwrap();
+        app.open_mark_card(byte, None, 300.0, None);
+        let filas = app.mark_card_rows();
+        assert!(
+            !filas.contains(&CardRow::Text),
+            "sin marca no hay texto que editar"
+        );
+        assert!(!filas.contains(&CardRow::Remove));
+        let pendiente = app.mark_kinds()[2].clone();
+        app.mark_card_choose_kind(&pendiente);
+        let marcas = app.study_bookmarks();
+        assert_eq!(marcas.len(), 1);
+        assert_eq!(marcas[0].kind.as_deref(), Some("Pendiente"));
+    }
+
+    #[test]
+    fn un_tipo_nuevo_toma_el_color_y_la_forma_de_la_marca_y_queda_para_todos_los_documentos() {
+        let mut app = app_con_marcas(1200, DocumentMode::Reading);
+        let marca = app.margin_marks(false)[3].clone();
+        app.open_mark_card(marca.byte, Some(marca.id.clone()), 300.0, None);
+        // Un nombre repetido, vacío o con barras no crea nada raro.
+        app.kind_edit = Some("duda".to_string());
+        app.commit_kind_edit();
+        assert!(app.custom_mark_kinds.is_empty(), "ya existe «Duda»");
+        app.kind_edit = Some("  ".to_string());
+        app.commit_kind_edit();
+        assert!(app.custom_mark_kinds.is_empty());
+        app.open_mark_card(marca.byte, Some(marca.id.clone()), 300.0, None);
+        app.kind_edit = Some("Para | el examen".to_string());
+        app.commit_kind_edit();
+        assert_eq!(app.custom_mark_kinds.len(), 1);
+        assert_eq!(app.custom_mark_kinds[0].name, "Para  el examen");
+        assert_eq!(app.settings.custom_mark_kinds.len(), 1);
+        // Se ofrece junto a los demás y la marca lo lleva.
+        assert_eq!(app.mark_kinds().len(), 6);
+        let marcada = app
+            .study_bookmarks()
+            .into_iter()
+            .find(|m| m.id == marca.id)
+            .unwrap();
+        assert_eq!(marcada.kind.as_deref(), Some("Para  el examen"));
+        assert_eq!(marcada.color, marca.color);
+        // Se puede usar en otra línea.
+        let otro = app.mark_kinds()[5].clone();
+        let byte = TEXTO_CON_MARCAS.find("Hay dos tipos").unwrap();
+        app.open_mark_card(byte, None, 300.0, None);
+        app.mark_card_choose_kind(&otro);
+        assert_eq!(
+            app.study_bookmarks()
+                .iter()
+                .filter(|m| m.kind.as_deref() == Some("Para  el examen"))
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn el_navegador_cuenta_por_tipo_filtra_y_salta_a_cada_marca() {
+        let mut app = app_con_marcas(1200, DocumentMode::Reading);
+        app.toggle_mark_navigator();
+        let vista = app.mark_navigator_view().unwrap();
+        assert_eq!(vista.title, "Marcas · 4");
+        let cuenta = |nombre: &str| {
+            vista
+                .chips
+                .iter()
+                .find(|(_, n, ..)| n == nombre)
+                .map(|(_, _, c, ..)| *c)
+        };
+        assert_eq!(cuenta("Duda"), Some(2));
+        assert_eq!(cuenta("Importante"), Some(1));
+        assert_eq!(cuenta("Corregir"), Some(1));
+        assert_eq!(cuenta("Repasar"), Some(0));
+        assert_eq!(vista.rows.len(), 4);
+        // Filtrar por «Duda» deja dos y las flechas recorren solo esas.
+        app.mark_navigator.as_mut().unwrap().filter = vec![Some("Duda".to_string())];
+        let vista = app.mark_navigator_view().unwrap();
+        assert_eq!(vista.rows.len(), 2);
+        assert_eq!(vista.title, "Marcas · 2 de 4");
+        let lineas: Vec<usize> = vista.rows.iter().map(|fila| fila.0).collect();
+        app.select_navigator_mark(0);
+        assert_eq!(app.mark_navigator.as_ref().unwrap().selected, 0);
+        app.select_navigator_mark(1);
+        assert_eq!(app.mark_navigator.as_ref().unwrap().selected, 1);
+        app.select_navigator_mark(2);
+        assert_eq!(
+            app.mark_navigator.as_ref().unwrap().selected,
+            0,
+            "da la vuelta"
+        );
+        assert!(lineas[0] < lineas[1]);
+        // Un tipo sin marcas deja la lista vacía con un mensaje.
+        app.mark_navigator.as_mut().unwrap().filter = vec![Some("Repasar".to_string())];
+        let vacia = app.mark_navigator_view().unwrap();
+        assert!(vacia.rows.is_empty());
+        assert!(vacia.empty_message.is_some());
+        // Dibuja sin fallar con cualquier filtro.
+        app.draw_for_test(1200, 560);
+        app.toggle_mark_navigator();
+        assert!(app.mark_navigator.is_none());
+    }
+
+    #[test]
+    fn alt_avpag_y_alt_repag_recorren_las_marcas_dando_la_vuelta() {
+        let mut app = app_con_marcas(1200, DocumentMode::Reading);
+        let marcas = app.study_bookmarks();
+        assert_eq!(marcas.len(), 4);
+        // Desde el principio, la siguiente es la primera; luego las demás.
+        app.selection = None;
+        app.document.scroll_anchor = Some(0);
+        app.step_bookmark(false);
+        assert_eq!(
+            app.notice.as_deref().map(|n| n.starts_with("Marca 1 de 4")),
+            Some(true)
+        );
+        app.selection = None;
+        app.document.scroll_anchor = Some(marcas[3].start);
+        app.step_bookmark(false);
+        assert!(
+            app.notice.as_deref().unwrap().starts_with("Marca 1 de 4"),
+            "da la vuelta"
+        );
+        app.selection = None;
+        app.document.scroll_anchor = Some(marcas[0].start);
+        app.step_bookmark(true);
+        assert!(
+            app.notice.as_deref().unwrap().starts_with("Marca 4 de 4"),
+            "da la vuelta hacia atrás"
+        );
+        // Sin marcas, avisa.
+        let mut vacio = app_de_estudio();
+        vacio.step_bookmark(false);
+        assert_eq!(
+            vacio.notice.as_deref(),
+            Some("Este documento no tiene marcas de libro")
+        );
+    }
+
+    #[test]
+    fn las_marcas_tienen_sus_botones_en_leer_y_el_menu_estudio_los_ofrece_al_escribir() {
+        for modo in [DocumentMode::Reading, DocumentMode::Split] {
+            let acciones = contextual_toolbar_actions(modo);
+            assert!(acciones.contains(&AppAction::ToggleBookmark), "{modo:?}");
+            assert!(acciones.contains(&AppAction::BookmarkMenu), "{modo:?}");
+            assert!(toolbar_action_has_menu(AppAction::BookmarkMenu));
+        }
+        assert!(
+            contextual_toolbar_actions(DocumentMode::Reading)
+                .contains(&AppAction::BookmarkNavigator)
+        );
+        // La flecha va pegada a su botón y es más angosta.
+        let acciones = contextual_toolbar_actions(DocumentMode::Reading);
+        let boton = acciones
+            .iter()
+            .position(|a| *a == AppAction::ToggleBookmark)
+            .unwrap();
+        assert_eq!(acciones[boton + 1], AppAction::BookmarkMenu);
+        // En Editar, subrayar y marcar están en el menú Estudio.
+        let mut editar = App::for_tests(NIGHT);
+        editar.load_for_test("# T\n", DocumentMode::SourceEditing);
+        editar.command_palette_scope = CommandPaletteScope::Study;
+        let acciones = editar.command_palette_actions();
+        for accion in STUDY_WRITING_ACTIONS {
+            assert!(acciones.contains(&accion), "{accion:?}");
+        }
+        // En Leer no se repite: ya están en la barra.
+        let mut leer = App::for_tests(NIGHT);
+        leer.load_for_test("# T\n", DocumentMode::Reading);
+        leer.command_palette_scope = CommandPaletteScope::Study;
+        assert!(
+            !leer
+                .command_palette_actions()
+                .contains(&AppAction::HighlightSelection)
+        );
     }
 
     #[test]

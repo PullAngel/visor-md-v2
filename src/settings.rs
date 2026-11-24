@@ -13,6 +13,8 @@ const MAX_SETTINGS_BYTES: u64 = 16 * 1024;
 const MAX_DOCUMENT_MODES: usize = 128;
 /// Cuántos colores libres recientes se recuerdan.
 pub(crate) const MAX_RECENT_COLORS: usize = 6;
+/// Cuántos tipos de marca propios se guardan.
+pub(crate) const MAX_CUSTOM_MARK_KINDS: usize = 12;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum DocumentModePreference {
@@ -59,6 +61,9 @@ pub(crate) struct Settings {
     /// Últimos colores libres de subrayado (RGB de 24 bits), el más reciente
     /// primero. Son colores, no texto ni rutas.
     pub(crate) recent_colors: Vec<u32>,
+    /// Tipos de marca propios: nombre, color (RGB de 24 bits) y forma (posición
+    /// en el catálogo de formas). Valen para todos los documentos.
+    pub(crate) custom_mark_kinds: Vec<(String, u32, u8)>,
     document_modes: Vec<(String, DocumentModePreference)>,
 }
 
@@ -72,6 +77,7 @@ impl Default for Settings {
             file_types_offered: false,
             tree_sort: 0,
             recent_colors: Vec::new(),
+            custom_mark_kinds: Vec::new(),
             document_modes: Vec::new(),
         }
     }
@@ -148,6 +154,7 @@ fn load_from(path: &Path) -> Result<Settings, std::io::Error> {
     let mut file_types_offered = None;
     let mut tree_sort = None;
     let mut recent_colors = Vec::new();
+    let mut custom_mark_kinds: Vec<(String, u32, u8)> = Vec::new();
     let mut document_modes = Vec::new();
     for line in source.lines().map(str::trim) {
         let Some((key, value)) = line.split_once('=') else {
@@ -190,6 +197,27 @@ fn load_from(path: &Path) -> Result<Settings, std::io::Error> {
                     _ => None,
                 }
             }
+            "mark_kind" => {
+                let mut parts = value.trim().rsplitn(3, '|');
+                let (Some(shape), Some(color), Some(name)) =
+                    (parts.next(), parts.next(), parts.next())
+                else {
+                    continue;
+                };
+                let name = crate::estudio::clean_kind_name(name);
+                let color = (color.len() == 6)
+                    .then(|| u32::from_str_radix(color, 16).ok())
+                    .flatten();
+                let shape = shape.parse::<u8>().ok();
+                if let (false, Some(color), Some(shape)) = (name.is_empty(), color, shape)
+                    && custom_mark_kinds.len() < MAX_CUSTOM_MARK_KINDS
+                    && !custom_mark_kinds
+                        .iter()
+                        .any(|(known, _, _)| known.eq_ignore_ascii_case(&name))
+                {
+                    custom_mark_kinds.push((name, color, shape));
+                }
+            }
             "recent_colors" => {
                 recent_colors = value
                     .split(',')
@@ -230,6 +258,7 @@ fn load_from(path: &Path) -> Result<Settings, std::io::Error> {
         file_types_offered: file_types_offered.unwrap_or(false),
         tree_sort: tree_sort.unwrap_or(0),
         recent_colors,
+        custom_mark_kinds,
         document_modes: if matches!(version, Some(2) | Some(SETTINGS_VERSION)) {
             document_modes
         } else {
@@ -257,6 +286,17 @@ fn store_to(path: &Path, settings: &Settings) -> Result<(), std::io::Error> {
             .collect::<Vec<_>>()
             .join(",");
         source.push_str(&format!("recent_colors={colors}\n"));
+    }
+    for (name, color, shape) in settings
+        .custom_mark_kinds
+        .iter()
+        .take(MAX_CUSTOM_MARK_KINDS)
+    {
+        source.push_str(&format!(
+            "mark_kind={}|{:06x}|{shape}\n",
+            crate::estudio::clean_kind_name(name),
+            color & 0xFF_FFFF
+        ));
     }
     for (key, mode) in &settings.document_modes {
         source.push_str(&format!("document_mode={key},{}\n", mode.code()));
@@ -311,6 +351,7 @@ mod tests {
             file_types_offered: true,
             tree_sort: 2,
             recent_colors: vec![0xFFCC00, 0x0033AA],
+            custom_mark_kinds: vec![("Para el examen".to_string(), 0x2288CC, 3)],
             document_modes: Vec::new(),
         };
         store_to(&path, &settings).unwrap();
@@ -325,12 +366,43 @@ mod tests {
                 file_types_offered: true,
                 tree_sort: 2,
                 recent_colors: vec![0xFFCC00, 0x0033AA],
+                custom_mark_kinds: vec![("Para el examen".to_string(), 0x2288CC, 3)],
                 document_modes: Vec::new(),
             }
         );
         let stored = fs::read_to_string(&path).unwrap();
         assert!(!stored.contains("path"));
         assert!(stored.contains("reduce_motion=true"));
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn los_tipos_de_marca_propios_se_limpian_y_se_acotan() {
+        let path = temp_file();
+        let mut lineas = String::from("version=3\n");
+        lineas.push_str("mark_kind=Bueno|aabbcc|2\n");
+        lineas.push_str("mark_kind=bueno|112233|1\n");
+        lineas.push_str("mark_kind=|112233|1\n");
+        lineas.push_str("mark_kind=Sin color|xyz|1\n");
+        lineas.push_str("mark_kind=Con|barra|ffffff|4\n");
+        for n in 0..20 {
+            lineas.push_str(&format!("mark_kind=Tipo {n}|0000ff|0\n"));
+        }
+        fs::write(&path, lineas).unwrap();
+        let tipos = load_from(&path).unwrap().custom_mark_kinds;
+        assert_eq!(tipos.len(), MAX_CUSTOM_MARK_KINDS);
+        assert_eq!(tipos[0], ("Bueno".to_string(), 0xAABBCC, 2));
+        // Repetido (sin importar mayúsculas), vacío y color inválido: ignorados.
+        assert!(tipos.iter().all(|(nombre, _, _)| nombre != "Sin color"));
+        assert_eq!(
+            tipos
+                .iter()
+                .filter(|(nombre, _, _)| nombre.eq_ignore_ascii_case("bueno"))
+                .count(),
+            1
+        );
+        // Un nombre con barra vertical se limpia al leer y al guardar.
+        assert!(tipos.iter().any(|(nombre, _, _)| nombre == "Conbarra"));
         let _ = fs::remove_file(path);
     }
 

@@ -3,7 +3,7 @@
 //! tramos pintar. Sin interfaz: solo texto, rangos y el formato de
 //! `anotaciones`.
 
-use crate::anotaciones::{self, Ancla, Anotaciones, Color, Forma, Lectura, Registro, Tipo};
+use crate::anotaciones::{self, Ancla, Anotaciones, Color, Forma, Lectura, Registro, Tipo, Valor};
 
 /// Tope de la cita de un subrayado (diseño, 5.6).
 pub(crate) const MAX_CITA_BYTES: usize = 4096;
@@ -129,8 +129,8 @@ pub(crate) struct Highlight {
 pub(crate) const CUSTOM_BASE: usize = 1 << 24;
 
 /// El número de un color libre.
-pub(crate) fn custom_color(rgb: (u8, u8, u8)) -> usize {
-    CUSTOM_BASE | (usize::from(rgb.0) << 16) | (usize::from(rgb.1) << 8) | usize::from(rgb.2)
+pub(crate) const fn custom_color(rgb: (u8, u8, u8)) -> usize {
+    CUSTOM_BASE | ((rgb.0 as usize) << 16) | ((rgb.1 as usize) << 8) | rgb.2 as usize
 }
 
 /// El RGB de un color libre, o `None` si es de la paleta.
@@ -402,6 +402,10 @@ pub(crate) struct Bookmark {
     pub(crate) shape: Forma,
     pub(crate) label: String,
     pub(crate) id: String,
+    /// El tipo de la marca («Duda», «Pendiente», uno propio…), si tiene.
+    pub(crate) kind: Option<String>,
+    /// El texto que la persona le escribió, sin la cita de la línea.
+    pub(crate) note: Option<String>,
 }
 
 /// Las marcas ancladas, ordenadas por posición.
@@ -428,11 +432,176 @@ pub(crate) fn bookmarks(source: &str, anotaciones: &Anotaciones) -> Vec<Bookmark
                 shape: registro.forma.clone().unwrap_or(Forma::Barra),
                 label,
                 id: registro.id.clone(),
+                kind: mark_kind_of(registro).map(str::to_string),
+                note: registro.nota.clone().filter(|nota| !nota.trim().is_empty()),
             })
         })
         .collect();
     marks.sort_by_key(|mark| mark.start);
     marks
+}
+
+// ---------------------------------------------------------------------------
+// Tipos de marca: una etiqueta («Duda», «Pendiente»…) que trae su color y su
+// forma por defecto, y que después se puede filtrar y recorrer.
+// ---------------------------------------------------------------------------
+
+/// Clave del tipo dentro del registro. El lector del formato ya conserva las
+/// claves que no conoce, así que una versión anterior la respeta sin dibujarla.
+const KIND_KEY: &str = "categoria";
+/// Tope del nombre de un tipo.
+pub(crate) const MAX_KIND_NAME_CHARS: usize = 24;
+
+/// Un tipo de marca con el color y la forma que se ponen al elegirlo.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct MarkKind {
+    pub(crate) name: String,
+    pub(crate) color: usize,
+    pub(crate) shape: Forma,
+}
+
+/// Formas de marca que se pueden elegir. Las cuatro primeras son las de
+/// siempre; las demás llevan un signo dentro.
+pub(crate) fn shape_catalog() -> [Forma; 9] {
+    [
+        Forma::Barra,
+        Forma::Cinta,
+        Forma::Punto,
+        Forma::Bandera,
+        Forma::Otro("exclamacion".to_string()),
+        Forma::Otro("interrogacion".to_string()),
+        Forma::Otro("casilla".to_string()),
+        Forma::Otro("repetir".to_string()),
+        Forma::Otro("lapiz".to_string()),
+    ]
+}
+
+/// Los tipos que trae la aplicación.
+pub(crate) fn default_mark_kinds() -> Vec<MarkKind> {
+    let kind = |name: &str, color: usize, shape: &str| MarkKind {
+        name: name.to_string(),
+        color,
+        shape: Forma::Otro(shape.to_string()),
+    };
+    vec![
+        kind(
+            "Importante",
+            custom_color((0xE5, 0x48, 0x4D)),
+            "exclamacion",
+        ),
+        kind("Duda", custom_color((0xF0, 0x8C, 0x3A)), "interrogacion"),
+        MarkKind {
+            name: "Pendiente".to_string(),
+            color: 0,
+            shape: Forma::Otro("casilla".to_string()),
+        },
+        MarkKind {
+            name: "Repasar".to_string(),
+            color: 4,
+            shape: Forma::Otro("repetir".to_string()),
+        },
+        MarkKind {
+            name: "Corregir".to_string(),
+            color: 3,
+            shape: Forma::Otro("lapiz".to_string()),
+        },
+    ]
+}
+
+/// Nombre de un tipo, limpio: sin saltos ni `|`, recortado y de largo acotado.
+pub(crate) fn clean_kind_name(text: &str) -> String {
+    text.chars()
+        .filter(|c| !c.is_control() && *c != '|')
+        .collect::<String>()
+        .trim()
+        .chars()
+        .take(MAX_KIND_NAME_CHARS)
+        .collect()
+}
+
+/// El tipo de una marca, si tiene.
+pub(crate) fn mark_kind_of(registro: &Registro) -> Option<&str> {
+    registro
+        .extras
+        .iter()
+        .find_map(|(key, value)| match (key.as_str(), value) {
+            (KIND_KEY, Valor::Texto(name)) if !name.trim().is_empty() => Some(name.as_str()),
+            _ => None,
+        })
+}
+
+/// Pone o quita el tipo de una marca, sin tocar su color ni su forma.
+pub(crate) fn set_mark_kind(registro: &mut Registro, kind: Option<&str>) {
+    registro.extras.retain(|(key, _)| key != KIND_KEY);
+    if let Some(name) = kind.map(clean_kind_name).filter(|name| !name.is_empty()) {
+        registro
+            .extras
+            .push((KIND_KEY.to_string(), Valor::Texto(name)));
+    }
+}
+
+/// Le da a una marca un tipo con su color y su forma por defecto.
+pub(crate) fn apply_mark_kind(registro: &mut Registro, kind: &MarkKind) {
+    set_mark_kind(registro, Some(&kind.name));
+    registro.color = color_for_index(kind.color);
+    registro.forma = Some(kind.shape.clone());
+}
+
+/// Cuántas marcas hay de cada tipo (en el orden de `kinds`) y cuántas no
+/// tienen tipo. Los tipos que no están en `kinds` (de otra computadora) se
+/// suman al final, con su nombre.
+pub(crate) fn kind_counts(marks: &[Bookmark], kinds: &[MarkKind]) -> (Vec<(String, usize)>, usize) {
+    let mut counts: Vec<(String, usize)> =
+        kinds.iter().map(|kind| (kind.name.clone(), 0)).collect();
+    let mut untyped = 0;
+    for mark in marks {
+        match &mark.kind {
+            None => untyped += 1,
+            Some(name) => match counts.iter_mut().find(|(known, _)| known == name) {
+                Some((_, count)) => *count += 1,
+                None => counts.push((name.clone(), 1)),
+            },
+        }
+    }
+    (counts, untyped)
+}
+
+/// Las marcas que pasan el filtro (sin filtro, todas), en orden de posición.
+/// Un filtro vacío no deja ver ninguna; `None` en el nombre es «sin tipo».
+pub(crate) fn filter_marks<'a>(
+    marks: &'a [Bookmark],
+    active: &[Option<String>],
+) -> Vec<&'a Bookmark> {
+    marks
+        .iter()
+        .filter(|mark| active.is_empty() || active.contains(&mark.kind))
+        .collect()
+}
+
+/// La marca siguiente (o anterior) a `from` dentro de las filtradas, dando la
+/// vuelta al llegar al final. `None` si no hay ninguna.
+pub(crate) fn step_mark<'a>(
+    filtered: &[&'a Bookmark],
+    from: usize,
+    backwards: bool,
+) -> Option<&'a Bookmark> {
+    if filtered.is_empty() {
+        return None;
+    }
+    if backwards {
+        filtered
+            .iter()
+            .rev()
+            .find(|mark| mark.start < from)
+            .or(filtered.last())
+            .copied()
+    } else {
+        filtered
+            .iter()
+            .find(|mark| mark.start > from)
+            .or(filtered.first())
+            .copied()
+    }
 }
 
 /// Comienzo de la línea del texto real que contiene `byte`.
@@ -495,6 +664,38 @@ pub(crate) fn toggle_bookmark(
     Ok(true)
 }
 
+/// El identificador de la marca de la línea de `byte`, si hay.
+pub(crate) fn bookmark_id_on_line(
+    source: &str,
+    anotaciones: &Anotaciones,
+    byte: usize,
+) -> Option<String> {
+    bookmark_on_line(source, anotaciones, byte)
+}
+
+/// Si la línea de `byte` ya tiene marca, no hace nada; si no, la pone.
+pub(crate) fn ensure_bookmark(
+    anotaciones: &mut Anotaciones,
+    source: &str,
+    byte: usize,
+    color: usize,
+    shape: Forma,
+) -> Result<(), &'static str> {
+    if bookmark_on_line(source, anotaciones, byte).is_some() {
+        return Ok(());
+    }
+    toggle_bookmark(anotaciones, source, byte, color, shape).map(|_| ())
+}
+
+/// Quita una marca por su identificador. Devuelve `true` si existía.
+pub(crate) fn remove_bookmark(anotaciones: &mut Anotaciones, id: &str) -> bool {
+    let before = anotaciones.registros.len();
+    anotaciones
+        .registros
+        .retain(|registro| !(registro.tipo == Tipo::Marca && registro.id == id));
+    anotaciones.registros.len() != before
+}
+
 /// Aplica un cambio a la marca de la línea de `byte`. Error si no hay.
 pub(crate) fn change_bookmark(
     anotaciones: &mut Anotaciones,
@@ -510,16 +711,6 @@ pub(crate) fn change_bookmark(
         .ok_or("Esta línea no tiene marca")?;
     change(registro);
     Ok(())
-}
-
-/// La siguiente forma de marca: barra → cinta → punto → bandera → barra.
-pub(crate) fn next_shape(shape: Option<&Forma>) -> Forma {
-    match shape {
-        Some(Forma::Barra) | None | Some(Forma::Otro(_)) => Forma::Cinta,
-        Some(Forma::Cinta) => Forma::Punto,
-        Some(Forma::Punto) => Forma::Bandera,
-        Some(Forma::Bandera) => Forma::Barra,
-    }
 }
 
 /// Lo que el índice muestra de las marcas de una sección.
@@ -554,7 +745,12 @@ impl SectionMarks {
             .take(MAX_TOOLTIP_MARKS)
             .map(|(color, _, label)| {
                 let label: String = label.chars().take(60).collect();
-                format!("{}: {label}", crate::theme::STUDY_COLOR_NAMES[*color])
+                // «Duda: …» si la marca tiene tipo (el rótulo ya lo trae);
+                // si no, el nombre de su color.
+                match label.split_once('\u{1f}') {
+                    Some((kind, text)) => format!("{kind}: {text}"),
+                    None => format!("{}: {label}", color_name(*color)),
+                }
             })
             .collect();
         if self.marks.len() > MAX_TOOLTIP_MARKS {
@@ -577,9 +773,13 @@ pub(crate) fn sections(heading_starts: &[usize], marks: &[Bookmark]) -> Vec<Sect
         let index = heading_starts
             .partition_point(|&start| start <= mark.start)
             .saturating_sub(1);
-        sections[index]
-            .marks
-            .push((mark.color, mark.start, mark.label.clone()));
+        // El tipo viaja delante del texto, separado por un carácter que no se
+        // escribe, para que la ayuda lo muestre en lugar del color.
+        let label = match &mark.kind {
+            Some(kind) => format!("{kind}\u{1f}{}", mark.label),
+            None => mark.label.clone(),
+        };
+        sections[index].marks.push((mark.color, mark.start, label));
     }
     for section in &mut sections {
         let mut colors: Vec<usize> = section.marks.iter().map(|(color, _, _)| *color).collect();
@@ -896,7 +1096,7 @@ mod pruebas {
         marcar(&mut anotaciones, "texto uno", 0);
         let byte = GUIA.find("texto uno").unwrap();
         change_bookmark(&mut anotaciones, GUIA, byte, |registro| {
-            registro.forma = Some(next_shape(registro.forma.as_ref()));
+            registro.forma = Some(Forma::Cinta);
         })
         .unwrap();
         assert_eq!(bookmarks(GUIA, &anotaciones)[0].shape, Forma::Cinta);
@@ -993,6 +1193,149 @@ Fin del texto
         let mut anotaciones = Anotaciones::default();
         highlight(&mut anotaciones, original, 2, 3, 0).unwrap();
         assert!(highlights("a x c", &anotaciones).is_empty());
+    }
+
+    fn marcar_con_tipo(anotaciones: &mut Anotaciones, texto: &str, linea: &str, tipo: usize) {
+        let byte = texto.find(linea).unwrap();
+        toggle_bookmark(anotaciones, texto, byte, 0, Forma::Barra).unwrap();
+        let tipos = default_mark_kinds();
+        change_bookmark(anotaciones, texto, byte, |registro| {
+            apply_mark_kind(registro, &tipos[tipo]);
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn la_ayuda_del_indice_nombra_el_tipo_o_el_color_y_no_falla_con_colores_libres() {
+        let texto = "# Uno\n\nprimera linea\n\nsegunda linea\n\ntercera linea\n";
+        let mut anotaciones = Anotaciones::default();
+        marcar_con_tipo(&mut anotaciones, texto, "primera", 1);
+        let byte = texto.find("segunda").unwrap();
+        toggle_bookmark(
+            &mut anotaciones,
+            texto,
+            byte,
+            custom_color((0x12, 0x34, 0x56)),
+            Forma::Barra,
+        )
+        .unwrap();
+        let byte = texto.find("tercera").unwrap();
+        toggle_bookmark(&mut anotaciones, texto, byte, 2, Forma::Barra).unwrap();
+        let marcas = bookmarks(texto, &anotaciones);
+        let secciones = sections(&[0], &marcas);
+        let ayuda = secciones[0].tooltip();
+        assert!(ayuda.contains("Duda: primera linea"), "{ayuda}");
+        assert!(ayuda.contains("el color #123456: segunda linea"), "{ayuda}");
+        assert!(ayuda.contains("azul: tercera linea"), "{ayuda}");
+        assert!(!ayuda.contains('\u{1f}'));
+        // Tres colores distintos (uno libre) caben en los puntos del índice.
+        assert_eq!(secciones[0].colors.len(), 3);
+    }
+
+    #[test]
+    fn el_tipo_de_una_marca_trae_color_y_forma_y_se_guarda_en_el_archivo() {
+        let texto = "uno\ndos\ntres\n";
+        let mut anotaciones = Anotaciones::default();
+        marcar_con_tipo(&mut anotaciones, texto, "dos", 1);
+        let tipos = default_mark_kinds();
+        let registro = &anotaciones.registros[0];
+        assert_eq!(mark_kind_of(registro), Some("Duda"));
+        assert_eq!(color_index(&registro.color), Some(tipos[1].color));
+        assert_eq!(registro.forma, Some(tipos[1].shape.clone()));
+        // Sale en el archivo y vuelve igual.
+        let bloque = anotaciones::escribir(&anotaciones, "\n").unwrap();
+        assert!(bloque.contains("\"categoria\":\"Duda\""), "{bloque}");
+        let Lectura::Entendido(leidas) = anotaciones::leer(&bloque) else {
+            panic!("el bloque no se entendió");
+        };
+        assert_eq!(mark_kind_of(&leidas.registros[0]), Some("Duda"));
+        assert_eq!(anotaciones::escribir(&leidas, "\n").unwrap(), bloque);
+        // El marcador del documento lleva el tipo.
+        let marcas = bookmarks(texto, &anotaciones);
+        assert_eq!(marcas[0].kind.as_deref(), Some("Duda"));
+        // Quitarle el tipo no cambia color ni forma.
+        let mut sin = anotaciones.clone();
+        set_mark_kind(&mut sin.registros[0], None);
+        assert_eq!(mark_kind_of(&sin.registros[0]), None);
+        assert_eq!(sin.registros[0].color, anotaciones.registros[0].color);
+    }
+
+    #[test]
+    fn los_tipos_por_defecto_son_distintos_y_el_nombre_se_limpia() {
+        let tipos = default_mark_kinds();
+        let nombres: Vec<_> = tipos.iter().map(|tipo| tipo.name.as_str()).collect();
+        assert_eq!(
+            nombres,
+            ["Importante", "Duda", "Pendiente", "Repasar", "Corregir"]
+        );
+        for (i, a) in tipos.iter().enumerate() {
+            for b in &tipos[i + 1..] {
+                assert_ne!(a.color, b.color, "{} y {} comparten color", a.name, b.name);
+                assert_ne!(a.shape, b.shape, "{} y {} comparten forma", a.name, b.name);
+            }
+            assert!(shape_catalog().contains(&a.shape));
+        }
+        assert_eq!(
+            clean_kind_name("  Para | revisar\n hoy  "),
+            "Para  revisar hoy"
+        );
+        assert_eq!(
+            clean_kind_name(&"x".repeat(80)).chars().count(),
+            MAX_KIND_NAME_CHARS
+        );
+        assert_eq!(clean_kind_name("|\n"), "");
+    }
+
+    #[test]
+    fn contar_filtrar_y_recorrer_marcas_por_tipo() {
+        let texto = "a\nb\nc\nd\ne\n";
+        let mut anotaciones = Anotaciones::default();
+        marcar_con_tipo(&mut anotaciones, texto, "a", 1);
+        marcar_con_tipo(&mut anotaciones, texto, "c", 1);
+        marcar_con_tipo(&mut anotaciones, texto, "d", 2);
+        toggle_bookmark(
+            &mut anotaciones,
+            texto,
+            texto.find('e').unwrap(),
+            0,
+            Forma::Barra,
+        )
+        .unwrap();
+        // Un tipo de otra computadora se conserva con su nombre.
+        marcar_con_tipo(&mut anotaciones, texto, "b", 0);
+        set_mark_kind(&mut anotaciones.registros[4], Some("Del trabajo"));
+        let marcas = bookmarks(texto, &anotaciones);
+        let tipos = default_mark_kinds();
+        let (cuentas, sin_tipo) = kind_counts(&marcas, &tipos);
+        assert_eq!(sin_tipo, 1);
+        let por_nombre = |nombre: &str| cuentas.iter().find(|(n, _)| n == nombre).map(|(_, c)| *c);
+        assert_eq!(por_nombre("Duda"), Some(2));
+        assert_eq!(por_nombre("Pendiente"), Some(1));
+        assert_eq!(por_nombre("Importante"), Some(0));
+        assert_eq!(por_nombre("Del trabajo"), Some(1));
+        // Filtrar: sin filtro, todas; con uno, solo ese; «sin tipo» es None.
+        assert_eq!(filter_marks(&marcas, &[]).len(), 5);
+        let duda = [Some("Duda".to_string())];
+        let solo_duda = filter_marks(&marcas, &duda);
+        assert_eq!(solo_duda.len(), 2);
+        let sin = [None];
+        assert_eq!(filter_marks(&marcas, &sin).len(), 1);
+        let dos = [Some("Duda".to_string()), None];
+        assert_eq!(filter_marks(&marcas, &dos).len(), 3);
+        // Recorrer: siguiente y anterior, con vuelta.
+        let primera = solo_duda[0].start;
+        let segunda = solo_duda[1].start;
+        assert_eq!(
+            step_mark(&solo_duda, primera, false).unwrap().start,
+            segunda
+        );
+        assert_eq!(
+            step_mark(&solo_duda, segunda, false).unwrap().start,
+            primera
+        );
+        assert_eq!(step_mark(&solo_duda, segunda, true).unwrap().start, primera);
+        assert_eq!(step_mark(&solo_duda, primera, true).unwrap().start, segunda);
+        assert!(step_mark(&[], 0, false).is_none());
     }
 
     #[test]

@@ -257,32 +257,31 @@ memoria (D-46) también baja el costo por tecla.
 
 ## Fase 20 · Marcadores nuevos
 
-- [ ] **20.1** Modelo: clave `categoria`, tipos predeterminados y
-  personalizados (D-51, D-52).
+- [x] **20.1** Modelo: clave `categoria`, tipos predeterminados y
+  personalizados (D-51, D-52). Los propios se guardan en la configuración (`mark_kind=nombre|rrggbb|forma`, hasta 12).
   Dónde: `anotaciones.rs`, `estudio.rs`, `settings.rs`.
   Prueba:
   - Lectura y escritura de ida y vuelta con `categoria`.
   - Un bloque escrito por la versión actual se sigue leyendo.
   - Un tipo desconocido se conserva.
-- [ ] **20.2** Botón dividido del marcador con tipo, forma, color y «Quitar»
-  (D-50).
-- [ ] **20.3** Dibujo en el margen derecho con sus tres tamaños (D-53).
+- [x] **20.2** Botón dividido del marcador con tipo, forma, color y «Quitar»
+  (D-50). La flecha abre una tarjeta con los tipos, la tira de formas, la tira de colores, «Texto de la marca…», «Guardar como tipo nuevo…» y «Quitar marcador». Está en la barra de Leer y de Comparar; en Editar, donde la barra no tiene lugar (cabe en 640 px), el menú Estudio muestra un grupo «Subrayar y marcar».
+- [x] **20.3** Dibujo en el margen derecho con sus tres tamaños (D-53). Cuentas en `marcadores.rs`; con el índice flotante abierto el espacio se reduce.
   Dónde: `draw_bookmark` y el cálculo del margen. Funciona en Leer, en Editar y
   en el lado de lectura de Comparar.
   Prueba: visual con ventana ancha, media y angosta, y con el índice flotante
   abierto. En ningún caso el marcador toca el texto ni el borde.
-- [ ] **20.4** Tarjeta flotante del marcador: el texto completo al pasar el
+- [x] **20.4** Tarjeta flotante del marcador: el texto completo al pasar el
   cursor, y la edición al hacer click (texto, tipo, forma, color y «Quitar»).
   Dónde: `start_bookmark_note` y `commit_bookmark_note` se integran a la
   tarjeta.
-- [ ] **20.5** Navegador de marcadores (D-54).
+- [x] **20.5** Navegador de marcadores (D-54). Atajos: Alt+AvPág y Alt+RePág (F2 y F3 ya estaban ocupados).
   Prueba:
   - Los conteos por tipo coinciden con el documento.
   - Las flechas recorren solo los marcadores filtrados y dan la vuelta con
     aviso.
   - El atajo funciona sin abrir el panel.
-- [ ] **20.6** Puntos del índice y PDF con los colores y las formas de los
-  tipos.
+- [x] **20.6** Puntos del índice con los colores de los tipos y ayuda que nombra el tipo. El PDF no dibuja marcas, así que no cambia.
 
 ## Fase 21 · Ortografía (pendiente de tu decisión)
 
@@ -338,5 +337,5 @@ avisar. Estas las hacés vos, o yo con tu permiso explícito en ese momento:
 | 17 | Hecha | 17.1 a 17.3 |
 | 18 | Hecha | 18.1 a 18.3 |
 | 19 | Hecha | 19.1 a 19.3 |
-| 20 | Pendiente | |
+| 20 | Hecha | 20.1 a 20.6; falta probar a mano el margen al cambiar el ancho de la ventana |
 | 21 | Sin aprobar | Decisión de ortografía |
