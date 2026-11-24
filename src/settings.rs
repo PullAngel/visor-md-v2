@@ -11,6 +11,8 @@ use std::path::{Path, PathBuf};
 const SETTINGS_VERSION: u32 = 3;
 const MAX_SETTINGS_BYTES: u64 = 16 * 1024;
 const MAX_DOCUMENT_MODES: usize = 128;
+/// Cuántos colores libres recientes se recuerdan.
+pub(crate) const MAX_RECENT_COLORS: usize = 6;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum DocumentModePreference {
@@ -54,6 +56,9 @@ pub(crate) struct Settings {
     /// Orden del árbol de archivos de la carpeta de apuntes (0 a 3; ver
     /// `TreeSort` en `main.rs`). Un valor desconocido vuelve al orden por nombre.
     pub(crate) tree_sort: u8,
+    /// Últimos colores libres de subrayado (RGB de 24 bits), el más reciente
+    /// primero. Son colores, no texto ni rutas.
+    pub(crate) recent_colors: Vec<u32>,
     document_modes: Vec<(String, DocumentModePreference)>,
 }
 
@@ -66,6 +71,7 @@ impl Default for Settings {
             open_external_in_existing: true,
             file_types_offered: false,
             tree_sort: 0,
+            recent_colors: Vec::new(),
             document_modes: Vec::new(),
         }
     }
@@ -141,6 +147,7 @@ fn load_from(path: &Path) -> Result<Settings, std::io::Error> {
     let mut open_external_in_existing = None;
     let mut file_types_offered = None;
     let mut tree_sort = None;
+    let mut recent_colors = Vec::new();
     let mut document_modes = Vec::new();
     for line in source.lines().map(str::trim) {
         let Some((key, value)) = line.split_once('=') else {
@@ -183,6 +190,16 @@ fn load_from(path: &Path) -> Result<Settings, std::io::Error> {
                     _ => None,
                 }
             }
+            "recent_colors" => {
+                recent_colors = value
+                    .split(',')
+                    .filter_map(|item| {
+                        let item = item.trim();
+                        (item.len() == 6).then(|| u32::from_str_radix(item, 16).ok())?
+                    })
+                    .take(MAX_RECENT_COLORS)
+                    .collect();
+            }
             "tree_sort" => tree_sort = value.trim().parse::<u8>().ok().filter(|value| *value <= 3),
             "document_mode" => {
                 let Some((key, code)) = value.trim().split_once(',') else {
@@ -212,6 +229,7 @@ fn load_from(path: &Path) -> Result<Settings, std::io::Error> {
         open_external_in_existing: open_external_in_existing.unwrap_or(true),
         file_types_offered: file_types_offered.unwrap_or(false),
         tree_sort: tree_sort.unwrap_or(0),
+        recent_colors,
         document_modes: if matches!(version, Some(2) | Some(SETTINGS_VERSION)) {
             document_modes
         } else {
@@ -230,6 +248,16 @@ fn store_to(path: &Path, settings: &Settings) -> Result<(), std::io::Error> {
         settings.file_types_offered,
         settings.tree_sort
     );
+    if !settings.recent_colors.is_empty() {
+        let colors = settings
+            .recent_colors
+            .iter()
+            .take(MAX_RECENT_COLORS)
+            .map(|color| format!("{:06x}", color & 0xFF_FFFF))
+            .collect::<Vec<_>>()
+            .join(",");
+        source.push_str(&format!("recent_colors={colors}\n"));
+    }
     for (key, mode) in &settings.document_modes {
         source.push_str(&format!("document_mode={key},{}\n", mode.code()));
     }
@@ -282,6 +310,7 @@ mod tests {
             open_external_in_existing: false,
             file_types_offered: true,
             tree_sort: 2,
+            recent_colors: vec![0xFFCC00, 0x0033AA],
             document_modes: Vec::new(),
         };
         store_to(&path, &settings).unwrap();
@@ -295,12 +324,27 @@ mod tests {
                 open_external_in_existing: false,
                 file_types_offered: true,
                 tree_sort: 2,
+                recent_colors: vec![0xFFCC00, 0x0033AA],
                 document_modes: Vec::new(),
             }
         );
         let stored = fs::read_to_string(&path).unwrap();
         assert!(!stored.contains("path"));
         assert!(stored.contains("reduce_motion=true"));
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn los_colores_recientes_se_acotan_y_los_invalidos_se_ignoran() {
+        let path = temp_file();
+        fs::write(
+            &path,
+            "version=3\nrecent_colors=ffcc00,xyz,12345,00ff00,0000ff,ff0000,aa00aa,bb00bb,cc00cc\n",
+        )
+        .unwrap();
+        let cargados = load_from(&path).unwrap().recent_colors;
+        assert_eq!(cargados.len(), MAX_RECENT_COLORS);
+        assert_eq!(&cargados[..3], &[0xFFCC00, 0x00FF00, 0x0000FF]);
         let _ = fs::remove_file(path);
     }
 

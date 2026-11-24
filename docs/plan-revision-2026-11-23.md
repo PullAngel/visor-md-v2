@@ -235,13 +235,13 @@ memoria (D-46) también baja el costo por tecla.
 
 ## Fase 19 · Subrayado al estilo Word
 
-- [ ] **19.1** Botón dividido de subrayado (D-50) y limpieza del menú Estudio
-  (D-49).
+- [x] **19.1** Botón dividido de subrayado (D-50) y limpieza del menú Estudio
+  (D-49). Hecho: el marcador y su flecha forman un solo control (la flecha, angosta y pegada); «Sin color» quita el subrayado de la selección; el menú Estudio perdió las ocho entradas y el código de las seis de insertar.
   Dónde: `toggle_highlight_picker`, `pick_highlight_color`, `AppAction` y los
   menús.
   Prueba: «Sin color» quita el subrayado de la selección, y el menú Estudio ya
   no tiene las ocho entradas.
-- [ ] **19.2** Selector de color libre (D-48).
+- [x] **19.2** Selector de color libre (D-48). Módulo `selector_color.rs`; recientes en la configuración (hasta 6).
   Qué:
   - Cuadro de saturación y luminosidad, barra de tono, campo hexadecimal y
     vista previa.
@@ -251,7 +251,7 @@ memoria (D-46) también baja el costo por tecla.
 
   Prueba: unidad de la conversión de color HSV a RGB y del formato `#rrggbb`
   de ida y vuelta, y visual del selector en tema claro y oscuro.
-- [ ] **19.3** Colores libres en el dibujo, el PDF y la leyenda.
+- [x] **19.3** Colores libres en el dibujo y el PDF (las leyendas siguen siendo de los cinco colores de la paleta).
   Dónde: `color_index` / `Highlight.color` pasan de índice a color RGB;
   también `pdf.rs`.
 
@@ -337,6 +337,6 @@ avisar. Estas las hacés vos, o yo con tu permiso explícito en ese momento:
 | 16 | Hecha | 16.1 a 16.8; falta probar a mano el arrastre de pestañas y el diálogo de restauración |
 | 17 | Hecha | 17.1 a 17.3 |
 | 18 | Hecha | 18.1 a 18.3 |
-| 19 | Pendiente | |
+| 19 | Hecha | 19.1 a 19.3 |
 | 20 | Pendiente | |
 | 21 | Sin aprobar | Decisión de ortografía |

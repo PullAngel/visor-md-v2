@@ -32,6 +32,7 @@ mod panes;
 mod pdf;
 mod recovery;
 mod scrollbar;
+mod selector_color;
 mod settings;
 mod surface;
 mod theme;
@@ -147,6 +148,8 @@ const CONTEXT_TOOLBAR_HEIGHT: f32 = 28.0;
 /// siguen disponibles con hover, foco F6 y la paleta.
 const CONTEXT_TOOLBAR_ITEM_WIDTH: f32 = 38.0;
 const CONTEXT_TOOLBAR_ITEM_GAP: f32 = 4.0;
+/// Espacio de la flecha de un botón dividido (subrayar), con su separación.
+const SPLIT_CARET_STRIDE: f32 = 22.0;
 const CONTEXT_TOOLBAR_LABELED_MIN_WIDTH: f32 = 1_100.0;
 const CONTEXT_TOOLBAR_GROUP_WIDTH: f32 = 98.0;
 const WINDOW_CHROME_HEIGHT: f32 = 40.0;
@@ -360,9 +363,7 @@ const WORKSPACE_HUB_ACTIONS: [AppAction; 8] = [
 ];
 /// Herramientas de estudio reunidas fuera del menú contextual plano. Comparten
 /// paleta, teclado y la misma fuente Markdown portable que el resto del editor.
-const STUDY_ACTIONS: [AppAction; 25] = [
-    AppAction::HighlightSelection,
-    AppAction::HighlightPickColor,
+const STUDY_ACTIONS: [AppAction; 17] = [
     AppAction::RemoveHighlight,
     AppAction::ToggleStudyAnnotations,
     AppAction::ShowAnnotationsBlock,
@@ -377,12 +378,6 @@ const STUDY_ACTIONS: [AppAction; 25] = [
     AppAction::RestoreRemovedAnnotations,
     AppAction::SaveCopyWithoutAnnotations,
     AppAction::ExportPdfPlain,
-    AppAction::InsertStudyQuestion,
-    AppAction::InsertStudySummary,
-    AppAction::InsertStudyConceptList,
-    AppAction::InsertStudyUnderstood,
-    AppAction::InsertStudyDoubt,
-    AppAction::InsertStudyPending,
     AppAction::PrepareStudySummary,
     AppAction::PrepareStudyConceptList,
     AppAction::PrepareAiFragments,
@@ -614,12 +609,10 @@ const BLOCK_GROUPS: [MenuGroup; 3] = [
     ),
     ("Bloque", &[AppAction::InsertQuote]),
 ];
-const STUDY_GROUPS: [MenuGroup; 6] = [
+const STUDY_GROUPS: [MenuGroup; 5] = [
     (
         "Subrayar",
         &[
-            AppAction::HighlightSelection,
-            AppAction::HighlightPickColor,
             AppAction::RemoveHighlight,
             AppAction::ToggleStudyAnnotations,
             AppAction::ShowAnnotationsBlock,
@@ -649,17 +642,6 @@ const STUDY_GROUPS: [MenuGroup; 6] = [
             AppAction::RestoreRemovedAnnotations,
             AppAction::SaveCopyWithoutAnnotations,
             AppAction::ExportPdfPlain,
-        ],
-    ),
-    (
-        "Insertar en el documento",
-        &[
-            AppAction::InsertStudyQuestion,
-            AppAction::InsertStudySummary,
-            AppAction::InsertStudyConceptList,
-            AppAction::InsertStudyUnderstood,
-            AppAction::InsertStudyDoubt,
-            AppAction::InsertStudyPending,
         ],
     ),
     (
@@ -1807,6 +1789,10 @@ fn contextual_toolbar_item_geometry(
 }
 
 fn contextual_toolbar_item_stride(action: AppAction, labeled: bool) -> f32 {
+    if action == AppAction::HighlightPickColor {
+        // La flecha del subrayado: un tramo angosto pegado al botón.
+        return SPLIT_CARET_STRIDE;
+    }
     if labeled && toolbar_group_label(action).is_some() {
         CONTEXT_TOOLBAR_GROUP_WIDTH
     } else {
@@ -2238,7 +2224,10 @@ fn action_category(action: AppAction) -> Option<&'static str> {
             | AppAction::FormatHighlight => Some("Formato"),
             AppAction::BlockTools => Some("Párrafo"),
             AppAction::InsertTools => Some("Insertar"),
-            AppAction::StudyTools => Some("Estudio"),
+            // Subrayar vive en la barra; en la paleta se busca como Estudio.
+            AppAction::StudyTools
+            | AppAction::HighlightSelection
+            | AppAction::HighlightPickColor => Some("Estudio"),
             AppAction::ToggleSection => Some("Vista"),
             _ => None,
         })
@@ -2364,12 +2353,6 @@ enum AppAction {
     BlockTools,
     InsertTools,
     StudyTools,
-    InsertStudyQuestion,
-    InsertStudySummary,
-    InsertStudyConceptList,
-    InsertStudyUnderstood,
-    InsertStudyDoubt,
-    InsertStudyPending,
     PrepareStudySummary,
     PrepareStudyConceptList,
     PrepareAiFragments,
@@ -2420,7 +2403,7 @@ enum AppAction {
     Paste,
 }
 
-const APP_ACTIONS: [AppAction; 77] = [
+const APP_ACTIONS: [AppAction; 71] = [
     AppAction::NewDocument,
     AppAction::OpenDocument,
     AppAction::Save,
@@ -2473,12 +2456,6 @@ const APP_ACTIONS: [AppAction; 77] = [
     AppAction::BlockTools,
     AppAction::InsertTools,
     AppAction::StudyTools,
-    AppAction::InsertStudyQuestion,
-    AppAction::InsertStudySummary,
-    AppAction::InsertStudyConceptList,
-    AppAction::InsertStudyUnderstood,
-    AppAction::InsertStudyDoubt,
-    AppAction::InsertStudyPending,
     AppAction::PrepareStudySummary,
     AppAction::PrepareStudyConceptList,
     AppAction::PrepareAiFragments,
@@ -2550,12 +2527,6 @@ impl AppAction {
             Self::BlockTools => "Párrafo: títulos, listas y citas",
             Self::InsertTools => "Insertar enlaces y bloques",
             Self::StudyTools => "Estudio y notas",
-            Self::InsertStudyQuestion => "Insertar pregunta de estudio",
-            Self::InsertStudySummary => "Insertar resumen de estudio",
-            Self::InsertStudyConceptList => "Insertar lista de conceptos",
-            Self::InsertStudyUnderstood => "Marcar contenido como entendido",
-            Self::InsertStudyDoubt => "Marcar contenido como dudoso",
-            Self::InsertStudyPending => "Marcar contenido como pendiente",
             Self::PrepareStudySummary => "Preparar resumen desde selección",
             Self::PrepareStudyConceptList => "Preparar conceptos desde selección",
             Self::PrepareAiFragments => "Preparar fragmentos para IA",
@@ -4299,27 +4270,6 @@ fn callout_prefix(text: &str) -> Option<(CalloutKind, usize)> {
         prefix += 1;
     }
     Some((kind, prefix))
-}
-
-/// Los estados de estudio se expresan con callouts que Obsidian ya entiende.
-/// No crean metadatos privados ni cambian el documento fuera de la inserción
-/// explícita de la persona.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum StudyState {
-    Understood,
-    Doubt,
-    Pending,
-}
-
-impl StudyState {
-    fn callout_template(self, eol: &str) -> String {
-        let (kind, title, body) = match self {
-            Self::Understood => ("SUCCESS", "Entendido", "Anotá por qué quedó claro"),
-            Self::Doubt => ("WARNING", "Duda", "Anotá qué falta verificar"),
-            Self::Pending => ("TODO", "Pendiente", "Anotá el próximo paso"),
-        };
-        format!("> [!{kind}] {title}{eol}> {body}")
-    }
 }
 
 /// Una lista de conceptos se guarda como Markdown común para poder reutilizarla
@@ -7824,7 +7774,7 @@ fn highlight_ranges_for(
 ) -> StudyRanges {
     let mut ranges = StudyRanges::new();
     for item in items {
-        let fill = palette.study[item.color.min(4)].fill;
+        let fill = palette.study_tone(item.color).fill;
         let first = blocks.partition_point(|block| block.source.end <= item.start);
         for (index, block) in blocks.iter().enumerate().skip(first) {
             if block.source.start >= item.end {
@@ -7858,12 +7808,30 @@ fn annotation_count(block: &str) -> usize {
 }
 
 const HIGHLIGHT_PICKER_ROW: f32 = 28.0;
+/// Filas fijas del selector: los cinco colores, «Sin color» y «Más colores…».
+/// Con colores libres recientes se suma una fila de muestras.
+const HIGHLIGHT_PICKER_FIXED_ROWS: usize = 7;
+/// Lado de una muestra de color reciente y espacio entre muestras.
+const RECENT_SWATCH: f32 = 20.0;
+const RECENT_SWATCH_GAP: f32 = 6.0;
+
+/// La muestra reciente bajo `x` en la fila de muestras, si hay.
+fn recent_swatch_at(anchor_x: f32, window_width: f32, count: usize, x: f32) -> Option<usize> {
+    let (left, _, _, _) = highlight_picker_rect(anchor_x, window_width, 0);
+    let first = left + 16.0;
+    if x < first {
+        return None;
+    }
+    let slot = ((x - first) / (RECENT_SWATCH + RECENT_SWATCH_GAP)) as usize;
+    let inside = (x - first) - slot as f32 * (RECENT_SWATCH + RECENT_SWATCH_GAP) < RECENT_SWATCH;
+    (slot < count && inside).then_some(slot)
+}
 const HIGHLIGHT_PICKER_WIDTH: f32 = 250.0;
 
 /// Rectángulo del selector de color: bajo el botón que lo abrió, sin salirse
 /// de la ventana.
-fn highlight_picker_rect(anchor_x: f32, window_width: f32) -> (f32, f32, f32, f32) {
-    let height = HIGHLIGHT_PICKER_ROW * 5.0 + 8.0;
+fn highlight_picker_rect(anchor_x: f32, window_width: f32, rows: usize) -> (f32, f32, f32, f32) {
+    let height = HIGHLIGHT_PICKER_ROW * rows as f32 + 8.0;
     let x = anchor_x
         .min(window_width - HIGHLIGHT_PICKER_WIDTH - 8.0)
         .max(8.0);
@@ -7876,8 +7844,14 @@ fn highlight_picker_rect(anchor_x: f32, window_width: f32) -> (f32, f32, f32, f3
 }
 
 /// Fila (color) del selector bajo el punto, si hay.
-fn highlight_picker_row_at(anchor_x: f32, window_width: f32, x: f32, y: f32) -> Option<usize> {
-    let (left, top, width, height) = highlight_picker_rect(anchor_x, window_width);
+fn highlight_picker_row_at(
+    anchor_x: f32,
+    window_width: f32,
+    rows: usize,
+    x: f32,
+    y: f32,
+) -> Option<usize> {
+    let (left, top, width, height) = highlight_picker_rect(anchor_x, window_width, rows);
     if x < left || x >= left + width || y < top + 4.0 || y >= top + height - 4.0 {
         return None;
     }
@@ -7955,7 +7929,7 @@ fn draw_index_dots(
     palette: Palette,
 ) {
     for (dot, color) in section.colors.iter().enumerate() {
-        let stroke = palette.study[(*color).min(4)].stroke;
+        let stroke = palette.study_tone(*color).stroke;
         let mut paint = Paint {
             anti_alias: true,
             ..Default::default()
@@ -9058,6 +9032,10 @@ struct App {
     /// Selector de color del subrayado abierto: borde izquierdo del botón que
     /// lo abrió.
     highlight_picker: Option<f32>,
+    /// Selector de color libre, abierto dentro del selector de subrayado.
+    custom_picker: Option<selector_color::CustomPicker>,
+    /// Últimos colores libres elegidos (números de `estudio::custom_color`).
+    recent_colors: Vec<usize>,
     /// «Ocultar mis anotaciones»: Leer muestra el original, sin subrayados.
     hide_annotations: bool,
     /// Orden del árbol de archivos de la carpeta de apuntes.
@@ -9302,6 +9280,18 @@ struct AppInit {
 impl App {
     fn new(init: AppInit) -> Self {
         let settings_tree_sort = init.settings.tree_sort;
+        let settings_recent_colors: Vec<usize> = init
+            .settings
+            .recent_colors
+            .iter()
+            .map(|rgb| {
+                estudio::custom_color((
+                    ((rgb >> 16) & 0xFF) as u8,
+                    ((rgb >> 8) & 0xFF) as u8,
+                    (rgb & 0xFF) as u8,
+                ))
+            })
+            .collect();
         let AppInit {
             started,
             settings,
@@ -9448,6 +9438,8 @@ impl App {
             tree_sort: TreeSort::from_code(settings_tree_sort),
             metrics_refresh_due: None,
             highlight_picker: None,
+            custom_picker: None,
+            recent_colors: settings_recent_colors,
             legend_edit: None,
             note_edit: None,
             pending_open_search: None,
@@ -10492,6 +10484,9 @@ impl ApplicationHandler<AppEvent> for App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 self.pointer = Some((position.x as f32, position.y as f32));
+                if self.custom_picker_drag(position.x as f32, position.y as f32) {
+                    return;
+                }
                 if let (Some(document_id), Some(window)) = (self.tab_drag_id, &self.window) {
                     let size = window.inner_size();
                     if let Some(target) = tab_index_at(
@@ -10713,10 +10708,24 @@ impl ApplicationHandler<AppEvent> for App {
                         && let Some((x, y)) = self.pointer
                         && let Some((width, _)) = self.view_size()
                     {
-                        match highlight_picker_row_at(anchor, width, x, y) {
-                            Some(row) if row < 5 => self.pick_highlight_color(row),
-                            Some(_) => {}
-                            None => self.toggle_highlight_picker(),
+                        if self.custom_picker.is_some() {
+                            self.custom_picker_press(anchor, width, x, y);
+                        } else {
+                            let rows = self.highlight_picker_rows();
+                            match highlight_picker_row_at(anchor, width, rows, x, y) {
+                                Some(row) if row < 5 => self.pick_highlight_color(row),
+                                Some(5) => self.remove_highlight_from_picker(),
+                                Some(6) => self.open_custom_picker(),
+                                Some(_) => {
+                                    if let Some(slot) =
+                                        recent_swatch_at(anchor, width, self.recent_colors.len(), x)
+                                    {
+                                        let color = self.recent_colors[slot];
+                                        self.pick_highlight_color(color);
+                                    }
+                                }
+                                None => self.toggle_highlight_picker(),
+                            }
                         }
                         self.selecting = false;
                         return;
@@ -11040,6 +11049,9 @@ impl ApplicationHandler<AppEvent> for App {
                 }
                 ElementState::Released => {
                     self.selecting = false;
+                    if let Some(picker) = &mut self.custom_picker {
+                        picker.drag = None;
+                    }
                     if self.tear_out_if_dropped_outside() {
                         self.tab_drag_id = None;
                         self.divider_drag = None;
@@ -11317,6 +11329,13 @@ impl ApplicationHandler<AppEvent> for App {
             }
             WindowEvent::KeyboardInput { event, .. } if self.outline_headings.is_some() => {
                 self.handle_outline_key(&event);
+            }
+            WindowEvent::KeyboardInput { event, .. }
+                if self.custom_picker.is_some()
+                    && self.highlight_picker.is_some()
+                    && event.state == ElementState::Pressed =>
+            {
+                self.handle_custom_picker_key(&event);
             }
             WindowEvent::KeyboardInput { event, .. }
                 if self.highlight_picker.is_some() && event.state == ElementState::Pressed =>
@@ -12063,12 +12082,6 @@ impl App {
             AppAction::BlockTools => self.open_block_actions(),
             AppAction::InsertTools => self.open_insert_actions(),
             AppAction::StudyTools => self.open_study_actions(),
-            AppAction::InsertStudyQuestion => self.insert_study_question(),
-            AppAction::InsertStudySummary => self.insert_study_summary(),
-            AppAction::InsertStudyConceptList => self.insert_study_concept_list(),
-            AppAction::InsertStudyUnderstood => self.insert_study_state(StudyState::Understood),
-            AppAction::InsertStudyDoubt => self.insert_study_state(StudyState::Doubt),
-            AppAction::InsertStudyPending => self.insert_study_state(StudyState::Pending),
             AppAction::PrepareStudySummary => self.prepare_study_summary(),
             AppAction::PrepareStudyConceptList => self.prepare_study_concept_list(),
             AppAction::PrepareAiFragments => self.prepare_ai_fragments(),
@@ -13188,7 +13201,7 @@ impl App {
     }
 
     fn highlight_selection(&mut self, color: usize) {
-        let color = color.min(4);
+        let color = estudio::clamp_color(color);
         let Some((start, end)) = self.selected_source_range() else {
             self.set_notice(
                 "Seleccioná con el mouse el texto que querés subrayar y volvé a pulsar el marcador",
@@ -13199,9 +13212,9 @@ impl App {
         self.hide_annotations = false;
         let legend = self.current_legend(color);
         let name = if legend.is_empty() {
-            crate::theme::STUDY_COLOR_NAMES[color].to_string()
+            estudio::color_name(color)
         } else {
-            format!("{} ({legend})", crate::theme::STUDY_COLOR_NAMES[color])
+            format!("{} ({legend})", estudio::color_name(color))
         };
         self.change_annotations(|anotaciones, source| {
             match estudio::highlight(anotaciones, source, start, end, color)? {
@@ -13247,7 +13260,12 @@ impl App {
     }
 
     fn start_legend_edit(&mut self) {
-        let color = self.study_color;
+        // Las leyendas son de los cinco colores de la paleta.
+        let color = if self.study_color < 5 {
+            self.study_color
+        } else {
+            0
+        };
         self.legend_edit = Some((color, self.current_legend(color)));
         self.context_menu = None;
         self.command_palette = None;
@@ -13309,7 +13327,7 @@ impl App {
         if text.trim() == self.current_legend(color) {
             self.set_notice("La leyenda no cambió");
         } else {
-            let name = crate::theme::STUDY_COLOR_NAMES[color];
+            let name = estudio::color_name(color);
             self.change_annotations(|anotaciones, _| {
                 estudio::set_legend(anotaciones, color, &text);
                 Ok(if text.trim().is_empty() {
@@ -13455,7 +13473,7 @@ impl App {
             };
             let index = blocks.partition_point(|block| block.source.end <= mark.start);
             if index < blocks.len() {
-                let stroke = self.palette.study[mark.color.min(4)].stroke;
+                let stroke = self.palette.study_tone(mark.color).stroke;
                 by_block
                     .entry(index)
                     .or_default()
@@ -13628,7 +13646,7 @@ impl App {
                     color,
                     anotaciones::Forma::Barra,
                 )? {
-                    format!("Marca de libro {}", crate::theme::STUDY_COLOR_NAMES[color])
+                    format!("Marca de libro {}", estudio::color_name(color))
                 } else {
                     "Marca quitada".to_string()
                 },
@@ -13658,10 +13676,7 @@ impl App {
                     registro.forma = Some(next);
                 } else {
                     let next = (estudio::color_index(&registro.color).unwrap_or(4) + 1) % 5;
-                    message = format!(
-                        "Color de la marca: {}",
-                        crate::theme::STUDY_COLOR_NAMES[next]
-                    );
+                    message = format!("Color de la marca: {}", estudio::color_name(next));
                     registro.color = estudio::color_for_index(next);
                 }
             })?;
@@ -13800,6 +13815,7 @@ impl App {
 
     /// Abre o cierra el selector de color del subrayado, bajo su botón.
     fn toggle_highlight_picker(&mut self) {
+        self.custom_picker = None;
         if self.highlight_picker.take().is_some() {
             if let Some(window) = &self.window {
                 window.request_redraw();
@@ -13823,20 +13839,165 @@ impl App {
         }
     }
 
+    /// Filas del selector de subrayado: las fijas y, si hay colores libres
+    /// recientes, una de muestras.
+    fn highlight_picker_rows(&self) -> usize {
+        HIGHLIGHT_PICKER_FIXED_ROWS + usize::from(!self.recent_colors.is_empty())
+    }
+
+    /// «Sin color»: quita el subrayado de la selección (o del punto).
+    fn remove_highlight_from_picker(&mut self) {
+        self.highlight_picker = None;
+        self.custom_picker = None;
+        self.remove_selected_highlight();
+    }
+
+    /// Abre el selector libre, partiendo del color que está en uso.
+    fn open_custom_picker(&mut self) {
+        let current = estudio::clamp_color(self.study_color);
+        // Se parte del color tal como se ve el subrayado: el elegido, si es
+        // libre; si no, el trazo (de noche) o el fondo (de día).
+        let tone = self.palette.study_tone(current);
+        let start = estudio::custom_rgb(current).unwrap_or(if self.palette.is_dark() {
+            tone.stroke
+        } else {
+            tone.fill
+        });
+        self.custom_picker = Some(selector_color::CustomPicker::from_rgb(start));
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    /// Geometría del selector libre, si está abierto.
+    fn custom_picker_geometry(&self) -> Option<selector_color::PickerGeometry> {
+        let anchor = self.highlight_picker?;
+        let (width, _) = self.view_size()?;
+        Some(selector_color::picker_geometry(
+            anchor,
+            width,
+            CONTEXT_TOOLBAR_Y + CONTEXT_TOOLBAR_HEIGHT + 4.0,
+            HIGHLIGHT_PICKER_WIDTH,
+        ))
+    }
+
+    /// Pulsación dentro (o fuera) del selector libre.
+    fn custom_picker_press(&mut self, _anchor: f32, _width: f32, x: f32, y: f32) {
+        let Some(geometry) = self.custom_picker_geometry() else {
+            return;
+        };
+        let hit = selector_color::picker_hit(&geometry, x, y);
+        match hit {
+            selector_color::PickerHit::Square(fx, fy) => {
+                if let Some(picker) = &mut self.custom_picker {
+                    picker.set_square(fx, fy);
+                    picker.drag = Some(selector_color::PickerDrag::Square);
+                }
+            }
+            selector_color::PickerHit::Hue(fx) => {
+                if let Some(picker) = &mut self.custom_picker {
+                    picker.set_hue(fx);
+                    picker.drag = Some(selector_color::PickerDrag::Hue);
+                }
+            }
+            selector_color::PickerHit::Back => self.custom_picker = None,
+            selector_color::PickerHit::Apply => self.apply_custom_color(),
+            selector_color::PickerHit::Outside => self.toggle_highlight_picker(),
+            selector_color::PickerHit::Hex | selector_color::PickerHit::Panel => {}
+        }
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    /// Movimiento del puntero con el botón apretado sobre el selector libre.
+    fn custom_picker_drag(&mut self, x: f32, y: f32) -> bool {
+        let Some(geometry) = self.custom_picker_geometry() else {
+            return false;
+        };
+        let Some(picker) = &mut self.custom_picker else {
+            return false;
+        };
+        match picker.drag {
+            Some(selector_color::PickerDrag::Square) => {
+                picker.set_square(
+                    (x - geometry.square.0) / geometry.square.2,
+                    (y - geometry.square.1) / geometry.square.3,
+                );
+            }
+            Some(selector_color::PickerDrag::Hue) => {
+                picker.set_hue((x - geometry.hue.0) / geometry.hue.2);
+            }
+            None => return false,
+        }
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+        true
+    }
+
+    fn handle_custom_picker_key(&mut self, event: &KeyEvent) {
+        match event.physical_key {
+            PhysicalKey::Code(KeyCode::Escape) => self.custom_picker = None,
+            PhysicalKey::Code(KeyCode::Enter | KeyCode::NumpadEnter) => self.apply_custom_color(),
+            PhysicalKey::Code(KeyCode::Backspace) => {
+                if let Some(picker) = &mut self.custom_picker {
+                    picker.backspace();
+                }
+            }
+            _ => {
+                let typed = typed_text(
+                    event.text.as_deref(),
+                    self.modifiers.control_key(),
+                    self.modifiers.alt_key(),
+                );
+                match (typed, &mut self.custom_picker) {
+                    (Some(typed), Some(picker)) => picker.type_hex(typed),
+                    _ => return,
+                }
+            }
+        }
+        if let Some(window) = &self.window {
+            window.request_redraw();
+        }
+    }
+
+    /// Aplica el color del selector libre: lo recuerda entre los recientes y
+    /// subraya la selección con él.
+    fn apply_custom_color(&mut self) {
+        let Some(picker) = self.custom_picker.take() else {
+            return;
+        };
+        let rgb = picker.parsed().unwrap_or_else(|| picker.rgb());
+        let color = estudio::custom_color(rgb);
+        self.recent_colors.retain(|recent| *recent != color);
+        self.recent_colors.insert(0, color);
+        self.recent_colors.truncate(settings::MAX_RECENT_COLORS);
+        self.settings.recent_colors = self
+            .recent_colors
+            .iter()
+            .filter_map(|recent| estudio::custom_rgb(*recent))
+            .map(|(r, g, b)| (u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b))
+            .collect();
+        let _ = self.settings.store();
+        self.pick_highlight_color(color);
+    }
+
     /// Elige un color en el selector: subraya la selección con él y lo deja
     /// como color actual.
     fn pick_highlight_color(&mut self, color: usize) {
         self.highlight_picker = None;
+        self.custom_picker = None;
         let has_selection = self
             .selected_source_range()
             .is_some_and(|(start, end)| end > start);
         if has_selection {
             self.highlight_selection(color);
         } else {
-            self.study_color = color.min(4);
+            self.study_color = estudio::clamp_color(color);
             self.set_notice(&format!(
                 "Color de subrayado: {} · seleccioná texto y pulsá el marcador",
-                crate::theme::STUDY_COLOR_NAMES[color.min(4)]
+                estudio::color_name(color)
             ));
         }
         if let Some(window) = &self.window {
@@ -15177,36 +15338,6 @@ impl App {
         });
     }
 
-    fn insert_study_question(&mut self) {
-        if !self.document.mode.is_editable() {
-            self.set_notice("Activá Editar para insertar una pregunta de estudio");
-            return;
-        }
-        let eol = self.document_line_ending();
-        let template = format!("> [!QUESTION]- Pregunta{eol}>{eol}> Escribí aquí la respuesta");
-        self.edit_source(|editor, source| editor.insert_block(source, &template, eol, None));
-    }
-
-    fn insert_study_summary(&mut self) {
-        if !self.document.mode.is_editable() {
-            self.set_notice("Activá Editar para insertar un resumen de estudio");
-            return;
-        }
-        let eol = self.document_line_ending();
-        let template = study_summary_template(eol);
-        self.edit_source(|editor, source| editor.insert_block(source, &template, eol, None));
-    }
-
-    fn insert_study_concept_list(&mut self) {
-        if !self.document.mode.is_editable() {
-            self.set_notice("Activá Editar para insertar una lista de conceptos");
-            return;
-        }
-        let eol = self.document_line_ending();
-        let template = study_concept_list_template(eol);
-        self.edit_source(|editor, source| editor.insert_block(source, &template, eol, None));
-    }
-
     /// Crea una pestaña derivada para copiar o guardar fragmentos. El archivo
     /// original no se edita, no se consulta red y cada fragmento conserva
     /// bloques enteros aunque uno de ellos exceda el tamaño orientativo.
@@ -15311,16 +15442,6 @@ impl App {
         self.set_notice(&format!(
             "{label} preparados en una pestaña nueva · no se modificó el original"
         ));
-    }
-
-    fn insert_study_state(&mut self, state: StudyState) {
-        if !self.document.mode.is_editable() {
-            self.set_notice("Activá Editar para marcar el estado de estudio");
-            return;
-        }
-        let eol = self.document_line_ending();
-        let template = state.callout_template(eol);
-        self.edit_source(|editor, source| editor.insert(source, &template));
     }
 
     fn schedule_recovery(&mut self) {
@@ -19358,7 +19479,7 @@ impl App {
         let legend_overlay = self.legend_edit.clone().map(|(color, text)| {
             let label = format!(
                 "Leyenda del {}: {text}| · ↑↓ otro color · Enter guarda · Esc cancela",
-                crate::theme::STUDY_COLOR_NAMES[color]
+                estudio::color_name(color)
             );
             let label = abbreviated_label(&label, MAX_OVERLAY_LABEL_CHARS);
             build_menu_layout(&label, &mut self.font_cx, &mut self.layout_cx, self.palette)
@@ -20855,11 +20976,12 @@ impl App {
         // Se desarma `self` en campos sueltos para que el prestamo del pixmap
         // no choque con el de la cache de glifos ni con el de los bloques.
         let context_mode = self.document.mode;
-        let study_color_now = self.study_color.min(4);
+        let study_color_now = estudio::clamp_color(self.study_color);
         let highlight_picker = self.highlight_picker;
         let picker_legends: Vec<String> = (0..5).map(|color| self.current_legend(color)).collect();
+        let picker_rows = self.highlight_picker_rows();
         let picker_layouts = highlight_picker.map(|_| {
-            (0..5)
+            let mut layouts = (0..5)
                 .map(|color| {
                     let name = crate::theme::STUDY_COLOR_NAMES[color];
                     let label = if picker_legends[color].is_empty() {
@@ -20874,8 +20996,44 @@ impl App {
                         self.palette,
                     )
                 })
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>();
+            for label in ["Sin color", "Más colores…"] {
+                layouts.push(build_menu_layout(
+                    label,
+                    &mut self.font_cx,
+                    &mut self.layout_cx,
+                    self.palette,
+                ));
+            }
+            layouts
         });
+        let recent_colors = self.recent_colors.clone();
+        // Selector libre: su estado, su geometría y sus textos.
+        let custom_picker_view = self
+            .custom_picker
+            .clone()
+            .zip(self.custom_picker_geometry())
+            .map(|(picker, geometry)| {
+                let hex = build_menu_layout(
+                    &format!("{}|", picker.hex),
+                    &mut self.font_cx,
+                    &mut self.layout_cx,
+                    self.palette,
+                );
+                let back = build_menu_layout(
+                    "Volver",
+                    &mut self.font_cx,
+                    &mut self.layout_cx,
+                    self.palette,
+                );
+                let apply = build_menu_layout(
+                    "Aplicar",
+                    &mut self.font_cx,
+                    &mut self.layout_cx,
+                    self.palette,
+                );
+                (picker, geometry, hex, back, apply)
+            });
         let study_highlights = self.study_highlight_ranges();
         let study_marks = self.study_mark_blocks();
         let study_preview_highlights = self.study_preview_highlight_ranges();
@@ -22512,17 +22670,19 @@ impl App {
             } else {
                 x + (width - 18.0) * 0.5
             };
-            draw_toolbar_icon(
-                pixmap,
-                action,
-                icon_x,
-                CONTEXT_TOOLBAR_Y + 5.0,
-                18.0,
-                icon_color,
-            );
-            // El marcador lleva una raya del color actual; el botón de color,
-            // el círculo relleno con él.
-            let current = palette.study[study_color_now];
+            if action != AppAction::HighlightPickColor {
+                draw_toolbar_icon(
+                    pixmap,
+                    action,
+                    icon_x,
+                    CONTEXT_TOOLBAR_Y + 5.0,
+                    18.0,
+                    icon_color,
+                );
+            }
+            // El marcador lleva una raya del color actual; la flecha que le
+            // sigue abre los colores, como en un botón dividido.
+            let current = palette.study_tone(study_color_now);
             let mut swatch = Paint {
                 anti_alias: true,
                 ..Default::default()
@@ -22533,30 +22693,11 @@ impl App {
                 current.stroke.2,
                 255,
             ));
-            match action {
-                AppAction::HighlightSelection => {
-                    if let Some(rect) =
-                        Rect::from_xywh(icon_x + 2.0, CONTEXT_TOOLBAR_Y + 5.0 + 16.0, 14.0, 3.0)
-                    {
-                        pixmap.fill_rect(rect, &swatch, Transform::identity(), None);
-                    }
-                }
-                AppAction::HighlightPickColor => {
-                    if let Some(circle) = tiny_skia::PathBuilder::from_circle(
-                        icon_x + 9.0 - 2.0,
-                        CONTEXT_TOOLBAR_Y + 5.0 + 9.0,
-                        4.5,
-                    ) {
-                        pixmap.fill_path(
-                            &circle,
-                            &swatch,
-                            tiny_skia::FillRule::Winding,
-                            Transform::identity(),
-                            None,
-                        );
-                    }
-                }
-                _ => {}
+            if action == AppAction::HighlightSelection
+                && let Some(rect) =
+                    Rect::from_xywh(icon_x + 2.0, CONTEXT_TOOLBAR_Y + 5.0 + 16.0, 14.0, 3.0)
+            {
+                pixmap.fill_rect(rect, &swatch, Transform::identity(), None);
             }
             if let Some(layout) = group_label {
                 for line in layout.lines() {
@@ -22576,20 +22717,176 @@ impl App {
                 }
             }
             if toolbar_action_has_menu(action) {
+                let caret_only = action == AppAction::HighlightPickColor;
                 draw_menu_chevron(
                     pixmap,
-                    x + width - 11.0,
-                    CONTEXT_TOOLBAR_Y + CONTEXT_TOOLBAR_HEIGHT - 9.0,
+                    if caret_only {
+                        x + (width - 7.0) * 0.5
+                    } else {
+                        x + width - 11.0
+                    },
+                    if caret_only {
+                        CONTEXT_TOOLBAR_Y + (CONTEXT_TOOLBAR_HEIGHT - 4.0) * 0.5
+                    } else {
+                        CONTEXT_TOOLBAR_Y + CONTEXT_TOOLBAR_HEIGHT - 9.0
+                    },
                     icon_color,
                 );
             }
         }
 
-        if let (Some(anchor), Some(layouts)) = (highlight_picker, picker_layouts.as_ref()) {
-            let (px, py, pw, ph) = highlight_picker_rect(anchor, w.get() as f32);
+        if let (Some((picker, geometry, hex_layout, back_layout, apply_layout)), Some(_)) =
+            (custom_picker_view.as_ref(), highlight_picker)
+        {
+            // Selector libre: cuadro de saturación y brillo, barra de tono,
+            // campo hexadecimal y botones.
+            let (px, py, pw, ph) = geometry.rect;
             draw_floating_surface(pixmap, px, py, pw, ph, 10.0, *palette);
-            let hovered_row =
-                tab_hover.and_then(|(x, y)| highlight_picker_row_at(anchor, w.get() as f32, x, y));
+            let (sx, sy, sw, sh) = geometry.square;
+            if let Some(mut square) = Pixmap::new(sw as u32, sh as u32) {
+                let (width, height) = (square.width() as usize, square.height() as usize);
+                for (index, pixel) in square.pixels_mut().iter_mut().enumerate() {
+                    let (x, y) = (index % width, index / width);
+                    let (r, g, b) = selector_color::hsv_to_rgb(
+                        picker.hue,
+                        (x as f32 + 0.5) / width as f32,
+                        1.0 - (y as f32 + 0.5) / height as f32,
+                    );
+                    *pixel = tiny_skia::PremultipliedColorU8::from_rgba(r, g, b, 255)
+                        .unwrap_or(tiny_skia::PremultipliedColorU8::TRANSPARENT);
+                }
+                pixmap.draw_pixmap(
+                    sx as i32,
+                    sy as i32,
+                    square.as_ref(),
+                    &PixmapPaint::default(),
+                    Transform::identity(),
+                    None,
+                );
+            }
+            let (hx, hy, hw, hh) = geometry.hue;
+            if let Some(mut bar) = Pixmap::new(hw as u32, hh as u32) {
+                let width = bar.width() as usize;
+                for (index, pixel) in bar.pixels_mut().iter_mut().enumerate() {
+                    let x = index % width;
+                    let (r, g, b) = selector_color::hsv_to_rgb(
+                        (x as f32 + 0.5) / width as f32 * 360.0,
+                        1.0,
+                        1.0,
+                    );
+                    *pixel = tiny_skia::PremultipliedColorU8::from_rgba(r, g, b, 255)
+                        .unwrap_or(tiny_skia::PremultipliedColorU8::TRANSPARENT);
+                }
+                pixmap.draw_pixmap(
+                    hx as i32,
+                    hy as i32,
+                    bar.as_ref(),
+                    &PixmapPaint::default(),
+                    Transform::identity(),
+                    None,
+                );
+            }
+            // Marcadores: un anillo en el cuadro y una raya en la barra.
+            let ring_paint = |color: (u8, u8, u8)| {
+                let mut paint = Paint {
+                    anti_alias: true,
+                    ..Default::default()
+                };
+                paint.set_color(Color::from_rgba8(color.0, color.1, color.2, 255));
+                paint
+            };
+            let (ring_x, ring_y) = (sx + picker.saturation * sw, sy + (1.0 - picker.value) * sh);
+            for (radius, color, width) in [(6.0, (0, 0, 0), 3.0), (6.0, (255, 255, 255), 1.5)] {
+                if let Some(circle) = tiny_skia::PathBuilder::from_circle(ring_x, ring_y, radius) {
+                    pixmap.stroke_path(
+                        &circle,
+                        &ring_paint(color),
+                        &tiny_skia::Stroke {
+                            width,
+                            ..Default::default()
+                        },
+                        Transform::identity(),
+                        None,
+                    );
+                }
+            }
+            let hue_x = hx + (picker.hue / 360.0) * hw;
+            for (extra, color) in [(1.5, (0, 0, 0)), (0.0, (255, 255, 255))] {
+                if let Some(rect) = Rect::from_xywh(
+                    hue_x - 1.0 - extra,
+                    hy - 2.0 - extra,
+                    2.0 + extra * 2.0,
+                    hh + 4.0 + extra * 2.0,
+                ) {
+                    pixmap.fill_rect(rect, &ring_paint(color), Transform::identity(), None);
+                }
+            }
+            // Vista previa del color y campo hexadecimal.
+            let (rx, ry, rw, rh) = geometry.preview;
+            let (red, green, blue) = picker.rgb();
+            let mut preview = Paint {
+                anti_alias: true,
+                ..Default::default()
+            };
+            preview.set_color(Color::from_rgba8(red, green, blue, 255));
+            fill_rounded_rect(pixmap, rx, ry, rw, rh, 6.0, &preview);
+            let (fx, fy, fw, fh) = geometry.hex;
+            let mut field = Paint {
+                anti_alias: true,
+                ..Default::default()
+            };
+            field.set_color(Color::from_rgba8(
+                palette.elevated.0,
+                palette.elevated.1,
+                palette.elevated.2,
+                255,
+            ));
+            fill_rounded_rect(pixmap, fx, fy, fw, fh, 6.0, &field);
+            let text_y = fy + (fh - hex_layout.height()) * 0.5;
+            draw_text_layout(
+                pixmap,
+                scale_cx,
+                glyphs,
+                hex_layout,
+                fx + 10.0,
+                text_y.round(),
+            );
+            // Botones: «Volver» neutro y «Aplicar» con el acento.
+            for (rect, layout, primary) in [
+                (geometry.back, back_layout, false),
+                (geometry.apply, apply_layout, true),
+            ] {
+                let mut button = Paint {
+                    anti_alias: true,
+                    ..Default::default()
+                };
+                let tone = if primary {
+                    palette.accent
+                } else {
+                    palette.border
+                };
+                button.set_color(Color::from_rgba8(
+                    tone.0,
+                    tone.1,
+                    tone.2,
+                    if primary { 70 } else { 255 },
+                ));
+                fill_rounded_rect(pixmap, rect.0, rect.1, rect.2, rect.3, 6.0, &button);
+                draw_text_layout(
+                    pixmap,
+                    scale_cx,
+                    glyphs,
+                    layout,
+                    (rect.0 + (rect.2 - layout.width()) * 0.5).round(),
+                    (rect.1 + (rect.3 - layout.height()) * 0.5).round(),
+                );
+            }
+        } else if let (Some(anchor), Some(layouts)) = (highlight_picker, picker_layouts.as_ref()) {
+            let (px, py, pw, ph) = highlight_picker_rect(anchor, w.get() as f32, picker_rows);
+            draw_floating_surface(pixmap, px, py, pw, ph, 10.0, *palette);
+            let hovered_row = tab_hover.and_then(|(x, y)| {
+                highlight_picker_row_at(anchor, w.get() as f32, picker_rows, x, y)
+            });
             for (row, layout) in layouts.iter().enumerate() {
                 let ry = py + 4.0 + row as f32 * HIGHLIGHT_PICKER_ROW;
                 if hovered_row == Some(row) || study_color_now == row {
@@ -22610,30 +22907,121 @@ impl App {
                         &fill,
                     );
                 }
-                let color = palette.study[row].stroke;
-                let mut dot = Paint {
-                    anti_alias: true,
-                    ..Default::default()
-                };
-                dot.set_color(Color::from_rgba8(color.0, color.1, color.2, 255));
-                if let Some(circle) = tiny_skia::PathBuilder::from_circle(
-                    px + 20.0,
-                    ry + HIGHLIGHT_PICKER_ROW * 0.5,
-                    6.0,
-                ) {
-                    pixmap.fill_path(
-                        &circle,
-                        &dot,
-                        tiny_skia::FillRule::Winding,
-                        Transform::identity(),
-                        None,
-                    );
+                let (dot_x, dot_y) = (px + 20.0, ry + HIGHLIGHT_PICKER_ROW * 0.5);
+                if row < 5 {
+                    let color = palette.study[row].stroke;
+                    let mut dot = Paint {
+                        anti_alias: true,
+                        ..Default::default()
+                    };
+                    dot.set_color(Color::from_rgba8(color.0, color.1, color.2, 255));
+                    if let Some(circle) = tiny_skia::PathBuilder::from_circle(dot_x, dot_y, 6.0) {
+                        pixmap.fill_path(
+                            &circle,
+                            &dot,
+                            tiny_skia::FillRule::Winding,
+                            Transform::identity(),
+                            None,
+                        );
+                    }
+                } else if row == 5 {
+                    // «Sin color»: un círculo vacío tachado.
+                    let mut stroke = Paint {
+                        anti_alias: true,
+                        ..Default::default()
+                    };
+                    stroke.set_color(Color::from_rgba8(
+                        palette.dim.0,
+                        palette.dim.1,
+                        palette.dim.2,
+                        255,
+                    ));
+                    let line = tiny_skia::Stroke {
+                        width: 1.5,
+                        ..Default::default()
+                    };
+                    if let Some(circle) = tiny_skia::PathBuilder::from_circle(dot_x, dot_y, 6.0) {
+                        pixmap.stroke_path(&circle, &stroke, &line, Transform::identity(), None);
+                    }
+                    let mut slash = tiny_skia::PathBuilder::new();
+                    slash.move_to(dot_x - 4.2, dot_y + 4.2);
+                    slash.line_to(dot_x + 4.2, dot_y - 4.2);
+                    if let Some(slash) = slash.finish() {
+                        pixmap.stroke_path(&slash, &stroke, &line, Transform::identity(), None);
+                    }
+                } else {
+                    // «Más colores…»: tres puntos de tonos distintos.
+                    for (offset, tone) in [
+                        (-5.0, palette.study[3].stroke),
+                        (0.0, palette.study[0].stroke),
+                        (5.0, palette.study[2].stroke),
+                    ] {
+                        let mut dot = Paint {
+                            anti_alias: true,
+                            ..Default::default()
+                        };
+                        dot.set_color(Color::from_rgba8(tone.0, tone.1, tone.2, 255));
+                        if let Some(circle) =
+                            tiny_skia::PathBuilder::from_circle(dot_x + offset, dot_y, 3.2)
+                        {
+                            pixmap.fill_path(
+                                &circle,
+                                &dot,
+                                tiny_skia::FillRule::Winding,
+                                Transform::identity(),
+                                None,
+                            );
+                        }
+                    }
                 }
                 for line in layout.lines() {
                     for entry in line.items() {
                         if let PositionedLayoutItem::GlyphRun(run) = entry {
                             draw_run_background(pixmap, &run, px + 36.0, ry + 6.0);
                             draw_glyph_run(pixmap, scale_cx, glyphs, &run, px + 36.0, ry + 6.0);
+                        }
+                    }
+                }
+            }
+            // Colores libres recientes: una fila de muestras.
+            if !recent_colors.is_empty() {
+                let row_y = py + 4.0 + HIGHLIGHT_PICKER_FIXED_ROWS as f32 * HIGHLIGHT_PICKER_ROW;
+                for (slot, color) in recent_colors.iter().enumerate() {
+                    let tone = palette.study_tone(*color).stroke;
+                    let swatch_x = px + 16.0 + slot as f32 * (RECENT_SWATCH + RECENT_SWATCH_GAP);
+                    let swatch_y = row_y + (HIGHLIGHT_PICKER_ROW - RECENT_SWATCH) * 0.5;
+                    let mut swatch = Paint {
+                        anti_alias: true,
+                        ..Default::default()
+                    };
+                    swatch.set_color(Color::from_rgba8(tone.0, tone.1, tone.2, 255));
+                    fill_rounded_rect(
+                        pixmap,
+                        swatch_x,
+                        swatch_y,
+                        RECENT_SWATCH,
+                        RECENT_SWATCH,
+                        5.0,
+                        &swatch,
+                    );
+                    if *color == study_color_now {
+                        let mut ring = Paint {
+                            anti_alias: true,
+                            ..Default::default()
+                        };
+                        ring.set_color(Color::from_rgba8(
+                            palette.text.0,
+                            palette.text.1,
+                            palette.text.2,
+                            255,
+                        ));
+                        if let Some(rect) = Rect::from_xywh(
+                            swatch_x,
+                            swatch_y + RECENT_SWATCH + 1.0,
+                            RECENT_SWATCH,
+                            2.0,
+                        ) {
+                            pixmap.fill_rect(rect, &ring, Transform::identity(), None);
                         }
                     }
                 }
@@ -26811,36 +27199,35 @@ la casa final
             assert!(acciones.contains(&AppAction::HighlightPickColor));
             assert!(toolbar_action_has_menu(AppAction::HighlightPickColor));
         }
-        // El menú Estudio no tiene una función por color: una sola entrada.
+        // El menú Estudio ya no repite lo que está en la barra.
         let entradas: Vec<AppAction> = STUDY_GROUPS
             .iter()
             .flat_map(|(_, acciones)| acciones.iter().copied())
             .filter(|accion| {
-                accion.label().starts_with("Subrayar") || accion.label().starts_with("Color del")
+                accion.label().starts_with("Subrayar la") || accion.label().starts_with("Color del")
             })
             .collect();
-        assert_eq!(
-            entradas,
-            [AppAction::HighlightSelection, AppAction::HighlightPickColor]
-        );
+        assert!(entradas.is_empty(), "{entradas:?}");
         // El selector se abre bajo el botón, elige un color y subraya.
         let mut app = app_de_estudio();
         app.draw_for_test(900, 500);
         seleccionar(&mut app, (1, 4), (1, 9));
         app.perform_action(AppAction::HighlightPickColor);
         let ancla = app.highlight_picker.expect("el selector queda abierto");
-        let (x, y, _, _) = highlight_picker_rect(ancla, 900.0);
+        let filas = app.highlight_picker_rows();
+        let (x, y, _, _) = highlight_picker_rect(ancla, 900.0, filas);
         assert_eq!(
             highlight_picker_row_at(
                 ancla,
                 900.0,
+                filas,
                 x + 20.0,
                 y + 4.0 + 2.0 * HIGHLIGHT_PICKER_ROW + 5.0
             ),
             Some(2)
         );
         assert_eq!(
-            highlight_picker_row_at(ancla, 900.0, x - 5.0, y + 10.0),
+            highlight_picker_row_at(ancla, 900.0, filas, x - 5.0, y + 10.0),
             None
         );
         app.pick_highlight_color(2);
@@ -26857,6 +27244,93 @@ la casa final
         app.pick_highlight_color(4);
         assert_eq!(app.study_color, 4);
         assert_eq!(parsed.registros.len(), 1);
+    }
+
+    #[test]
+    fn el_selector_libre_subraya_con_un_color_a_medida_y_lo_recuerda() {
+        let mut app = app_de_estudio();
+        app.draw_for_test(900, 500);
+        seleccionar(&mut app, (1, 4), (1, 9));
+        app.perform_action(AppAction::HighlightPickColor);
+        let ancla = app.highlight_picker.expect("el selector queda abierto");
+        // «Más colores…» (fila 6) abre el selector libre en el mismo lugar.
+        let filas = app.highlight_picker_rows();
+        let (x, y, _, _) = highlight_picker_rect(ancla, 900.0, filas);
+        assert_eq!(
+            highlight_picker_row_at(
+                ancla,
+                900.0,
+                filas,
+                x + 20.0,
+                y + 4.0 + 6.0 * HIGHLIGHT_PICKER_ROW + 5.0
+            ),
+            Some(6)
+        );
+        app.open_custom_picker();
+        assert!(app.custom_picker.is_some());
+        app.draw_for_test(900, 500);
+        // Se escribe un color y se aplica con Enter.
+        let picker = app.custom_picker.as_mut().unwrap();
+        picker.hex.clear();
+        picker.type_hex("#3366ff");
+        app.apply_custom_color();
+        assert!(app.custom_picker.is_none());
+        assert_eq!(app.highlight_picker, None);
+        let parsed = estudio::parse(app.document.annotations.as_deref()).unwrap();
+        assert_eq!(
+            parsed.registros[0].color,
+            anotaciones::Color::Otro("#3366ff".to_string())
+        );
+        let azul = estudio::custom_color((0x33, 0x66, 0xFF));
+        assert_eq!(app.study_color, azul);
+        assert_eq!(app.recent_colors, vec![azul]);
+        assert_eq!(app.settings.recent_colors, vec![0x3366FF]);
+        // El subrayado se dibuja con el color elegido, adaptado al tema.
+        let tramos = app.study_highlight_ranges();
+        let fondo = app.palette.study_tone(azul).fill;
+        assert!(
+            tramos
+                .values()
+                .flatten()
+                .any(|(_, _, color)| *color == fondo)
+        );
+        // La fila de colores recientes aparece y repetir un color no lo duplica.
+        assert_eq!(app.highlight_picker_rows(), HIGHLIGHT_PICKER_FIXED_ROWS + 1);
+        app.pick_highlight_color(azul);
+        assert_eq!(app.recent_colors.len(), 1);
+        app.draw_for_test(900, 500);
+    }
+
+    #[test]
+    fn sin_color_quita_el_subrayado_y_volver_regresa_a_la_lista() {
+        let mut app = app_de_estudio();
+        app.draw_for_test(900, 500);
+        seleccionar(&mut app, (1, 4), (1, 9));
+        app.highlight_selection(1);
+        assert!(!app.study_highlight_ranges().is_empty());
+        app.perform_action(AppAction::HighlightPickColor);
+        app.open_custom_picker();
+        // Escape sale del selector libre y deja abierta la lista.
+        app.custom_picker = None;
+        assert!(app.highlight_picker.is_some());
+        app.remove_highlight_from_picker();
+        assert!(app.highlight_picker.is_none());
+        assert!(app.study_highlight_ranges().is_empty(), "se quitó");
+    }
+
+    #[test]
+    fn la_flecha_del_subrayado_va_pegada_al_boton_y_es_mas_angosta() {
+        let modo = DocumentMode::Reading;
+        let acciones = contextual_toolbar_actions(modo);
+        let boton = acciones
+            .iter()
+            .position(|a| *a == AppAction::HighlightSelection)
+            .unwrap();
+        assert_eq!(acciones[boton + 1], AppAction::HighlightPickColor);
+        let a = contextual_toolbar_item_geometry(boton, 1100.0, modo).unwrap();
+        let b = contextual_toolbar_item_geometry(boton + 1, 1100.0, modo).unwrap();
+        assert!(b.width < a.width);
+        assert!(b.x - (a.x + a.width) <= CONTEXT_TOOLBAR_ITEM_GAP + 0.01);
     }
 
     #[test]
@@ -28561,18 +29035,15 @@ sin guardar",
         );
         assert_eq!(
             filtered_actions_from(&STUDY_ACTIONS, "resumen"),
-            vec![
-                AppAction::InsertStudySummary,
-                AppAction::PrepareStudySummary,
-            ]
+            vec![AppAction::PrepareStudySummary]
         );
         assert_eq!(
             filtered_actions_from(&STUDY_ACTIONS, "conceptos"),
-            vec![
-                AppAction::InsertStudyConceptList,
-                AppAction::PrepareStudyConceptList,
-            ]
+            vec![AppAction::PrepareStudyConceptList]
         );
+        // Subrayar y marcar viven en la barra, no en el menú Estudio.
+        assert!(!STUDY_ACTIONS.contains(&AppAction::HighlightSelection));
+        assert!(!STUDY_ACTIONS.contains(&AppAction::HighlightPickColor));
         assert_eq!(
             filtered_actions_from(&STUDY_ACTIONS, ""),
             STUDY_ACTIONS.to_vec()
@@ -28856,12 +29327,6 @@ sin guardar",
         assert!(APP_ACTIONS.contains(&AppAction::SplitDocumentBelow));
         assert!(APP_ACTIONS.contains(&AppAction::CloseDocumentPane));
         assert!(APP_ACTIONS.contains(&AppAction::ToggleReduceMotion));
-        assert!(APP_ACTIONS.contains(&AppAction::InsertStudyQuestion));
-        assert!(APP_ACTIONS.contains(&AppAction::InsertStudySummary));
-        assert!(APP_ACTIONS.contains(&AppAction::InsertStudyConceptList));
-        assert!(APP_ACTIONS.contains(&AppAction::InsertStudyUnderstood));
-        assert!(APP_ACTIONS.contains(&AppAction::InsertStudyDoubt));
-        assert!(APP_ACTIONS.contains(&AppAction::InsertStudyPending));
         assert!(APP_ACTIONS.contains(&AppAction::CopyPlatform));
         assert!(contextual_toolbar_actions(DocumentMode::Split).contains(&AppAction::BlockTools));
         assert!(VIEW_ACTIONS.contains(&AppAction::ToggleSplitOrientation));
@@ -31601,31 +32066,6 @@ mod pruebas_inline {
             source,
             "> [!QUESTION]- ¿Capital de Argentina?\n>\n> Buenos Aires."
         );
-    }
-
-    #[test]
-    fn los_estados_de_estudio_son_callouts_portables_y_reconocibles() {
-        let eol = "\r\n";
-        let cases = [
-            (
-                StudyState::Understood,
-                "> [!SUCCESS] Entendido",
-                "Entendido",
-            ),
-            (StudyState::Doubt, "> [!WARNING] Duda", "Atención"),
-            (StudyState::Pending, "> [!TODO] Pendiente", "Pendiente"),
-        ];
-
-        for (state, expected_source, expected_label) in cases {
-            let source = state.callout_template(eol);
-            assert!(source.starts_with(expected_source));
-            assert!(source.contains("\r\n"), "debe preservar el EOL solicitado");
-
-            let blocks = aplanar(&source);
-            let first = blocks.first().expect("el callout debe crear un bloque");
-            assert!(matches!(first.kind, Kind::Callout));
-            assert!(matches!(&first.marker, Some(Marker::Text(label)) if label == expected_label));
-        }
     }
 
     #[test]

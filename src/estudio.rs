@@ -123,14 +123,76 @@ pub(crate) struct Highlight {
     pub(crate) id: String,
 }
 
-/// Índice de un color en la paleta, o `None` si es desconocido.
+/// Los colores elegidos con el selector libre se llevan como un número que
+/// empieza en este valor y trae el RGB en sus 24 bits bajos. Los cinco de la
+/// paleta son 0 a 4. En el archivo se guardan como `#rrggbb`.
+pub(crate) const CUSTOM_BASE: usize = 1 << 24;
+
+/// El número de un color libre.
+pub(crate) fn custom_color(rgb: (u8, u8, u8)) -> usize {
+    CUSTOM_BASE | (usize::from(rgb.0) << 16) | (usize::from(rgb.1) << 8) | usize::from(rgb.2)
+}
+
+/// El RGB de un color libre, o `None` si es de la paleta.
+pub(crate) fn custom_rgb(index: usize) -> Option<(u8, u8, u8)> {
+    (index >= CUSTOM_BASE).then_some((
+        ((index >> 16) & 0xFF) as u8,
+        ((index >> 8) & 0xFF) as u8,
+        (index & 0xFF) as u8,
+    ))
+}
+
+/// Un número de color que se puede dibujar: los de la paleta no pasan de 4.
+pub(crate) fn clamp_color(index: usize) -> usize {
+    match custom_rgb(index) {
+        Some(rgb) => custom_color(rgb),
+        None => index.min(4),
+    }
+}
+
+/// `#rrggbb` o `rrggbb` (mayúsculas o minúsculas) a RGB.
+pub(crate) fn parse_hex_color(text: &str) -> Option<(u8, u8, u8)> {
+    let digits = text.trim().strip_prefix('#').unwrap_or(text.trim());
+    if digits.len() != 6 || !digits.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    let value = u32::from_str_radix(digits, 16).ok()?;
+    Some((
+        ((value >> 16) & 0xFF) as u8,
+        ((value >> 8) & 0xFF) as u8,
+        (value & 0xFF) as u8,
+    ))
+}
+
+/// `#rrggbb` en minúsculas.
+pub(crate) fn hex_color(rgb: (u8, u8, u8)) -> String {
+    format!("#{:02x}{:02x}{:02x}", rgb.0, rgb.1, rgb.2)
+}
+
+/// El nombre de un color para los avisos.
+pub(crate) fn color_name(index: usize) -> String {
+    match custom_rgb(index) {
+        Some(rgb) => format!("el color {}", hex_color(rgb).to_uppercase()),
+        None => crate::theme::STUDY_COLOR_NAMES[index.min(4)].to_string(),
+    }
+}
+
+/// Índice de un color en la paleta (o color libre), o `None` si es desconocido.
 pub(crate) fn color_index(color: &Color) -> Option<usize> {
+    if let Color::Otro(text) = color
+        && text.starts_with('#')
+    {
+        return parse_hex_color(text).map(custom_color);
+    }
     crate::theme::STUDY_COLOR_NAMES
         .iter()
         .position(|name| *name == color.texto())
 }
 
 pub(crate) fn color_for_index(index: usize) -> Color {
+    if let Some(rgb) = custom_rgb(index) {
+        return Color::Otro(hex_color(rgb));
+    }
     match index {
         1 => Color::Verde,
         2 => Color::Azul,
@@ -931,6 +993,47 @@ Fin del texto
         let mut anotaciones = Anotaciones::default();
         highlight(&mut anotaciones, original, 2, 3, 0).unwrap();
         assert!(highlights("a x c", &anotaciones).is_empty());
+    }
+
+    #[test]
+    fn un_color_libre_se_guarda_como_hex_y_vuelve_igual() {
+        let rojizo = custom_color((0xE0, 0x30, 0x20));
+        assert!(rojizo >= CUSTOM_BASE);
+        assert_eq!(custom_rgb(rojizo), Some((0xE0, 0x30, 0x20)));
+        assert_eq!(custom_rgb(3), None);
+        let color = color_for_index(rojizo);
+        assert_eq!(color, Color::Otro("#e03020".to_string()));
+        assert_eq!(color_index(&color), Some(rojizo));
+        // Los de la paleta no cambian.
+        for indice in 0..5 {
+            assert_eq!(color_index(&color_for_index(indice)), Some(indice));
+        }
+        // Un color mal escrito no se dibuja, pero tampoco rompe nada.
+        assert_eq!(color_index(&Color::Otro("#12345".to_string())), None);
+        assert_eq!(color_index(&Color::Otro("#zzzzzz".to_string())), None);
+        assert_eq!(parse_hex_color(" #FFCC00 "), Some((255, 204, 0)));
+        assert_eq!(parse_hex_color("ffcc0"), None);
+        assert_eq!(clamp_color(99), 4);
+        assert_eq!(clamp_color(rojizo), rojizo);
+        assert_eq!(color_name(1), "verde");
+        assert_eq!(color_name(rojizo), "el color #E03020");
+    }
+
+    #[test]
+    fn subrayar_con_un_color_libre_lo_guarda_y_lo_dibuja_en_su_tramo() {
+        let texto = "uno dos tres";
+        let mut anotaciones = Anotaciones::default();
+        let verde_lima = custom_color((0x99, 0xEE, 0x44));
+        highlight(&mut anotaciones, texto, 4, 7, verde_lima).unwrap();
+        assert_eq!(
+            anotaciones.registros[0].color,
+            Color::Otro("#99ee44".to_string())
+        );
+        let pintados = highlights(texto, &anotaciones);
+        assert_eq!(pintados[0].color, verde_lima);
+        // Cambiarlo a un color de la paleta reemplaza el libre.
+        highlight(&mut anotaciones, texto, 4, 7, 2).unwrap();
+        assert_eq!(anotaciones.registros[0].color, Color::Azul);
     }
 
     #[test]

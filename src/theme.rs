@@ -107,6 +107,42 @@ impl Palette {
             .map(|index| self.study[index])
     }
 
+    /// Si es un tema oscuro (el documento es más oscuro que claro).
+    pub(crate) fn is_dark(&self) -> bool {
+        u16::from(self.surface.0) + u16::from(self.surface.1) + u16::from(self.surface.2) < 3 * 128
+    }
+
+    /// El color de estudio de un número de `estudio`: uno de la paleta, o un
+    /// color libre adaptado al tema. El elegido es el color del fondo del
+    /// subrayado; de noche se mezcla con el fondo para que el texto claro
+    /// conserve el contraste, y de día se usa casi tal cual.
+    pub(crate) fn study_tone(&self, index: usize) -> StudyColor {
+        let Some(rgb) = crate::estudio::custom_rgb(index) else {
+            return self.study[index.min(4)];
+        };
+        let mix = |from: (u8, u8, u8), to: (u8, u8, u8), amount: f32| {
+            let channel = |a: u8, b: u8| {
+                (f32::from(a) + (f32::from(b) - f32::from(a)) * amount).round() as u8
+            };
+            (
+                channel(from.0, to.0),
+                channel(from.1, to.1),
+                channel(from.2, to.2),
+            )
+        };
+        if self.is_dark() {
+            StudyColor {
+                fill: mix(self.surface, rgb, 0.38),
+                stroke: mix(rgb, (255, 255, 255), 0.15),
+            }
+        } else {
+            StudyColor {
+                fill: mix(self.surface, rgb, 0.92),
+                stroke: mix(rgb, (0, 0, 0), 0.30),
+            }
+        }
+    }
+
     pub(crate) fn resolve(self, role: Role) -> (u8, u8, u8) {
         match role {
             Role::Text => self.text,
