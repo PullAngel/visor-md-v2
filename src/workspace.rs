@@ -224,6 +224,15 @@ impl WorkspaceIndex {
 
     /// Devuelve únicamente rutas relativas que ya pasaron por el recorrido
     /// contenido. La interfaz debe resolverlas otra vez antes de abrirlas.
+    /// Fecha de modificación de cada nota, para ordenar el árbol por fecha. Las
+    /// notas sin fecha conocida no aparecen.
+    pub(crate) fn note_dates(&self) -> HashMap<PathBuf, SystemTime> {
+        self.notes
+            .iter()
+            .filter_map(|note| Some((note.relative_path.clone(), note.source_modified?)))
+            .collect()
+    }
+
     pub(crate) fn note_paths(&self) -> Vec<PathBuf> {
         self.notes
             .iter()

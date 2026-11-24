@@ -219,12 +219,12 @@ memoria (D-46) también baja el costo por tecla.
 
   Prueba: unidad del recorrido de la píldora y una medición del tiempo de
   cuadro durante la animación.
-- [ ] **18.2** Índice de carpeta con jerarquía.
+- [x] **18.2** Índice de carpeta con jerarquía (íconos de carpeta y nota dibujados como vectores, carpetas con más peso, guías de sangría).
   Qué:
   - Filas de carpeta con flecha de plegar, ícono de carpeta y peso medio.
   - Archivos con ícono de documento y texto normal.
   - Guías de sangría tenues por nivel, y la fila activa resaltada.
-- [ ] **18.3** Orden del índice (D-56).
+- [x] **18.3** Orden del índice (D-56). El cambio de orden es la tecla O con el árbol abierto (el pie del panel lo dice); no se agregó acción al catálogo para no tocar el menú de comandos.
   Qué: comparador natural nuevo en `workspace.rs` y un menú de orden en el
   encabezado del panel. La indexación conserva el orden de bytes solo para los
   límites de contenido; lo que se muestra usa el comparador nuevo.
@@ -336,7 +336,7 @@ avisar. Estas las hacés vos, o yo con tu permiso explícito en ese momento:
 | --- | --- | --- |
 | 16 | Hecha | 16.1 a 16.8; falta probar a mano el arrastre de pestañas y el diálogo de restauración |
 | 17 | Hecha | 17.1 a 17.3 |
-| 18 | Pendiente | |
+| 18 | Hecha | 18.1 a 18.3 |
 | 19 | Pendiente | |
 | 20 | Pendiente | |
 | 21 | Sin aprobar | Decisión de ortografía |

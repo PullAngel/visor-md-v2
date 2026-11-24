@@ -51,6 +51,9 @@ pub(crate) struct Settings {
     pub(crate) open_external_in_existing: bool,
     /// La bienvenida ya ofreció registrar Visor MD en «Abrir con»: no insiste.
     pub(crate) file_types_offered: bool,
+    /// Orden del árbol de archivos de la carpeta de apuntes (0 a 3; ver
+    /// `TreeSort` en `main.rs`). Un valor desconocido vuelve al orden por nombre.
+    pub(crate) tree_sort: u8,
     document_modes: Vec<(String, DocumentModePreference)>,
 }
 
@@ -62,6 +65,7 @@ impl Default for Settings {
             floating_outline: false,
             open_external_in_existing: true,
             file_types_offered: false,
+            tree_sort: 0,
             document_modes: Vec::new(),
         }
     }
@@ -136,6 +140,7 @@ fn load_from(path: &Path) -> Result<Settings, std::io::Error> {
     let mut floating_outline = None;
     let mut open_external_in_existing = None;
     let mut file_types_offered = None;
+    let mut tree_sort = None;
     let mut document_modes = Vec::new();
     for line in source.lines().map(str::trim) {
         let Some((key, value)) = line.split_once('=') else {
@@ -178,6 +183,7 @@ fn load_from(path: &Path) -> Result<Settings, std::io::Error> {
                     _ => None,
                 }
             }
+            "tree_sort" => tree_sort = value.trim().parse::<u8>().ok().filter(|value| *value <= 3),
             "document_mode" => {
                 let Some((key, code)) = value.trim().split_once(',') else {
                     continue;
@@ -205,6 +211,7 @@ fn load_from(path: &Path) -> Result<Settings, std::io::Error> {
         floating_outline: floating_outline.unwrap_or(false),
         open_external_in_existing: open_external_in_existing.unwrap_or(true),
         file_types_offered: file_types_offered.unwrap_or(false),
+        tree_sort: tree_sort.unwrap_or(0),
         document_modes: if matches!(version, Some(2) | Some(SETTINGS_VERSION)) {
             document_modes
         } else {
@@ -215,12 +222,13 @@ fn load_from(path: &Path) -> Result<Settings, std::io::Error> {
 
 fn store_to(path: &Path, settings: &Settings) -> Result<(), std::io::Error> {
     let mut source = format!(
-        "version={SETTINGS_VERSION}\nrecovery_enabled={}\nreduce_motion={}\nfloating_outline={}\nopen_external_in_existing={}\nfile_types_offered={}\n",
+        "version={SETTINGS_VERSION}\nrecovery_enabled={}\nreduce_motion={}\nfloating_outline={}\nopen_external_in_existing={}\nfile_types_offered={}\ntree_sort={}\n",
         settings.recovery_enabled,
         settings.reduce_motion,
         settings.floating_outline,
         settings.open_external_in_existing,
-        settings.file_types_offered
+        settings.file_types_offered,
+        settings.tree_sort
     );
     for (key, mode) in &settings.document_modes {
         source.push_str(&format!("document_mode={key},{}\n", mode.code()));
@@ -273,6 +281,7 @@ mod tests {
             floating_outline: true,
             open_external_in_existing: false,
             file_types_offered: true,
+            tree_sort: 2,
             document_modes: Vec::new(),
         };
         store_to(&path, &settings).unwrap();
@@ -285,12 +294,26 @@ mod tests {
                 floating_outline: true,
                 open_external_in_existing: false,
                 file_types_offered: true,
+                tree_sort: 2,
                 document_modes: Vec::new(),
             }
         );
         let stored = fs::read_to_string(&path).unwrap();
         assert!(!stored.contains("path"));
         assert!(stored.contains("reduce_motion=true"));
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn un_orden_del_arbol_desconocido_vuelve_al_orden_por_nombre() {
+        let path = temp_file();
+        fs::write(&path, "version=3\ntree_sort=9\n").unwrap();
+        assert_eq!(load_from(&path).unwrap().tree_sort, 0);
+        fs::write(&path, "version=3\ntree_sort=hola\n").unwrap();
+        assert_eq!(load_from(&path).unwrap().tree_sort, 0);
+        // Un archivo anterior, sin la clave, también.
+        fs::write(&path, "version=3\nrecovery_enabled=true\n").unwrap();
+        assert_eq!(load_from(&path).unwrap().tree_sort, 0);
         let _ = fs::remove_file(path);
     }
 

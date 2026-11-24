@@ -1357,7 +1357,7 @@ impl WorkspaceTreeRow {
     /// Sangría en píxeles: una carpeta lleva su chevron en el margen y las
     /// notas dejan ese hueco para que los nombres queden alineados.
     fn indent_px(&self) -> f32 {
-        self.depth.min(12) as f32 * 14.0 + 16.0
+        self.depth.min(12) as f32 * TREE_LEVEL_STEP + TREE_BASE_INDENT
     }
 
     /// `Some(cerrada)` para una carpeta; las notas no llevan chevron.
@@ -1388,7 +1388,168 @@ impl WorkspaceSearchResult {
     }
 }
 
-fn workspace_tree_rows(paths: &[PathBuf]) -> Vec<WorkspaceTreeRow> {
+/// Sangría base de una fila del árbol: la flecha de plegar, el ícono y el
+/// espacio entre ellos y el nombre.
+const TREE_BASE_INDENT: f32 = 36.0;
+/// Cuánto se corre cada nivel del árbol.
+const TREE_LEVEL_STEP: f32 = 14.0;
+/// Distancia del centro de la flecha de plegar al comienzo del nombre.
+const TREE_CHEVRON_OFFSET: f32 = 30.0;
+/// Distancia del comienzo del ícono al comienzo del nombre.
+const TREE_ICON_OFFSET: f32 = 19.0;
+
+/// Carpeta pequeña (13×10 px): una solapa y el cuerpo, en el color de acento
+/// con poca opacidad para que no compita con el nombre.
+fn draw_folder_icon(pixmap: &mut Pixmap, x: f32, center_y: f32, color: (u8, u8, u8)) {
+    let top = center_y - 5.0;
+    let mut paint = Paint {
+        anti_alias: true,
+        ..Default::default()
+    };
+    paint.set_color(Color::from_rgba8(color.0, color.1, color.2, 200));
+    let mut path = tiny_skia::PathBuilder::new();
+    path.move_to(x, top + 1.5);
+    path.line_to(x + 5.0, top + 1.5);
+    path.line_to(x + 6.5, top + 3.0);
+    path.line_to(x + 13.0, top + 3.0);
+    path.line_to(x + 13.0, top + 10.0);
+    path.line_to(x, top + 10.0);
+    path.close();
+    if let Some(path) = path.finish() {
+        pixmap.fill_path(
+            &path,
+            &paint,
+            tiny_skia::FillRule::Winding,
+            Transform::identity(),
+            None,
+        );
+    }
+}
+
+/// Hoja pequeña (10×12 px): contorno con la esquina doblada.
+fn draw_note_icon(pixmap: &mut Pixmap, x: f32, center_y: f32, color: (u8, u8, u8)) {
+    let top = center_y - 6.0;
+    let mut paint = Paint {
+        anti_alias: true,
+        ..Default::default()
+    };
+    paint.set_color(Color::from_rgba8(color.0, color.1, color.2, 210));
+    let mut path = tiny_skia::PathBuilder::new();
+    path.move_to(x + 1.5, top + 0.5);
+    path.line_to(x + 6.5, top + 0.5);
+    path.line_to(x + 10.5, top + 4.5);
+    path.line_to(x + 10.5, top + 11.5);
+    path.line_to(x + 1.5, top + 11.5);
+    path.close();
+    path.move_to(x + 6.5, top + 0.5);
+    path.line_to(x + 6.5, top + 4.5);
+    path.line_to(x + 10.5, top + 4.5);
+    if let Some(path) = path.finish() {
+        pixmap.stroke_path(
+            &path,
+            &paint,
+            &tiny_skia::Stroke {
+                width: 1.1,
+                ..Default::default()
+            },
+            Transform::identity(),
+            None,
+        );
+    }
+}
+
+/// Orden del árbol de archivos. Las carpetas van siempre antes que las notas
+/// de su mismo nivel, sea cual sea el criterio.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum TreeSort {
+    #[default]
+    NameAscending,
+    NameDescending,
+    NewestFirst,
+    OldestFirst,
+}
+
+impl TreeSort {
+    fn from_code(code: u8) -> Self {
+        match code {
+            1 => Self::NameDescending,
+            2 => Self::NewestFirst,
+            3 => Self::OldestFirst,
+            _ => Self::NameAscending,
+        }
+    }
+
+    fn code(self) -> u8 {
+        match self {
+            Self::NameAscending => 0,
+            Self::NameDescending => 1,
+            Self::NewestFirst => 2,
+            Self::OldestFirst => 3,
+        }
+    }
+
+    fn next(self) -> Self {
+        Self::from_code((self.code() + 1) % 4)
+    }
+
+    /// Versión corta, para el pie del panel.
+    fn short_label(self) -> &'static str {
+        match self {
+            Self::NameAscending => "A-Z",
+            Self::NameDescending => "Z-A",
+            Self::NewestFirst => "recientes",
+            Self::OldestFirst => "antiguos",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::NameAscending => "nombre A-Z",
+            Self::NameDescending => "nombre Z-A",
+            Self::NewestFirst => "fecha, recientes primero",
+            Self::OldestFirst => "fecha, antiguos primero",
+        }
+    }
+}
+
+/// Orden «natural» sin distinguir mayúsculas ni tildes: «nota 2» va antes que
+/// «nota 10», y «Árbol» junto a «arbol», no después de la «z».
+fn natural_cmp(left: &str, right: &str) -> std::cmp::Ordering {
+    #[derive(PartialEq, Eq, PartialOrd, Ord)]
+    enum Part {
+        Number(u128, usize),
+        Text(String),
+    }
+    fn parts(text: &str) -> Vec<Part> {
+        let folded = search_fold(text);
+        let mut parts = Vec::new();
+        let mut chars = folded.chars().peekable();
+        while let Some(&first) = chars.peek() {
+            let mut run = String::new();
+            let digits = first.is_ascii_digit();
+            while let Some(&next) = chars.peek() {
+                if next.is_ascii_digit() != digits {
+                    break;
+                }
+                run.push(next);
+                chars.next();
+            }
+            parts.push(if digits {
+                Part::Number(run.parse().unwrap_or(u128::MAX), run.len())
+            } else {
+                Part::Text(run)
+            });
+        }
+        parts
+    }
+    parts(left).cmp(&parts(right)).then_with(|| left.cmp(right))
+}
+
+fn workspace_tree_rows(
+    paths: &[PathBuf],
+    sort: TreeSort,
+    dates: &HashMap<PathBuf, std::time::SystemTime>,
+) -> Vec<WorkspaceTreeRow> {
     let mut directories = BTreeSet::new();
     for path in paths {
         let mut parent = path.parent();
@@ -1415,16 +1576,77 @@ fn workspace_tree_rows(paths: &[PathBuf]) -> Vec<WorkspaceTreeRow> {
             collapsed: false,
         }))
         .collect::<Vec<_>>();
+    // Una carpeta tiene la fecha de su nota más reciente.
+    let mut directory_dates: HashMap<&std::path::Path, std::time::SystemTime> = HashMap::new();
+    for (path, date) in dates {
+        let mut parent = path.parent();
+        while let Some(directory) = parent {
+            if directory.as_os_str().is_empty() {
+                break;
+            }
+            let entry = directory_dates.entry(directory).or_insert(*date);
+            if *date > *entry {
+                *entry = *date;
+            }
+            parent = directory.parent();
+        }
+    }
+    let date_of = |path: &std::path::Path, is_directory: bool| {
+        if is_directory {
+            directory_dates.get(path).copied()
+        } else {
+            dates.get(path).copied()
+        }
+    };
     rows.sort_by(|left, right| {
-        left.relative_path
-            .cmp(&right.relative_path)
-            .then_with(|| match (&left.kind, &right.kind) {
-                (WorkspaceTreeKind::Directory, WorkspaceTreeKind::Note) => std::cmp::Ordering::Less,
-                (WorkspaceTreeKind::Note, WorkspaceTreeKind::Directory) => {
-                    std::cmp::Ordering::Greater
+        let left_names: Vec<_> = left.relative_path.components().collect();
+        let right_names: Vec<_> = right.relative_path.components().collect();
+        for level in 0..left_names.len().min(right_names.len()) {
+            if left_names[level] == right_names[level] {
+                continue;
+            }
+            // Al primer nivel donde se separan se decide: carpetas antes que
+            // notas y, entre iguales, el criterio elegido.
+            let is_directory = |row: &WorkspaceTreeRow, count: usize| {
+                level + 1 < count || matches!(row.kind, WorkspaceTreeKind::Directory)
+            };
+            let (left_dir, right_dir) = (
+                is_directory(left, left_names.len()),
+                is_directory(right, right_names.len()),
+            );
+            if left_dir != right_dir {
+                return right_dir.cmp(&left_dir);
+            }
+            let prefix = |row: &WorkspaceTreeRow| -> PathBuf {
+                row.relative_path.components().take(level + 1).collect()
+            };
+            let (left_prefix, right_prefix) = (prefix(left), prefix(right));
+            let by_name = || {
+                natural_cmp(
+                    &left_names[level].as_os_str().to_string_lossy(),
+                    &right_names[level].as_os_str().to_string_lossy(),
+                )
+            };
+            return match sort {
+                TreeSort::NameAscending => by_name(),
+                TreeSort::NameDescending => by_name().reverse(),
+                TreeSort::NewestFirst | TreeSort::OldestFirst => {
+                    let left_date = date_of(&left_prefix, left_dir);
+                    let right_date = date_of(&right_prefix, right_dir);
+                    // Sin fecha, al final en los dos sentidos.
+                    match (left_date, right_date) {
+                        (Some(a), Some(b)) if sort == TreeSort::NewestFirst => b.cmp(&a),
+                        (Some(a), Some(b)) => a.cmp(&b),
+                        (Some(_), None) => std::cmp::Ordering::Less,
+                        (None, Some(_)) => std::cmp::Ordering::Greater,
+                        (None, None) => std::cmp::Ordering::Equal,
+                    }
+                    .then_with(by_name)
                 }
-                _ => std::cmp::Ordering::Equal,
-            })
+            };
+        }
+        // Uno es prefijo del otro: la carpeta va antes que su contenido.
+        left_names.len().cmp(&right_names.len())
     });
     rows
 }
@@ -1432,8 +1654,10 @@ fn workspace_tree_rows(paths: &[PathBuf]) -> Vec<WorkspaceTreeRow> {
 fn visible_workspace_tree_rows(
     paths: &[PathBuf],
     collapsed: &HashSet<PathBuf>,
+    sort: TreeSort,
+    dates: &HashMap<PathBuf, std::time::SystemTime>,
 ) -> Vec<WorkspaceTreeRow> {
-    workspace_tree_rows(paths)
+    workspace_tree_rows(paths, sort, dates)
         .into_iter()
         .filter(|row| {
             let mut parent = row.relative_path.parent();
@@ -6599,9 +6823,37 @@ fn build_menu_layout(
     layout
 }
 
+/// Como `build_menu_layout`, con el peso a elección (las carpetas del árbol de
+/// archivos van con más peso que las notas).
+fn build_menu_layout_weighted(
+    label: &str,
+    font_cx: &mut FontContext,
+    layout_cx: &mut LayoutContext<Brush>,
+    palette: Palette,
+    semi_bold: bool,
+) -> Layout<Brush> {
+    let stack: &[FontFamilyName] = &[
+        FontFamilyName::Named(std::borrow::Cow::Borrowed(FONT_UI)),
+        FontFamilyName::Generic(GenericFamily::SystemUi),
+    ];
+    let mut builder = layout_cx.ranged_builder(font_cx, label, 1.0, true);
+    builder.push_default(StyleProperty::Brush(Brush::text(palette.text)));
+    builder.push_default(StyleProperty::FontFamily(FontFamily::List(
+        std::borrow::Cow::Borrowed(stack),
+    )));
+    builder.push_default(StyleProperty::FontSize(13.0));
+    if semi_bold {
+        builder.push_default(StyleProperty::FontWeight(FontWeight::SEMI_BOLD));
+    }
+    let mut layout: Layout<Brush> = builder.build(label);
+    layout.break_all_lines(None);
+    layout
+}
+
 /// Como `build_menu_layout`, pero el texto que no cabe en `max_width` se
 /// recorta con «…». Mide el resultado en vez de contar caracteres: las letras
 /// anchas («m», «W») y las angostas («i», «l») ocupan lo que ocupan.
+#[cfg(test)]
 fn fit_menu_layout(
     label: &str,
     font_cx: &mut FontContext,
@@ -6609,7 +6861,21 @@ fn fit_menu_layout(
     palette: Palette,
     max_width: f32,
 ) -> (Layout<Brush>, bool) {
-    let full = build_menu_layout(label, font_cx, layout_cx, palette);
+    fit_menu_layout_weighted(label, font_cx, layout_cx, palette, max_width, false)
+}
+
+fn fit_menu_layout_weighted(
+    label: &str,
+    font_cx: &mut FontContext,
+    layout_cx: &mut LayoutContext<Brush>,
+    palette: Palette,
+    max_width: f32,
+    semi_bold: bool,
+) -> (Layout<Brush>, bool) {
+    let build = |text: &str, font_cx: &mut FontContext, layout_cx: &mut LayoutContext<Brush>| {
+        build_menu_layout_weighted(text, font_cx, layout_cx, palette, semi_bold)
+    };
+    let full = build(label, font_cx, layout_cx);
     if full.width() <= max_width {
         return (full, false);
     }
@@ -6619,7 +6885,7 @@ fn fit_menu_layout(
     while low < high {
         let middle = (low + high).div_ceil(2);
         let candidate = format!("{}…", chars[..middle].iter().collect::<String>().trim_end());
-        let layout = build_menu_layout(&candidate, font_cx, layout_cx, palette);
+        let layout = build(&candidate, font_cx, layout_cx);
         if layout.width() <= max_width {
             best = Some(layout);
             low = middle;
@@ -6627,10 +6893,7 @@ fn fit_menu_layout(
             high = middle - 1;
         }
     }
-    (
-        best.unwrap_or_else(|| build_menu_layout("…", font_cx, layout_cx, palette)),
-        true,
-    )
+    (best.unwrap_or_else(|| build("…", font_cx, layout_cx)), true)
 }
 
 /// Representacion cacheada de un marcador visible. Los marcadores de texto
@@ -8797,6 +9060,8 @@ struct App {
     highlight_picker: Option<f32>,
     /// «Ocultar mis anotaciones»: Leer muestra el original, sin subrayados.
     hide_annotations: bool,
+    /// Orden del árbol de archivos de la carpeta de apuntes.
+    tree_sort: TreeSort,
     /// Cuándo hay que redibujar para poner al día el contador de un documento
     /// grande que se mostró atrasado a propósito.
     metrics_refresh_due: Option<Instant>,
@@ -9036,6 +9301,7 @@ struct AppInit {
 
 impl App {
     fn new(init: AppInit) -> Self {
+        let settings_tree_sort = init.settings.tree_sort;
         let AppInit {
             started,
             settings,
@@ -9179,6 +9445,7 @@ impl App {
             annotations_line_width: None,
             study_color: 0,
             hide_annotations: false,
+            tree_sort: TreeSort::from_code(settings_tree_sort),
             metrics_refresh_due: None,
             highlight_picker: None,
             legend_edit: None,
@@ -17776,7 +18043,12 @@ impl App {
                 parent = directory.parent();
             }
         }
-        let rows = visible_workspace_tree_rows(&paths, &self.collapsed_workspace_dirs);
+        let rows = visible_workspace_tree_rows(
+            &paths,
+            &self.collapsed_workspace_dirs,
+            self.tree_sort,
+            &index.note_dates(),
+        );
         self.workspace_path_match = current
             .as_deref()
             .and_then(|current| rows.iter().position(|row| row.note_path() == Some(current)))
@@ -17833,8 +18105,12 @@ impl App {
             let Some((_, index)) = self.workspace.as_ref() else {
                 return;
             };
-            let visible =
-                visible_workspace_tree_rows(&index.note_paths(), &self.collapsed_workspace_dirs);
+            let visible = visible_workspace_tree_rows(
+                &index.note_paths(),
+                &self.collapsed_workspace_dirs,
+                self.tree_sort,
+                &index.note_dates(),
+            );
             self.workspace_path_match = visible
                 .iter()
                 .position(|candidate| candidate.relative_path == directory)
@@ -17875,11 +18151,45 @@ impl App {
                 self.workspace_path_match = (self.workspace_path_match + count - 1) % count;
             }
             PhysicalKey::Code(KeyCode::Enter) => self.open_workspace_path_match(),
+            PhysicalKey::Code(KeyCode::KeyO)
+                if !self.modifiers.control_key() && !self.modifiers.alt_key() =>
+            {
+                self.cycle_tree_sort();
+            }
             _ => {}
         }
         if let Some(window) = &self.window {
             window.request_redraw();
         }
+    }
+
+    /// Pasa al siguiente orden del árbol de archivos, lo recuerda y deja el
+    /// árbol con la misma fila elegida.
+    fn cycle_tree_sort(&mut self) {
+        self.tree_sort = self.tree_sort.next();
+        self.settings.tree_sort = self.tree_sort.code();
+        let _ = self.settings.store();
+        let Some((_, index)) = self.workspace.as_ref() else {
+            return;
+        };
+        let selected = self.workspace_paths.as_ref().and_then(|rows| {
+            rows.get(self.workspace_path_match % rows.len().max(1))
+                .map(|row| row.relative_path.clone())
+        });
+        let rows = visible_workspace_tree_rows(
+            &index.note_paths(),
+            &self.collapsed_workspace_dirs,
+            self.tree_sort,
+            &index.note_dates(),
+        );
+        self.workspace_path_match = selected
+            .and_then(|path| rows.iter().position(|row| row.relative_path == path))
+            .unwrap_or(0);
+        self.workspace_paths = Some(rows);
+        self.set_notice(&format!(
+            "Archivos ordenados por {}",
+            self.tree_sort.label()
+        ));
     }
 
     fn append_workspace_search_text(&mut self, text: &str) {
@@ -19347,7 +19657,17 @@ impl App {
                     })
                     .collect(),
                 first: range.start,
-                footer: panel_footer(paths.len(), range),
+                footer: if range.len() < paths.len() {
+                    format!(
+                        "{}–{} de {} · orden {} (O)",
+                        range.start + 1,
+                        range.end,
+                        paths.len(),
+                        self.tree_sort.short_label()
+                    )
+                } else {
+                    format!("Orden {} · O lo cambia", self.tree_sort.short_label())
+                },
             })
         } else if let Some(paths) = self.backlink_paths.as_ref() {
             let selected = self.backlink_match % paths.len().max(1);
@@ -19560,12 +19880,18 @@ impl App {
                     } else {
                         0.0
                     };
-                    fit_menu_layout(
+                    // En el árbol de archivos las carpetas llevan más peso.
+                    let is_folder = row
+                        .checked_sub(1)
+                        .and_then(|item| rows.chevrons.get(item))
+                        .is_some_and(|chevron| chevron.is_some());
+                    fit_menu_layout_weighted(
                         label,
                         &mut self.font_cx,
                         &mut self.layout_cx,
                         self.palette,
                         navigation_text_width - shortcut_width - indent - marks_width,
+                        is_folder,
                     )
                 })
                 .collect::<Vec<_>>()
@@ -23094,8 +23420,39 @@ impl App {
                         }
                     }
                 }
+                // Árbol de archivos: guías de sangría y un ícono por fila, para
+                // distinguir de un vistazo carpetas de notas y su jerarquía.
+                if is_item
+                    && !rows.chevrons.is_empty()
+                    && let Some(chevron) = rows.chevrons.get(row - 1).copied()
+                {
+                    let text_x = geometry.x + 12.0 + indent;
+                    let depth = ((indent - TREE_BASE_INDENT) / TREE_LEVEL_STEP)
+                        .round()
+                        .max(0.0) as usize;
+                    let mut guide_paint = Paint::default();
+                    let dim = palette.dim;
+                    guide_paint.set_color(Color::from_rgba8(dim.0, dim.1, dim.2, 55));
+                    for level in 0..depth {
+                        // Bajo la flecha de la carpeta de cada nivel.
+                        let guide_x =
+                            geometry.x + 12.0 + (level as f32 * TREE_LEVEL_STEP + TREE_BASE_INDENT)
+                                - TREE_CHEVRON_OFFSET;
+                        if let Some(rect) = Rect::from_xywh(guide_x - 0.5, y, 1.0, PANEL_ROW_HEIGHT)
+                        {
+                            pixmap.fill_rect(rect, &guide_paint, Transform::identity(), None);
+                        }
+                    }
+                    let icon_x = text_x - TREE_ICON_OFFSET;
+                    let icon_y = y + PANEL_ROW_HEIGHT * 0.5;
+                    if chevron.is_some() {
+                        draw_folder_icon(pixmap, icon_x, icon_y, palette.accent);
+                    } else {
+                        draw_note_icon(pixmap, icon_x, icon_y, palette.dim);
+                    }
+                }
                 if is_item && let Some(Some(collapsed)) = rows.chevrons.get(row - 1).copied() {
-                    let cx = geometry.x + 12.0 + indent - 11.0;
+                    let cx = geometry.x + 12.0 + indent - TREE_CHEVRON_OFFSET;
                     let cy = y + PANEL_ROW_HEIGHT * 0.5;
                     let mut chevron = tiny_skia::PathBuilder::new();
                     if collapsed {
@@ -28341,32 +28698,114 @@ sin guardar",
             PathBuf::from("raiz.md"),
         ];
 
-        let rows = workspace_tree_rows(&paths);
+        let sin_fechas = HashMap::new();
+        let rows = workspace_tree_rows(&paths, TreeSort::NameAscending, &sin_fechas);
 
+        // Las carpetas van antes que las notas de su nivel.
         assert_eq!(rows.len(), 5);
-        assert_eq!(rows[0].note_path(), Some(std::path::Path::new("raiz.md")));
-        assert_eq!(rows[1].label(), "universidad");
-        assert_eq!(rows[1].chevron(), Some(false));
-        assert!(rows[1].note_path().is_none());
-        assert_eq!(rows[2].label(), "redes");
-        assert!(rows[2].indent_px() > rows[1].indent_px());
-        assert_eq!(rows[3].label(), "uno.md");
-        assert_eq!(rows[3].chevron(), None);
+        assert_eq!(rows[0].label(), "universidad");
+        assert_eq!(rows[0].chevron(), Some(false));
+        assert!(rows[0].note_path().is_none());
+        assert_eq!(rows[1].label(), "redes");
+        assert!(rows[1].indent_px() > rows[0].indent_px());
+        assert_eq!(rows[2].label(), "uno.md");
+        assert_eq!(rows[2].chevron(), None);
         assert_eq!(
-            rows[3].note_path(),
+            rows[2].note_path(),
             Some(std::path::Path::new("universidad/redes/uno.md"))
         );
-        assert_eq!(rows[4].label(), "seguridad.md");
+        assert_eq!(rows[3].label(), "seguridad.md");
+        assert_eq!(rows[4].note_path(), Some(std::path::Path::new("raiz.md")));
 
         let collapsed = HashSet::from([PathBuf::from("universidad/redes")]);
-        let visible = visible_workspace_tree_rows(&paths, &collapsed);
+        let visible =
+            visible_workspace_tree_rows(&paths, &collapsed, TreeSort::NameAscending, &sin_fechas);
         assert_eq!(visible.len(), 4);
-        assert_eq!(visible[2].chevron(), Some(true));
+        assert_eq!(visible[1].chevron(), Some(true));
         assert!(
             visible
                 .iter()
                 .all(|row| row.relative_path != std::path::Path::new("universidad/redes/uno.md"))
         );
+    }
+
+    #[test]
+    fn el_orden_natural_ignora_mayusculas_y_tildes_y_cuenta_los_numeros() {
+        let mut nombres = ["Zorro", "abeja", "Árbol", "nota 10", "nota 2", "Nota 1"];
+        nombres.sort_by(|a, b| natural_cmp(a, b));
+        assert_eq!(
+            nombres,
+            ["abeja", "Árbol", "Nota 1", "nota 2", "nota 10", "Zorro"]
+        );
+        // Con el mismo valor, el orden sigue siendo total y estable.
+        assert_ne!(natural_cmp("a01", "a1"), std::cmp::Ordering::Equal);
+        assert_eq!(natural_cmp("a01", "a1"), natural_cmp("a1", "a01").reverse());
+        assert_ne!(natural_cmp("arbol", "Árbol"), std::cmp::Ordering::Equal);
+    }
+
+    #[test]
+    fn el_arbol_pone_las_carpetas_primero_y_ordena_por_nombre_o_fecha() {
+        use std::time::{Duration as Lapso, UNIX_EPOCH};
+        let paths = vec![
+            PathBuf::from("zeta.md"),
+            PathBuf::from("Beta/dos.md"),
+            PathBuf::from("alfa/uno.md"),
+            PathBuf::from("alfa/10.md"),
+            PathBuf::from("alfa/2.md"),
+            PathBuf::from("Árboles/hoja.md"),
+        ];
+        let nombres = |filas: &[WorkspaceTreeRow]| -> Vec<String> {
+            filas.iter().map(WorkspaceTreeRow::label).collect()
+        };
+        let sin_fechas = HashMap::new();
+        let por_nombre = workspace_tree_rows(&paths, TreeSort::NameAscending, &sin_fechas);
+        assert_eq!(
+            nombres(&por_nombre),
+            [
+                "alfa", "2.md", "10.md", "uno.md", "Árboles", "hoja.md", "Beta", "dos.md",
+                "zeta.md"
+            ]
+        );
+        let descendente = workspace_tree_rows(&paths, TreeSort::NameDescending, &sin_fechas);
+        assert_eq!(
+            nombres(&descendente),
+            [
+                "Beta", "dos.md", "Árboles", "hoja.md", "alfa", "uno.md", "10.md", "2.md",
+                "zeta.md"
+            ]
+        );
+        // Por fecha: cada carpeta toma la de su nota más reciente.
+        let dia = |n: u64| UNIX_EPOCH + Lapso::from_secs(n * 86_400);
+        let fechas = HashMap::from([
+            (PathBuf::from("zeta.md"), dia(10)),
+            (PathBuf::from("Beta/dos.md"), dia(30)),
+            (PathBuf::from("alfa/uno.md"), dia(20)),
+            (PathBuf::from("alfa/10.md"), dia(5)),
+            (PathBuf::from("alfa/2.md"), dia(25)),
+            (PathBuf::from("Árboles/hoja.md"), dia(1)),
+        ]);
+        let recientes = workspace_tree_rows(&paths, TreeSort::NewestFirst, &fechas);
+        assert_eq!(
+            nombres(&recientes),
+            [
+                "Beta", "dos.md", "alfa", "2.md", "uno.md", "10.md", "Árboles", "hoja.md",
+                "zeta.md"
+            ]
+        );
+        let antiguas = workspace_tree_rows(&paths, TreeSort::OldestFirst, &fechas);
+        assert_eq!(nombres(&antiguas)[0], "Árboles");
+        assert_eq!(
+            nombres(&antiguas).last().map(String::as_str),
+            Some("zeta.md")
+        );
+        // Los cuatro criterios se recorren en ciclo y se recuerdan por código.
+        let mut orden = TreeSort::default();
+        for _ in 0..4 {
+            orden = orden.next();
+            assert_eq!(TreeSort::from_code(orden.code()), orden);
+        }
+        assert_eq!(orden, TreeSort::default());
+        assert_eq!(TreeSort::from_code(200), TreeSort::NameAscending);
     }
 
     #[test]
