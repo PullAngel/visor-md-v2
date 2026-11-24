@@ -38,6 +38,20 @@ impl TextBuffer {
         self.rope.len_bytes()
     }
 
+    /// Los tramos de texto contiguos del buffer, en orden. Permite recorrerlo
+    /// sin copiarlo a un `String`.
+    pub fn chunks(&self) -> impl Iterator<Item = &str> {
+        self.rope.chunks()
+    }
+
+    /// Caracteres entre el comienzo de una línea y un byte de ella. Cuesta lo
+    /// mismo en una línea de diez caracteres que en una de varios megas.
+    pub fn chars_between(&self, start_byte: usize, end_byte: usize) -> usize {
+        let end = end_byte.min(self.len_bytes());
+        let start = start_byte.min(end);
+        self.rope.byte_to_char(end) - self.rope.byte_to_char(start)
+    }
+
     pub fn is_empty(&self) -> bool {
         self.rope.len_bytes() == 0
     }

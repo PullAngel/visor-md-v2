@@ -179,7 +179,7 @@ memoria (D-46) también baja el costo por tecla.
 
 ## Fase 17 · Rendimiento de la barra de estado
 
-- [ ] **17.1** Conteo incremental.
+- [x] **17.1** Conteo sin copias y con espera en documentos grandes (en lugar de incremental: ver `docs/benchmarks/barra-de-estado-2026-11-24.md`; lo que costaba era actualizar los bloques de la fuente, y ahora se hace en sitio).
   Dónde: `live_metrics`, `DocumentMetrics`.
   Qué:
   - Por cada cambio se recuentan solo las líneas tocadas, antes y después, y se
@@ -191,14 +191,14 @@ memoria (D-46) también baja el costo por tecla.
 
   Prueba: el conteo incremental coincide con el completo en secuencias al azar
   de escritura, borrado, pegado y deshacer.
-- [ ] **17.2** Barra sin saltos de ancho.
+- [x] **17.2** Barra sin saltos de ancho (dos partes: números y parte fija anclada).
   Qué:
   - Cifras con ancho fijo (dígitos tabulares si la fuente los trae; si no, el
     ancho del campo se reserva por cantidad de dígitos y solo crece).
   - El maquetado del texto de la barra se cachea por contenido.
   - La columna del cursor se calcula de forma incremental, sin recorrer toda la
     línea por cuadro.
-- [ ] **17.3** Medición.
+- [x] **17.3** Medición.
   Qué: banco con escritura rápida simulada (1000 teclas) y pegado de 5 MB en
   una sola línea y en 100 000 líneas. Se comparan antes y después el tiempo por
   tecla y el tiempo de cuadro, y se anota en `docs/benchmarks/`.
@@ -207,7 +207,7 @@ memoria (D-46) también baja el costo por tecla.
 
 ## Fase 18 · Interfaz
 
-- [ ] **18.1** Selector Leer, Editar y Comparar con indicador deslizante.
+- [x] **18.1** Selector Leer, Editar y Comparar con indicador deslizante. Ya existía un indicador animado; se mejoró: el reloj arranca en el segundo cuadro (el primero lleva el trabajo de cambiar de modo), curva de quinto grado, duración según la distancia, y las etiquetas cambian de color con el indicador y mantienen el mismo peso.
   Qué:
   - Una píldora que se desliza entre las tres opciones en unos 180 ms con
     salida suave (`ui_motion::transition_progress`), y el rótulo cambia de
@@ -335,7 +335,7 @@ avisar. Estas las hacés vos, o yo con tu permiso explícito en ese momento:
 | Fase | Estado | Nota |
 | --- | --- | --- |
 | 16 | Hecha | 16.1 a 16.8; falta probar a mano el arrastre de pestañas y el diálogo de restauración |
-| 17 | Pendiente | |
+| 17 | Hecha | 17.1 a 17.3 |
 | 18 | Pendiente | |
 | 19 | Pendiente | |
 | 20 | Pendiente | |

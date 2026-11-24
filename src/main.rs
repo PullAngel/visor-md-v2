@@ -5442,26 +5442,44 @@ fn safe_buffer_blocks_for_lines(
 /// queda después conserva el mismo texto y solo desplaza sus rangos. Si la
 /// geometría previa no cumple las invariantes, devolver `None` fuerza el camino
 /// completo y seguro en vez de arriesgar bloques desalineados.
+/// Versión de prueba: devuelve los bloques nuevos en vez de editarlos en sitio.
+#[cfg(test)]
 fn refresh_safe_buffer_blocks_incrementally(
     previous: &[Block],
     source: &TextBuffer,
     change: SourceChange,
 ) -> Result<Option<Vec<Block>>, &'static str> {
+    let mut blocks = previous.to_vec();
+    Ok(refresh_safe_buffer_blocks_in_place(&mut blocks, source, change)?.then_some(blocks))
+}
+
+/// Actualiza `previous` con lo que cambió, sin copiar los bloques que quedan
+/// después: solo reemplaza los de las líneas tocadas y corre sus posiciones.
+/// Antes cada tecla clonaba y revalidaba todos los bloques siguientes, y el
+/// costo crecía con el tamaño del documento (75 ms por tecla con 1 MB).
+///
+/// Devuelve `true` si `previous` quedó al día; con `false` no hay que fiarse de
+/// su contenido y quien llama debe volver a construirlos desde la fuente.
+fn refresh_safe_buffer_blocks_in_place(
+    previous: &mut Vec<Block>,
+    source: &TextBuffer,
+    change: SourceChange,
+) -> Result<bool, &'static str> {
     if previous.is_empty() || source.is_empty() {
-        return Ok(None);
+        return Ok(false);
     }
     let old_end = change.start.saturating_add(change.removed_bytes);
     let Some(mut first) = previous
         .iter()
         .position(|block| block.source.end > change.start)
     else {
-        return Ok(None);
+        return Ok(false);
     };
     while first > 0 && !source_block_ends_line(&previous[first - 1]) {
         first -= 1;
     }
     let Some(mut last) = previous.iter().position(|block| block.source.end > old_end) else {
-        return Ok(None);
+        return Ok(false);
     };
     while last + 1 < previous.len() && !source_block_ends_line(&previous[last]) {
         last += 1;
@@ -5472,31 +5490,53 @@ fn refresh_safe_buffer_blocks_incrementally(
     let last_line = source.line_at_byte(new_end);
     let available = MAX_BLOCKS.saturating_sub(previous.len().saturating_sub(last - first + 1));
     let replacement = safe_buffer_blocks_for_lines(source, first_line, last_line, available)?;
-    let delta = change.inserted_bytes as i128 - change.removed_bytes as i128;
-    let mut blocks = Vec::with_capacity(previous.len() - (last - first + 1) + replacement.len());
-    blocks.extend_from_slice(&previous[..first]);
-    blocks.extend(replacement);
-    for block in &previous[last + 1..] {
-        let mut shifted = block.clone();
-        shifted.source.start = shift_source_offset(shifted.source.start, delta)?;
-        shifted.source.end = shift_source_offset(shifted.source.end, delta)?;
-        for span in &mut shifted.spans {
-            span.source.start = shift_source_offset(span.source.start, delta)?;
-            span.source.end = shift_source_offset(span.source.end, delta)?;
-        }
-        if !shifted.source.is_valid_for_buffer(source) {
-            return Ok(None);
-        }
-        blocks.push(shifted);
-    }
-    if blocks.len() > MAX_BLOCKS
-        || !blocks
-            .iter()
-            .all(|block| block.source.is_valid_for_buffer(source))
+    if !replacement
+        .iter()
+        .all(|block| block.source.is_valid_for_buffer(source))
     {
-        return Ok(None);
+        return Ok(false);
     }
-    Ok(Some(blocks))
+    let delta = change.inserted_bytes as i128 - change.removed_bytes as i128;
+    let tail_start = first + replacement.len();
+    previous.splice(first..=last, replacement);
+    if previous.len() > MAX_BLOCKS {
+        return Ok(false);
+    }
+    for block in &mut previous[tail_start..] {
+        let (Ok(start), Ok(end)) = (
+            shift_source_offset(block.source.start, delta),
+            shift_source_offset(block.source.end, delta),
+        ) else {
+            return Ok(false);
+        };
+        block.source.start = start;
+        block.source.end = end;
+        for span in &mut block.spans {
+            let (Ok(start), Ok(end)) = (
+                shift_source_offset(span.source.start, delta),
+                shift_source_offset(span.source.end, delta),
+            ) else {
+                return Ok(false);
+            };
+            span.source.start = start;
+            span.source.end = end;
+        }
+    }
+    // Los bloques de después conservan su texto y solo se desplazaron: basta
+    // con comprobar el último. En compilaciones de prueba se revisan todos.
+    if previous
+        .last()
+        .is_some_and(|block| block.source.end > source.len_bytes())
+    {
+        return Ok(false);
+    }
+    debug_assert!(
+        previous
+            .iter()
+            .all(|block| block.source.is_valid_for_buffer(source)),
+        "los bloques desplazados deben seguir siendo válidos"
+    );
+    Ok(true)
 }
 
 fn source_block_ends_line(block: &Block) -> bool {
@@ -7435,9 +7475,10 @@ struct DocumentState {
     /// para que la vista dividida nunca se convierta en autoridad de guardado.
     rendered_blocks: Vec<Block>,
     metrics: DocumentMetrics,
-    /// Métricas de la fuente para la revisión y el tamaño indicados. Se
-    /// recalculan solo cuando el editor cambia, no en cada cuadro.
-    metrics_cache: Option<((u64, usize), DocumentMetrics)>,
+    /// Métricas de la fuente para la revisión y el tamaño indicados, y cuándo
+    /// se calcularon. Se recalculan solo cuando el editor cambia, no en cada
+    /// cuadro, y en un documento grande, a lo sumo cada `METRICS_DEBOUNCE`.
+    metrics_cache: Option<((u64, usize), DocumentMetrics, Instant)>,
     blocks: Vec<Block>,
     safe_mode: Option<Degradation>,
     /// Posición visual propia de la pestaña. Se sincroniza antes de cambiar
@@ -7872,19 +7913,35 @@ impl DocumentState {
 
     /// Palabras y caracteres para la barra de estado. En Leer salen del
     /// render; en Editar y Comparar, de la fuente actual.
+    #[cfg(test)]
     fn live_metrics(&mut self) -> DocumentMetrics {
+        self.live_metrics_at(Instant::now()).0
+    }
+
+    /// Las métricas y, si se devuelve un valor atrasado a propósito, cuándo
+    /// toca actualizarlo. Hasta `METRICS_EXACT_BYTES` se cuenta en cada
+    /// cambio, porque cuesta menos de un milisegundo; en un documento mayor,
+    /// escribir rápido o pegar no recuenta todo el texto cada tecla.
+    fn live_metrics_at(&mut self, now: Instant) -> (DocumentMetrics, Option<Instant>) {
         if !self.mode.is_editable() {
-            return self.metrics;
+            return (self.metrics, None);
         }
         let key = (self.source_editor.revision(), self.source.len_bytes());
-        if let Some((cached, metrics)) = self.metrics_cache
+        if let Some((cached, metrics, _)) = self.metrics_cache
             && cached == key
         {
-            return metrics;
+            return (metrics, None);
         }
-        let metrics = DocumentMetrics::from_source(&self.source.to_string());
-        self.metrics_cache = Some((key, metrics));
-        metrics
+        let debounce = metrics_debounce(self.source.len_bytes());
+        if self.source.len_bytes() > METRICS_EXACT_BYTES
+            && let Some((_, metrics, at)) = self.metrics_cache
+            && now.saturating_duration_since(at) < debounce
+        {
+            return (metrics, Some(at + debounce));
+        }
+        let metrics = DocumentMetrics::from_buffer(&self.source);
+        self.metrics_cache = Some((key, metrics, now));
+        (metrics, None)
     }
 
     fn queue_recovery(&mut self, request: u64, now: Instant) {
@@ -8312,6 +8369,31 @@ fn apply_view_outcome(document: &mut DocumentState, outcome: ParseOutcome) {
     document.safe_mode = outcome.degradation;
 }
 
+/// Color intermedio entre `from` (0) y `to` (1).
+fn mix_rgb(from: (u8, u8, u8), to: (u8, u8, u8), amount: f32) -> (u8, u8, u8) {
+    let amount = amount.clamp(0.0, 1.0);
+    let channel =
+        |a: u8, b: u8| (f32::from(a) + (f32::from(b) - f32::from(a)) * amount).round() as u8;
+    (
+        channel(from.0, to.0),
+        channel(from.1, to.1),
+        channel(from.2, to.2),
+    )
+}
+
+/// Hasta este tamaño el contador en vivo cuenta en cada cambio.
+const METRICS_EXACT_BYTES: usize = 256 * 1024;
+/// Por encima, el contador se actualiza a lo sumo con esta frecuencia.
+const METRICS_DEBOUNCE: Duration = Duration::from_millis(250);
+
+/// Espera entre dos recuentos de un documento grande. Contar cuesta unos
+/// 10 ns por byte, así que la espera crece con el tamaño y el recuento no
+/// ocupa más de un 4 % del tiempo escribiendo (5 MB: una vez por segundo y
+/// cuarto).
+fn metrics_debounce(len_bytes: usize) -> Duration {
+    METRICS_DEBOUNCE.max(Duration::from_nanos(len_bytes as u64 * 250))
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct DocumentMetrics {
     words: usize,
@@ -8324,12 +8406,64 @@ impl DocumentMetrics {
     /// Cuenta sobre la fuente tal como se escribe, para el contador en vivo de
     /// Editar. Los marcadores sin letras ni números (`#`, `-`, cercas) no son
     /// palabras; los caracteres incluyen la sintaxis Markdown.
+    #[cfg(test)]
     fn from_source(source: &str) -> Self {
         let words = source
             .split_whitespace()
             .filter(|word| word.chars().any(char::is_alphanumeric))
             .count();
         let characters = source.chars().filter(|c| !c.is_control()).count();
+        Self {
+            words,
+            characters,
+            reading_minutes: words.div_ceil(200),
+            estimated_tokens: characters.div_ceil(4),
+        }
+    }
+
+    /// Lo mismo que `from_source`, recorriendo los tramos del buffer sin
+    /// copiarlo: sin memoria extra, también en un documento de varios megas.
+    fn from_buffer(buffer: &TextBuffer) -> Self {
+        let (mut words, mut characters) = (0usize, 0usize);
+        // Una palabra puede quedar partida entre dos tramos: se arrastra su
+        // estado de un tramo al siguiente.
+        let (mut in_word, mut word_counts) = (false, false);
+        for chunk in buffer.chunks() {
+            for character in chunk.chars() {
+                // El ASCII (casi todo el texto) se clasifica sin las tablas de
+                // Unicode, que cuestan varias veces más por carácter.
+                let (is_control, is_space, is_alphanumeric) = if character.is_ascii() {
+                    let byte = character as u8;
+                    (
+                        byte < 0x20 || byte == 0x7f,
+                        byte == b' ' || (0x09..=0x0d).contains(&byte),
+                        byte.is_ascii_alphanumeric(),
+                    )
+                } else {
+                    (
+                        character.is_control(),
+                        character.is_whitespace(),
+                        character.is_alphanumeric(),
+                    )
+                };
+                if !is_control {
+                    characters += 1;
+                }
+                if is_space {
+                    if in_word && word_counts {
+                        words += 1;
+                    }
+                    in_word = false;
+                    word_counts = false;
+                } else {
+                    in_word = true;
+                    word_counts |= is_alphanumeric;
+                }
+            }
+        }
+        if in_word && word_counts {
+            words += 1;
+        }
         Self {
             words,
             characters,
@@ -8633,6 +8767,9 @@ struct App {
     /// actualiza de inmediato; una transición nunca bloquea edición, guardado
     /// ni render.
     mode_transition: Option<ModeTransition>,
+    /// Posición (en casillas) del indicador del selector de modo en este
+    /// cuadro, mientras dura la animación.
+    mode_indicator_slot: Option<f32>,
     /// Punto actual del cursor dentro de la ventana, en pixeles físicos.
     pointer: Option<(f32, f32)>,
     /// Hover y pulsación con transición. El dibujo lo consume desde la fase 8.
@@ -8660,6 +8797,9 @@ struct App {
     highlight_picker: Option<f32>,
     /// «Ocultar mis anotaciones»: Leer muestra el original, sin subrayados.
     hide_annotations: bool,
+    /// Cuándo hay que redibujar para poner al día el contador de un documento
+    /// grande que se mostró atrasado a propósito.
+    metrics_refresh_due: Option<Instant>,
     /// Leyenda en edición: color y texto escrito.
     legend_edit: Option<(usize, String)>,
     /// Búsqueda que se aplica cuando termina de abrirse el documento: al abrir
@@ -8815,20 +8955,42 @@ struct ModeTransition {
     from_slot: f32,
     to_slot: f32,
     started: Instant,
+    /// Cuadros dibujados desde que se pidió el cambio. El reloj de la
+    /// animación arranca en el segundo: el primero lleva el trabajo pesado de
+    /// pasar de modo (maquetar el documento) y, si contara, el indicador
+    /// aparecería ya a medio camino.
+    frames_drawn: u8,
 }
 
 impl ModeTransition {
+    fn new(from_slot: f32, to_slot: f32, started: Instant) -> Self {
+        Self {
+            from_slot,
+            to_slot,
+            started,
+            frames_drawn: 0,
+        }
+    }
+
+    /// Duración según la distancia: pasar de Leer a Comparar cruza dos casillas
+    /// y se toma un poco más, pero la velocidad se parece.
+    fn duration(self) -> Duration {
+        let distance = (self.to_slot - self.from_slot).abs().max(1.0);
+        MODE_SWITCH_TRANSITION_DURATION.mul_f32(1.0 + (distance - 1.0) * 0.3)
+    }
+
     fn position_at(self, now: Instant) -> f32 {
         let progress = (now.saturating_duration_since(self.started).as_secs_f32()
-            / MODE_SWITCH_TRANSITION_DURATION.as_secs_f32())
+            / self.duration().as_secs_f32())
         .clamp(0.0, 1.0);
-        // Curva suave: acelera al salir y frena al llegar, sin rebotes.
-        let eased = progress * progress * (3.0 - 2.0 * progress);
+        // Curva suave de quinto grado: sale despacio, corre por el medio y
+        // frena largo al llegar, sin rebotes. Parece un interruptor con peso.
+        let eased = progress * progress * progress * (progress * (progress * 6.0 - 15.0) + 10.0);
         self.from_slot + (self.to_slot - self.from_slot) * eased
     }
 
     fn finished(self, now: Instant) -> bool {
-        now.saturating_duration_since(self.started) >= MODE_SWITCH_TRANSITION_DURATION
+        self.frames_drawn >= 2 && now.saturating_duration_since(self.started) >= self.duration()
     }
 
     fn next_frame_at(self, now: Instant) -> Instant {
@@ -9006,6 +9168,7 @@ impl App {
             theme_transition: None,
             reduce_motion,
             mode_transition: None,
+            mode_indicator_slot: None,
             pointer: None,
             ui_motion: ui_motion::UiMotion::default(),
             tooltip: ui_motion::TooltipTimer::default(),
@@ -9016,6 +9179,7 @@ impl App {
             annotations_line_width: None,
             study_color: 0,
             hide_annotations: false,
+            metrics_refresh_due: None,
             highlight_picker: None,
             legend_edit: None,
             note_edit: None,
@@ -9261,7 +9425,19 @@ impl ApplicationHandler<AppEvent> for App {
                 Some(until)
             }
         });
+        let metrics_deadline = self.metrics_refresh_due.and_then(|due| {
+            if due <= now {
+                self.metrics_refresh_due = None;
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+                None
+            } else {
+                Some(due)
+            }
+        });
         let next = [
+            metrics_deadline,
             theme_deadline,
             mode_deadline,
             motion_deadline,
@@ -11729,11 +11905,7 @@ impl App {
             self.mode_transition = None;
             return;
         }
-        self.mode_transition = Some(ModeTransition {
-            from_slot,
-            to_slot,
-            started: now,
-        });
+        self.mode_transition = Some(ModeTransition::new(from_slot, to_slot, now));
         if let Some(window) = &self.window {
             window.request_redraw();
         }
@@ -11759,11 +11931,27 @@ impl App {
     }
 
     fn advance_mode_transition(&mut self) {
-        let Some(transition) = self.mode_transition else {
+        let Some(mut transition) = self.mode_transition else {
+            self.mode_indicator_slot = None;
             return;
         };
-        if transition.finished(Instant::now()) {
+        let now = Instant::now();
+        match transition.frames_drawn {
+            0 => transition.frames_drawn = 1,
+            1 => {
+                transition.frames_drawn = 2;
+                transition.started = now;
+            }
+            _ => {}
+        }
+        if transition.finished(now) {
             self.mode_transition = None;
+            self.mode_indicator_slot = None;
+        } else {
+            self.mode_transition = Some(transition);
+            // La posición se fija al empezar el cuadro: lo que se tarde en
+            // maquetar no la mueve a mitad de dibujo.
+            self.mode_indicator_slot = Some(transition.position_at(now));
         }
     }
 
@@ -14553,20 +14741,18 @@ impl App {
     }
 
     fn refresh_source_blocks(&mut self) -> Result<(), &'static str> {
-        let refreshed = self
-            .document
+        let document = &mut self.document;
+        let refreshed = document
             .source_editor
             .last_change()
             .map(|change| {
-                refresh_safe_buffer_blocks_incrementally(
-                    &self.document.blocks,
-                    &self.document.source,
-                    change,
-                )
+                refresh_safe_buffer_blocks_in_place(&mut document.blocks, &document.source, change)
             })
             .transpose()?
-            .flatten();
-        self.document.blocks = refreshed.unwrap_or(safe_buffer_blocks(&self.document.source)?);
+            .unwrap_or(false);
+        if !refreshed {
+            self.document.blocks = safe_buffer_blocks(&self.document.source)?;
+        }
         self.slots.clear();
         self.live.clear();
         self.laid_for_width = -1.0;
@@ -19861,14 +20047,18 @@ impl App {
         .into_iter()
         .enumerate()
         .map(|(index, (target, label))| {
-            let active = mode_target_for_document(self.document.mode) == target;
             let focused = self.toolbar_focus == Some(PRIMARY_TOOLBAR_ACTIONS.len() + index);
-            let color = if active {
-                self.palette.text
-            } else if focused {
+            // El color sigue al indicador: la etiqueta se enciende a medida que
+            // el indicador llega y se apaga a medida que se va. Todas con el
+            // mismo peso, para que el texto no cambie de ancho en el camino.
+            let slot = self
+                .mode_indicator_slot
+                .unwrap_or_else(|| mode_target_slot(mode_target_for_document(self.document.mode)));
+            let closeness = (1.0 - (slot - mode_target_slot(target)).abs()).clamp(0.0, 1.0);
+            let color = if focused && closeness < 0.5 {
                 self.palette.accent
             } else {
-                self.palette.dim
+                mix_rgb(self.palette.dim, self.palette.text, closeness)
             };
             build_ui_text_layout(
                 label,
@@ -19876,7 +20066,7 @@ impl App {
                 &mut self.layout_cx,
                 color,
                 13.0,
-                active,
+                true,
                 None,
             )
         })
@@ -20147,17 +20337,17 @@ impl App {
             let cursor = self.document.source_editor.cursor().min(source.len_bytes());
             let line = source.line_at_byte(cursor);
             let line_start = source.line_start_byte(line);
-            let column = source
-                .slice_bytes(line_start..cursor)
-                .map(|text| text.chars().count())
-                .unwrap_or(0);
+            let column = source.chars_between(line_start, cursor);
             format!(" · Lín {}, Col {}", line + 1, column + 1)
         });
-        let live_metrics = self.document.live_metrics();
+        let (live_metrics, metrics_due) = self.document.live_metrics_at(Instant::now());
+        self.metrics_refresh_due = metrics_due;
         let words = live_metrics.words;
         let characters = live_metrics.characters;
-        let status_right = format!(
-            "{} · {} {}{} · {document_mode_label} · {document_state_label}{workspace_status}",
+        // Dos partes: la de la derecha casi no cambia y queda anclada al
+        // borde; los números crecen hacia la izquierda sin mover nada más.
+        let status_counts = format!(
+            "{} · {} {}{}",
             count_noun(words, "palabra", "palabras"),
             characters,
             if characters == 1 {
@@ -20167,8 +20357,19 @@ impl App {
             },
             cursor_position.unwrap_or_default()
         );
+        let status_tail =
+            format!(" · {document_mode_label} · {document_state_label}{workspace_status}");
+        let status_counts_layout = build_ui_text_layout(
+            &status_counts,
+            &mut self.font_cx,
+            &mut self.layout_cx,
+            self.palette.dim,
+            12.0,
+            false,
+            None,
+        );
         let status_layout = build_ui_text_layout(
-            &status_right,
+            &status_tail,
             &mut self.font_cx,
             &mut self.layout_cx,
             self.palette.dim,
@@ -21834,8 +22035,7 @@ impl App {
         mode_active_paint.set_color(Color::from_rgba8(accent.0, accent.1, accent.2, 48));
         let mode_width = MODE_SWITCH_WIDTH / 3.0;
         let mode_indicator_slot = self
-            .mode_transition
-            .map(|transition| transition.position_at(Instant::now()))
+            .mode_indicator_slot
             .unwrap_or_else(|| mode_target_slot(mode_target_for_document(context_mode)));
         fill_rounded_rect(
             pixmap,
@@ -22555,12 +22755,21 @@ impl App {
             pixmap.fill_rect(rect, &border_paint, Transform::identity(), None);
         }
         let status_text_y = (status_y + (STATUS_HEIGHT - status_layout.height()) * 0.5).round();
-        let status_x = window_width - status_layout.width() - 14.0;
+        let status_tail_x = window_width - status_layout.width() - 14.0;
+        let status_x = status_tail_x - status_counts_layout.width();
         draw_text_layout(
             pixmap,
             scale_cx,
             glyphs,
             &status_layout,
+            status_tail_x.max(14.0),
+            status_text_y,
+        );
+        draw_text_layout(
+            pixmap,
+            scale_cx,
+            glyphs,
+            &status_counts_layout,
             status_x.max(14.0),
             status_text_y,
         );
@@ -25685,6 +25894,220 @@ reservar hotel
     }
 
     #[test]
+    fn el_conteo_por_tramos_coincide_con_el_de_la_fuente_entera() {
+        let mut texto = String::new();
+        for n in 0..4_000 {
+            texto.push_str(&format!(
+                "# Título {n}\n\n- palabra{n} otra, **negrita** ñandú — «cita»\t\u{7}x\u{b}y\u{7f}z\u{85}w\n---\n"
+            ));
+        }
+        texto.push_str("sin salto final");
+        let buffer = TextBuffer::from_text(&texto);
+        assert!(buffer.chunks().count() > 10, "el texto cruza varios tramos");
+        assert_eq!(
+            DocumentMetrics::from_buffer(&buffer),
+            DocumentMetrics::from_source(&texto)
+        );
+        for corto in [
+            "",
+            " ",
+            "a",
+            "a b",
+            "# ",
+            "--- ---",
+            "a\u{a0}b",
+            "uno\r\ndos\r\n",
+        ] {
+            assert_eq!(
+                DocumentMetrics::from_buffer(&TextBuffer::from_text(corto)),
+                DocumentMetrics::from_source(corto),
+                "{corto:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn en_un_documento_grande_escribir_rapido_no_recuenta_en_cada_tecla() {
+        let grande = "palabra ".repeat(METRICS_EXACT_BYTES / 8 + 100);
+        let mut app = App::for_tests(NIGHT);
+        app.load_for_test(&grande, DocumentMode::SourceEditing);
+        let t0 = Instant::now();
+        let (primero, due) = app.document.live_metrics_at(t0);
+        assert_eq!(due, None);
+        app.edit_source(|editor, source| {
+            editor.set_cursor(source, 0, false)?;
+            editor.insert(source, "nueva ")
+        });
+        // Dentro de la ventana de espera se muestra el valor anterior y se
+        // avisa cuándo actualizarlo.
+        let (atrasado, due) = app.document.live_metrics_at(t0 + Duration::from_millis(40));
+        assert_eq!(atrasado, primero);
+        assert_eq!(due, Some(t0 + METRICS_DEBOUNCE));
+        // Pasado el plazo se pone al día.
+        let (al_dia, due) = app
+            .document
+            .live_metrics_at(t0 + METRICS_DEBOUNCE + Duration::from_millis(1));
+        assert_eq!(due, None);
+        assert_eq!(al_dia.words, primero.words + 1);
+        // Cuanto más grande el documento, más espera entre recuentos.
+        assert_eq!(metrics_debounce(300 * 1024), METRICS_DEBOUNCE);
+        assert!(metrics_debounce(5 * 1024 * 1024) > Duration::from_secs(1));
+        assert!(metrics_debounce(16 * 1024 * 1024) < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn en_un_documento_chico_el_conteo_es_exacto_en_cada_cambio() {
+        let mut app = App::for_tests(NIGHT);
+        app.load_for_test("uno dos", DocumentMode::SourceEditing);
+        let t0 = Instant::now();
+        assert_eq!(app.document.live_metrics_at(t0).0.words, 2);
+        app.edit_source(|editor, source| {
+            editor.set_cursor(source, 7, false)?;
+            editor.insert(source, " tres")
+        });
+        assert_eq!(app.document.live_metrics_at(t0).0.words, 3);
+    }
+
+    #[test]
+    fn la_columna_del_cursor_en_una_linea_enorme_no_copia_la_linea() {
+        let linea = "ñ".repeat(3_000_000);
+        let buffer = TextBuffer::from_text(&format!("{linea}\nfin"));
+        let cursor = "ñ".len() * 2_500_000;
+        let inicio = std::time::Instant::now();
+        assert_eq!(buffer.chars_between(0, cursor), 2_500_000);
+        assert!(inicio.elapsed() < Duration::from_millis(5));
+        assert_eq!(
+            buffer.chars_between(buffer.line_start_byte(1), buffer.len_bytes()),
+            3
+        );
+    }
+
+    /// Medición, no prueba: `cargo test --release medicion_de_la_barra -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "medición manual; ver docs/benchmarks/barra-de-estado-2026-11-24.md"]
+    fn medicion_de_la_barra_de_estado() {
+        fn cuesta(etiqueta: &str, repeticiones: u32, mut accion: impl FnMut()) {
+            let inicio = Instant::now();
+            for _ in 0..repeticiones {
+                accion();
+            }
+            let total = inicio.elapsed();
+            println!(
+                "{etiqueta}: {:.3} ms por vez ({repeticiones} veces, {:.1} ms en total)",
+                total.as_secs_f64() * 1000.0 / f64::from(repeticiones),
+                total.as_secs_f64() * 1000.0
+            );
+        }
+        for (nombre, lineas) in [("100 KB", 1_500), ("1 MB", 15_000)] {
+            let texto = "Una línea de texto con **negrita** y varias palabras.\n".repeat(lineas);
+            let mut app = App::for_tests(NIGHT);
+            app.load_for_test(&texto, DocumentMode::SourceEditing);
+            println!("--- documento de {nombre} ---");
+            cuesta("antes: copiar a String y recontar", 20, || {
+                let copia = app.document.source.to_string();
+                std::hint::black_box(DocumentMetrics::from_source(&copia));
+            });
+            cuesta("ahora: recorrer el buffer", 20, || {
+                std::hint::black_box(DocumentMetrics::from_buffer(&app.document.source));
+            });
+            cuesta("solo el editor: insertar una letra", 200, || {
+                let document = &mut app.document;
+                let _ = document.source_editor.insert(&mut document.source, "x");
+            });
+            cuesta("refresh_source_blocks", 200, || {
+                let document = &mut app.document;
+                let _ = document.source_editor.insert(&mut document.source, "x");
+                app.refresh_source_blocks().unwrap();
+            });
+            cuesta("is_dirty", 200, || {
+                std::hint::black_box(app.document.is_dirty());
+            });
+            cuesta("schedule_recovery", 200, || app.schedule_recovery());
+            cuesta("dibujar un cuadro tras escribir (1200x800)", 30, || {
+                app.edit_source(|editor, source| editor.insert(source, "x"));
+                app.draw_for_test(1200, 800);
+            });
+            let mut ahora = Instant::now();
+            cuesta("1000 teclas: edición + barra (con espera)", 1000, || {
+                app.edit_source(|editor, source| editor.insert(source, "x"));
+                ahora += Duration::from_millis(5);
+                std::hint::black_box(app.document.live_metrics_at(ahora));
+            });
+        }
+        let pegado = "palabra ".repeat(5 * 1024 * 1024 / 8);
+        let mut app = App::for_tests(NIGHT);
+        app.load_for_test("", DocumentMode::SourceEditing);
+        println!("--- pegar 5 MB en una sola línea ---");
+        cuesta("pegado", 1, || {
+            app.edit_source(|editor, source| editor.insert(source, &pegado));
+        });
+        cuesta("barra después del pegado", 1, || {
+            std::hint::black_box(app.document.live_metrics_at(Instant::now()));
+        });
+        let cursor = app.document.source_editor.cursor();
+        cuesta("columna del cursor al final de la línea", 100, || {
+            std::hint::black_box(app.document.source.chars_between(0, cursor));
+        });
+    }
+
+    #[test]
+    fn la_actualizacion_en_sitio_de_bloques_coincide_con_reconstruir_todo() {
+        let mut texto = String::new();
+        for n in 0..120 {
+            texto.push_str(&format!(
+                "# Título {n}\n\n- **negrita** ñandú {n}\n`código`\n\n"
+            ));
+        }
+        let mut source = TextBuffer::from_text(&texto);
+        let mut editor = SourceEditor::new();
+        let mut blocks = safe_buffer_blocks(&source).unwrap();
+        // Generador simple y repetible: nada de azar real en las pruebas.
+        let mut estado = 12_345u64;
+        let mut siguiente = |tope: usize| {
+            estado = estado
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1);
+            ((estado >> 33) as usize) % tope.max(1)
+        };
+        let piezas = ["x", "\n", "ñ", "**", "\n\n", " palabra ", "# ", "- "];
+        for paso in 0..160 {
+            let len = source.len_bytes();
+            let mut inicio = siguiente(len + 1);
+            while !source.is_char_boundary(inicio) {
+                inicio -= 1;
+            }
+            let mut fin = (inicio + siguiente(40)).min(len);
+            while !source.is_char_boundary(fin) {
+                fin -= 1;
+            }
+            let pieza = if paso % 3 == 0 {
+                ""
+            } else {
+                piezas[siguiente(piezas.len())]
+            };
+            let aplicado = editor.set_cursor(&source, inicio, false).is_ok()
+                && editor.set_cursor(&source, fin, true).is_ok()
+                && editor.insert(&mut source, pieza).unwrap_or(false);
+            if !aplicado {
+                continue;
+            }
+            let cambio = editor.last_change().expect("hubo un cambio");
+            let al_dia = refresh_safe_buffer_blocks_in_place(&mut blocks, &source, cambio).unwrap();
+            if !al_dia {
+                blocks = safe_buffer_blocks(&source).unwrap();
+            }
+            let completo = safe_buffer_blocks(&source).unwrap();
+            let resumen = |lista: &[Block]| {
+                lista
+                    .iter()
+                    .map(|b| (b.source.start, b.source.end, b.text.clone(), b.spans.len()))
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(resumen(&blocks), resumen(&completo), "paso {paso}");
+        }
+    }
+
+    #[test]
     fn marcar_una_tarea_no_borra_el_subrayado_que_la_cubre() {
         let cuerpo = "- [ ] uno
 - [ ] dos
@@ -28649,20 +29072,30 @@ Segundo parrafo.
     #[test]
     fn el_indicador_de_modo_anima_sin_rebasar_sus_destinos() {
         let started = Instant::now();
-        let transition = ModeTransition {
-            from_slot: mode_target_slot(ModeTarget::Reading),
-            to_slot: mode_target_slot(ModeTarget::Compare),
+        let mut transition = ModeTransition::new(
+            mode_target_slot(ModeTarget::Reading),
+            mode_target_slot(ModeTarget::Compare),
             started,
-        };
+        );
 
         assert_eq!(transition.position_at(started), 0.0);
-        let middle = transition.position_at(started + MODE_SWITCH_TRANSITION_DURATION / 2);
+        let middle = transition.position_at(started + transition.duration() / 2);
         assert!(middle > 0.0 && middle < 2.0);
-        assert_eq!(
-            transition.position_at(started + MODE_SWITCH_TRANSITION_DURATION),
-            2.0
-        );
-        assert!(transition.finished(started + MODE_SWITCH_TRANSITION_DURATION));
+        assert_eq!(transition.position_at(started + transition.duration()), 2.0);
+        // Nunca termina antes de dibujar dos cuadros.
+        assert!(!transition.finished(started + transition.duration()));
+        transition.frames_drawn = 2;
+        assert!(transition.finished(started + transition.duration()));
+        // Cruzar dos casillas dura más que una, pero menos que el doble.
+        let una = ModeTransition::new(0.0, 1.0, started).duration();
+        assert!(transition.duration() > una && transition.duration() < una * 2);
+        // Va monótona: nunca retrocede ni se pasa.
+        let mut anterior = 0.0;
+        for paso in 0..=40 {
+            let ahora = transition.position_at(started + transition.duration() * paso / 40);
+            assert!((anterior..=2.0).contains(&ahora), "{paso}: {ahora}");
+            anterior = ahora;
+        }
         assert!(transition.next_frame_at(started) > started);
         assert_eq!(
             mode_target_for_document(DocumentMode::SourceEditing),
