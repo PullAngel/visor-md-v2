@@ -707,3 +707,23 @@ el documento; el bloque es dato inerte (nada se ejecuta, abre o consulta).
 texto (la frase fija lo explica); cada anotación pesa unos 250 bytes; si el
 cuerpo termina dentro de un bloque de código sin cerrar no se guardan
 anotaciones. Enviar a IA o a Google queda sin decidir.
+
+## ADR-40: Licencia PolyForm Noncommercial y contribuciones cerradas
+
+**Contexto.** El código es público, pero el propietario quiere que nadie lo
+venda y conservar la posibilidad de explotarlo comercialmente.
+
+**Decisión.** El código se publica bajo la PolyForm Noncommercial License 1.0.0
+(`LICENSE`, texto oficial sin cambios; `Cargo.toml` usa el identificador SPDX
+`PolyForm-Noncommercial-1.0.0`; `NOTICE` lleva el aviso requerido). Las
+contribuciones de código externas están cerradas: se aceptan issues y
+feedback, no pull requests con código. No hay CLA porque no hay contribuciones.
+
+**Por qué.** Sin aportes externos, todo el código pertenece a una sola persona y
+puede relicenciarse o venderse sin pedir permiso a nadie. Un acuerdo de
+contribución costaría fricción y revisión legal sin traer nada hoy.
+
+**Límites aceptados.** Es código de fuente disponible, no Open Source en el
+sentido de la OSI: no se debe llamar «código abierto». Si se abren las
+contribuciones, hay que agregar antes un acuerdo de contribución. Las
+dependencias y las fuentes embebidas conservan sus licencias.

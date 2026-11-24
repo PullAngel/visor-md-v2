@@ -5,7 +5,7 @@ producidos por IA y recorrer notas de Obsidian. Offline, con edición fiel de la
 fuente y controles explícitos sobre archivos y recursos externos.
 
 [![Validación Windows y Linux](https://github.com/PullAngel/visor-md-v2/actions/workflows/ci.yml/badge.svg)](https://github.com/PullAngel/visor-md-v2/actions/workflows/ci.yml)
-[![Licencia GPL-3.0-only](https://img.shields.io/badge/licencia-GPL--3.0--only-blue)](LICENSE)
+[![Licencia PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/licencia-PolyForm%20Noncommercial%201.0.0-blue)](LICENSE)
 
 [Estado](docs/project-dashboard.md) · [Arquitectura](docs/architecture.md) ·
 [Modelo de amenazas](docs/threat-model.md) · [Pruebas](docs/testing.md) ·
@@ -118,5 +118,7 @@ para acompañar ese trabajo y el aprendizaje de seguridad aplicada.
 ## Contribuir
 
 Consulta [CONTRIBUTING.md](CONTRIBUTING.md) para proponer cambios y reproducir
-las verificaciones. Licencia [GNU GPL-3.0-only](LICENSE); las fuentes embebidas
-conservan sus [licencias y procedencia](assets/fonts/README.md).
+las verificaciones. Código fuente público bajo la [PolyForm Noncommercial
+License 1.0.0](LICENSE): se puede leer, estudiar y modificar para uso no
+comercial. Las fuentes embebidas conservan sus
+[licencias y procedencia](assets/fonts/README.md).

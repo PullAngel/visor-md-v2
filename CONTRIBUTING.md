@@ -1,5 +1,12 @@
 # Contribuir a Visor MD v2
 
+> **Contribuciones de código: cerradas por ahora.** Se aceptan issues con
+> reportes, ideas y feedback de uso, pero todavía no se reciben pull requests
+> con código. El proyecto está bajo la
+> [PolyForm Noncommercial License 1.0.0](LICENSE) y no tiene un acuerdo de
+> contribución; mientras no lo tenga, el código lo escribe solo su autor. Si esto
+> cambia, se anunciará aquí antes de aceptar el primer aporte.
+
 El proyecto está en desarrollo activo y todavía no tiene una release estable.
 Las contribuciones deben preservar su dirección de seguridad, fidelidad de datos,
 tamaño y UX. El [dashboard](docs/project-dashboard.md) resume capacidades y deuda.
@@ -19,8 +26,8 @@ función que altere producto, seguridad, diseño o alcance.
 ## Ramas y preservación
 
 - `main` es la rama principal de desarrollo; no implica una release estable.
-- Para contribuciones externas, usar una rama y un pull request. El workspace
-  del propietario puede trabajar directamente en `main` según el acuerdo vigente.
+- Los pull requests externos con código no se aceptan por ahora. El workspace
+  del propietario trabaja directamente en `main` según el acuerdo vigente.
 - La rama `archive/claude-pre-codex` es histórica y se conserva intacta.
 - Inspeccionar `git status` y `git diff` antes de editar.
 - No descartar trabajo ajeno ni snapshots sin autorización.

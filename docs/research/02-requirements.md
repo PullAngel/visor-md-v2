@@ -64,7 +64,7 @@ mantienen intactas y no negociables:
 
 ## Lo que se preserva de la v1 sin cambios
 
-- Licencia GPLv3 y desarrollo abierto.
+- Código fuente público bajo PolyForm Noncommercial 1.0.0.
 - Se fija como programa predeterminado de Windows para `.md`.
 - Distribución portable sin instalador obligatorio.
 - Disciplina de pruebas: cualquier arquitectura nueva llega con su propia
