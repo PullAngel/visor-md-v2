@@ -105,7 +105,7 @@ lectura por tema.
 
 ## Autoría y dirección
 
-Proyecto personal de **Angel David Durán Erazo**, estudiante de redes y
+Proyecto personal de **PullAngel**, estudiante de redes y
 ciberseguridad. Su aportación central es la dirección de producto: definir
 necesidades, priorizar seguridad y UX, evaluar alternativas y revisar el
 comportamiento mediante QA manual.
