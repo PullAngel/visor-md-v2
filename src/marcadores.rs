@@ -9,8 +9,9 @@
 
 /// Alto de una etiqueta.
 pub(crate) const TAG_HEIGHT: f32 = 22.0;
-/// Separación entre la columna de texto y la etiqueta.
-pub(crate) const TAG_GAP: f32 = 12.0;
+/// Separación entre el borde del texto y la etiqueta: el ancho de una «a» del
+/// cuerpo (16 px de letra).
+pub(crate) const TAG_GAP: f32 = 8.0;
 /// Ancho mínimo para mostrar texto, y el máximo que ocupa una etiqueta.
 const FULL_MIN: f32 = 112.0;
 const FULL_MAX: f32 = 172.0;

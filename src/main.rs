@@ -2595,7 +2595,7 @@ impl AppAction {
             Self::MenuEdit => "Editar",
             Self::MenuView => "Vista",
             Self::Undo => "Deshacer · Ctrl+Z",
-            Self::Redo => "Rehacer · Ctrl+Y",
+            Self::Redo => "Rehacer · Ctrl+Y o Ctrl+Mayús+Z",
             Self::Copy => "Copiar · Ctrl+C",
             Self::Paste => "Pegar · Ctrl+V",
             Self::MenuFolder => "Carpeta",
@@ -8399,23 +8399,8 @@ fn draw_margin_tag(
             if let Some(name) = mark_shape_glyph(shape) {
                 draw_mark_glyph(pixmap, name, x + 11.0, y + height * 0.5, height * 0.72, ink);
             } else {
-                // Las formas clásicas llevan un punto de tinta como asa.
-                let mut dot = Paint {
-                    anti_alias: true,
-                    ..Default::default()
-                };
-                dot.set_color(Color::from_rgba8(ink.0, ink.1, ink.2, 255));
-                if let Some(circle) =
-                    tiny_skia::PathBuilder::from_circle(x + 11.0, y + height * 0.5, 3.0)
-                {
-                    pixmap.fill_path(
-                        &circle,
-                        &dot,
-                        tiny_skia::FillRule::Winding,
-                        Transform::identity(),
-                        None,
-                    );
-                }
+                // Las formas clásicas se dibujan como son, en tinta.
+                draw_bookmark(pixmap, x + 7.0, y, height, ink, shape);
             }
             if let (marcadores::MarkDisplay::Full(_), Some(layout)) = (display, text) {
                 draw_text_layout(
@@ -9569,6 +9554,10 @@ struct App {
     pending_open_search: Option<(PathBuf, String)>,
     /// Nota de marca en edición: byte de la línea y texto escrito.
     note_edit: Option<(usize, String)>,
+    /// Marca del margen bajo el puntero, para repintar al entrar y salir.
+    margin_hover_id: Option<String>,
+    /// Último clic sobre una etiqueta del margen, para reconocer el doble clic.
+    last_margin_click: Option<(String, Instant)>,
     /// Puntos de marcas del índice flotante y la marca a la que llevan.
     floating_outline_dots: Vec<(DialogRect, usize)>,
     /// El puntero estaba en la zona activa de la barra en el último movimiento:
@@ -9982,6 +9971,8 @@ impl App {
             recent_colors: settings_recent_colors,
             legend_edit: None,
             note_edit: None,
+            margin_hover_id: None,
+            last_margin_click: None,
             pending_open_search: None,
             floating_outline_dots: Vec::new(),
             scroll_hot: false,
@@ -11160,6 +11151,15 @@ impl ApplicationHandler<AppEvent> for App {
                         w.request_redraw();
                     }
                 }
+                let margin_hover_id = self
+                    .margin_mark_at(position.x as f32, position.y as f32)
+                    .map(|mark| mark.id);
+                if margin_hover_id != self.margin_hover_id {
+                    self.margin_hover_id = margin_hover_id;
+                    if let Some(w) = &self.window {
+                        w.request_redraw();
+                    }
+                }
                 self.text_cursor_hover = text_cursor_hover;
                 if let Some(w) = &self.window {
                     let divider_axis = match (self.divider_drag, ui_target) {
@@ -11238,6 +11238,37 @@ impl ApplicationHandler<AppEvent> for App {
                         && thumb.contains(x, y)
                     {
                         self.scroll_thumb_drag = Some(y - thumb.y);
+                        self.selecting = false;
+                        if let Some(window) = &self.window {
+                            window.request_redraw();
+                        }
+                        return;
+                    }
+                    if self.note_edit.is_some()
+                        && let Some((x, y)) = self.pointer
+                    {
+                        // Un clic dentro del cuadro sigue escribiendo; fuera, guarda.
+                        let inside = self.note_edit_rect().is_some_and(|(left, top, w, h)| {
+                            x >= left && x < left + w && y >= top && y < top + h
+                        });
+                        if !inside {
+                            self.commit_bookmark_note();
+                        }
+                        self.selecting = false;
+                        if let Some(window) = &self.window {
+                            window.request_redraw();
+                        }
+                        return;
+                    }
+                    if self.dialog.is_none()
+                        && self.kind_edit.is_none()
+                        && let Some((x, y)) = self.pointer
+                        && let Some(mark) = self.margin_mark_at(x, y)
+                        && self.register_margin_click(&mark.id)
+                    {
+                        // Doble clic: el texto se escribe sobre la misma etiqueta.
+                        self.mark_card = None;
+                        self.note_edit = Some((mark.byte, self.mark_card_note(mark.byte)));
                         self.selecting = false;
                         if let Some(window) = &self.window {
                             window.request_redraw();
@@ -14674,7 +14705,25 @@ impl App {
         if !text_left.is_finite() {
             return Vec::new();
         }
-        let column_right = pane.x + text_left + pane_text_width(pane, self.scale_factor);
+        // Los bloques de código y las tablas se pintan un poco más allá del
+        // texto: las etiquetas parten desde el borde de lo más ancho que se ve.
+        let viewport = (
+            DOCUMENT_VIEWPORT_TOP + pane.y,
+            DOCUMENT_VIEWPORT_TOP + pane.y + pane.height,
+        );
+        let overhang = slots
+            .iter()
+            .filter(|slot| {
+                let top = pane_screen_y(slot.y, scroll, pane);
+                top + slot.height > viewport.0 && top < viewport.1
+            })
+            .map(|slot| match slot.kind {
+                Kind::Code => 12.0,
+                Kind::TableRow { .. } => 6.0,
+                _ => 0.0,
+            })
+            .fold(0.0_f32, f32::max);
+        let column_right = pane.x + text_left + pane_text_width(pane, self.scale_factor) + overhang;
         // El índice flotante ocupa el borde derecho en Leer.
         let reserved =
             if self.settings.floating_outline && self.document.mode == DocumentMode::Reading {
@@ -14720,6 +14769,55 @@ impl App {
                 }
             })
             .collect()
+    }
+
+    /// Anota un clic sobre una etiqueta y dice si es el segundo seguido.
+    fn register_margin_click(&mut self, id: &str) -> bool {
+        let now = Instant::now();
+        let double = self.last_margin_click.as_ref().is_some_and(|(last, at)| {
+            last == id && now.duration_since(*at) < Duration::from_millis(450)
+        });
+        self.last_margin_click = if double {
+            None
+        } else {
+            Some((id.to_string(), now))
+        };
+        double
+    }
+
+    /// Rectángulo del cuadro donde se escribe el texto de la marca: sobre su
+    /// etiqueta, con el mismo ancho si hay lugar (y creciendo hacia abajo), o
+    /// flotando del ancho de la tarjeta si la etiqueta es una cinta o una
+    /// muesca. `None` si la marca no está a la vista.
+    fn note_edit_rect(&mut self) -> Option<(f32, f32, f32, f32)> {
+        let (byte, text) = self.note_edit.clone()?;
+        let (view_width, _) = self.view_size()?;
+        let source = self.document.source.to_string();
+        let id = estudio::parse(self.document.annotations.as_deref())
+            .ok()
+            .and_then(|parsed| estudio::bookmark_id_on_line(&source, &parsed, byte))?;
+        let preview = self.document.mode == DocumentMode::Split;
+        let mark = self
+            .margin_marks(preview)
+            .into_iter()
+            .find(|mark| mark.id == id)?;
+        let (x, y, width, _) = mark.rect;
+        let width = match mark.display {
+            marcadores::MarkDisplay::Full(_) => (view_width - x - 16.0).clamp(width, 236.0),
+            _ => MARK_CARD_WIDTH,
+        };
+        let x = match mark.display {
+            marcadores::MarkDisplay::Full(_) => x,
+            _ => (x + mark.rect.2 - width).max(8.0),
+        };
+        let x = x.min(view_width - width - 8.0).max(8.0);
+        // Cuántas líneas ocupa el texto, con una cuenta algo generosa.
+        let per_line = ((width - 20.0) / 6.8).max(4.0);
+        let lines = ((text.chars().count() + 1) as f32 / per_line)
+            .ceil()
+            .max(1.0);
+        let height = 10.0 + lines * 16.0 + 18.0;
+        Some((x, y, width, height))
     }
 
     /// La etiqueta del margen bajo el punto, si hay.
@@ -14976,7 +15074,16 @@ impl App {
                     note.pop();
                 }
             }
-            PhysicalKey::Code(KeyCode::Enter) => self.commit_bookmark_note(),
+            PhysicalKey::Code(KeyCode::Enter | KeyCode::NumpadEnter) => self.commit_bookmark_note(),
+            PhysicalKey::Code(KeyCode::KeyV) if self.modifiers.control_key() => {
+                let pasted = Clipboard::new()
+                    .ok()
+                    .and_then(|mut clip| clip.get_text().ok());
+                if let (Some(pasted), Some((_, note))) = (pasted, &mut self.note_edit) {
+                    let flat: String = pasted.split_whitespace().collect::<Vec<_>>().join(" ");
+                    append_limited_text(note, &flat, MAX_BOOKMARK_NOTE_CHARS);
+                }
+            }
             _ => {
                 let typed = typed_text(
                     event.text.as_deref(),
@@ -17016,6 +17123,11 @@ impl App {
                 if self.modifiers.control_key() && self.modifiers.shift_key() =>
             {
                 self.perform_action(AppAction::RestoreRecovery);
+            }
+            PhysicalKey::Code(KeyCode::KeyZ)
+                if self.modifiers.control_key() && self.modifiers.shift_key() =>
+            {
+                self.edit_source(|editor, source| editor.redo(source));
             }
             PhysicalKey::Code(KeyCode::KeyZ) if self.modifiers.control_key() => {
                 self.edit_source(|editor, source| editor.undo(source));
@@ -20751,11 +20863,16 @@ impl App {
             let label = abbreviated_label(&label, MAX_OVERLAY_LABEL_CHARS);
             build_menu_layout(&label, &mut self.font_cx, &mut self.layout_cx, self.palette)
         });
-        let note_overlay = self.note_edit.clone().map(|(_, text)| {
-            let label = format!("Nota de la marca: {text}| · Enter guarda · Esc cancela");
-            let label = abbreviated_label(&label, MAX_OVERLAY_LABEL_CHARS);
-            build_menu_layout(&label, &mut self.font_cx, &mut self.layout_cx, self.palette)
-        });
+        let note_in_place = self.note_edit_rect().is_some();
+        let note_overlay = self
+            .note_edit
+            .clone()
+            .filter(|_| !note_in_place)
+            .map(|(_, text)| {
+                let label = format!("Nota de la marca: {text}| · Enter guarda · Esc cancela");
+                let label = abbreviated_label(&label, MAX_OVERLAY_LABEL_CHARS);
+                build_menu_layout(&label, &mut self.font_cx, &mut self.layout_cx, self.palette)
+            });
         let kind_overlay = self.kind_edit.clone().map(|text| {
             let label = format!(
                 "Tipo nuevo: {text}| · Enter lo guarda con el color y la forma de la marca · Esc cancela"
@@ -22328,35 +22445,63 @@ impl App {
             })
             .collect();
         // Tarjeta al pasar el puntero: el texto completo de la marca.
-        let margin_hover_card = (self.mark_card.is_none() && self.mark_navigator.is_none())
-            .then_some(margin_hover)
-            .flatten()
-            .map(|index| {
-                let mark = &margin_marks[index];
-                let title = mark
-                    .kind
-                    .clone()
-                    .unwrap_or_else(|| "Marca de libro".to_string());
-                let title_layout = build_ui_text_layout(
-                    &title,
-                    &mut self.font_cx,
-                    &mut self.layout_cx,
-                    self.palette.dim,
-                    11.5,
-                    true,
-                    None,
-                );
-                let body_layout = build_ui_text_layout(
-                    &mark.text,
-                    &mut self.font_cx,
-                    &mut self.layout_cx,
-                    self.palette.text,
-                    12.5,
-                    false,
-                    Some(MARGIN_HOVER_TEXT_WIDTH),
-                );
-                (index, title_layout, body_layout)
-            });
+        let margin_hover_card =
+            (self.mark_card.is_none() && self.mark_navigator.is_none() && self.note_edit.is_none())
+                .then_some(margin_hover)
+                .flatten()
+                .map(|index| {
+                    let mark = &margin_marks[index];
+                    let title = mark
+                        .kind
+                        .clone()
+                        .unwrap_or_else(|| "Marca de libro".to_string());
+                    let title_layout = build_ui_text_layout(
+                        &title,
+                        &mut self.font_cx,
+                        &mut self.layout_cx,
+                        self.palette.dim,
+                        11.5,
+                        true,
+                        None,
+                    );
+                    let body_layout = build_ui_text_layout(
+                        &mark.text,
+                        &mut self.font_cx,
+                        &mut self.layout_cx,
+                        self.palette.text,
+                        12.5,
+                        false,
+                        Some(MARGIN_HOVER_TEXT_WIDTH),
+                    );
+                    (index, title_layout, body_layout)
+                });
+        let note_edit_view = self.note_edit_rect().map(|rect| {
+            let text = self
+                .note_edit
+                .as_ref()
+                .map(|(_, text)| text.clone())
+                .unwrap_or_default();
+            let count = text.chars().count();
+            let body = build_ui_text_layout(
+                &format!("{text}|"),
+                &mut self.font_cx,
+                &mut self.layout_cx,
+                self.palette.text,
+                12.5,
+                false,
+                Some(rect.2 - 20.0),
+            );
+            let counter = build_ui_text_layout(
+                &format!("{count}/{MAX_BOOKMARK_NOTE_CHARS} · Enter guarda · Esc cancela"),
+                &mut self.font_cx,
+                &mut self.layout_cx,
+                self.palette.dim,
+                10.5,
+                false,
+                None,
+            );
+            (rect, body, counter)
+        });
         let mark_card_view = self.mark_card_layout().map(|(rect, rows)| {
             let kinds = self.mark_kinds();
             let marker = self.mark_card_marker();
@@ -24427,6 +24572,14 @@ impl App {
                 card_x + 12.0,
                 card_y + 12.0 + title.height(),
             );
+        }
+        // Texto de la marca: se escribe sobre su propia etiqueta.
+        if let Some((rect, body, counter)) = &note_edit_view {
+            let (x, y, w, _) = *rect;
+            let h = body.height() + 10.0 + 18.0;
+            draw_floating_surface(pixmap, x, y, w, h, 8.0, *palette);
+            draw_text_layout(pixmap, scale_cx, glyphs, body, x + 10.0, y + 6.0);
+            draw_text_layout(pixmap, scale_cx, glyphs, counter, x + 10.0, y + h - 16.0);
         }
         if let Some((rect, rows, labels, kinds, marker, colors)) = &mark_card_view {
             let (px, py, pw, ph) = *rect;
@@ -29068,9 +29221,87 @@ la casa final
     }
 
     #[test]
+    fn con_el_indice_flotante_y_poco_ancho_la_marca_es_una_muesca() {
+        let mut app = app_con_marcas(640, DocumentMode::Reading);
+        app.settings.floating_outline = true;
+        assert!(matches!(
+            app.margin_marks(false)[0].display,
+            marcadores::MarkDisplay::Notch
+        ));
+    }
+
+    #[test]
+    fn el_doble_clic_sobre_una_etiqueta_se_reconoce_una_sola_vez() {
+        let mut app = app_con_marcas(1200, DocumentMode::Reading);
+        assert!(!app.register_margin_click("a"));
+        assert!(app.register_margin_click("a"));
+        // Después del doble clic empieza de cero; otra etiqueta no cuenta.
+        assert!(!app.register_margin_click("a"));
+        assert!(!app.register_margin_click("b"));
+    }
+
+    #[test]
+    fn el_texto_de_la_marca_se_escribe_sobre_su_etiqueta_y_cabe_en_la_ventana() {
+        for ancho in [1200u32, 640] {
+            let mut app = app_con_marcas(ancho, DocumentMode::Reading);
+            let marca = app.margin_marks(false)[0].clone();
+            assert!(app.note_edit_rect().is_none());
+            app.note_edit = Some((marca.byte, "x".repeat(200)));
+            let (x, y, w, h) = app.note_edit_rect().expect("el cuadro de edición");
+            assert!(x >= 0.0 && x + w <= ancho as f32, "{x} {w} en {ancho}");
+            assert!(w >= marca.rect.2.min(236.0) - 0.1);
+            assert_eq!(y, marca.rect.1);
+            // Con 200 caracteres crece hacia abajo, más que la etiqueta.
+            assert!(h > marcadores::TAG_HEIGHT * 3.0, "{h}");
+            app.draw_for_test(ancho, 560);
+        }
+    }
+
+    #[test]
+    fn las_etiquetas_no_pisan_los_bloques_de_codigo() {
+        let mut app = App::for_tests(NIGHT);
+        let texto = "# Tema
+
+Una linea de texto normal.
+
+```
+codigo largo codigo largo
+```
+";
+        app.load_for_test(texto, DocumentMode::Reading);
+        app.draw_for_test(1200, 560);
+        let mut parsed = anotaciones::Anotaciones::default();
+        let byte = texto.find("Una linea").unwrap();
+        estudio::toggle_bookmark(&mut parsed, texto, byte, 0, anotaciones::Forma::Cinta).unwrap();
+        let byte = texto.find("codigo largo").unwrap();
+        estudio::toggle_bookmark(&mut parsed, texto, byte, 0, anotaciones::Forma::Cinta).unwrap();
+        app.document.annotations = anotaciones::escribir(
+            &parsed, "
+",
+        );
+        app.draw_for_test(1200, 560);
+        let panes = app.focused_document_panes().unwrap();
+        let izquierda = app
+            .slots
+            .iter()
+            .map(|slot| slot.x)
+            .fold(f32::INFINITY, f32::min);
+        // El borde más ancho que se pinta: el fondo del código, 12 px más allá.
+        let borde =
+            panes.source.x + izquierda + pane_text_width(panes.source, app.scale_factor) + 12.0;
+        for marca in app.margin_marks(false) {
+            assert!(
+                marca.rect.0 >= borde + marcadores::TAG_GAP - 0.1,
+                "{:?} contra {borde}",
+                marca.rect
+            );
+        }
+    }
+
+    #[test]
     fn las_marcas_van_a_la_derecha_del_texto_y_se_pliegan_con_el_ancho() {
         use marcadores::MarkDisplay;
-        for (ancho, esperado) in [(1200u32, "texto"), (900, "cinta"), (640, "muesca")] {
+        for (ancho, esperado) in [(1200u32, "texto"), (900, "cinta"), (640, "cinta")] {
             let mut app = app_con_marcas(ancho, DocumentMode::Reading);
             let marcas = app.margin_marks(false);
             assert_eq!(marcas.len(), 4, "{ancho}");

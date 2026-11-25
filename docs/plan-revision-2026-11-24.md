@@ -105,3 +105,24 @@ Orden: del más simple al que cambia la interacción.
 
 - Ortografía en español (fase 21): aplazada hasta tener una versión casi final.
 - Nombre y logo: sigue en su propia sesión.
+
+## Estado (2026-11-25): fases 22 a 24 hechas
+
+- **22.** Subrayar y quitar subrayado por tramos (D-57), con 6 pruebas nuevas.
+  Los restos conservan los espacios del borde de la selección, como en Word.
+- **23.** Formas reales en las etiquetas (error 5); el borde para las etiquetas
+  incluye lo que pintan el código (+12 px) y las tablas (+6 px) y el hueco es de
+  8 px (error 2); la tarjeta de ayuda se repinta al entrar y salir de una
+  etiqueta (error 4: faltaba el repintado); doble clic escribe sobre la etiqueta
+  (error 3).
+  - Desvío: con 8 px de hueco, a 640 px de ancho la marca ya es una cinta y no una
+    muesca; la muesca queda para cuando el índice flotante está abierto.
+  - Desvío: mientras se escribe, el cuadro se dibuja encima de las etiquetas de
+    abajo en lugar de correrlas.
+  - Si la marca no está a la vista (atajo de teclado), el texto se sigue
+    escribiendo en la barra de arriba.
+  - Se puede pegar con Ctrl+V dentro del cuadro; un clic fuera guarda.
+- **24.** Ctrl+Mayús+Z rehace en Editar y Comparar (D-60). No encontré ninguna ruta
+  donde Ctrl+V rehaga; queda por confirmar a mano. No se pudo probar con una
+  prueba automática porque winit no deja construir eventos de teclado.
+- Ejecutable: `C:\Dev\archivo\visor-md-v2-ejecutable\VisorMD-v2-nuevo-4.exe`.
