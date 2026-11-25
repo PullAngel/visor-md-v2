@@ -275,10 +275,103 @@ fn quote(
     Ok((first as u64, antes, cita, despues))
 }
 
-/// Subraya `[start, end)` con un color. Si el tramo cae sobre subrayados que ya
-/// existen, les cambia el color en lugar de superponer otro: así «subrayar en
-/// verde» sobre lo amarillo lo vuelve verde. Devuelve cuántos se cambiaron (0
-/// si se creó uno nuevo).
+/// Un registro nuevo para el tramo `[start, end)`, con el color, la nota y los
+/// extras de `base` (si hay). `None` si el tramo no tiene texto que subrayar.
+fn highlight_record(
+    anotaciones: &mut Anotaciones,
+    source: &str,
+    start: usize,
+    end: usize,
+    base: Option<&Registro>,
+    color: Color,
+) -> Result<Option<Registro>, &'static str> {
+    let (pos, antes, cita, despues) = match quote(source, start, end) {
+        Ok(quoted) => quoted,
+        // Un resto que es solo espacio no se conserva.
+        Err(_) if base.is_some() => return Ok(None),
+        Err(message) => return Err(message),
+    };
+    let id = anotaciones.nuevo_id();
+    Ok(Some(Registro {
+        id,
+        tipo: Tipo::Subrayado,
+        color,
+        forma: None,
+        pos: Some(pos),
+        antes: Some(antes),
+        cita: Some(cita),
+        despues: Some(despues),
+        nota: base.and_then(|registro| registro.nota.clone()),
+        imagen: None,
+        extras: base.map_or_else(Vec::new, |registro| registro.extras.clone()),
+    }))
+}
+
+/// Los subrayados que se cruzan con `[start, end)`.
+fn crossing_highlights(
+    anotaciones: &Anotaciones,
+    source: &str,
+    start: usize,
+    end: usize,
+) -> Vec<Highlight> {
+    highlights(source, anotaciones)
+        .into_iter()
+        .filter(|item| item.start < end.max(start + 1) && start < item.end)
+        .collect()
+}
+
+/// Reparte lo que queda fuera de `[start, end)` de los subrayados `crossing`
+/// en registros nuevos (uno a la izquierda y otro a la derecha, como mucho) y
+/// quita los registros viejos. Los de `absorbed` no dejan restos.
+fn split_highlights(
+    anotaciones: &mut Anotaciones,
+    source: &str,
+    crossing: &[Highlight],
+    absorbed: &[String],
+    start: usize,
+    end: usize,
+) -> Result<(), &'static str> {
+    let mut remains: Vec<Registro> = Vec::new();
+    for item in crossing.iter().filter(|item| !absorbed.contains(&item.id)) {
+        let Some(base) = anotaciones
+            .registros
+            .iter()
+            .find(|registro| registro.id == item.id)
+            .cloned()
+        else {
+            continue;
+        };
+        for (from, to) in [
+            (item.start, start.min(item.end)),
+            (end.max(item.start), item.end),
+        ] {
+            if from < to
+                && let Some(record) = highlight_record(
+                    anotaciones,
+                    source,
+                    from,
+                    to,
+                    Some(&base),
+                    base.color.clone(),
+                )?
+            {
+                remains.push(record);
+            }
+        }
+    }
+    anotaciones
+        .registros
+        .retain(|registro| !crossing.iter().any(|item| item.id == registro.id));
+    anotaciones.registros.extend(remains);
+    Ok(())
+}
+
+/// Subraya `[start, end)` con un color, como en un procesador de texto: el
+/// color nuevo cubre solo el tramo seleccionado. De los subrayados que se
+/// cruzan queda lo que está fuera del tramo, con su color de antes; los que
+/// quedan dentro desaparecen, y los del mismo color se unen con el nuevo.
+/// Con el cursor quieto sobre un subrayado (sin selección) se le cambia el
+/// color entero. Devuelve cuántos subrayados se tocaron (0 si solo se creó uno).
 pub(crate) fn highlight(
     anotaciones: &mut Anotaciones,
     source: &str,
@@ -286,54 +379,60 @@ pub(crate) fn highlight(
     end: usize,
     color: usize,
 ) -> Result<usize, &'static str> {
-    let existing: Vec<String> = highlights(source, anotaciones)
-        .into_iter()
-        .filter(|item| item.start < end.max(start + 1) && start < item.end)
-        .map(|item| item.id)
-        .collect();
-    if !existing.is_empty() {
+    let new_color = color_for_index(color);
+    let crossing = crossing_highlights(anotaciones, source, start, end);
+    if start >= end && !crossing.is_empty() {
         for registro in &mut anotaciones.registros {
-            if existing.contains(&registro.id) {
-                registro.color = color_for_index(color);
+            if crossing.iter().any(|item| item.id == registro.id) {
+                registro.color = new_color.clone();
             }
         }
-        return Ok(existing.len());
+        return Ok(crossing.len());
     }
-    let (pos, antes, cita, despues) = quote(source, start, end)?;
-    let id = anotaciones.nuevo_id();
-    anotaciones.registros.push(Registro {
-        id,
-        tipo: Tipo::Subrayado,
-        color: color_for_index(color),
-        forma: None,
-        pos: Some(pos),
-        antes: Some(antes),
-        cita: Some(cita),
-        despues: Some(despues),
-        nota: None,
-        imagen: None,
-        extras: Vec::new(),
-    });
-    Ok(0)
+    // Los del mismo color que tocan el tramo se funden con él.
+    let same: Vec<&Highlight> = crossing.iter().filter(|item| item.color == color).collect();
+    let merged_start = same.iter().map(|item| item.start).fold(start, usize::min);
+    let merged_end = same.iter().map(|item| item.end).fold(end, usize::max);
+    let absorbed: Vec<String> = same.iter().map(|item| item.id.clone()).collect();
+    // Si la unión no cabe en un subrayado, se deja el tramo solo.
+    let (new_start, new_end, absorbed) = if merged_end - merged_start > MAX_CITA_BYTES {
+        (start, end, Vec::new())
+    } else {
+        (merged_start, merged_end, absorbed)
+    };
+    let record = highlight_record(anotaciones, source, new_start, new_end, None, new_color)?
+        .ok_or("Seleccioná el texto que querés subrayar")?;
+    split_highlights(anotaciones, source, &crossing, &absorbed, start, end)?;
+    anotaciones.registros.push(record);
+    Ok(crossing.len())
 }
 
-/// Quita los subrayados que tocan `[start, end)` (o que contienen el punto si
-/// el tramo está vacío). Devuelve cuántos quitó.
+/// Quita el subrayado de `[start, end)`: de los que se cruzan queda lo que
+/// está fuera del tramo. Con el cursor quieto (sin selección) quita entero el
+/// subrayado que lo contiene. Devuelve cuántos tocó.
 pub(crate) fn remove_highlights(
     anotaciones: &mut Anotaciones,
     source: &str,
     start: usize,
     end: usize,
 ) -> usize {
-    let touched: Vec<String> = highlights(source, anotaciones)
-        .into_iter()
-        .filter(|item| item.start < end.max(start + 1) && start < item.end)
-        .map(|item| item.id)
-        .collect();
-    anotaciones
-        .registros
-        .retain(|registro| !touched.contains(&registro.id));
-    touched.len()
+    let crossing = crossing_highlights(anotaciones, source, start, end);
+    if crossing.is_empty() {
+        return 0;
+    }
+    if start >= end {
+        anotaciones
+            .registros
+            .retain(|registro| !crossing.iter().any(|item| item.id == registro.id));
+        return crossing.len();
+    }
+    // Si un resto no se puede anclar, se quita entero como antes.
+    if split_highlights(anotaciones, source, &crossing, &[], start, end).is_err() {
+        anotaciones
+            .registros
+            .retain(|registro| !crossing.iter().any(|item| item.id == registro.id));
+    }
+    crossing.len()
 }
 
 /// La leyenda de un color, si la persona le dio un significado.
@@ -945,6 +1044,95 @@ mod pruebas {
         assert_eq!((despues.pos, &despues.cita), (antes.pos, &antes.cita));
         assert_eq!(remove_highlights(&mut anotaciones, source, 6, 6), 1);
         assert!(anotaciones.registros.is_empty());
+    }
+
+    /// Los tramos subrayados como (texto, color), en orden.
+    fn tramos(source: &str, anotaciones: &Anotaciones) -> Vec<(String, usize)> {
+        let mut items = highlights(source, anotaciones);
+        items.sort_by_key(|item| item.start);
+        items
+            .into_iter()
+            .map(|item| (source[item.start..item.end].to_string(), item.color))
+            .collect()
+    }
+
+    #[test]
+    fn subrayar_un_bloque_que_contiene_un_subrayado_lo_reemplaza() {
+        let source = "uno dos tres cuatro";
+        for (primero, segundo) in [(0, 0), (0, 1)] {
+            let mut anotaciones = Anotaciones::default();
+            highlight(&mut anotaciones, source, 4, 7, primero).unwrap();
+            highlight(&mut anotaciones, source, 0, 12, segundo).unwrap();
+            assert_eq!(
+                tramos(source, &anotaciones),
+                vec![("uno dos tres".to_string(), segundo)]
+            );
+        }
+    }
+
+    #[test]
+    fn una_letra_con_otro_color_parte_el_subrayado_en_tres() {
+        let source = "uno dos tres";
+        let mut anotaciones = Anotaciones::default();
+        highlight(&mut anotaciones, source, 4, 7, 0).unwrap();
+        highlight(&mut anotaciones, source, 5, 6, 2).unwrap();
+        assert_eq!(
+            tramos(source, &anotaciones),
+            vec![
+                ("d".to_string(), 0),
+                ("o".to_string(), 2),
+                ("s".to_string(), 0)
+            ]
+        );
+    }
+
+    #[test]
+    fn un_bloque_grande_absorbe_varios_subrayados_previos() {
+        let source = "aaa bbb ccc ddd eee";
+        let mut anotaciones = Anotaciones::default();
+        highlight(&mut anotaciones, source, 0, 3, 0).unwrap();
+        highlight(&mut anotaciones, source, 8, 11, 1).unwrap();
+        highlight(&mut anotaciones, source, 16, 19, 3).unwrap();
+        highlight(&mut anotaciones, source, 0, 19, 2).unwrap();
+        assert_eq!(tramos(source, &anotaciones), vec![(source.to_string(), 2)]);
+        assert_eq!(anotaciones.registros.len(), 1);
+    }
+
+    #[test]
+    fn la_seleccion_que_cruza_el_borde_deja_el_resto_con_su_color() {
+        let source = "uno dos tres cuatro";
+        let mut anotaciones = Anotaciones::default();
+        highlight(&mut anotaciones, source, 4, 12, 0).unwrap();
+        highlight(&mut anotaciones, source, 8, 19, 1).unwrap();
+        assert_eq!(
+            tramos(source, &anotaciones),
+            vec![("dos ".to_string(), 0), ("tres cuatro".to_string(), 1)]
+        );
+    }
+
+    #[test]
+    fn el_mismo_color_une_los_subrayados_que_se_tocan() {
+        let source = "uno dos tres";
+        let mut anotaciones = Anotaciones::default();
+        highlight(&mut anotaciones, source, 0, 5, 0).unwrap();
+        highlight(&mut anotaciones, source, 4, 12, 0).unwrap();
+        assert_eq!(tramos(source, &anotaciones), vec![(source.to_string(), 0)]);
+    }
+
+    #[test]
+    fn quitar_una_parte_deja_el_resto_y_el_texto_no_cambia() {
+        let source = "uno dos tres";
+        let mut anotaciones = Anotaciones::default();
+        highlight(&mut anotaciones, source, 0, 12, 1).unwrap();
+        assert_eq!(remove_highlights(&mut anotaciones, source, 4, 7), 1);
+        assert_eq!(
+            tramos(source, &anotaciones),
+            vec![("uno ".to_string(), 1), (" tres".to_string(), 1)]
+        );
+        // Guardado y vuelto a leer, conserva los tramos.
+        let bloque = anotaciones::escribir(&anotaciones, "\n").unwrap();
+        let leidas = parse(Some(&bloque)).unwrap();
+        assert_eq!(tramos(source, &leidas), tramos(source, &anotaciones));
     }
 
     #[test]
